@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:localsend_app/config/relay_brand.dart';
 import 'package:localsend_app/gen/strings.g.dart';
 import 'package:localsend_app/model/persistence/color_mode.dart';
 import 'package:localsend_app/provider/device_info_provider.dart';
@@ -16,6 +17,7 @@ ThemeData getTheme(ColorMode colorMode, Color customColor, Brightness brightness
   }
 
   final colorScheme = _determineColorScheme(colorMode, customColor, brightness, dynamicColors);
+  final palette = RelayPalette.of(colorScheme.brightness);
 
   final lightInputBorder = OutlineInputBorder(
     borderSide: BorderSide(color: colorScheme.secondaryContainer),
@@ -52,6 +54,7 @@ ThemeData getTheme(ColorMode colorMode, Color customColor, Brightness brightness
   return ThemeData(
     colorScheme: colorScheme,
     useMaterial3: true,
+    scaffoldBackgroundColor: palette.canvas,
     // same density on all platforms so desktop matches mobile (defaults to compact on desktop)
     visualDensity: VisualDensity.standard,
     navigationBarTheme: colorScheme.brightness == Brightness.dark
@@ -61,7 +64,7 @@ ThemeData getTheme(ColorMode colorMode, Color customColor, Brightness brightness
         : null,
     inputDecorationTheme: InputDecorationTheme(
       filled: true,
-      fillColor: colorScheme.secondaryContainer,
+      fillColor: palette.softSurface,
       border: colorScheme.brightness == Brightness.light ? lightInputBorder : darkInputBorder,
       focusedBorder: colorScheme.brightness == Brightness.light ? lightInputBorder : darkInputBorder,
       enabledBorder: colorScheme.brightness == Brightness.light ? lightInputBorder : darkInputBorder,
@@ -69,7 +72,11 @@ ThemeData getTheme(ColorMode colorMode, Color customColor, Brightness brightness
     ),
     elevatedButtonTheme: ElevatedButtonThemeData(
       style: ElevatedButton.styleFrom(
-        foregroundColor: colorScheme.brightness == Brightness.dark ? Colors.white : null,
+        foregroundColor: palette.accentSoft,
+        backgroundColor: palette.accent.withValues(alpha: 0.2),
+        side: BorderSide(color: palette.accentSoft.withValues(alpha: 0.45)),
+        shape: const StadiumBorder(),
+        elevation: 0,
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       ),
     ),
@@ -77,6 +84,38 @@ ThemeData getTheme(ColorMode colorMode, Color customColor, Brightness brightness
       style: TextButton.styleFrom(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       ),
+    ),
+    outlinedButtonTheme: OutlinedButtonThemeData(
+      style: OutlinedButton.styleFrom(
+        foregroundColor: palette.textPrimary,
+        side: BorderSide(color: palette.hairline),
+        shape: const StadiumBorder(),
+      ),
+    ),
+    iconButtonTheme: IconButtonThemeData(
+      style: IconButton.styleFrom(
+        foregroundColor: palette.textSecondary,
+        backgroundColor: palette.softSurface,
+      ),
+    ),
+    switchTheme: SwitchThemeData(
+      trackColor: WidgetStateProperty.resolveWith(
+        (states) => states.contains(WidgetState.selected) ? palette.accent.withValues(alpha: 0.6) : palette.softSurface,
+      ),
+      thumbColor: WidgetStateProperty.resolveWith(
+        (states) => states.contains(WidgetState.selected) ? palette.textPrimary : palette.textTertiary,
+      ),
+      trackOutlineColor: WidgetStateProperty.all(palette.hairline),
+    ),
+    dialogTheme: DialogThemeData(
+      backgroundColor: palette.elevated,
+      elevation: 0,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(RelayComponentTokens.dialogRadius)),
+    ),
+    bottomSheetTheme: BottomSheetThemeData(
+      backgroundColor: palette.elevated,
+      elevation: 0,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(RelayComponentTokens.dialogRadius)),
     ),
     fontFamily: fontFamily,
   );
@@ -141,10 +180,7 @@ extension InputDecorationThemeExt on InputDecorationThemeData {
 }
 
 ColorScheme _determineColorScheme(ColorMode mode, Color customColor, Brightness brightness, DynamicColors? dynamicColors) {
-  final defaultColorScheme = ColorScheme.fromSeed(
-    seedColor: Colors.teal,
-    brightness: brightness,
-  );
+  final defaultColorScheme = relayColorScheme(brightness);
 
   final colorScheme = switch (mode) {
     ColorMode.system => brightness == Brightness.light ? dynamicColors?.light : dynamicColors?.dark,
@@ -153,10 +189,7 @@ ColorScheme _determineColorScheme(ColorMode mode, Color customColor, Brightness 
       surface: Colors.black,
     ),
     ColorMode.yaru => throw 'Should reach here',
-    ColorMode.custom => ColorScheme.fromSeed(
-      seedColor: customColor,
-      brightness: brightness,
-    ),
+    ColorMode.custom => ColorScheme.fromSeed(seedColor: customColor, brightness: brightness),
   };
 
   return colorScheme ?? defaultColorScheme;

@@ -1,8 +1,10 @@
+import 'dart:async';
 import 'dart:typed_data';
 
 import 'package:localsend_app/model/persistence/relay_public_identity.dart';
 import 'package:localsend_app/util/security/relay_identity_metadata_store.dart';
 import 'package:localsend_app/util/security/relay_identity_secret_store.dart';
+import 'package:localsend_app/util/security/relay_server_signer_port.dart';
 import 'package:localsend_isolates/rust/api/crypto.dart' as rust_crypto;
 import 'package:logging/logging.dart';
 
@@ -79,24 +81,71 @@ final class RelayIdentityResetFailed extends RelayIdentityResetResult {
   const RelayIdentityResetFailed();
 }
 
+/// The running server signer could not be confirmed as revoked, so the
+/// authoritative secure identity was deliberately left untouched.
+final class RelayIdentityResetSignerActive extends RelayIdentityResetResult {
+  const RelayIdentityResetSignerActive();
+}
+
+sealed class RelaySignerActivationResult {
+  const RelaySignerActivationResult();
+}
+
+final class RelaySignerActivationInstalled extends RelaySignerActivationResult {
+  final String relayId;
+
+  const RelaySignerActivationInstalled(this.relayId);
+}
+
+final class RelaySignerActivationNotReady extends RelaySignerActivationResult {
+  const RelaySignerActivationNotReady();
+}
+
+final class RelaySignerActivationSecretUnavailable extends RelaySignerActivationResult {
+  const RelaySignerActivationSecretUnavailable();
+}
+
+final class RelaySignerActivationServerNotRunning extends RelaySignerActivationResult {
+  const RelaySignerActivationServerNotRunning();
+}
+
+final class RelaySignerActivationFailed extends RelaySignerActivationResult {
+  const RelaySignerActivationFailed();
+}
+
+class _RelaySignerInitialization {
+  final RelayIdentityState state;
+  final RelaySignerActivationResult result;
+
+  const _RelaySignerInitialization({
+    required this.state,
+    required this.result,
+  });
+}
+
 /// Coordinates the authoritative private identity in secure storage with a
 /// non-secret public metadata cache.
 class RelayIdentityCoordinator {
   final RelayIdentitySecretStore _secureStore;
   final RelayIdentityApi _identityApi;
   final RelayIdentityMetadataStore _metadataStore;
+  final RelayServerSignerPort _signerPort;
 
   RelayIdentityReady? _ready;
   Future<RelayIdentityState>? _initializing;
   Future<RelayIdentityResetResult>? _resetting;
+  Future<void> _signerOp = Future.value();
+  String? _installedRelayId;
 
   RelayIdentityCoordinator({
     required RelayIdentitySecretStore secureStore,
     required RelayIdentityApi identityApi,
     required RelayIdentityMetadataStore metadataStore,
+    required RelayServerSignerPort signerPort,
   }) : _secureStore = secureStore,
        _identityApi = identityApi,
-       _metadataStore = metadataStore;
+       _metadataStore = metadataStore,
+       _signerPort = signerPort;
 
   Future<RelayIdentityState> initialize() async {
     final reset = _resetting;
@@ -132,7 +181,7 @@ class RelayIdentityCoordinator {
   Future<RelayIdentityState> _initialize() async {
     final load = await _loadSecret();
     return switch (load) {
-      RelaySecretFound(:final secret) => _restore(secret),
+      RelaySecretFound(:final secret) => _restoreAndWipe(secret),
       RelaySecretNotFound() => _create(),
       RelaySecretLocked() => const RelayIdentityLocked(),
       RelaySecretNotAvailable() => const RelayIdentityNotAvailable(),
@@ -140,6 +189,14 @@ class RelayIdentityCoordinator {
       RelaySecretCorrupt() => const RelayIdentityCorrupt(),
       RelaySecretFailed() => const RelayIdentityFailed(),
     };
+  }
+
+  Future<RelayIdentityState> _restoreAndWipe(Uint8List secret) async {
+    try {
+      return await _restore(secret);
+    } finally {
+      _wipe(secret);
+    }
   }
 
   Future<RelaySecretLoadResult> _loadSecret() async {
@@ -166,21 +223,168 @@ class RelayIdentityCoordinator {
   }
 
   Future<RelayIdentityState> _create() async {
+    Uint8List? privateKey;
     try {
-      late RelayPublicIdentity publicIdentity;
-      {
-        final material = await _identityApi.generate();
-        final save = await _saveSecret(material.privateKey);
-        final failedState = _stateForStoreResult(save);
-        if (failedState != null) {
-          return failedState;
-        }
-        publicIdentity = RelayPublicIdentity(relayId: material.relayId, publicKey: material.publicKey);
+      final material = await _identityApi.generate();
+      privateKey = material.privateKey;
+      final save = await _saveSecret(privateKey);
+      final failedState = _stateForStoreResult(save);
+      if (failedState != null) {
+        return failedState;
       }
+      final publicIdentity = RelayPublicIdentity(relayId: material.relayId, publicKey: material.publicKey);
       await _repairMetadata(publicIdentity);
       return RelayIdentityReady(publicIdentity);
     } catch (_) {
       return const RelayIdentityFailed();
+    } finally {
+      if (privateKey != null) {
+        _wipe(privateKey);
+      }
+    }
+  }
+
+  /// Loads the secure private key once for this activation, installs it on the
+  /// running Rust server, and then wipes the Dart buffer.
+  Future<RelaySignerActivationResult> activateSigner() {
+    return _serializeSignerOperation(_activateSigner);
+  }
+
+  Future<RelaySignerActivationResult> _activateSigner() async {
+    final ready = _ready;
+    if (ready != null) {
+      return _loadAndInstall(ready);
+    }
+
+    final initializing = _initializing;
+    if (initializing != null) {
+      final initialized = await initializing;
+      return switch (initialized) {
+        RelayIdentityReady() => _loadAndInstall(initialized),
+        _ => const RelaySignerActivationNotReady(),
+      };
+    }
+
+    final initialized = Completer<RelayIdentityState>();
+    _initializing = initialized.future;
+    try {
+      final result = await _initializeAndInstall();
+      if (result.state case RelayIdentityReady()) {
+        _ready = result.state as RelayIdentityReady;
+      }
+      initialized.complete(result.state);
+      return result.result;
+    } catch (_) {
+      const failed = RelayIdentityFailed();
+      initialized.complete(failed);
+      return const RelaySignerActivationFailed();
+    } finally {
+      if (identical(_initializing, initialized.future)) {
+        _initializing = null;
+      }
+    }
+  }
+
+  Future<_RelaySignerInitialization> _initializeAndInstall() async {
+    final load = await _loadSecret();
+    switch (load) {
+      case RelaySecretFound(:final secret):
+        try {
+          final state = await _restore(secret);
+          return switch (state) {
+            RelayIdentityReady() => _RelaySignerInitialization(
+              state: state,
+              result: await _install(secret, state.identity.relayId),
+            ),
+            _ => _RelaySignerInitialization(
+              state: state,
+              result: const RelaySignerActivationNotReady(),
+            ),
+          };
+        } finally {
+          _wipe(secret);
+        }
+      case RelaySecretNotFound():
+        return _createAndInstall();
+      case RelaySecretLocked() || RelaySecretNotAvailable() || RelaySecretPermissionDenied() || RelaySecretCorrupt() || RelaySecretFailed():
+        return const _RelaySignerInitialization(
+          state: RelayIdentityFailed(),
+          result: RelaySignerActivationSecretUnavailable(),
+        );
+    }
+  }
+
+  Future<_RelaySignerInitialization> _createAndInstall() async {
+    Uint8List? privateKey;
+    try {
+      final material = await _identityApi.generate();
+      privateKey = material.privateKey;
+      final save = await _saveSecret(privateKey);
+      final failedState = _stateForStoreResult(save);
+      if (failedState != null) {
+        return _RelaySignerInitialization(
+          state: failedState,
+          result: const RelaySignerActivationNotReady(),
+        );
+      }
+      final publicIdentity = RelayPublicIdentity(relayId: material.relayId, publicKey: material.publicKey);
+      await _repairMetadata(publicIdentity);
+      final ready = RelayIdentityReady(publicIdentity);
+      return _RelaySignerInitialization(
+        state: ready,
+        result: await _install(privateKey, publicIdentity.relayId),
+      );
+    } catch (_) {
+      return const _RelaySignerInitialization(
+        state: RelayIdentityFailed(),
+        result: RelaySignerActivationFailed(),
+      );
+    } finally {
+      if (privateKey != null) {
+        _wipe(privateKey);
+      }
+    }
+  }
+
+  Future<RelaySignerActivationResult> _loadAndInstall(RelayIdentityReady ready) async {
+    final load = await _loadSecret();
+    if (load is! RelaySecretFound) {
+      return const RelaySignerActivationSecretUnavailable();
+    }
+    final secret = load.secret;
+    try {
+      return await _install(secret, ready.identity.relayId);
+    } finally {
+      _wipe(secret);
+    }
+  }
+
+  Future<RelaySignerActivationResult> _install(Uint8List privateKey, String expectedRelayId) async {
+    final installedRelayId = _installedRelayId;
+    if (installedRelayId != null && installedRelayId != expectedRelayId) {
+      final revoked = await _revoke();
+      if (revoked is! RelaySignerRevokeRevoked && revoked is! RelaySignerRevokeServerNotRunning) {
+        return const RelaySignerActivationFailed();
+      }
+    }
+
+    final RelaySignerInstallOutcome result;
+    try {
+      result = await _signerPort.install(privateKey, expectedRelayId);
+    } catch (_) {
+      return const RelaySignerActivationFailed();
+    }
+    switch (result) {
+      case RelaySignerInstallInstalled(:final relayId) when relayId == expectedRelayId:
+        _installedRelayId = relayId;
+        return RelaySignerActivationInstalled(relayId);
+      case RelaySignerInstallInstalled():
+        await _revoke();
+        return const RelaySignerActivationFailed();
+      case RelaySignerInstallServerNotRunning():
+        return const RelaySignerActivationServerNotRunning();
+      case RelaySignerInstallFailed():
+        return const RelaySignerActivationFailed();
     }
   }
 
@@ -231,9 +435,15 @@ class RelayIdentityCoordinator {
   }
 
   Future<RelayIdentityResetResult> _reset() async {
-    final initializing = _initializing;
-    if (initializing != null) {
-      await initializing;
+    final revoke = await _serializeSignerOperation(() async {
+      final initializing = _initializing;
+      if (initializing != null) {
+        await initializing;
+      }
+      return _revoke();
+    });
+    if (revoke is! RelaySignerRevokeRevoked && revoke is! RelaySignerRevokeServerNotRunning) {
+      return const RelayIdentityResetSignerActive();
     }
 
     final deleted = await _deleteSecret();
@@ -243,6 +453,7 @@ class RelayIdentityCoordinator {
     }
 
     _ready = null;
+    _installedRelayId = null;
     try {
       await _metadataStore.clear();
       return const RelayIdentityResetSuccess();
@@ -267,4 +478,28 @@ class RelayIdentityCoordinator {
     RelaySecretStorePermissionDenied() => const RelayIdentityResetPermissionDenied(),
     RelaySecretStoreFailed() => const RelayIdentityResetFailed(),
   };
+
+  Future<RelaySignerRevokeOutcome> _revoke() async {
+    try {
+      return await _signerPort.revoke();
+    } catch (_) {
+      return const RelaySignerRevokeUnreachable();
+    }
+  }
+
+  Future<T> _serializeSignerOperation<T>(Future<T> Function() operation) async {
+    final previous = _signerOp;
+    final current = Completer<void>();
+    _signerOp = current.future;
+    await previous;
+    try {
+      return await operation();
+    } finally {
+      current.complete();
+    }
+  }
+
+  void _wipe(Uint8List bytes) {
+    bytes.fillRange(0, bytes.length, 0);
+  }
 }

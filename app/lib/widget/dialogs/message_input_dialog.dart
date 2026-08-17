@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:localsend_app/gen/strings.g.dart';
+import 'package:localsend_app/widget/relay/relay_dialog.dart';
 import 'package:routerino/routerino.dart';
 
 class MessageInputDialog extends StatefulWidget {
@@ -28,28 +29,26 @@ class _MessageInputDialogState extends State<MessageInputDialog> {
 
   @override
   Widget build(BuildContext context) {
-    return AlertDialog(
-      title: Text(t.dialogs.messageInput.title),
-      content: TextFormField(
+    return RelayDialog(
+      title: t.dialogs.messageInput.title,
+      actions: [
+        TextButton(
+          style: relayQuietButtonStyle(context),
+          onPressed: () => context.pop(),
+          child: Text(t.general.cancel),
+        ),
+        FilledButton(
+          style: relayPrimaryButtonStyle(context),
+          onPressed: () => context.pop(_textController.text),
+          child: Text(t.general.confirm),
+        ),
+      ],
+      child: TextFormField(
         controller: _textController,
         keyboardType: TextInputType.multiline,
         maxLines: null,
         autofocus: true,
       ),
-      actions: [
-        TextButton(
-          onPressed: () => context.pop(),
-          child: Text(t.general.cancel),
-        ),
-        ElevatedButton(
-          style: ElevatedButton.styleFrom(
-            backgroundColor: Theme.of(context).colorScheme.primary,
-            foregroundColor: Theme.of(context).colorScheme.onPrimary,
-          ),
-          onPressed: () => context.pop(_textController.text),
-          child: Text(t.general.confirm),
-        ),
-      ],
     );
   }
 }

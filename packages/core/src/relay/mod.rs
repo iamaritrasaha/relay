@@ -7,6 +7,8 @@ use std::fmt;
 
 use thiserror::Error;
 
+use crate::crypto::relay_identity::RelayIdentity;
+use crate::crypto::relay_identity_proof::create_relay_identity_proof;
 use crate::crypto::relay_identity_proof::{RelayIdentityProofV1, RelayProofRole};
 
 /// Opaque TLS context owned by the Relay transport.
@@ -63,6 +65,63 @@ pub enum RelaySignError {
     InvalidIdentity,
     #[error("Relay identity proof signing failed")]
     SigningFailed,
+}
+
+/// Failure while installing a Rust-resident Relay server proof signer.
+///
+/// These errors deliberately carry no private-key material.
+#[derive(Clone, Copy, Debug, Error, Eq, PartialEq)]
+pub enum RelaySignerInstallError {
+    #[error("the Relay server has stopped")]
+    ServerStopped,
+    #[error("the Relay private key is invalid")]
+    InvalidPrivateKey,
+    #[error("the Relay private key does not match the expected RelayId")]
+    RelayIdMismatch,
+}
+
+/// Rust-resident signer for server-side Relay identity proofs.
+///
+/// This is intentionally crate-private: identity loading and lifecycle are
+/// controlled by the running core HTTP server, never by a network request.
+pub(crate) struct ProductionRelaySigner {
+    identity: RelayIdentity,
+    relay_id: String,
+}
+
+impl ProductionRelaySigner {
+    pub(crate) fn new(identity: RelayIdentity, relay_id: String) -> Self {
+        Self { identity, relay_id }
+    }
+}
+
+impl fmt::Debug for ProductionRelaySigner {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("ProductionRelaySigner")
+            .field("relay_id", &self.relay_id)
+            .finish()
+    }
+}
+
+impl RelayProofSigner for ProductionRelaySigner {
+    fn sign_server_proof(
+        &self,
+        nonce: &[u8; 32],
+        tls: &RelayTlsContext,
+    ) -> Result<RelayIdentityProofV1, RelaySignError> {
+        if tls.role() != RelayProofRole::Server {
+            return Err(RelaySignError::WrongRole);
+        }
+
+        create_relay_identity_proof(
+            &self.identity,
+            tls.role(),
+            *nonce,
+            tls.own_tls_fingerprint(),
+        )
+        .map_err(|_| RelaySignError::SigningFailed)
+    }
 }
 
 /// Result of Relay cryptographic authentication, without trust policy.
@@ -181,6 +240,26 @@ mod tests {
         fn assert_send_sync<T: Send + Sync + ?Sized>() {}
 
         assert_send_sync::<dyn RelayProofSigner>();
+    }
+
+    #[test]
+    fn production_signer_is_server_only_and_debug_reveals_only_the_relay_id() {
+        let identity = RelayIdentity::generate();
+        let relay_id = identity.relay_id().unwrap();
+        let private_key_pem = identity.private_key_export().unwrap();
+        let signer = ProductionRelaySigner::new(identity, relay_id.clone());
+        let client_context = test_tls_context(RelayProofRole::Client, TLS_FINGERPRINT);
+
+        assert_eq!(
+            signer.sign_server_proof(&[0x01; 32], &client_context),
+            Err(RelaySignError::WrongRole)
+        );
+
+        let debug = format!("{signer:?}");
+        assert!(debug.contains(&relay_id));
+        assert!(!debug.contains("PRIVATE KEY"));
+        assert!(!debug.contains(private_key_pem.as_str()));
+        assert!(!debug.contains(&format!("{:?}", private_key_pem.as_bytes())));
     }
 
     #[test]

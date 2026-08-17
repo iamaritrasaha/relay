@@ -19,9 +19,37 @@ struct _MyApplication {
 
 G_DEFINE_TYPE(MyApplication, my_application, GTK_TYPE_APPLICATION)
 
+// Gives every Relay window the Relay icon.
+//
+// Without this the window carries no _NET_WM_ICON, so X11 docks, task
+// switchers and window lists fall back to a generic placeholder. The icon
+// ships inside the Flutter bundle, so it resolves relative to the executable
+// and therefore works for an uninstalled bundle as well as an installed one.
+// If the bundle layout is not found we fall back to the hicolor theme entry
+// installed under the application id by the packaging step.
+static void relay_set_default_window_icon() {
+  g_autofree gchar* exe_path = g_file_read_link("/proc/self/exe", nullptr);
+  if (exe_path != nullptr) {
+    g_autofree gchar* exe_dir = g_path_get_dirname(exe_path);
+    g_autofree gchar* icon_path = g_build_filename(
+        exe_dir, "data", "flutter_assets", "assets", "img",
+        "relay-icon-linux-512.png", nullptr);
+    if (g_file_test(icon_path, G_FILE_TEST_EXISTS)) {
+      g_autoptr(GError) error = nullptr;
+      if (gtk_window_set_default_icon_from_file(icon_path, &error)) {
+        return;
+      }
+      g_warning("Failed to load the Relay window icon: %s", error->message);
+    }
+  }
+
+  gtk_window_set_default_icon_name(APPLICATION_ID);
+}
+
 // Implements GApplication::activate.
 static void my_application_activate(GApplication* application) {
   MyApplication* self = MY_APPLICATION(application);
+  relay_set_default_window_icon();
   GtkWindow* window =
       GTK_WINDOW(gtk_application_window_new(GTK_APPLICATION(application)));
 
@@ -42,11 +70,11 @@ static void my_application_activate(GApplication* application) {
   if (GTK_CSD && strcmp(GTK_CSD, "1") == 0) {
     GtkHeaderBar* header_bar = GTK_HEADER_BAR(gtk_header_bar_new());
     gtk_widget_show(GTK_WIDGET(header_bar));
-    gtk_header_bar_set_title(header_bar, "LocalSend");
+    gtk_header_bar_set_title(header_bar, "Relay");
     gtk_header_bar_set_show_close_button(header_bar, TRUE);
     gtk_window_set_titlebar(window, GTK_WIDGET(header_bar));
   } else {
-    gtk_window_set_title(window, "LocalSend");
+    gtk_window_set_title(window, "Relay");
   }
 
   gtk_window_set_default_size(window, 400, 500);

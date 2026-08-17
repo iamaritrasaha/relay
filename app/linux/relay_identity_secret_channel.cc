@@ -379,6 +379,7 @@ void relay_start_task(RelayOp op, FlMethodCall* method_call, guint8* secret, gsi
   // task_data is owned by relay_task_complete/relay_task_data_free, not by
   // GTask itself, since we need it in the completion callback too.
   GTask* task = g_task_new(nullptr, nullptr, relay_task_complete, data);
+  g_task_set_task_data(task, data, nullptr);
   g_task_run_in_thread(task, relay_task_worker);
   g_object_unref(task);
 }

@@ -8,7 +8,7 @@ AppDir:
   path: AppDir
   app_info:
     id: org.localsend.localsend_app
-    name: LocalSend
+    name: Relay
     icon: localsend
     version: latest
     exec: localsend_app

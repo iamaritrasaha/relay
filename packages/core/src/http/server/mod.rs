@@ -9,11 +9,14 @@ pub mod web;
 pub use peer_ip::PeerIp;
 
 use crate::crypto::cert::{fingerprint_from_cert_der, public_key_from_cert_der};
+use crate::crypto::relay_identity::RelayIdentity;
 use crate::http::server::internal::{InternalConfig, InternalState};
 use crate::http::server::v2::ServerEventV2;
 use crate::http::server::web::{WebConfig, WebI18n};
 use crate::http::state::ClientInfo;
-use crate::relay::{RelayProofSigner, RelayTlsContext};
+use crate::relay::{
+    ProductionRelaySigner, RelayProofSigner, RelaySignerInstallError, RelayTlsContext,
+};
 use common::client_cert_verifier::CustomClientCertVerifier;
 use common::error::AppError;
 use common::response;
@@ -30,7 +33,8 @@ use std::fmt::Debug;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
 use std::num::NonZeroUsize;
 use std::ops::Deref;
-use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, RwLock};
 use tokio::sync::{mpsc, oneshot, Mutex, Semaphore};
 use tokio_util::sync::CancellationToken;
 use tokio_util::task::TaskTracker;
@@ -69,8 +73,128 @@ pub(crate) struct V2State {
 }
 
 pub(crate) struct RelayProofState {
-    pub(crate) signer: Option<Arc<dyn RelayProofSigner>>,
+    /// The currently installed server proof signer. Requests clone this Arc
+    /// under the lock, then release the lock before signing.
+    pub(crate) signer: RwLock<Option<Arc<dyn RelayProofSigner>>>,
     pub(crate) semaphore: Arc<Semaphore>,
+    stopped: AtomicBool,
+}
+
+impl RelayProofState {
+    fn install(
+        &self,
+        private_key_pem: &mut Vec<u8>,
+        expected_relay_id: &str,
+    ) -> Result<String, RelaySignerInstallError> {
+        let private_key_pem = PrivateKeyPemWiper::new(private_key_pem);
+
+        if self.stopped.load(Ordering::SeqCst) {
+            return Err(RelaySignerInstallError::ServerStopped);
+        }
+
+        let private_key_pem = std::str::from_utf8(private_key_pem.as_bytes())
+            .map_err(|_| RelaySignerInstallError::InvalidPrivateKey)?;
+        let identity = RelayIdentity::from_private_key(private_key_pem)
+            .map_err(|_| RelaySignerInstallError::InvalidPrivateKey)?;
+        let relay_id = identity
+            .relay_id()
+            .map_err(|_| RelaySignerInstallError::InvalidPrivateKey)?;
+        if relay_id != expected_relay_id {
+            return Err(RelaySignerInstallError::RelayIdMismatch);
+        }
+
+        let signer: Arc<dyn RelayProofSigner> =
+            Arc::new(ProductionRelaySigner::new(identity, relay_id.clone()));
+        let replaced = {
+            let mut slot = match self.signer.write() {
+                Ok(slot) => slot,
+                Err(error) => {
+                    // A poisoned slot cannot safely be used for key lifecycle.
+                    // Mark it stopped so it remains unavailable rather than
+                    // risking a post-stop installation.
+                    self.stopped.store(true, Ordering::SeqCst);
+                    let removed = error.into_inner().take();
+                    drop(removed);
+                    return Err(RelaySignerInstallError::ServerStopped);
+                }
+            };
+            if self.stopped.load(Ordering::SeqCst) {
+                return Err(RelaySignerInstallError::ServerStopped);
+            }
+            slot.replace(signer)
+        };
+        drop(replaced);
+
+        Ok(relay_id)
+    }
+
+    fn revoke(&self) -> bool {
+        let removed = match self.signer.write() {
+            Ok(mut slot) => slot.take(),
+            // A poisoned slot is unavailable to requests, but revocation can
+            // still safely take its Arc and drop it outside the lock.
+            Err(error) => error.into_inner().take(),
+        };
+        let was_present = removed.is_some();
+        drop(removed);
+        was_present
+    }
+
+    fn mark_stopped_and_revoke(&self) {
+        let removed = match self.signer.write() {
+            Ok(mut slot) => {
+                // The write lock linearizes stop against install: once this
+                // flag is set, an installer cannot pass its in-lock recheck.
+                self.stopped.store(true, Ordering::SeqCst);
+                slot.take()
+            }
+            Err(error) => {
+                self.stopped.store(true, Ordering::SeqCst);
+                error.into_inner().take()
+            }
+        };
+        drop(removed);
+    }
+}
+
+/// Wipes the caller-owned private-key buffer on every install return path.
+struct PrivateKeyPemWiper<'a> {
+    bytes: &'a mut Vec<u8>,
+}
+
+impl<'a> PrivateKeyPemWiper<'a> {
+    fn new(bytes: &'a mut Vec<u8>) -> Self {
+        Self { bytes }
+    }
+
+    fn as_bytes(&self) -> &[u8] {
+        self.bytes
+    }
+}
+
+impl Drop for PrivateKeyPemWiper<'_> {
+    fn drop(&mut self) {
+        wipe_private_key_pem_bytes(self.bytes);
+        self.bytes.clear();
+    }
+}
+
+fn wipe_private_key_pem_bytes(bytes: &mut [u8]) {
+    bytes.fill(0);
+}
+
+#[cfg(test)]
+mod relay_proof_state_tests {
+    use super::wipe_private_key_pem_bytes;
+
+    #[test]
+    fn private_key_wipe_helper_overwrites_existing_bytes_before_truncation() {
+        let mut bytes = b"private relay identity".to_vec();
+
+        wipe_private_key_pem_bytes(&mut bytes);
+
+        assert!(bytes.iter().all(|byte| *byte == 0));
+    }
 }
 
 #[derive(Clone)]
@@ -145,8 +269,9 @@ impl AppState {
             ))),
             v2,
             relay_proof: Arc::new(RelayProofState {
-                signer: relay_proof_signer,
+                signer: RwLock::new(relay_proof_signer),
                 semaphore: Arc::new(Semaphore::new(4)),
+                stopped: AtomicBool::new(false),
             }),
         }
     }
@@ -156,6 +281,7 @@ impl AppState {
 /// (as opposed to the event channels which are driven by incoming requests).
 pub struct ServerHandle {
     v2: Option<Arc<V2State>>,
+    relay_proof: Arc<RelayProofState>,
 
     /// The port the listeners are bound to.
     port: u16,
@@ -236,6 +362,24 @@ impl ServerHandle {
             _ => false,
         }
     }
+
+    /// Installs a server-only Relay proof signer from a PKCS#8 PEM private
+    /// key. The input buffer is wiped and cleared on every return path.
+    pub fn install_relay_signer(
+        &self,
+        private_key_pem: &mut Vec<u8>,
+        expected_relay_id: &str,
+    ) -> Result<String, RelaySignerInstallError> {
+        self.relay_proof.install(private_key_pem, expected_relay_id)
+    }
+
+    /// Revokes the currently installed Relay proof signer.
+    ///
+    /// Returns whether a signer was present. Requests that had already cloned
+    /// the old Arc may still complete their one in-flight signature.
+    pub fn revoke_relay_signer(&self) -> bool {
+        self.relay_proof.revoke()
+    }
 }
 
 /// Binds the server to the specified port on both IPv4 and IPv6 addresses.
@@ -308,6 +452,7 @@ pub async fn start_with_port_with_relay_proof_signer(
 
     let task = tokio::spawn({
         let state = state.clone();
+        let relay_proof = state.relay_proof.clone();
         let cancel = cancel.clone();
         let connections = connections.clone();
         async move {
@@ -326,6 +471,10 @@ pub async fn start_with_port_with_relay_proof_signer(
                 _ = stop_rx => {}
             }
 
+            // Once shutdown begins, no new install or proof request can
+            // acquire a signer. Do this before cancellation closes connections.
+            relay_proof.mark_stopped_and_revoke();
+
             // Hard-drop connections that are still being served, so that no
             // client keeps talking to the stopped server.
             cancel.cancel();
@@ -336,6 +485,7 @@ pub async fn start_with_port_with_relay_proof_signer(
 
     Ok(ServerHandle {
         v2: state.v2.clone(),
+        relay_proof: state.relay_proof.clone(),
         port: bound_port,
         ipv6_bound,
         task: Mutex::new(Some(task)),

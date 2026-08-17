@@ -194,7 +194,7 @@ return other(_that.field0);case _:
 
 class RsHttpClientError_StatusCode extends RsHttpClientError {
   const RsHttpClientError_StatusCode({required this.status, this.message}): super._();
-  
+
 
  final  int status;
  final  String? message;
@@ -262,7 +262,7 @@ as String?,
 
 class RsHttpClientError_Reqwest extends RsHttpClientError {
   const RsHttpClientError_Reqwest(this.field0): super._();
-  
+
 
  final  String field0;
 
@@ -328,7 +328,7 @@ as String,
 
 class RsHttpClientError_Json extends RsHttpClientError {
   const RsHttpClientError_Json(this.field0): super._();
-  
+
 
  final  String field0;
 
@@ -394,7 +394,7 @@ as String,
 
 class RsHttpClientError_Io extends RsHttpClientError {
   const RsHttpClientError_Io(this.field0): super._();
-  
+
 
  final  String field0;
 
@@ -460,7 +460,7 @@ as String,
 
 class RsHttpClientError_Other extends RsHttpClientError {
   const RsHttpClientError_Other(this.field0): super._();
-  
+
 
  final  String field0;
 
@@ -514,6 +514,530 @@ class _$RsHttpClientError_OtherCopyWithImpl<$Res>
 @pragma('vm:prefer-inline') $Res call({Object? field0 = null,}) {
   return _then(RsHttpClientError_Other(
 null == field0 ? _self.field0 : field0 // ignore: cast_nullable_to_non_nullable
+as String,
+  ));
+}
+
+
+}
+
+/// @nodoc
+mixin _$RsRelayPeerAuth {
+
+
+
+
+
+@override
+bool operator ==(Object other) {
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is RsRelayPeerAuth);
+}
+
+
+@override
+int get hashCode => runtimeType.hashCode;
+
+@override
+String toString() {
+  return 'RsRelayPeerAuth()';
+}
+
+
+}
+
+/// @nodoc
+class $RsRelayPeerAuthCopyWith<$Res>  {
+$RsRelayPeerAuthCopyWith(RsRelayPeerAuth _, $Res Function(RsRelayPeerAuth) __);
+}
+
+
+/// Adds pattern-matching-related methods to [RsRelayPeerAuth].
+extension RsRelayPeerAuthPatterns on RsRelayPeerAuth {
+/// A variant of `map` that fallback to returning `orElse`.
+///
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case final Subclass value:
+///     return ...;
+///   case _:
+///     return orElse();
+/// }
+/// ```
+
+@optionalTypeArgs TResult maybeMap<TResult extends Object?>({TResult Function( RsRelayPeerAuth_NotAttempted value)?  notAttempted,TResult Function( RsRelayPeerAuth_Unsupported value)?  unsupported,TResult Function( RsRelayPeerAuth_TransportUnauthenticated value)?  transportUnauthenticated,TResult Function( RsRelayPeerAuth_SignerUnavailable value)?  signerUnavailable,TResult Function( RsRelayPeerAuth_Malformed value)?  malformed,TResult Function( RsRelayPeerAuth_RoleMismatch value)?  roleMismatch,TResult Function( RsRelayPeerAuth_ChallengeMismatch value)?  challengeMismatch,TResult Function( RsRelayPeerAuth_CryptoInvalid value)?  cryptoInvalid,TResult Function( RsRelayPeerAuth_Authenticated value)?  authenticated,required TResult orElse(),}){
+final _that = this;
+switch (_that) {
+case RsRelayPeerAuth_NotAttempted() when notAttempted != null:
+return notAttempted(_that);case RsRelayPeerAuth_Unsupported() when unsupported != null:
+return unsupported(_that);case RsRelayPeerAuth_TransportUnauthenticated() when transportUnauthenticated != null:
+return transportUnauthenticated(_that);case RsRelayPeerAuth_SignerUnavailable() when signerUnavailable != null:
+return signerUnavailable(_that);case RsRelayPeerAuth_Malformed() when malformed != null:
+return malformed(_that);case RsRelayPeerAuth_RoleMismatch() when roleMismatch != null:
+return roleMismatch(_that);case RsRelayPeerAuth_ChallengeMismatch() when challengeMismatch != null:
+return challengeMismatch(_that);case RsRelayPeerAuth_CryptoInvalid() when cryptoInvalid != null:
+return cryptoInvalid(_that);case RsRelayPeerAuth_Authenticated() when authenticated != null:
+return authenticated(_that);case _:
+  return orElse();
+
+}
+}
+/// A `switch`-like method, using callbacks.
+///
+/// Callbacks receives the raw object, upcasted.
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case final Subclass value:
+///     return ...;
+///   case final Subclass2 value:
+///     return ...;
+/// }
+/// ```
+
+@optionalTypeArgs TResult map<TResult extends Object?>({required TResult Function( RsRelayPeerAuth_NotAttempted value)  notAttempted,required TResult Function( RsRelayPeerAuth_Unsupported value)  unsupported,required TResult Function( RsRelayPeerAuth_TransportUnauthenticated value)  transportUnauthenticated,required TResult Function( RsRelayPeerAuth_SignerUnavailable value)  signerUnavailable,required TResult Function( RsRelayPeerAuth_Malformed value)  malformed,required TResult Function( RsRelayPeerAuth_RoleMismatch value)  roleMismatch,required TResult Function( RsRelayPeerAuth_ChallengeMismatch value)  challengeMismatch,required TResult Function( RsRelayPeerAuth_CryptoInvalid value)  cryptoInvalid,required TResult Function( RsRelayPeerAuth_Authenticated value)  authenticated,}){
+final _that = this;
+switch (_that) {
+case RsRelayPeerAuth_NotAttempted():
+return notAttempted(_that);case RsRelayPeerAuth_Unsupported():
+return unsupported(_that);case RsRelayPeerAuth_TransportUnauthenticated():
+return transportUnauthenticated(_that);case RsRelayPeerAuth_SignerUnavailable():
+return signerUnavailable(_that);case RsRelayPeerAuth_Malformed():
+return malformed(_that);case RsRelayPeerAuth_RoleMismatch():
+return roleMismatch(_that);case RsRelayPeerAuth_ChallengeMismatch():
+return challengeMismatch(_that);case RsRelayPeerAuth_CryptoInvalid():
+return cryptoInvalid(_that);case RsRelayPeerAuth_Authenticated():
+return authenticated(_that);}
+}
+/// A variant of `map` that fallback to returning `null`.
+///
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case final Subclass value:
+///     return ...;
+///   case _:
+///     return null;
+/// }
+/// ```
+
+@optionalTypeArgs TResult? mapOrNull<TResult extends Object?>({TResult? Function( RsRelayPeerAuth_NotAttempted value)?  notAttempted,TResult? Function( RsRelayPeerAuth_Unsupported value)?  unsupported,TResult? Function( RsRelayPeerAuth_TransportUnauthenticated value)?  transportUnauthenticated,TResult? Function( RsRelayPeerAuth_SignerUnavailable value)?  signerUnavailable,TResult? Function( RsRelayPeerAuth_Malformed value)?  malformed,TResult? Function( RsRelayPeerAuth_RoleMismatch value)?  roleMismatch,TResult? Function( RsRelayPeerAuth_ChallengeMismatch value)?  challengeMismatch,TResult? Function( RsRelayPeerAuth_CryptoInvalid value)?  cryptoInvalid,TResult? Function( RsRelayPeerAuth_Authenticated value)?  authenticated,}){
+final _that = this;
+switch (_that) {
+case RsRelayPeerAuth_NotAttempted() when notAttempted != null:
+return notAttempted(_that);case RsRelayPeerAuth_Unsupported() when unsupported != null:
+return unsupported(_that);case RsRelayPeerAuth_TransportUnauthenticated() when transportUnauthenticated != null:
+return transportUnauthenticated(_that);case RsRelayPeerAuth_SignerUnavailable() when signerUnavailable != null:
+return signerUnavailable(_that);case RsRelayPeerAuth_Malformed() when malformed != null:
+return malformed(_that);case RsRelayPeerAuth_RoleMismatch() when roleMismatch != null:
+return roleMismatch(_that);case RsRelayPeerAuth_ChallengeMismatch() when challengeMismatch != null:
+return challengeMismatch(_that);case RsRelayPeerAuth_CryptoInvalid() when cryptoInvalid != null:
+return cryptoInvalid(_that);case RsRelayPeerAuth_Authenticated() when authenticated != null:
+return authenticated(_that);case _:
+  return null;
+
+}
+}
+/// A variant of `when` that fallback to an `orElse` callback.
+///
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case Subclass(:final field):
+///     return ...;
+///   case _:
+///     return orElse();
+/// }
+/// ```
+
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>({TResult Function()?  notAttempted,TResult Function()?  unsupported,TResult Function()?  transportUnauthenticated,TResult Function()?  signerUnavailable,TResult Function()?  malformed,TResult Function()?  roleMismatch,TResult Function()?  challengeMismatch,TResult Function()?  cryptoInvalid,TResult Function( String relayId)?  authenticated,required TResult orElse(),}) {final _that = this;
+switch (_that) {
+case RsRelayPeerAuth_NotAttempted() when notAttempted != null:
+return notAttempted();case RsRelayPeerAuth_Unsupported() when unsupported != null:
+return unsupported();case RsRelayPeerAuth_TransportUnauthenticated() when transportUnauthenticated != null:
+return transportUnauthenticated();case RsRelayPeerAuth_SignerUnavailable() when signerUnavailable != null:
+return signerUnavailable();case RsRelayPeerAuth_Malformed() when malformed != null:
+return malformed();case RsRelayPeerAuth_RoleMismatch() when roleMismatch != null:
+return roleMismatch();case RsRelayPeerAuth_ChallengeMismatch() when challengeMismatch != null:
+return challengeMismatch();case RsRelayPeerAuth_CryptoInvalid() when cryptoInvalid != null:
+return cryptoInvalid();case RsRelayPeerAuth_Authenticated() when authenticated != null:
+return authenticated(_that.relayId);case _:
+  return orElse();
+
+}
+}
+/// A `switch`-like method, using callbacks.
+///
+/// As opposed to `map`, this offers destructuring.
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case Subclass(:final field):
+///     return ...;
+///   case Subclass2(:final field2):
+///     return ...;
+/// }
+/// ```
+
+@optionalTypeArgs TResult when<TResult extends Object?>({required TResult Function()  notAttempted,required TResult Function()  unsupported,required TResult Function()  transportUnauthenticated,required TResult Function()  signerUnavailable,required TResult Function()  malformed,required TResult Function()  roleMismatch,required TResult Function()  challengeMismatch,required TResult Function()  cryptoInvalid,required TResult Function( String relayId)  authenticated,}) {final _that = this;
+switch (_that) {
+case RsRelayPeerAuth_NotAttempted():
+return notAttempted();case RsRelayPeerAuth_Unsupported():
+return unsupported();case RsRelayPeerAuth_TransportUnauthenticated():
+return transportUnauthenticated();case RsRelayPeerAuth_SignerUnavailable():
+return signerUnavailable();case RsRelayPeerAuth_Malformed():
+return malformed();case RsRelayPeerAuth_RoleMismatch():
+return roleMismatch();case RsRelayPeerAuth_ChallengeMismatch():
+return challengeMismatch();case RsRelayPeerAuth_CryptoInvalid():
+return cryptoInvalid();case RsRelayPeerAuth_Authenticated():
+return authenticated(_that.relayId);}
+}
+/// A variant of `when` that fallback to returning `null`
+///
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case Subclass(:final field):
+///     return ...;
+///   case _:
+///     return null;
+/// }
+/// ```
+
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>({TResult? Function()?  notAttempted,TResult? Function()?  unsupported,TResult? Function()?  transportUnauthenticated,TResult? Function()?  signerUnavailable,TResult? Function()?  malformed,TResult? Function()?  roleMismatch,TResult? Function()?  challengeMismatch,TResult? Function()?  cryptoInvalid,TResult? Function( String relayId)?  authenticated,}) {final _that = this;
+switch (_that) {
+case RsRelayPeerAuth_NotAttempted() when notAttempted != null:
+return notAttempted();case RsRelayPeerAuth_Unsupported() when unsupported != null:
+return unsupported();case RsRelayPeerAuth_TransportUnauthenticated() when transportUnauthenticated != null:
+return transportUnauthenticated();case RsRelayPeerAuth_SignerUnavailable() when signerUnavailable != null:
+return signerUnavailable();case RsRelayPeerAuth_Malformed() when malformed != null:
+return malformed();case RsRelayPeerAuth_RoleMismatch() when roleMismatch != null:
+return roleMismatch();case RsRelayPeerAuth_ChallengeMismatch() when challengeMismatch != null:
+return challengeMismatch();case RsRelayPeerAuth_CryptoInvalid() when cryptoInvalid != null:
+return cryptoInvalid();case RsRelayPeerAuth_Authenticated() when authenticated != null:
+return authenticated(_that.relayId);case _:
+  return null;
+
+}
+}
+
+}
+
+/// @nodoc
+
+
+class RsRelayPeerAuth_NotAttempted extends RsRelayPeerAuth {
+  const RsRelayPeerAuth_NotAttempted(): super._();
+
+
+
+
+
+
+
+@override
+bool operator ==(Object other) {
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is RsRelayPeerAuth_NotAttempted);
+}
+
+
+@override
+int get hashCode => runtimeType.hashCode;
+
+@override
+String toString() {
+  return 'RsRelayPeerAuth.notAttempted()';
+}
+
+
+}
+
+
+
+
+/// @nodoc
+
+
+class RsRelayPeerAuth_Unsupported extends RsRelayPeerAuth {
+  const RsRelayPeerAuth_Unsupported(): super._();
+
+
+
+
+
+
+
+@override
+bool operator ==(Object other) {
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is RsRelayPeerAuth_Unsupported);
+}
+
+
+@override
+int get hashCode => runtimeType.hashCode;
+
+@override
+String toString() {
+  return 'RsRelayPeerAuth.unsupported()';
+}
+
+
+}
+
+
+
+
+/// @nodoc
+
+
+class RsRelayPeerAuth_TransportUnauthenticated extends RsRelayPeerAuth {
+  const RsRelayPeerAuth_TransportUnauthenticated(): super._();
+
+
+
+
+
+
+
+@override
+bool operator ==(Object other) {
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is RsRelayPeerAuth_TransportUnauthenticated);
+}
+
+
+@override
+int get hashCode => runtimeType.hashCode;
+
+@override
+String toString() {
+  return 'RsRelayPeerAuth.transportUnauthenticated()';
+}
+
+
+}
+
+
+
+
+/// @nodoc
+
+
+class RsRelayPeerAuth_SignerUnavailable extends RsRelayPeerAuth {
+  const RsRelayPeerAuth_SignerUnavailable(): super._();
+
+
+
+
+
+
+
+@override
+bool operator ==(Object other) {
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is RsRelayPeerAuth_SignerUnavailable);
+}
+
+
+@override
+int get hashCode => runtimeType.hashCode;
+
+@override
+String toString() {
+  return 'RsRelayPeerAuth.signerUnavailable()';
+}
+
+
+}
+
+
+
+
+/// @nodoc
+
+
+class RsRelayPeerAuth_Malformed extends RsRelayPeerAuth {
+  const RsRelayPeerAuth_Malformed(): super._();
+
+
+
+
+
+
+
+@override
+bool operator ==(Object other) {
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is RsRelayPeerAuth_Malformed);
+}
+
+
+@override
+int get hashCode => runtimeType.hashCode;
+
+@override
+String toString() {
+  return 'RsRelayPeerAuth.malformed()';
+}
+
+
+}
+
+
+
+
+/// @nodoc
+
+
+class RsRelayPeerAuth_RoleMismatch extends RsRelayPeerAuth {
+  const RsRelayPeerAuth_RoleMismatch(): super._();
+
+
+
+
+
+
+
+@override
+bool operator ==(Object other) {
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is RsRelayPeerAuth_RoleMismatch);
+}
+
+
+@override
+int get hashCode => runtimeType.hashCode;
+
+@override
+String toString() {
+  return 'RsRelayPeerAuth.roleMismatch()';
+}
+
+
+}
+
+
+
+
+/// @nodoc
+
+
+class RsRelayPeerAuth_ChallengeMismatch extends RsRelayPeerAuth {
+  const RsRelayPeerAuth_ChallengeMismatch(): super._();
+
+
+
+
+
+
+
+@override
+bool operator ==(Object other) {
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is RsRelayPeerAuth_ChallengeMismatch);
+}
+
+
+@override
+int get hashCode => runtimeType.hashCode;
+
+@override
+String toString() {
+  return 'RsRelayPeerAuth.challengeMismatch()';
+}
+
+
+}
+
+
+
+
+/// @nodoc
+
+
+class RsRelayPeerAuth_CryptoInvalid extends RsRelayPeerAuth {
+  const RsRelayPeerAuth_CryptoInvalid(): super._();
+
+
+
+
+
+
+
+@override
+bool operator ==(Object other) {
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is RsRelayPeerAuth_CryptoInvalid);
+}
+
+
+@override
+int get hashCode => runtimeType.hashCode;
+
+@override
+String toString() {
+  return 'RsRelayPeerAuth.cryptoInvalid()';
+}
+
+
+}
+
+
+
+
+/// @nodoc
+
+
+class RsRelayPeerAuth_Authenticated extends RsRelayPeerAuth {
+  const RsRelayPeerAuth_Authenticated({required this.relayId}): super._();
+
+
+ final  String relayId;
+
+/// Create a copy of RsRelayPeerAuth
+/// with the given fields replaced by the non-null parameter values.
+@JsonKey(includeFromJson: false, includeToJson: false)
+@pragma('vm:prefer-inline')
+$RsRelayPeerAuth_AuthenticatedCopyWith<RsRelayPeerAuth_Authenticated> get copyWith => _$RsRelayPeerAuth_AuthenticatedCopyWithImpl<RsRelayPeerAuth_Authenticated>(this, _$identity);
+
+
+
+@override
+bool operator ==(Object other) {
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is RsRelayPeerAuth_Authenticated&&(identical(other.relayId, relayId) || other.relayId == relayId));
+}
+
+
+@override
+int get hashCode => Object.hash(runtimeType,relayId);
+
+@override
+String toString() {
+  return 'RsRelayPeerAuth.authenticated(relayId: $relayId)';
+}
+
+
+}
+
+/// @nodoc
+abstract mixin class $RsRelayPeerAuth_AuthenticatedCopyWith<$Res> implements $RsRelayPeerAuthCopyWith<$Res> {
+  factory $RsRelayPeerAuth_AuthenticatedCopyWith(RsRelayPeerAuth_Authenticated value, $Res Function(RsRelayPeerAuth_Authenticated) _then) = _$RsRelayPeerAuth_AuthenticatedCopyWithImpl;
+@useResult
+$Res call({
+ String relayId
+});
+
+
+
+
+}
+/// @nodoc
+class _$RsRelayPeerAuth_AuthenticatedCopyWithImpl<$Res>
+    implements $RsRelayPeerAuth_AuthenticatedCopyWith<$Res> {
+  _$RsRelayPeerAuth_AuthenticatedCopyWithImpl(this._self, this._then);
+
+  final RsRelayPeerAuth_Authenticated _self;
+  final $Res Function(RsRelayPeerAuth_Authenticated) _then;
+
+/// Create a copy of RsRelayPeerAuth
+/// with the given fields replaced by the non-null parameter values.
+@pragma('vm:prefer-inline') $Res call({Object? relayId = null,}) {
+  return _then(RsRelayPeerAuth_Authenticated(
+relayId: null == relayId ? _self.relayId : relayId // ignore: cast_nullable_to_non_nullable
 as String,
   ));
 }
@@ -686,7 +1210,7 @@ return failed(_that.error);case _:
 
 class RsUploadEvent_Progress extends RsUploadEvent {
   const RsUploadEvent_Progress({required this.progress}): super._();
-  
+
 
  final  double progress;
 
@@ -752,7 +1276,7 @@ as double,
 
 class RsUploadEvent_Failed extends RsUploadEvent {
   const RsUploadEvent_Failed({required this.error}): super._();
-  
+
 
  final  RsHttpClientError error;
 
@@ -815,7 +1339,7 @@ as RsHttpClientError,
 @override
 @pragma('vm:prefer-inline')
 $RsHttpClientErrorCopyWith<$Res> get error {
-  
+
   return $RsHttpClientErrorCopyWith<$Res>(_self.error, (value) {
     return _then(_self.copyWith(error: value));
   });

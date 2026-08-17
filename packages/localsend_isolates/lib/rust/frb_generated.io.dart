@@ -459,6 +459,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   RsHttpClientError dco_decode_rs_http_client_error(dynamic raw);
 
   @protected
+  RsRelayPeerAuth dco_decode_rs_relay_peer_auth(dynamic raw);
+
+  @protected
   RsServerEvent dco_decode_rs_server_event(dynamic raw);
 
   @protected
@@ -932,6 +935,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   RsHttpClientError sse_decode_rs_http_client_error(SseDeserializer deserializer);
+
+  @protected
+  RsRelayPeerAuth sse_decode_rs_relay_peer_auth(SseDeserializer deserializer);
 
   @protected
   RsServerEvent sse_decode_rs_server_event(SseDeserializer deserializer);
@@ -1453,6 +1459,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   void sse_encode_rs_http_client_error(RsHttpClientError self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_rs_relay_peer_auth(RsRelayPeerAuth self, SseSerializer serializer);
 
   @protected
   void sse_encode_rs_server_event(RsServerEvent self, SseSerializer serializer);

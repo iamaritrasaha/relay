@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:typed_data';
 
 import 'package:localsend_isolates/model/device.dart';
 import 'package:localsend_isolates/rust/api/server.dart' show WebParams;
@@ -358,6 +359,66 @@ class IsolateHttpServerStopAction extends AsyncReduxAction<IsolateController, Pa
         .drain<void>();
 
     return state;
+  }
+}
+
+/// Installs a Relay proof signer on the running HTTP server.
+///
+/// This is a one-shot task; the private key is not synchronized or retained
+/// in parent isolate state.
+class IsolateHttpServerInstallRelaySignerAction extends AsyncReduxActionWithResult<IsolateController, ParentIsolateState, String> {
+  Uint8List? _privateKey;
+  final String expectedRelayId;
+
+  IsolateHttpServerInstallRelaySignerAction({
+    required Uint8List privateKey,
+    required this.expectedRelayId,
+  }) : _privateKey = privateKey;
+
+  @override
+  Future<(ParentIsolateState, String)> reduce() async {
+    final connection = state.httpServer;
+    if (connection == null) {
+      throw StateError('httpServer is not initialized');
+    }
+    final privateKey = _privateKey;
+    if (privateKey == null) {
+      throw StateError('Relay signer install action has already completed');
+    }
+
+    try {
+      final event = await connection
+          .sendWrappedTaskAndListenStream(
+            task: HttpServerInstallRelaySignerTask(
+              privateKey: privateKey,
+              expectedRelayId: expectedRelayId,
+            ),
+          )
+          .single;
+
+      return (state, (event as HttpServerRelaySignerInstalledEvent).relayId);
+    } finally {
+      _privateKey = null;
+    }
+  }
+}
+
+/// Revokes the Relay proof signer from the running HTTP server.
+class IsolateHttpServerRevokeRelaySignerAction extends AsyncReduxActionWithResult<IsolateController, ParentIsolateState, bool> {
+  @override
+  Future<(ParentIsolateState, bool)> reduce() async {
+    final connection = state.httpServer;
+    if (connection == null) {
+      throw StateError('httpServer is not initialized');
+    }
+
+    final event = await connection
+        .sendWrappedTaskAndListenStream(
+          task: HttpServerRevokeRelaySignerTask(),
+        )
+        .single;
+
+    return (state, (event as HttpServerRelaySignerRevokedEvent).hadSigner);
   }
 }
 

@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128" fill="currentColor" role="img" aria-label="Relay">
+  <!--
+    Compact treatment for 16 px and tray use: the endpoint tiles go solid so their
+    1.4 px stroke and 2.4 px counter do not mush together. Same silhouette, same rhythm.
+  -->
+  <rect x="10" y="10" width="42" height="42" rx="14"/>
+  <rect x="76" y="76" width="42" height="42" rx="14"/>
+  <rect x="52" y="52" width="24" height="24" rx="7" transform="rotate(45 64 64)"/>
+</svg>

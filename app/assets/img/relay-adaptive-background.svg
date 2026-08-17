@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 108 108" width="108" height="108" role="img" aria-label="Relay background">
+  <!-- Android adaptive BACKGROUND layer: full-bleed graphite plate, mild tonal shaping only -->
+  <defs>
+    <linearGradient id="plate" x1="54" y1="0" x2="54" y2="108" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#272C34"/>
+      <stop offset="0.52" stop-color="#1A1E25"/>
+      <stop offset="1" stop-color="#10131A"/>
+    </linearGradient>
+    <radialGradient id="sheen" cx="54" cy="11" r="70" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#FFFFFF" stop-opacity="0.075"/>
+      <stop offset="1" stop-color="#FFFFFF" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <rect x="0" y="0" width="108" height="108" fill="url(#plate)"/>
+  <rect x="0" y="0" width="108" height="108" fill="url(#sheen)"/>
+</svg>

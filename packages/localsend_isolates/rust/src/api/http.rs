@@ -4,10 +4,11 @@ use crate::frb_generated::StreamSink;
 use flutter_rust_bridge::frb;
 pub use localsend::http::client::{ClientError, LsHttpClientVersion};
 pub use localsend::http::dto::{
-    PrepareUploadRequestDto, PrepareUploadResponseDto, PrepareUploadResult,
-    RegisterDto, RegisterResponseDto,
+    PrepareUploadRequestDto, PrepareUploadResponseDto, PrepareUploadResult, RegisterDto,
+    RegisterResponseDto,
 };
 use localsend::model::discovery::ProtocolType;
+use localsend::relay::RelayPeerAuth;
 use localsend::reqwest;
 use localsend::util::error::ErrorChain;
 
@@ -42,6 +43,20 @@ pub fn create_client(
 }
 
 impl RsHttpClient {
+    /// Authenticates the selected HTTPS peer's Relay proof. Rust owns the
+    /// nonce, observed TLS certificate fingerprint, and proof verification.
+    pub async fn authenticate_relay_server(
+        &self,
+        protocol: ProtocolType,
+        ip: &str,
+        port: u16,
+    ) -> RsRelayPeerAuth {
+        self.inner
+            .authenticate_relay_server(protocol, ip, port)
+            .await
+            .into()
+    }
+
     pub async fn register(
         &self,
         protocol: ProtocolType,
@@ -223,6 +238,38 @@ pub enum RsHttpClientError {
     Json(String),
     Io(String),
     Other(String),
+}
+
+/// Relay proof authentication result for the app send path. The TLS
+/// fingerprint remains in Rust; only the public RelayId is returned on
+/// successful authentication.
+#[derive(Clone)]
+pub enum RsRelayPeerAuth {
+    NotAttempted,
+    Unsupported,
+    TransportUnauthenticated,
+    SignerUnavailable,
+    Malformed,
+    RoleMismatch,
+    ChallengeMismatch,
+    CryptoInvalid,
+    Authenticated { relay_id: String },
+}
+
+impl From<RelayPeerAuth> for RsRelayPeerAuth {
+    fn from(value: RelayPeerAuth) -> Self {
+        match value {
+            RelayPeerAuth::NotAttempted => Self::NotAttempted,
+            RelayPeerAuth::Unsupported => Self::Unsupported,
+            RelayPeerAuth::TransportUnauthenticated => Self::TransportUnauthenticated,
+            RelayPeerAuth::SignerUnavailable => Self::SignerUnavailable,
+            RelayPeerAuth::Malformed => Self::Malformed,
+            RelayPeerAuth::RoleMismatch => Self::RoleMismatch,
+            RelayPeerAuth::ChallengeMismatch => Self::ChallengeMismatch,
+            RelayPeerAuth::CryptoInvalid => Self::CryptoInvalid,
+            RelayPeerAuth::Authenticated { relay_id, .. } => Self::Authenticated { relay_id },
+        }
+    }
 }
 
 impl From<ClientError> for RsHttpClientError {

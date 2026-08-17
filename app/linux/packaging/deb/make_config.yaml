@@ -1,16 +1,13 @@
-display_name: LocalSend
-package_name: localsend
+display_name: Relay
+package_name: relay
 maintainer:
-  name: Tienisto
-  email: dev.tien.donam@gmail.com
-co_authors:
-  - name: TheGB0077
-    email: gb.lima.dev@gmail.com
+  name: Aritra Saha
+  email: aritrasab@gmail.com
 priority: optional
 section: x11
 installed_size: 30600
 essential: false
-icon: assets/img/logo-512.png
+icon: assets/img/relay-icon-linux-512.png
 
 pre_dependencies:
   - libc6 (>= 2.31)
@@ -22,16 +19,24 @@ dependencies:
   - xdg-user-dirs
 
 postinstall_scripts:
-  - echo "Installed Localsend successfully"
+  # The GTK application id (and therefore the X11 WM_CLASS / Wayland app_id) is
+  # org.localsend.localsend_app, which cannot change without relocating the
+  # user's settings directory. Desktop shells match a running window to its
+  # launcher by that id, so the desktop entry has to advertise it explicitly or
+  # the dock and task switcher show a generic icon instead of Relay's.
+  - 'DESKTOP_ENTRY=/usr/share/applications/relay.desktop'
+  - 'if [ -f "$DESKTOP_ENTRY" ] && ! grep -q "^StartupWMClass=" "$DESKTOP_ENTRY"; then echo "StartupWMClass=org.localsend.localsend_app" >> "$DESKTOP_ENTRY"; fi'
+  - 'command -v update-desktop-database >/dev/null 2>&1 && update-desktop-database -q /usr/share/applications || true'
+  - 'command -v gtk-update-icon-cache >/dev/null 2>&1 && gtk-update-icon-cache -q -t -f /usr/share/icons/hicolor || true'
 postuninstall_scripts:
-  - echo "Sorry to see you go :("
+  - 'command -v update-desktop-database >/dev/null 2>&1 && update-desktop-database -q /usr/share/applications || true'
 
 keywords:
   - Sharing
   - LAN
   - Files
 
-generic_name: An open source cross-platform alternative to AirDrop
+generic_name: Share files across your devices over the local network
 
 categories:
   - GTK

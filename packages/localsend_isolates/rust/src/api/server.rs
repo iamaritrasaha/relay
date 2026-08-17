@@ -273,6 +273,29 @@ pub async fn start_server(
 }
 
 impl RsHttpServer {
+    /// Installs the running server's Relay proof signer from a PKCS#8 PEM
+    /// private key.
+    ///
+    /// The core server owns the signer lifecycle and wipes this input buffer
+    /// on every return path. Only the derived public RelayId is returned.
+    pub fn install_relay_signer(
+        &self,
+        mut private_key: Vec<u8>,
+        expected_relay_id: String,
+    ) -> anyhow::Result<String> {
+        self.instance
+            .handle
+            .install_relay_signer(&mut private_key, &expected_relay_id)
+            .map_err(|_| anyhow::anyhow!("Relay signer installation failed"))
+    }
+
+    /// Revokes the running server's Relay proof signer.
+    ///
+    /// Returns whether a signer was installed.
+    pub fn revoke_relay_signer(&self) -> bool {
+        self.instance.handle.revoke_relay_signer()
+    }
+
     /// Emits server events until the server is stopped.
     /// Can only be listened to once.
     ///

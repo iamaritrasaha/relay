@@ -23,7 +23,13 @@ pub(crate) async fn proof(
         Ok(permit) => permit,
         Err(_) => return Ok(status_response(StatusCode::SERVICE_UNAVAILABLE)),
     };
-    let Some(signer) = &state.relay_proof.signer else {
+    let signer = match state.relay_proof.signer.read() {
+        Ok(slot) => slot.clone(),
+        // A poisoned slot is deliberately indistinguishable from an absent
+        // signer to a peer.
+        Err(_) => None,
+    };
+    let Some(signer) = signer else {
         return Ok(status_response(StatusCode::SERVICE_UNAVAILABLE));
     };
     let proof = match signer.sign_server_proof(challenge.nonce(), &tls_context.relay) {
@@ -102,7 +108,9 @@ mod tests {
     use crate::http::server::web::{WebConfig, WebI18n};
     use crate::http::server::{start_with_port_with_relay_proof_signer, ServerConfigV2, TlsConfig};
     use crate::http::state::ClientInfo;
-    use crate::relay::{RelayProofSigner, RelaySignError, RelayTlsContext};
+    use crate::relay::{
+        RelayProofSigner, RelaySignError, RelaySignerInstallError, RelayTlsContext,
+    };
     use rustls::pki_types::pem::PemObject;
     use rustls::pki_types::CertificateDer;
     use tokio::sync::oneshot;
@@ -222,6 +230,229 @@ mod tests {
 
     fn challenge_body(nonce: [u8; 32]) -> String {
         serde_json::to_string(&RelayChallengeV1Dto::new(nonce)).unwrap()
+    }
+
+    fn private_key_pem_bytes(identity: &RelayIdentity) -> Vec<u8> {
+        identity.private_key_export().unwrap().as_bytes().to_vec()
+    }
+
+    async fn request_proof(server: &TestServer, nonce: [u8; 32]) -> (StatusCode, String) {
+        let response = browser()
+            .post(format!(
+                "https://127.0.0.1:{}/api/relay/v1/proof",
+                server.port
+            ))
+            .body(challenge_body(nonce))
+            .send()
+            .await
+            .unwrap();
+        let status = response.status();
+        (status, response.text().await.unwrap())
+    }
+
+    #[tokio::test]
+    async fn production_signer_install_wipes_input_and_proves_the_installed_identity() {
+        let certificate = generate_self_signed().unwrap();
+        let tls_fingerprint = certificate_fingerprint(&certificate);
+        let server = start_server(Some(tls_config(&certificate)), None).await;
+        let identity = RelayIdentity::generate();
+        let expected_relay_id = identity.relay_id().unwrap();
+        let mut private_key_pem = private_key_pem_bytes(&identity);
+
+        assert_eq!(
+            server
+                .handle
+                .install_relay_signer(&mut private_key_pem, &expected_relay_id)
+                .unwrap(),
+            expected_relay_id
+        );
+        assert!(private_key_pem.is_empty());
+
+        let nonce = [0x41; 32];
+        let (status, body) = request_proof(&server, nonce).await;
+        assert_eq!(status, StatusCode::OK);
+        let dto = serde_json::from_str::<RelayProofV1Dto>(&body).unwrap();
+        let proof = dto.proof();
+        assert_eq!(proof.nonce, nonce);
+        assert_eq!(proof.role, RelayProofRole::Server);
+        assert_eq!(
+            verify_relay_identity_proof(&proof, RelayProofRole::Server, tls_fingerprint).unwrap(),
+            expected_relay_id
+        );
+        server.stop().await;
+    }
+
+    #[tokio::test]
+    async fn invalid_and_mismatched_signers_are_wiped_and_do_not_replace_the_current_signer() {
+        let certificate = generate_self_signed().unwrap();
+        let tls_fingerprint = certificate_fingerprint(&certificate);
+        let server = start_server(Some(tls_config(&certificate)), None).await;
+
+        let mut invalid_utf8 = vec![0xff, 0xfe];
+        assert_eq!(
+            server
+                .handle
+                .install_relay_signer(&mut invalid_utf8, "relay-id"),
+            Err(RelaySignerInstallError::InvalidPrivateKey)
+        );
+        assert!(invalid_utf8.is_empty());
+
+        let mut invalid_pkcs8 = b"not a PKCS#8 private key".to_vec();
+        assert_eq!(
+            server
+                .handle
+                .install_relay_signer(&mut invalid_pkcs8, "relay-id"),
+            Err(RelaySignerInstallError::InvalidPrivateKey)
+        );
+        assert!(invalid_pkcs8.is_empty());
+
+        let identity_a = RelayIdentity::generate();
+        let relay_id_a = identity_a.relay_id().unwrap();
+        let mut pem_a = private_key_pem_bytes(&identity_a);
+        server
+            .handle
+            .install_relay_signer(&mut pem_a, &relay_id_a)
+            .unwrap();
+        assert!(pem_a.is_empty());
+
+        let identity_b = RelayIdentity::generate();
+        let mut pem_b = private_key_pem_bytes(&identity_b);
+        assert_eq!(
+            server.handle.install_relay_signer(&mut pem_b, &relay_id_a),
+            Err(RelaySignerInstallError::RelayIdMismatch)
+        );
+        assert!(pem_b.is_empty());
+
+        let (status, body) = request_proof(&server, [0x42; 32]).await;
+        assert_eq!(status, StatusCode::OK);
+        let dto = serde_json::from_str::<RelayProofV1Dto>(&body).unwrap();
+        let proof = dto.proof();
+        assert_eq!(
+            verify_relay_identity_proof(&proof, RelayProofRole::Server, tls_fingerprint).unwrap(),
+            relay_id_a
+        );
+        server.stop().await;
+    }
+
+    #[tokio::test]
+    async fn revoke_is_idempotent_and_a_replacement_signer_never_proves_as_the_old_identity() {
+        let certificate = generate_self_signed().unwrap();
+        let tls_fingerprint = certificate_fingerprint(&certificate);
+        let server = start_server(Some(tls_config(&certificate)), None).await;
+
+        let identity_a = RelayIdentity::generate();
+        let relay_id_a = identity_a.relay_id().unwrap();
+        let mut pem_a = private_key_pem_bytes(&identity_a);
+        server
+            .handle
+            .install_relay_signer(&mut pem_a, &relay_id_a)
+            .unwrap();
+        let (status_a, body_a) = request_proof(&server, [0x51; 32]).await;
+        assert_eq!(status_a, StatusCode::OK);
+        let dto_a = serde_json::from_str::<RelayProofV1Dto>(&body_a).unwrap();
+        let proof_a = dto_a.proof();
+        assert_eq!(
+            verify_relay_identity_proof(&proof_a, RelayProofRole::Server, tls_fingerprint).unwrap(),
+            relay_id_a
+        );
+
+        assert!(server.handle.revoke_relay_signer());
+        assert!(!server.handle.revoke_relay_signer());
+        let (revoked_status, revoked_body) = request_proof(&server, [0x52; 32]).await;
+        assert_eq!(revoked_status, StatusCode::SERVICE_UNAVAILABLE);
+        assert!(revoked_body.is_empty());
+
+        let identity_b = RelayIdentity::generate();
+        let relay_id_b = identity_b.relay_id().unwrap();
+        let mut pem_b = private_key_pem_bytes(&identity_b);
+        server
+            .handle
+            .install_relay_signer(&mut pem_b, &relay_id_b)
+            .unwrap();
+        let (status_b, body_b) = request_proof(&server, [0x53; 32]).await;
+        assert_eq!(status_b, StatusCode::OK);
+        let dto_b = serde_json::from_str::<RelayProofV1Dto>(&body_b).unwrap();
+        let proof_b = dto_b.proof();
+        assert_eq!(
+            verify_relay_identity_proof(&proof_b, RelayProofRole::Server, tls_fingerprint).unwrap(),
+            relay_id_b
+        );
+        assert!(
+            verify_relay_identity_proof(&proof_b, RelayProofRole::Server, tls_fingerprint)
+                .is_ok_and(|relay_id| relay_id != relay_id_a)
+        );
+        server.stop().await;
+    }
+
+    #[tokio::test]
+    async fn stop_revokes_the_signer_and_prevents_late_installation() {
+        let certificate = generate_self_signed().unwrap();
+        let server = start_server(Some(tls_config(&certificate)), None).await;
+        let identity = RelayIdentity::generate();
+        let relay_id = identity.relay_id().unwrap();
+        let mut private_key_pem = private_key_pem_bytes(&identity);
+        server
+            .handle
+            .install_relay_signer(&mut private_key_pem, &relay_id)
+            .unwrap();
+
+        let _ = server.stop_tx.send(());
+        server.handle.wait_stopped().await;
+        assert!(server.handle.relay_proof.signer.read().unwrap().is_none());
+
+        let late_identity = RelayIdentity::generate();
+        let late_relay_id = late_identity.relay_id().unwrap();
+        let mut late_private_key_pem = private_key_pem_bytes(&late_identity);
+        assert_eq!(
+            server
+                .handle
+                .install_relay_signer(&mut late_private_key_pem, &late_relay_id),
+            Err(RelaySignerInstallError::ServerStopped)
+        );
+        assert!(late_private_key_pem.is_empty());
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn concurrent_install_and_revoke_do_not_panic_or_deadlock() {
+        let certificate = generate_self_signed().unwrap();
+        let server = start_server(Some(tls_config(&certificate)), None).await;
+        let proof_url = format!("https://127.0.0.1:{}/api/relay/v1/proof", server.port);
+        let proof_task = tokio::spawn(async move {
+            for nonce in 0..40 {
+                let response = browser()
+                    .post(&proof_url)
+                    .body(challenge_body([nonce; 32]))
+                    .send()
+                    .await
+                    .unwrap();
+                assert!(matches!(
+                    response.status(),
+                    StatusCode::OK | StatusCode::SERVICE_UNAVAILABLE
+                ));
+            }
+        });
+
+        std::thread::scope(|scope| {
+            for _ in 0..4 {
+                let handle = &server.handle;
+                scope.spawn(move || {
+                    for _ in 0..40 {
+                        let identity = RelayIdentity::generate();
+                        let relay_id = identity.relay_id().unwrap();
+                        let mut private_key_pem = private_key_pem_bytes(&identity);
+                        assert_eq!(
+                            handle.install_relay_signer(&mut private_key_pem, &relay_id),
+                            Ok(relay_id)
+                        );
+                        assert!(private_key_pem.is_empty());
+                        handle.revoke_relay_signer();
+                    }
+                });
+            }
+        });
+
+        proof_task.await.unwrap();
+        server.stop().await;
     }
 
     #[tokio::test]

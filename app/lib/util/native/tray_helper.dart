@@ -1,7 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
-import 'package:localsend_app/gen/assets.gen.dart';
+import 'package:localsend_app/config/relay_brand.dart';
 import 'package:localsend_app/gen/strings.g.dart';
 import 'package:localsend_app/provider/animation_provider.dart';
 import 'package:localsend_app/util/native/platform_check.dart';
@@ -23,7 +23,7 @@ Future<void> initTray() async {
   }
   try {
     if (checkPlatform([TargetPlatform.windows])) {
-      await tm.trayManager.setIcon(Assets.img.logo);
+      await tm.trayManager.setIcon('assets/img/relay-icon.ico');
     } else if (checkPlatform([TargetPlatform.macOS])) {
       // The menu bar icon will created in AppDelegate.swift
       return;
@@ -33,12 +33,12 @@ Future<void> initTray() async {
         // Icon for Flatpak, which must exist in /app/share/icons/hicolor/*x*/apps.
         icon = 'org.localsend.localsend_app-tray';
       } else {
-        icon = Assets.img.logo32White.path;
+        icon = 'assets/img/relay-tray-white.png';
       }
       _logger.info('Using "$icon" as path of system tray icon');
       await tm.trayManager.setIcon(icon);
     } else {
-      await tm.trayManager.setIcon(Assets.img.logo32.path);
+      await tm.trayManager.setIcon('assets/img/relay-icon-linux-512.png');
     }
 
     final items = [
@@ -55,7 +55,7 @@ Future<void> initTray() async {
     // No Linux implementation for setToolTip available as of tray_manager 0.2.2
     // https://pub.dev/packages/tray_manager#api
     if (!checkPlatform([TargetPlatform.linux])) {
-      await tm.trayManager.setToolTip(t.appName);
+      await tm.trayManager.setToolTip(RelayProduct.name);
     }
   } catch (e) {
     _logger.warning('Failed to init tray', e);

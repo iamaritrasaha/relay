@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128" role="img" aria-label="Relay">
+  <!--
+    Relay symbol — minimalist.
+    Two open endpoint tiles on the handoff diagonal; one solid packet in transit
+    between them. Identical under a 180 deg rotation, so neither end is the sender.
+    Grid 128 u · tiles 41 u outer, stroke 11 u · packet 22 u · gap 26 u.
+  -->
+  <defs>
+    <linearGradient id="relayGrad" x1="16" y1="16" x2="112" y2="112" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#5B8CFF"/>
+      <stop offset="0.55" stop-color="#6E79FB"/>
+      <stop offset="1" stop-color="#8B5CF6"/>
+    </linearGradient>
+  </defs>
+  <g fill="none" stroke="url(#relayGrad)" stroke-width="11">
+    <rect x="16" y="16" width="30" height="30" rx="10"/>
+    <rect x="82" y="82" width="30" height="30" rx="10"/>
+  </g>
+  <rect x="53" y="53" width="22" height="22" rx="6" transform="rotate(45 64 64)" fill="url(#relayGrad)"/>
+</svg>

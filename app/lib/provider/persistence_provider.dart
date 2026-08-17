@@ -161,7 +161,7 @@ class PersistenceService {
       }
     }
 
-    // Locale configuration upon persistence initialisation to prevent unlocalised Alias generation
+    // Locale configuration upon persistence initialisation.
     final persistedLocale = prefs.getString(_localeKey);
     if (persistedLocale == null) {
       await LocaleSettings.useDeviceLocale();
@@ -174,7 +174,7 @@ class PersistenceService {
     }
 
     if (prefs.getString(_aliasKey) == null) {
-      await prefs.setString(_aliasKey, generateRandomAlias());
+      await prefs.setString(_aliasKey, await generateDefaultAlias());
     }
 
     if (prefs.getString(_securityContext) == null) {
@@ -306,7 +306,7 @@ class PersistenceService {
   }
 
   String getAlias() {
-    return _prefs.getString(_aliasKey) ?? generateRandomAlias();
+    return _prefs.getString(_aliasKey) ?? generatePlatformAlias();
   }
 
   Future<void> setAlias(String alias) async {
