@@ -23,7 +23,7 @@ class HomePageController extends ReduxNotifier<HomePageVm> {
   HomePageVm init() {
     return HomePageVm(
       controller: PageController(),
-      currentTab: HomeTab.receive,
+      currentTab: HomeTab.home,
       changeTab: (tab) => redux.dispatch(ChangeTabAction(tab)),
     );
   }
@@ -36,10 +36,14 @@ class ChangeTabAction extends ReduxAction<HomePageController, HomePageVm> {
 
   @override
   HomePageVm reduce() {
-    state.controller.jumpToPage(tab.index);
+    // Legacy share-intent and tray paths still name `send`.  The Relay home
+    // surface owns payload selection now, so preserve those callers while
+    // directing them to the unified nearby-sharing experience.
+    final target = tab == HomeTab.send ? HomeTab.home : tab;
+    state.controller.jumpToPage(target.index);
     return HomePageVm(
       controller: state.controller,
-      currentTab: tab,
+      currentTab: target,
       changeTab: state.changeTab,
     );
   }

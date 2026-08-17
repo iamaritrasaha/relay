@@ -13,7 +13,10 @@ import 'package:refena_flutter/refena_flutter.dart';
 
 /// Review-only unified Relay home. It is intentionally not wired into routing.
 class RelayHomePage extends StatelessWidget {
-  const RelayHomePage({super.key});
+  final VoidCallback? onOpenHistory;
+  final VoidCallback? onOpenSettings;
+
+  const RelayHomePage({super.key, this.onOpenHistory, this.onOpenSettings});
 
   @override
   Widget build(BuildContext context) {
@@ -27,6 +30,8 @@ class RelayHomePage extends StatelessWidget {
           animationsEnabled: animationsEnabled,
           onSelectPayload: () => unawaited(AddFileDialog.open(context: context, options: FilePickerOption.getOptionsForPlatform())),
           onClearPayload: () => ref.redux(selectedSendingFilesProvider).dispatch(ClearSelectionAction()),
+          onOpenHistory: onOpenHistory,
+          onOpenSettings: onOpenSettings,
           onDeviceTap: (key) {
             final device = ref.read(nearbyDevicesProvider).allDevices[key];
             final files = ref.read(selectedSendingFilesProvider);

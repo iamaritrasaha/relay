@@ -4,9 +4,12 @@ import 'package:flutter/material.dart';
 import 'package:localsend_app/config/relay_brand.dart';
 import 'package:localsend_app/gen/strings.g.dart';
 import 'package:localsend_app/pages/debug/debug_page.dart';
+import 'package:localsend_app/provider/version_provider.dart';
 import 'package:localsend_app/util/i18n.dart';
+import 'package:localsend_app/widget/relay_components.dart';
 import 'package:localsend_app/widget/relay_logo.dart';
 import 'package:localsend_app/widget/responsive_list_view.dart';
+import 'package:refena_flutter/refena_flutter.dart';
 import 'package:routerino/routerino.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -25,27 +28,71 @@ class AboutPage extends StatelessWidget {
   Widget build(BuildContext context) {
     final primaryColor = Theme.of(context).colorScheme.primary;
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('About Relay'),
-      ),
+      appBar: AppBar(title: const Text('About Relay')),
       body: ResponsiveListView(
-        padding: const EdgeInsets.symmetric(horizontal: 15),
+        maxWidth: 840,
+        padding: const EdgeInsets.fromLTRB(22, 26, 22, 56),
         children: [
-          const SizedBox(height: 20),
-          const RelayLogo(withText: true),
-          Text(
-            RelayProduct.copyright,
-            style: RelayTypography.legal(Theme.of(context).relayPalette.textSecondary),
-            textAlign: TextAlign.center,
+          RelayGroupedSurface(
+            padding: const EdgeInsets.fromLTRB(28, 38, 28, 30),
+            child: Column(
+              children: [
+                const RelayLogo(withText: true, symbolSize: 100),
+                const SizedBox(height: 20),
+                Consumer(
+                  builder: (context, ref) => ref
+                      .watch(versionProvider)
+                      .maybeWhen(
+                        data: (version) => Text(
+                          'Version ${version.combinedString}',
+                          style: RelayTypography.value(Theme.of(context).relayPalette.textSecondary),
+                        ),
+                        orElse: () => const SizedBox(height: 17),
+                      ),
+                ),
+                const SizedBox(height: 14),
+                Text(RelayProduct.copyright, style: RelayTypography.legal(Theme.of(context).relayPalette.textSecondary)),
+                const SizedBox(height: 20),
+                Text(
+                  RelayProduct.localSendAttribution,
+                  style: RelayTypography.legal(Theme.of(context).relayPalette.textTertiary),
+                  textAlign: TextAlign.center,
+                ),
+              ],
+            ),
           ),
-          const SizedBox(height: 10),
-          Text(
-            RelayProduct.localSendAttribution,
-            style: RelayTypography.legal(Theme.of(context).relayPalette.textTertiary),
-            textAlign: TextAlign.center,
+          const SizedBox(height: 26),
+          RelaySectionHeading('Open source'),
+          const SizedBox(height: 8),
+          RelayGroupedSurface(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                TextButton.icon(
+                  onPressed: () async => context.push(() => const LicensePage()),
+                  icon: const Icon(Icons.article_outlined),
+                  label: const Text('Open Source Licenses'),
+                ),
+                TextButton.icon(
+                  onPressed: () async => launchUrl(Uri.parse('https://www.apache.org/licenses/LICENSE-2.0')),
+                  icon: const Icon(Icons.open_in_new_rounded),
+                  label: const Text('Apache License 2.0'),
+                ),
+                TextButton.icon(
+                  onPressed: () async => launchUrl(
+                    Uri.parse('https://github.com/localsend/localsend'),
+                    mode: LaunchMode.externalApplication,
+                  ),
+                  icon: const Icon(Icons.code_rounded),
+                  label: const Text('Upstream source'),
+                ),
+              ],
+            ),
           ),
-          const SizedBox(height: 10),
-          Text(t.aboutPage.description.join('\n\n')),
+          const SizedBox(height: 24),
+          RelaySectionHeading('Acknowledgements'),
+          const SizedBox(height: 8),
+          Text(t.aboutPage.description.join('\n\n'), style: RelayTypography.value(Theme.of(context).relayPalette.textSecondary)),
           const SizedBox(height: 20),
           Text(t.aboutPage.author, style: const TextStyle(fontWeight: FontWeight.bold)),
           Text.rich(
@@ -131,46 +178,10 @@ class AboutPage extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 20),
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              TextButton(
-                onPressed: () async {
-                  await launchUrl(Uri.parse('https://localsend.org'));
-                },
-                child: const Text('Homepage'),
-              ),
-              TextButton(
-                onPressed: () async {
-                  await launchUrl(Uri.parse('https://github.com/localsend/localsend'), mode: LaunchMode.externalApplication);
-                },
-                child: const Text('Source Code (Github)'),
-              ),
-              TextButton(
-                onPressed: () async {
-                  await launchUrl(Uri.parse('https://codeberg.org/localsend/localsend'), mode: LaunchMode.externalApplication);
-                },
-                child: const Text('Source Code (Codeberg)'),
-              ),
-              TextButton(
-                onPressed: () async {
-                  await launchUrl(Uri.parse('https://www.apache.org/licenses/LICENSE-2.0'));
-                },
-                child: const Text('Apache License 2.0'),
-              ),
-              TextButton(
-                onPressed: () async {
-                  await context.push(() => const LicensePage());
-                },
-                child: const Text('License Notices'),
-              ),
-              TextButton(
-                onPressed: () async {
-                  await context.push(() => const DebugPage());
-                },
-                child: const Text('Debugging'),
-              ),
-            ],
+          TextButton.icon(
+            onPressed: () async => context.push(() => const DebugPage()),
+            icon: const Icon(Icons.bug_report_outlined),
+            label: const Text('Diagnostics'),
           ),
           const SizedBox(height: 50),
         ],

@@ -28,6 +28,7 @@ import 'package:localsend_app/widget/dialogs/quick_save_notice.dart';
 import 'package:localsend_app/widget/dialogs/text_field_tv.dart';
 import 'package:localsend_app/widget/dialogs/text_field_with_actions.dart';
 import 'package:localsend_app/widget/labeled_checkbox.dart';
+import 'package:localsend_app/widget/relay_components.dart';
 import 'package:localsend_app/widget/relay_logo.dart';
 import 'package:localsend_app/widget/responsive_list_view.dart';
 import 'package:localsend_isolates/constants.dart';
@@ -37,7 +38,9 @@ import 'package:routerino/routerino.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 class SettingsTab extends StatelessWidget {
-  const SettingsTab();
+  final VoidCallback? onClose;
+
+  const SettingsTab({super.key, this.onClose});
 
   @override
   Widget build(BuildContext context) {
@@ -45,568 +48,581 @@ class SettingsTab extends StatelessWidget {
       provider: (ref) => settingsTabControllerProvider,
       builder: (context, vm) {
         final ref = context.ref;
-        return ResponsiveListView(
-          padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 40),
-          children: [
-            Padding(
-              padding: const EdgeInsets.only(left: 8),
-              child: Text(t.settingsTab.title, style: Theme.of(context).textTheme.titleLarge, textAlign: TextAlign.center),
-            ),
-            const SizedBox(height: 30),
-            _SettingsSection(
-              title: t.settingsTab.general.title,
-              children: [
-                _SettingsEntry(
-                  label: t.settingsTab.general.brightness,
-                  child: CustomDropdownButton<ThemeMode>(
-                    value: vm.settings.theme,
-                    items: vm.themeModes.map((theme) {
-                      return DropdownMenuItem(
-                        value: theme,
-                        alignment: Alignment.center,
-                        child: Text(theme.humanName),
-                      );
-                    }).toList(),
-                    onChanged: (theme) => vm.onChangeTheme(context, theme),
+        return ResponsiveListView.single(
+          maxWidth: 1080,
+          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 28),
+          tabletPadding: const EdgeInsets.symmetric(horizontal: 18, vertical: 26),
+          child: RelaySettingsLayout.fromChildren(
+            children: [
+              Row(
+                children: [
+                  if (onClose != null) IconButton(tooltip: 'Back to Relay', onPressed: onClose, icon: const Icon(Icons.arrow_back_rounded)),
+                  Expanded(
+                    child: Text(
+                      'Settings',
+                      style: RelayTypography.pageTitle(Theme.of(context).relayPalette.textPrimary),
+                      textAlign: TextAlign.center,
+                    ),
                   ),
-                ),
-                _SettingsEntry(
-                  label: t.settingsTab.general.color,
-                  child: CustomDropdownButton<ColorMode>(
-                    value: vm.settings.colorMode,
-                    items: vm.colorModes.map((colorMode) {
-                      return DropdownMenuItem(
-                        value: colorMode,
-                        alignment: Alignment.center,
-                        child: Text(colorMode.humanName, overflow: TextOverflow.ellipsis),
-                      );
-                    }).toList(),
-                    onChanged: (colorMode) => vm.onChangeColorMode(context, colorMode),
-                  ),
-                ),
-                _ButtonEntry(
-                  label: t.settingsTab.general.language,
-                  buttonLabel: vm.settings.locale?.getLocaleName() ?? t.settingsTab.general.languageOptions.system,
-                  onTap: () => vm.onTapLanguage(context),
-                ),
-                if (checkPlatformIsDesktop()) ...[
-                  /// Wayland does window position handling, so there's no need for it. See [https://github.com/localsend/localsend/issues/544]
-                  if (vm.advanced && checkPlatformIsNotWaylandDesktop())
-                    _BooleanEntry(
-                      label: defaultTargetPlatform == TargetPlatform.windows
-                          ? t.settingsTab.general.saveWindowPlacementWindows
-                          : t.settingsTab.general.saveWindowPlacement,
-                      value: vm.settings.saveWindowPlacement,
-                      onChanged: (b) async {
-                        await ref.notifier(settingsProvider).setSaveWindowPlacement(b);
-                      },
-                    ),
-                  if (checkPlatformHasTray()) ...[
-                    _BooleanEntry(
-                      label: t.settingsTab.general.minimizeToTray,
-                      value: vm.settings.minimizeToTray,
-                      onChanged: (b) async {
-                        await ref.notifier(settingsProvider).setMinimizeToTray(b);
-                      },
-                    ),
-                  ],
-                  if (checkPlatformIsDesktop()) ...[
-                    _BooleanEntry(
-                      label: t.settingsTab.general.launchAtStartup,
-                      value: vm.autoStart,
-                      onChanged: (_) => vm.onToggleAutoStart(context),
-                    ),
-                    Visibility(
-                      visible: vm.autoStart,
-                      maintainAnimation: true,
-                      maintainState: true,
-                      child: AnimatedOpacity(
-                        opacity: vm.autoStart ? 1.0 : 0.0,
-                        duration: const Duration(milliseconds: 500),
-                        child: _BooleanEntry(
-                          label: t.settingsTab.general.launchMinimized,
-                          value: vm.autoStartLaunchHidden,
-                          onChanged: (_) => vm.onToggleAutoStartLaunchHidden(context),
-                        ),
-                      ),
-                    ),
-                  ],
-                  if (vm.advanced && checkPlatform([TargetPlatform.windows])) ...[
-                    _BooleanEntry(
-                      label: t.settingsTab.general.showInContextMenu,
-                      value: vm.showInContextMenu,
-                      onChanged: (_) => vm.onToggleShowInContextMenu(context),
-                    ),
-                  ],
+                  if (onClose != null) const SizedBox(width: 48),
                 ],
-                _BooleanEntry(
-                  label: t.settingsTab.general.animations,
-                  value: vm.settings.enableAnimations,
-                  onChanged: (b) async {
-                    await ref.notifier(settingsProvider).setEnableAnimations(b);
-                  },
-                ),
-              ],
-            ),
-            _SettingsSection(
-              title: t.settingsTab.receive.title,
-              children: [
-                _BooleanEntry(
-                  label: t.settingsTab.receive.quickSave,
-                  value: vm.settings.quickSave,
-                  onChanged: (b) async {
-                    final old = vm.settings.quickSave;
-                    await ref.notifier(settingsProvider).setQuickSave(b);
-                    if (b) {
-                      await ref.notifier(settingsProvider).setQuickSaveFromFavorites(false);
-                    }
-                    if (!old && b && context.mounted) {
-                      await QuickSaveNotice.open(context);
-                    }
-                  },
-                ),
-                _BooleanEntry(
-                  label: t.settingsTab.receive.quickSaveFromFavorites,
-                  value: vm.settings.quickSaveFromFavorites,
-                  onChanged: (b) async {
-                    final old = vm.settings.quickSaveFromFavorites;
-                    await ref.notifier(settingsProvider).setQuickSaveFromFavorites(b);
-                    if (b) {
-                      await ref.notifier(settingsProvider).setQuickSave(false);
-                    }
-                    if (!old && b && context.mounted) {
-                      await QuickSaveFromFavoritesNotice.open(context);
-                    }
-                  },
-                ),
-                _BooleanEntry(
-                  label: t.settingsTab.receive.requirePin,
-                  value: vm.settings.receivePin != null,
-                  onChanged: (b) async {
-                    final currentPIN = vm.settings.receivePin;
-                    if (currentPIN != null) {
-                      await ref.notifier(settingsProvider).setReceivePin(null);
-                    } else {
-                      final String? newPin = await showDialog<String>(
-                        context: context,
-                        builder: (_) => const PinDialog(
-                          obscureText: false,
-                          generateRandom: false,
-                        ),
-                      );
-
-                      if (newPin != null && newPin.isNotEmpty) {
-                        await ref.notifier(settingsProvider).setReceivePin(newPin);
-                      }
-                    }
-
-                    // The pin is enforced by the Rust server, so it needs a restart.
-                    if (ref.read(serverProvider) != null) {
-                      await ref.notifier(serverProvider).restartServerFromSettings();
-                    }
-                  },
-                ),
-                if (checkPlatformWithFileSystem())
+              ),
+              const SizedBox(height: 26),
+              _SettingsSection(
+                title: t.settingsTab.general.title,
+                children: [
                   _SettingsEntry(
-                    label: t.settingsTab.receive.destination,
-                    child: TextButton(
-                      style: TextButton.styleFrom(
-                        backgroundColor: Theme.of(context).inputDecorationTheme.fillColor,
-                        shape: RoundedRectangleBorder(borderRadius: Theme.of(context).inputDecorationTheme.borderRadius),
-                        foregroundColor: Theme.of(context).colorScheme.onSurface,
-                      ),
-                      onPressed: () async {
-                        if (vm.settings.destination != null) {
-                          await ref.notifier(settingsProvider).setDestination(null);
-                          if (defaultTargetPlatform == TargetPlatform.macOS) {
-                            await removeExistingDestinationAccess();
-                          }
-                          return;
-                        }
-
-                        final directory = await pickDirectoryPath();
-                        if (directory != null) {
-                          if (defaultTargetPlatform == TargetPlatform.macOS) {
-                            await persistDestinationFolderAccess(directory);
-                          }
-                          await ref.notifier(settingsProvider).setDestination(directory);
-                        }
-                      },
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(vertical: 5),
-                        child: Text(vm.settings.destination ?? t.settingsTab.receive.downloads, style: Theme.of(context).textTheme.titleMedium),
-                      ),
+                    label: t.settingsTab.general.brightness,
+                    child: CustomDropdownButton<ThemeMode>(
+                      value: vm.settings.theme,
+                      items: vm.themeModes.map((theme) {
+                        return DropdownMenuItem(
+                          value: theme,
+                          alignment: Alignment.center,
+                          child: Text(theme.humanName),
+                        );
+                      }).toList(),
+                      onChanged: (theme) => vm.onChangeTheme(context, theme),
                     ),
                   ),
-                if (checkPlatformWithGallery())
+                  _SettingsEntry(
+                    label: t.settingsTab.general.color,
+                    child: CustomDropdownButton<ColorMode>(
+                      value: vm.settings.colorMode,
+                      items: vm.colorModes.map((colorMode) {
+                        return DropdownMenuItem(
+                          value: colorMode,
+                          alignment: Alignment.center,
+                          child: Text(colorMode.humanName, overflow: TextOverflow.ellipsis),
+                        );
+                      }).toList(),
+                      onChanged: (colorMode) => vm.onChangeColorMode(context, colorMode),
+                    ),
+                  ),
+                  _ButtonEntry(
+                    label: t.settingsTab.general.language,
+                    buttonLabel: vm.settings.locale?.getLocaleName() ?? t.settingsTab.general.languageOptions.system,
+                    onTap: () => vm.onTapLanguage(context),
+                  ),
+                  if (checkPlatformIsDesktop()) ...[
+                    /// Wayland does window position handling, so there's no need for it. See [https://github.com/localsend/localsend/issues/544]
+                    if (vm.advanced && checkPlatformIsNotWaylandDesktop())
+                      _BooleanEntry(
+                        label: defaultTargetPlatform == TargetPlatform.windows
+                            ? t.settingsTab.general.saveWindowPlacementWindows
+                            : t.settingsTab.general.saveWindowPlacement,
+                        value: vm.settings.saveWindowPlacement,
+                        onChanged: (b) async {
+                          await ref.notifier(settingsProvider).setSaveWindowPlacement(b);
+                        },
+                      ),
+                    if (checkPlatformHasTray()) ...[
+                      _BooleanEntry(
+                        label: t.settingsTab.general.minimizeToTray,
+                        value: vm.settings.minimizeToTray,
+                        onChanged: (b) async {
+                          await ref.notifier(settingsProvider).setMinimizeToTray(b);
+                        },
+                      ),
+                    ],
+                    if (checkPlatformIsDesktop()) ...[
+                      _BooleanEntry(
+                        label: t.settingsTab.general.launchAtStartup,
+                        value: vm.autoStart,
+                        onChanged: (_) => vm.onToggleAutoStart(context),
+                      ),
+                      Visibility(
+                        visible: vm.autoStart,
+                        maintainAnimation: true,
+                        maintainState: true,
+                        child: AnimatedOpacity(
+                          opacity: vm.autoStart ? 1.0 : 0.0,
+                          duration: const Duration(milliseconds: 500),
+                          child: _BooleanEntry(
+                            label: t.settingsTab.general.launchMinimized,
+                            value: vm.autoStartLaunchHidden,
+                            onChanged: (_) => vm.onToggleAutoStartLaunchHidden(context),
+                          ),
+                        ),
+                      ),
+                    ],
+                    if (vm.advanced && checkPlatform([TargetPlatform.windows])) ...[
+                      _BooleanEntry(
+                        label: t.settingsTab.general.showInContextMenu,
+                        value: vm.showInContextMenu,
+                        onChanged: (_) => vm.onToggleShowInContextMenu(context),
+                      ),
+                    ],
+                  ],
                   _BooleanEntry(
-                    label: t.settingsTab.receive.saveToGallery,
-                    value: vm.settings.saveToGallery,
+                    label: t.settingsTab.general.animations,
+                    value: vm.settings.enableAnimations,
                     onChanged: (b) async {
-                      await ref.notifier(settingsProvider).setSaveToGallery(b);
+                      await ref.notifier(settingsProvider).setEnableAnimations(b);
                     },
                   ),
-                _BooleanEntry(
-                  label: t.settingsTab.receive.autoFinish,
-                  value: vm.settings.autoFinish,
-                  onChanged: (b) async {
-                    await ref.notifier(settingsProvider).setAutoFinish(b);
-                  },
-                ),
-                _BooleanEntry(
-                  label: t.settingsTab.receive.saveToHistory,
-                  value: vm.settings.saveToHistory,
-                  onChanged: (b) async {
-                    await ref.notifier(settingsProvider).setSaveToHistory(b);
-                  },
-                ),
-                if (vm.advanced)
+                ],
+              ),
+              _SettingsSection(
+                title: t.settingsTab.receive.title,
+                children: [
                   _BooleanEntry(
-                    label: t.settingsTab.receive.verifyChecksums,
-                    value: vm.settings.verifyChecksums,
+                    label: t.settingsTab.receive.quickSave,
+                    value: vm.settings.quickSave,
                     onChanged: (b) async {
-                      await ref.notifier(settingsProvider).setVerifyChecksums(b);
+                      final old = vm.settings.quickSave;
+                      await ref.notifier(settingsProvider).setQuickSave(b);
+                      if (b) {
+                        await ref.notifier(settingsProvider).setQuickSaveFromFavorites(false);
+                      }
+                      if (!old && b && context.mounted) {
+                        await QuickSaveNotice.open(context);
+                      }
+                    },
+                  ),
+                  _BooleanEntry(
+                    label: t.settingsTab.receive.quickSaveFromFavorites,
+                    value: vm.settings.quickSaveFromFavorites,
+                    onChanged: (b) async {
+                      final old = vm.settings.quickSaveFromFavorites;
+                      await ref.notifier(settingsProvider).setQuickSaveFromFavorites(b);
+                      if (b) {
+                        await ref.notifier(settingsProvider).setQuickSave(false);
+                      }
+                      if (!old && b && context.mounted) {
+                        await QuickSaveFromFavoritesNotice.open(context);
+                      }
+                    },
+                  ),
+                  _BooleanEntry(
+                    label: t.settingsTab.receive.requirePin,
+                    value: vm.settings.receivePin != null,
+                    onChanged: (b) async {
+                      final currentPIN = vm.settings.receivePin;
+                      if (currentPIN != null) {
+                        await ref.notifier(settingsProvider).setReceivePin(null);
+                      } else {
+                        final String? newPin = await showDialog<String>(
+                          context: context,
+                          builder: (_) => const PinDialog(
+                            obscureText: false,
+                            generateRandom: false,
+                          ),
+                        );
 
-                      // The checksums are verified by the Rust server, so it needs a restart.
+                        if (newPin != null && newPin.isNotEmpty) {
+                          await ref.notifier(settingsProvider).setReceivePin(newPin);
+                        }
+                      }
+
+                      // The pin is enforced by the Rust server, so it needs a restart.
                       if (ref.read(serverProvider) != null) {
                         await ref.notifier(serverProvider).restartServerFromSettings();
                       }
                     },
                   ),
-              ],
-            ),
-            if (vm.advanced)
-              _SettingsSection(
-                title: t.settingsTab.send.title,
-                children: [
+                  if (checkPlatformWithFileSystem())
+                    _SettingsEntry(
+                      label: t.settingsTab.receive.destination,
+                      child: TextButton(
+                        style: TextButton.styleFrom(
+                          backgroundColor: Theme.of(context).inputDecorationTheme.fillColor,
+                          shape: RoundedRectangleBorder(borderRadius: Theme.of(context).inputDecorationTheme.borderRadius),
+                          foregroundColor: Theme.of(context).colorScheme.onSurface,
+                        ),
+                        onPressed: () async {
+                          if (vm.settings.destination != null) {
+                            await ref.notifier(settingsProvider).setDestination(null);
+                            if (defaultTargetPlatform == TargetPlatform.macOS) {
+                              await removeExistingDestinationAccess();
+                            }
+                            return;
+                          }
+
+                          final directory = await pickDirectoryPath();
+                          if (directory != null) {
+                            if (defaultTargetPlatform == TargetPlatform.macOS) {
+                              await persistDestinationFolderAccess(directory);
+                            }
+                            await ref.notifier(settingsProvider).setDestination(directory);
+                          }
+                        },
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 5),
+                          child: Text(vm.settings.destination ?? t.settingsTab.receive.downloads, style: Theme.of(context).textTheme.titleMedium),
+                        ),
+                      ),
+                    ),
+                  if (checkPlatformWithGallery())
+                    _BooleanEntry(
+                      label: t.settingsTab.receive.saveToGallery,
+                      value: vm.settings.saveToGallery,
+                      onChanged: (b) async {
+                        await ref.notifier(settingsProvider).setSaveToGallery(b);
+                      },
+                    ),
                   _BooleanEntry(
-                    label: t.settingsTab.send.shareViaLinkAutoAccept,
-                    value: vm.settings.shareViaLinkAutoAccept,
+                    label: t.settingsTab.receive.autoFinish,
+                    value: vm.settings.autoFinish,
                     onChanged: (b) async {
-                      await ref.notifier(settingsProvider).setShareViaLinkAutoAccept(b);
+                      await ref.notifier(settingsProvider).setAutoFinish(b);
                     },
                   ),
                   _BooleanEntry(
-                    label: t.settingsTab.send.createChecksums,
-                    value: vm.settings.createChecksums,
+                    label: t.settingsTab.receive.saveToHistory,
+                    value: vm.settings.saveToHistory,
                     onChanged: (b) async {
-                      await ref.notifier(settingsProvider).setCreateChecksums(b);
+                      await ref.notifier(settingsProvider).setSaveToHistory(b);
                     },
                   ),
+                  if (vm.advanced)
+                    _BooleanEntry(
+                      label: t.settingsTab.receive.verifyChecksums,
+                      value: vm.settings.verifyChecksums,
+                      onChanged: (b) async {
+                        await ref.notifier(settingsProvider).setVerifyChecksums(b);
+
+                        // The checksums are verified by the Rust server, so it needs a restart.
+                        if (ref.read(serverProvider) != null) {
+                          await ref.notifier(serverProvider).restartServerFromSettings();
+                        }
+                      },
+                    ),
                 ],
               ),
-            _SettingsSection(
-              title: t.settingsTab.network.title,
-              children: [
-                AnimatedCrossFade(
-                  crossFadeState:
-                      vm.serverState != null &&
-                          (vm.serverState!.alias != vm.settings.alias ||
-                              vm.serverState!.port != vm.settings.port ||
-                              vm.serverState!.https != vm.settings.https)
-                      ? CrossFadeState.showSecond
-                      : CrossFadeState.showFirst,
-                  duration: const Duration(milliseconds: 200),
-                  alignment: Alignment.topLeft,
-                  firstChild: Container(),
-                  secondChild: Padding(
-                    padding: const EdgeInsets.only(bottom: 15),
-                    child: Text(t.settingsTab.network.needRestart, style: TextStyle(color: Theme.of(context).colorScheme.warning)),
-                  ),
-                ),
-                _SettingsEntry(
-                  label: '${t.settingsTab.network.server}${vm.serverState == null ? ' (${t.general.offline})' : ''}',
-                  child: DecoratedBox(
-                    decoration: BoxDecoration(
-                      color: Theme.of(context).inputDecorationTheme.fillColor,
-                      borderRadius: Theme.of(context).inputDecorationTheme.borderRadius,
+              if (vm.advanced)
+                _SettingsSection(
+                  title: t.settingsTab.send.title,
+                  children: [
+                    _BooleanEntry(
+                      label: t.settingsTab.send.shareViaLinkAutoAccept,
+                      value: vm.settings.shareViaLinkAutoAccept,
+                      onChanged: (b) async {
+                        await ref.notifier(settingsProvider).setShareViaLinkAutoAccept(b);
+                      },
                     ),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                      children: [
-                        if (vm.serverState == null)
-                          Tooltip(
-                            message: t.general.start,
-                            child: TextButton(
-                              style: TextButton.styleFrom(foregroundColor: Theme.of(context).colorScheme.onSurface, iconSize: 24),
-                              onPressed: () => vm.onTapStartServer(context),
-                              child: const Icon(Icons.play_arrow),
+                    _BooleanEntry(
+                      label: t.settingsTab.send.createChecksums,
+                      value: vm.settings.createChecksums,
+                      onChanged: (b) async {
+                        await ref.notifier(settingsProvider).setCreateChecksums(b);
+                      },
+                    ),
+                  ],
+                ),
+              _SettingsSection(
+                title: t.settingsTab.network.title,
+                children: [
+                  AnimatedCrossFade(
+                    crossFadeState:
+                        vm.serverState != null &&
+                            (vm.serverState!.alias != vm.settings.alias ||
+                                vm.serverState!.port != vm.settings.port ||
+                                vm.serverState!.https != vm.settings.https)
+                        ? CrossFadeState.showSecond
+                        : CrossFadeState.showFirst,
+                    duration: const Duration(milliseconds: 200),
+                    alignment: Alignment.topLeft,
+                    firstChild: Container(),
+                    secondChild: Padding(
+                      padding: const EdgeInsets.only(bottom: 15),
+                      child: Text(t.settingsTab.network.needRestart, style: TextStyle(color: Theme.of(context).colorScheme.warning)),
+                    ),
+                  ),
+                  _SettingsEntry(
+                    label: '${t.settingsTab.network.server}${vm.serverState == null ? ' (${t.general.offline})' : ''}',
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        color: Theme.of(context).inputDecorationTheme.fillColor,
+                        borderRadius: Theme.of(context).inputDecorationTheme.borderRadius,
+                      ),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                        children: [
+                          if (vm.serverState == null)
+                            Tooltip(
+                              message: t.general.start,
+                              child: TextButton(
+                                style: TextButton.styleFrom(foregroundColor: Theme.of(context).colorScheme.onSurface, iconSize: 24),
+                                onPressed: () => vm.onTapStartServer(context),
+                                child: const Icon(Icons.play_arrow),
+                              ),
+                            )
+                          else
+                            Tooltip(
+                              message: t.general.restart,
+                              child: TextButton(
+                                style: TextButton.styleFrom(foregroundColor: Theme.of(context).colorScheme.onSurface, iconSize: 24),
+                                onPressed: () => vm.onTapRestartServer(context),
+                                child: const Icon(Icons.refresh),
+                              ),
                             ),
-                          )
-                        else
                           Tooltip(
-                            message: t.general.restart,
+                            message: t.general.stop,
                             child: TextButton(
                               style: TextButton.styleFrom(foregroundColor: Theme.of(context).colorScheme.onSurface, iconSize: 24),
-                              onPressed: () => vm.onTapRestartServer(context),
-                              child: const Icon(Icons.refresh),
+                              onPressed: vm.serverState == null ? null : vm.onTapStopServer,
+                              child: const Icon(Icons.stop),
                             ),
                           ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  _SettingsEntry(
+                    label: t.settingsTab.network.alias,
+                    child: TextFieldWithActions(
+                      name: t.settingsTab.network.alias,
+                      controller: vm.aliasController,
+                      onChanged: (s) async {
+                        await ref.notifier(settingsProvider).setAlias(s);
+                      },
+                      actions: [
                         Tooltip(
-                          message: t.general.stop,
-                          child: TextButton(
-                            style: TextButton.styleFrom(foregroundColor: Theme.of(context).colorScheme.onSurface, iconSize: 24),
-                            onPressed: vm.serverState == null ? null : vm.onTapStopServer,
-                            child: const Icon(Icons.stop),
+                          message: t.settingsTab.network.generateRandomAlias,
+                          child: IconButton(
+                            onPressed: () async {
+                              // Generates random alias
+                              final newAlias = generateRandomAlias();
+
+                              // Update the TextField with the new alias
+                              vm.aliasController.text = newAlias;
+
+                              // Persist the new alias using the settingsProvider
+                              await ref.notifier(settingsProvider).setAlias(newAlias);
+                            },
+                            icon: const Icon(Icons.casino),
+                          ),
+                        ),
+                        Tooltip(
+                          message: t.settingsTab.network.useSystemName,
+                          child: IconButton(
+                            onPressed: () async {
+                              final String newAlias;
+                              if (Platform.isMacOS) {
+                                final result = await Process.run('scutil', ['--get', 'ComputerName']);
+                                newAlias = result.stdout.toString().trim();
+                              } else {
+                                newAlias = Platform.localHostname;
+                              }
+
+                              vm.aliasController.text = newAlias;
+                              await ref.notifier(settingsProvider).setAlias(newAlias);
+                            },
+                            icon: const Icon(Icons.desktop_windows_rounded),
                           ),
                         ),
                       ],
                     ),
                   ),
-                ),
-                _SettingsEntry(
-                  label: t.settingsTab.network.alias,
-                  child: TextFieldWithActions(
-                    name: t.settingsTab.network.alias,
-                    controller: vm.aliasController,
-                    onChanged: (s) async {
-                      await ref.notifier(settingsProvider).setAlias(s);
-                    },
-                    actions: [
-                      Tooltip(
-                        message: t.settingsTab.network.generateRandomAlias,
-                        child: IconButton(
-                          onPressed: () async {
-                            // Generates random alias
-                            final newAlias = generateRandomAlias();
-
-                            // Update the TextField with the new alias
-                            vm.aliasController.text = newAlias;
-
-                            // Persist the new alias using the settingsProvider
-                            await ref.notifier(settingsProvider).setAlias(newAlias);
-                          },
-                          icon: const Icon(Icons.casino),
-                        ),
+                  if (vm.advanced)
+                    _SettingsEntry(
+                      label: t.settingsTab.network.deviceType,
+                      child: CustomDropdownButton<DeviceType>(
+                        value: vm.deviceInfo.deviceType,
+                        items: DeviceType.values.map((type) {
+                          return DropdownMenuItem(
+                            value: type,
+                            alignment: Alignment.center,
+                            child: Icon(type.icon),
+                          );
+                        }).toList(),
+                        onChanged: (type) async {
+                          await ref.notifier(settingsProvider).setDeviceType(type);
+                        },
                       ),
-                      Tooltip(
-                        message: t.settingsTab.network.useSystemName,
-                        child: IconButton(
-                          onPressed: () async {
-                            final String newAlias;
-                            if (Platform.isMacOS) {
-                              final result = await Process.run('scutil', ['--get', 'ComputerName']);
-                              newAlias = result.stdout.toString().trim();
-                            } else {
-                              newAlias = Platform.localHostname;
-                            }
-
-                            vm.aliasController.text = newAlias;
-                            await ref.notifier(settingsProvider).setAlias(newAlias);
-                          },
-                          icon: const Icon(Icons.desktop_windows_rounded),
-                        ),
+                    ),
+                  if (vm.advanced)
+                    _SettingsEntry(
+                      label: t.settingsTab.network.deviceModel,
+                      child: TextFieldTv(
+                        name: t.settingsTab.network.deviceModel,
+                        controller: vm.deviceModelController,
+                        onChanged: (s) async {
+                          await ref.notifier(settingsProvider).setDeviceModel(s);
+                        },
                       ),
-                    ],
-                  ),
-                ),
-                if (vm.advanced)
-                  _SettingsEntry(
-                    label: t.settingsTab.network.deviceType,
-                    child: CustomDropdownButton<DeviceType>(
-                      value: vm.deviceInfo.deviceType,
-                      items: DeviceType.values.map((type) {
-                        return DropdownMenuItem(
-                          value: type,
-                          alignment: Alignment.center,
-                          child: Icon(type.icon),
-                        );
-                      }).toList(),
-                      onChanged: (type) async {
-                        await ref.notifier(settingsProvider).setDeviceType(type);
+                    ),
+                  if (vm.advanced)
+                    _SettingsEntry(
+                      label: t.settingsTab.network.port,
+                      child: TextFieldTv(
+                        name: t.settingsTab.network.port,
+                        controller: vm.portController,
+                        onChanged: (s) async {
+                          final port = int.tryParse(s);
+                          if (port != null) {
+                            await ref.notifier(settingsProvider).setPort(port);
+                          }
+                        },
+                      ),
+                    ),
+                  if (vm.advanced)
+                    _ButtonEntry(
+                      label: t.settingsTab.network.network,
+                      buttonLabel: switch (vm.settings.networkWhitelist != null || vm.settings.networkBlacklist != null) {
+                        true => t.settingsTab.network.networkOptions.filtered,
+                        false => t.settingsTab.network.networkOptions.all,
+                      },
+                      onTap: () async {
+                        await context.push(() => const NetworkInterfacesPage());
                       },
                     ),
-                  ),
-                if (vm.advanced)
-                  _SettingsEntry(
-                    label: t.settingsTab.network.deviceModel,
-                    child: TextFieldTv(
-                      name: t.settingsTab.network.deviceModel,
-                      controller: vm.deviceModelController,
-                      onChanged: (s) async {
-                        await ref.notifier(settingsProvider).setDeviceModel(s);
-                      },
+                  if (vm.advanced)
+                    _SettingsEntry(
+                      label: t.settingsTab.network.discoveryTimeout,
+                      child: TextFieldTv(
+                        name: t.settingsTab.network.discoveryTimeout,
+                        controller: vm.timeoutController,
+                        onChanged: (s) async {
+                          final timeout = int.tryParse(s);
+                          if (timeout != null) {
+                            await ref.notifier(settingsProvider).setDiscoveryTimeout(timeout);
+                          }
+                        },
+                      ),
                     ),
-                  ),
-                if (vm.advanced)
-                  _SettingsEntry(
-                    label: t.settingsTab.network.port,
-                    child: TextFieldTv(
-                      name: t.settingsTab.network.port,
-                      controller: vm.portController,
-                      onChanged: (s) async {
-                        final port = int.tryParse(s);
-                        if (port != null) {
-                          await ref.notifier(settingsProvider).setPort(port);
+                  if (vm.advanced)
+                    _BooleanEntry(
+                      label: t.settingsTab.network.encryption,
+                      value: vm.settings.https,
+                      onChanged: (b) async {
+                        final old = vm.settings.https;
+                        await ref.notifier(settingsProvider).setHttps(b);
+                        if (old && !b && context.mounted) {
+                          await EncryptionDisabledNotice.open(context);
                         }
                       },
                     ),
+                  if (vm.advanced)
+                    _SettingsEntry(
+                      label: t.settingsTab.network.multicastGroup,
+                      child: TextFieldTv(
+                        name: t.settingsTab.network.multicastGroup,
+                        controller: vm.multicastController,
+                        onChanged: (s) async {
+                          await ref.notifier(settingsProvider).setMulticastGroup(s);
+                        },
+                      ),
+                    ),
+                  AnimatedCrossFade(
+                    crossFadeState: vm.settings.port != defaultPort ? CrossFadeState.showSecond : CrossFadeState.showFirst,
+                    duration: const Duration(milliseconds: 200),
+                    alignment: Alignment.topLeft,
+                    firstChild: Container(),
+                    secondChild: Padding(
+                      padding: const EdgeInsets.only(bottom: 15),
+                      child: Text(
+                        t.settingsTab.network.portWarning(defaultPort: defaultPort),
+                        style: const TextStyle(color: Colors.grey),
+                      ),
+                    ),
                   ),
-                if (vm.advanced)
+                  AnimatedCrossFade(
+                    crossFadeState: vm.settings.multicastGroup != defaultMulticastGroup ? CrossFadeState.showSecond : CrossFadeState.showFirst,
+                    duration: const Duration(milliseconds: 200),
+                    alignment: Alignment.topLeft,
+                    firstChild: Container(),
+                    secondChild: Padding(
+                      padding: const EdgeInsets.only(bottom: 15),
+                      child: Text(
+                        t.settingsTab.network.multicastGroupWarning(defaultMulticast: defaultMulticastGroup),
+                        style: const TextStyle(color: Colors.grey),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              _SettingsSection(
+                title: t.settingsTab.other.title,
+                padding: const EdgeInsets.only(bottom: 0),
+                children: [
                   _ButtonEntry(
-                    label: t.settingsTab.network.network,
-                    buttonLabel: switch (vm.settings.networkWhitelist != null || vm.settings.networkBlacklist != null) {
-                      true => t.settingsTab.network.networkOptions.filtered,
-                      false => t.settingsTab.network.networkOptions.all,
-                    },
+                    label: t.aboutPage.title,
+                    buttonLabel: t.general.open,
                     onTap: () async {
-                      await context.push(() => const NetworkInterfacesPage());
+                      await context.push(() => const AboutPage());
                     },
                   ),
-                if (vm.advanced)
-                  _SettingsEntry(
-                    label: t.settingsTab.network.discoveryTimeout,
-                    child: TextFieldTv(
-                      name: t.settingsTab.network.discoveryTimeout,
-                      controller: vm.timeoutController,
-                      onChanged: (s) async {
-                        final timeout = int.tryParse(s);
-                        if (timeout != null) {
-                          await ref.notifier(settingsProvider).setDiscoveryTimeout(timeout);
-                        }
-                      },
-                    ),
-                  ),
-                if (vm.advanced)
-                  _BooleanEntry(
-                    label: t.settingsTab.network.encryption,
-                    value: vm.settings.https,
-                    onChanged: (b) async {
-                      final old = vm.settings.https;
-                      await ref.notifier(settingsProvider).setHttps(b);
-                      if (old && !b && context.mounted) {
-                        await EncryptionDisabledNotice.open(context);
-                      }
-                    },
-                  ),
-                if (vm.advanced)
-                  _SettingsEntry(
-                    label: t.settingsTab.network.multicastGroup,
-                    child: TextFieldTv(
-                      name: t.settingsTab.network.multicastGroup,
-                      controller: vm.multicastController,
-                      onChanged: (s) async {
-                        await ref.notifier(settingsProvider).setMulticastGroup(s);
-                      },
-                    ),
-                  ),
-                AnimatedCrossFade(
-                  crossFadeState: vm.settings.port != defaultPort ? CrossFadeState.showSecond : CrossFadeState.showFirst,
-                  duration: const Duration(milliseconds: 200),
-                  alignment: Alignment.topLeft,
-                  firstChild: Container(),
-                  secondChild: Padding(
-                    padding: const EdgeInsets.only(bottom: 15),
-                    child: Text(
-                      t.settingsTab.network.portWarning(defaultPort: defaultPort),
-                      style: const TextStyle(color: Colors.grey),
-                    ),
-                  ),
-                ),
-                AnimatedCrossFade(
-                  crossFadeState: vm.settings.multicastGroup != defaultMulticastGroup ? CrossFadeState.showSecond : CrossFadeState.showFirst,
-                  duration: const Duration(milliseconds: 200),
-                  alignment: Alignment.topLeft,
-                  firstChild: Container(),
-                  secondChild: Padding(
-                    padding: const EdgeInsets.only(bottom: 15),
-                    child: Text(
-                      t.settingsTab.network.multicastGroupWarning(defaultMulticast: defaultMulticastGroup),
-                      style: const TextStyle(color: Colors.grey),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-            _SettingsSection(
-              title: t.settingsTab.other.title,
-              padding: const EdgeInsets.only(bottom: 0),
-              children: [
-                _ButtonEntry(
-                  label: t.aboutPage.title,
-                  buttonLabel: t.general.open,
-                  onTap: () async {
-                    await context.push(() => const AboutPage());
-                  },
-                ),
-                _ButtonEntry(
-                  label: t.settingsTab.other.support,
-                  buttonLabel: t.settingsTab.other.donate,
-                  onTap: () async {
-                    await context.push(() => const DonationPage());
-                  },
-                ),
-                _ButtonEntry(
-                  label: t.settingsTab.other.privacyPolicy,
-                  buttonLabel: t.general.open,
-                  onTap: () async {
-                    await launchUrl(
-                      Uri.parse('https://localsend.org/privacy'),
-                      mode: LaunchMode.externalApplication,
-                    );
-                  },
-                ),
-                if (checkPlatform([TargetPlatform.iOS, TargetPlatform.macOS]))
                   _ButtonEntry(
-                    label: t.settingsTab.other.termsOfUse,
+                    label: t.settingsTab.other.support,
+                    buttonLabel: t.settingsTab.other.donate,
+                    onTap: () async {
+                      await context.push(() => const DonationPage());
+                    },
+                  ),
+                  _ButtonEntry(
+                    label: t.settingsTab.other.privacyPolicy,
                     buttonLabel: t.general.open,
                     onTap: () async {
                       await launchUrl(
-                        Uri.parse('https://www.apple.com/legal/internet-services/itunes/dev/stdeula/'),
+                        Uri.parse('https://localsend.org/privacy'),
                         mode: LaunchMode.externalApplication,
                       );
                     },
                   ),
-              ],
-            ),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.end,
-              children: [
-                LabeledCheckbox(
-                  label: t.settingsTab.advancedSettings,
-                  value: vm.advanced,
-                  labelFirst: true,
-                  onChanged: (b) async {
-                    vm.onTapAdvanced(b == true);
-                    await ref.notifier(settingsProvider).setAdvancedSettingsEnabled(b == true);
-                  },
-                ),
-                const SizedBox(width: 10),
-              ],
-            ),
-            const SizedBox(height: 20),
-            const RelayLogo(withText: true),
-            const SizedBox(height: 5),
-            ref
-                .watch(versionProvider)
-                .maybeWhen(
-                  data: (version) => Text(
-                    'Version: ${version.combinedString}',
-                    textAlign: TextAlign.center,
-                  ),
-                  orElse: () => Container(),
-                ),
-            Text(RelayProduct.copyright, style: RelayTypography.legal(Theme.of(context).relayPalette.textSecondary), textAlign: TextAlign.center),
-            const SizedBox(height: 4),
-            Text(
-              RelayProduct.localSendAttribution,
-              style: RelayTypography.legal(Theme.of(context).relayPalette.textTertiary),
-              textAlign: TextAlign.center,
-            ),
-            Center(
-              child: TextButton.icon(
-                style: TextButton.styleFrom(
-                  foregroundColor: Theme.of(context).colorScheme.onSurface,
-                ),
-                onPressed: () async {
-                  await context.push(() => const ChangelogPage());
-                },
-                icon: const Icon(Icons.history),
-                label: Text(t.changelogPage.title),
+                  if (checkPlatform([TargetPlatform.iOS, TargetPlatform.macOS]))
+                    _ButtonEntry(
+                      label: t.settingsTab.other.termsOfUse,
+                      buttonLabel: t.general.open,
+                      onTap: () async {
+                        await launchUrl(
+                          Uri.parse('https://www.apple.com/legal/internet-services/itunes/dev/stdeula/'),
+                          mode: LaunchMode.externalApplication,
+                        );
+                      },
+                    ),
+                ],
               ),
-            ),
-            const SizedBox(height: 80),
-          ],
+              Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  LabeledCheckbox(
+                    label: t.settingsTab.advancedSettings,
+                    value: vm.advanced,
+                    labelFirst: true,
+                    onChanged: (b) async {
+                      vm.onTapAdvanced(b == true);
+                      await ref.notifier(settingsProvider).setAdvancedSettingsEnabled(b == true);
+                    },
+                  ),
+                  const SizedBox(width: 10),
+                ],
+              ),
+              const SizedBox(height: 20),
+              const RelayLogo(withText: true),
+              const SizedBox(height: 5),
+              ref
+                  .watch(versionProvider)
+                  .maybeWhen(
+                    data: (version) => Text(
+                      'Version: ${version.combinedString}',
+                      textAlign: TextAlign.center,
+                    ),
+                    orElse: () => Container(),
+                  ),
+              Text(RelayProduct.copyright, style: RelayTypography.legal(Theme.of(context).relayPalette.textSecondary), textAlign: TextAlign.center),
+              const SizedBox(height: 4),
+              Text(
+                RelayProduct.localSendAttribution,
+                style: RelayTypography.legal(Theme.of(context).relayPalette.textTertiary),
+                textAlign: TextAlign.center,
+              ),
+              Center(
+                child: TextButton.icon(
+                  style: TextButton.styleFrom(
+                    foregroundColor: Theme.of(context).colorScheme.onSurface,
+                  ),
+                  onPressed: () async {
+                    await context.push(() => const ChangelogPage());
+                  },
+                  icon: const Icon(Icons.history),
+                  label: Text(t.changelogPage.title),
+                ),
+              ),
+              const SizedBox(height: 80),
+            ],
+          ),
         );
       },
     );
@@ -621,19 +637,18 @@ class _SettingsEntry extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final palette = Theme.of(context).relayPalette;
     return Padding(
-      padding: const EdgeInsets.only(bottom: 15),
-      child: Row(
-        children: [
-          Expanded(
-            child: Text(label),
-          ),
-          const SizedBox(width: 10),
-          SizedBox(
-            width: 150,
-            child: child,
-          ),
-        ],
+      padding: const EdgeInsets.only(bottom: 4),
+      child: SizedBox(
+        height: 52,
+        child: Row(
+          children: [
+            Expanded(child: Text(label, style: RelayTypography.row(palette.textPrimary))),
+            const SizedBox(width: 12),
+            SizedBox(width: 150, child: child),
+          ],
+        ),
       ),
     );
   }
@@ -654,6 +669,7 @@ class _BooleanEntry extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final palette = theme.relayPalette;
     return _SettingsEntry(
       label: label,
       child: Stack(
@@ -661,10 +677,7 @@ class _BooleanEntry extends StatelessWidget {
           Container(
             width: double.infinity,
             height: 50,
-            decoration: BoxDecoration(
-              color: theme.inputDecorationTheme.fillColor,
-              borderRadius: theme.inputDecorationTheme.borderRadius,
-            ),
+            decoration: BoxDecoration(color: palette.softSurface, borderRadius: BorderRadius.circular(RelayComponentTokens.groupedRadius)),
           ),
           Positioned.fill(
             child: Center(
@@ -702,8 +715,8 @@ class _ButtonEntry extends StatelessWidget {
       label: label,
       child: TextButton(
         style: TextButton.styleFrom(
-          backgroundColor: Theme.of(context).inputDecorationTheme.fillColor,
-          shape: RoundedRectangleBorder(borderRadius: Theme.of(context).inputDecorationTheme.borderRadius),
+          backgroundColor: Theme.of(context).relayPalette.softSurface,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(RelayComponentTokens.groupedRadius)),
           foregroundColor: Theme.of(context).colorScheme.onSurface,
         ),
         onPressed: onTap,
@@ -728,26 +741,69 @@ class _SettingsSection extends StatelessWidget {
   const _SettingsSection({
     required this.title,
     required this.children,
-    this.padding = const EdgeInsets.only(bottom: 15),
+    this.padding = const EdgeInsets.only(bottom: 14),
   });
 
   @override
   Widget build(BuildContext context) {
     return Padding(
       padding: padding,
-      child: Card(
-        child: Padding(
-          padding: const EdgeInsets.only(left: 15, right: 15, top: 15),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(title, style: Theme.of(context).textTheme.titleMedium),
-              const SizedBox(height: 10),
-              ...children,
-            ],
-          ),
+      child: RelayGroupedSurface(
+        padding: const EdgeInsets.fromLTRB(18, 16, 18, 13),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            RelaySectionHeading(title),
+            const SizedBox(height: 11),
+            ...children,
+          ],
         ),
       ),
+    );
+  }
+}
+
+/// Keeps the existing settings actions intact while presenting grouped cards in
+/// two relaxed columns when the available width permits it.
+class RelaySettingsLayout extends StatelessWidget {
+  final List<Widget> header;
+  final List<Widget> sections;
+  final List<Widget> footer;
+
+  const RelaySettingsLayout({super.key, required this.header, required this.sections, required this.footer});
+
+  factory RelaySettingsLayout.fromChildren({Key? key, required List<Widget> children}) {
+    return RelaySettingsLayout(
+      key: key,
+      header: children.take(2).toList(),
+      sections: children.whereType<_SettingsSection>().toList(),
+      footer: children.skip(2).where((child) => child is! _SettingsSection).toList(),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final desktop = constraints.maxWidth >= 840;
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            ...header,
+            if (desktop)
+              Wrap(
+                spacing: 22,
+                runSpacing: 0,
+                children: [
+                  for (final section in sections) SizedBox(width: (constraints.maxWidth - 22) / 2, child: section),
+                ],
+              )
+            else
+              ...sections,
+            ...footer,
+          ],
+        );
+      },
     );
   }
 }

@@ -49,9 +49,13 @@ class RelayGroupedSurface extends StatelessWidget {
     final palette = Theme.of(context).relayPalette;
     return DecoratedBox(
       decoration: BoxDecoration(
-        color: palette.softSurface,
         borderRadius: BorderRadius.circular(RelayComponentTokens.groupedRadius),
         border: Border.all(color: palette.hairline),
+        gradient: LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: [palette.topHighlight, palette.softSurface],
+        ),
       ),
       child: Padding(padding: padding, child: child),
     );

@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:localsend_app/config/relay_motion.dart';
 import 'package:localsend_app/model/ui/relay_device_vm.dart';
-import 'package:localsend_app/util/device_type_ext.dart';
+import 'package:localsend_app/widget/relay/relay_device_silhouette.dart';
 import 'package:localsend_app/widget/relay/relay_progress_ring.dart';
 
 class RelayDeviceTarget extends StatefulWidget {
@@ -46,7 +46,14 @@ class _RelayDeviceTargetState extends State<RelayDeviceTarget> {
     final colors = Theme.of(context).colorScheme;
     final active = widget.device.phase == RelayDevicePhase.sending;
     final successful = widget.device.phase == RelayDevicePhase.success;
+    final waiting = widget.device.phase == RelayDevicePhase.waiting || widget.device.phase == RelayDevicePhase.verifying;
     final status = active && widget.device.progress != null ? 'Sending · ${(widget.device.progress! * 100).round()}%' : widget.device.detail;
+    final statusColor = switch (widget.device.phase) {
+      RelayDevicePhase.sending || RelayDevicePhase.waiting || RelayDevicePhase.verifying => colors.primary,
+      RelayDevicePhase.success => colors.tertiary,
+      RelayDevicePhase.failed => colors.error,
+      RelayDevicePhase.idle => colors.onSurfaceVariant,
+    };
     return Semantics(
       button: widget.onTap != null,
       label: '${widget.device.alias}, $status',
@@ -79,59 +86,56 @@ class _RelayDeviceTargetState extends State<RelayDeviceTarget> {
                       curve: RelayMotion.curve,
                       width: 128,
                       height: 128,
-                      padding: const EdgeInsets.all(8),
+                      padding: const EdgeInsets.all(7),
                       decoration: BoxDecoration(
                         shape: BoxShape.circle,
-                        color: colors.primary.withValues(
-                          alpha: active
-                              ? 0.12
-                              : widget.payloadSelected
-                              ? 0.08
-                              : 0.035,
+                        gradient: LinearGradient(
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                          colors: [
+                            colors.surfaceContainerHighest.withValues(alpha: 0.94),
+                            colors.surface.withValues(alpha: 0.72),
+                          ],
                         ),
+                        border: Border.all(color: colors.outlineVariant.withValues(alpha: active || waiting ? 0.9 : 0.58)),
                         boxShadow: [
-                          BoxShadow(
-                            color: colors.primary.withValues(
-                              alpha: active
-                                  ? 0.24
-                                  : widget.payloadSelected
-                                  ? 0.13
-                                  : 0.07,
-                            ),
-                            blurRadius: active ? 28 : 20,
-                            spreadRadius: active ? 4 : 0,
-                          ),
+                          BoxShadow(color: colors.shadow.withValues(alpha: 0.12), blurRadius: 12, offset: const Offset(0, 5)),
                         ],
                       ),
                       child: RelayProgressRing(
-                        size: 112,
+                        size: 114,
                         phase: widget.device.phase,
                         progress: widget.device.progress,
                         animationsEnabled: widget.animationsEnabled,
                         child: Container(
                           decoration: BoxDecoration(
-                            color: colors.secondaryContainer.withValues(alpha: 0.58),
+                            gradient: LinearGradient(
+                              begin: Alignment.topCenter,
+                              end: Alignment.bottomCenter,
+                              colors: [colors.surfaceContainerHighest.withValues(alpha: 0.84), colors.surface.withValues(alpha: 0.8)],
+                            ),
                             shape: BoxShape.circle,
                           ),
                           child: AnimatedSwitcher(
                             duration: RelayMotion.gated(RelayMotion.deviceTransition, widget.animationsEnabled),
-                            child: Icon(
-                              successful ? Icons.check_rounded : widget.device.deviceType.icon,
-                              key: ValueKey(successful),
-                              size: successful ? 54 : 52,
-                              color: successful ? colors.primary : colors.onSecondaryContainer,
-                            ),
+                            child: successful
+                                ? Icon(Icons.check_rounded, key: const ValueKey(true), size: 54, color: colors.tertiary)
+                                : RelayDeviceSilhouette(
+                                    key: const ValueKey(false),
+                                    deviceType: widget.device.deviceType,
+                                    color: colors.onSurface,
+                                  ),
                           ),
                         ),
                       ),
                     ),
-                    const SizedBox(height: 13),
+                    const SizedBox(height: 14),
                     Text(
                       widget.device.alias,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       textAlign: TextAlign.center,
-                      style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600),
+                      style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600, height: 1.15),
                     ),
                     const SizedBox(height: 4),
                     Text(
@@ -139,7 +143,7 @@ class _RelayDeviceTargetState extends State<RelayDeviceTarget> {
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       textAlign: TextAlign.center,
-                      style: Theme.of(context).textTheme.bodySmall?.copyWith(color: active ? colors.primary : colors.onSurfaceVariant),
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(color: statusColor),
                     ),
                   ],
                 ),

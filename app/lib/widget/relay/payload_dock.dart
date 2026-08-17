@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:localsend_app/config/relay_brand.dart';
 import 'package:localsend_app/pages/relay_home_vm.dart';
+import 'package:localsend_app/widget/relay_components.dart';
 import 'package:localsend_isolates/util/file_size_helper.dart';
 
 class PayloadDock extends StatelessWidget {
@@ -12,13 +14,25 @@ class PayloadDock extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
+    final palette = Theme.of(context).relayPalette;
     if (selection.isEmpty) {
       return Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Text('Drop files to share', style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: colors.onSurfaceVariant)),
-          const SizedBox(height: 8),
-          TextButton.icon(onPressed: onSelect, icon: const Icon(Icons.add), label: const Text('Select files')),
+          if (Theme.of(context).platform != TargetPlatform.android) ...[
+            Text(
+              'Drop files here or choose something to share',
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(color: palette.textTertiary),
+            ),
+            const SizedBox(height: 10),
+          ],
+          FilledButton.icon(
+            key: const ValueKey('relay-share-something'),
+            onPressed: onSelect,
+            style: RelayButtonStyles.primary(context),
+            icon: const Icon(Icons.add_rounded),
+            label: const Text('Share something'),
+          ),
         ],
       );
     }
@@ -26,14 +40,17 @@ class PayloadDock extends StatelessWidget {
       mainAxisSize: MainAxisSize.min,
       children: [
         Container(
-          padding: const EdgeInsets.only(left: 16, right: 4, top: 4, bottom: 4),
+          padding: const EdgeInsets.only(left: 13, right: 4, top: 4, bottom: 4),
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(999),
-            color: colors.secondaryContainer.withValues(alpha: 0.42),
+            color: colors.surfaceContainerHighest.withValues(alpha: 0.64),
+            border: Border.all(color: colors.outlineVariant.withValues(alpha: 0.55)),
           ),
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
+              Icon(Icons.attach_file_rounded, size: 17, color: colors.onSurfaceVariant),
+              const SizedBox(width: 8),
               Text(
                 '${selection.fileCount} ${selection.fileCount == 1 ? 'file' : 'files'} · ${selection.totalBytes.asReadableFileSize}',
                 key: const ValueKey('relay-payload-summary'),
@@ -41,13 +58,13 @@ class PayloadDock extends StatelessWidget {
               ),
               if (onClear != null) ...[
                 const SizedBox(width: 6),
-                TextButton(onPressed: onClear, child: const Text('Clear')),
+                IconButton(tooltip: 'Clear selection', onPressed: onClear, icon: const Icon(Icons.close_rounded, size: 18)),
               ],
             ],
           ),
         ),
-        const SizedBox(height: 10),
-        Text('Choose a nearby device', style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: colors.onSurfaceVariant)),
+        const SizedBox(height: 12),
+        Text('Choose a nearby device', style: Theme.of(context).textTheme.bodySmall?.copyWith(color: palette.textSecondary)),
       ],
     );
   }

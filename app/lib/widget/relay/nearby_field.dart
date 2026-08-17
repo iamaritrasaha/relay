@@ -19,20 +19,32 @@ class NearbyField extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final hasActiveTransfer = devices.any((device) => device.phase == RelayDevicePhase.sending);
-    return Wrap(
-      alignment: WrapAlignment.center,
-      spacing: 48,
-      runSpacing: 36,
-      children: [
-        for (final device in devices)
-          RelayDeviceTarget(
-            device: device,
-            animationsEnabled: animationsEnabled,
-            payloadSelected: payloadSelected,
-            dimmed: hasActiveTransfer && device.phase != RelayDevicePhase.sending,
-            onTap: onDeviceTap == null ? null : () => onDeviceTap!(device),
-          ),
-      ],
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final mobile = constraints.maxWidth < 600;
+        final children = [
+          for (final device in devices)
+            RelayDeviceTarget(
+              device: device,
+              animationsEnabled: animationsEnabled,
+              payloadSelected: payloadSelected,
+              dimmed: hasActiveTransfer && device.phase != RelayDevicePhase.sending,
+              onTap: onDeviceTap == null ? null : () => onDeviceTap!(device),
+            ),
+        ];
+        if (mobile) {
+          return GridView.count(
+            crossAxisCount: 2,
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            mainAxisSpacing: 30,
+            crossAxisSpacing: 18,
+            childAspectRatio: 0.88,
+            children: children,
+          );
+        }
+        return Wrap(alignment: WrapAlignment.center, spacing: 56, runSpacing: 42, children: children);
+      },
     );
   }
 }

@@ -87,7 +87,7 @@ class LocalSendApp extends StatelessWidget {
               navigatorKey: context.read(navigationProvider).key,
               home: RouterinoHome(
                 builder: () => HomePage(
-                  initialTab: HomeTab.receive,
+                  initialTab: HomeTab.home,
                   appStart: true,
                   networkBootstrap: networkBootstrap,
                 ),

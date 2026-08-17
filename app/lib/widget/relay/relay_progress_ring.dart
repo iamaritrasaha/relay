@@ -35,7 +35,7 @@ class RelayProgressRing extends StatelessWidget {
           phase: phase,
           progress: displayedProgress,
           trackColor: colors.outlineVariant.withValues(alpha: 0.45),
-          accentColor: colors.primary,
+          accentColor: phase == RelayDevicePhase.success ? colors.tertiary : colors.primary,
         ),
         child: Center(child: child),
       ),
@@ -67,14 +67,16 @@ class _RelayProgressRingPainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    const strokeWidth = 4.0;
+    const strokeWidth = 3.0;
     final radius = (size.shortestSide - strokeWidth) / 2;
     final rect = Rect.fromCircle(center: size.center(Offset.zero), radius: radius);
     final paint = Paint()
       ..style = PaintingStyle.stroke
       ..strokeWidth = strokeWidth
       ..strokeCap = StrokeCap.round;
-    canvas.drawArc(rect, 0, math.pi * 2, false, paint..color = trackColor);
+    if (phase == RelayDevicePhase.sending || phase == RelayDevicePhase.success) {
+      canvas.drawArc(rect, 0, math.pi * 2, false, paint..color = trackColor);
+    }
 
     final sweep = switch (phase) {
       RelayDevicePhase.sending => math.pi * 2 * (progress ?? 0),

@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:localsend_app/config/theme.dart';
 import 'package:localsend_app/model/cross_file.dart';
+import 'package:localsend_app/model/persistence/color_mode.dart';
 import 'package:localsend_app/model/state/nearby_devices_state.dart';
 import 'package:localsend_app/model/state/send/send_session_state.dart';
 import 'package:localsend_app/model/state/send/sending_file.dart';
@@ -15,7 +17,6 @@ import 'package:localsend_isolates/model/session_status.dart';
 
 void main() {
   const selfAlias = 'My Linux';
-  const mint = Color(0xff57d9b4);
 
   Device device(String alias, String fingerprint) => Device(
     signalingId: null,
@@ -114,10 +115,7 @@ void main() {
     addTearDown(tester.view.reset);
     await tester.pumpWidget(
       MaterialApp(
-        theme: ThemeData(
-          colorScheme: ColorScheme.fromSeed(seedColor: mint, brightness: Brightness.dark),
-          useMaterial3: true,
-        ),
+        theme: getTheme(ColorMode.localsend, Colors.blue, Brightness.dark, null),
         home: RelayShell(vm: vm, animationsEnabled: false, onSelectPayload: () {}),
       ),
     );
