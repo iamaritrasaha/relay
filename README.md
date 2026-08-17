@@ -31,6 +31,12 @@ Relay currently uses:
 - Flutter 3.41.9, selected with [FVM](https://fvm.app/)
 - Rust 1.97.1
 
+Linux builds additionally need the libsecret development headers (used for Relay's secure identity storage via the desktop Secret Service):
+
+```bash
+sudo apt install libsecret-1-dev
+```
+
 From `app/`, use the pinned Flutter toolchain:
 
 ```bash
