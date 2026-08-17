@@ -1,3 +1,4 @@
+mod relay;
 mod scoped_host;
 mod server_cert_verifier;
 mod url;
@@ -8,6 +9,7 @@ pub use v2::LsHttpClientV2;
 pub use v3::LsHttpClientV3;
 
 use crate::http::StatusCodeError;
+use crate::relay::RelayPeerAuth;
 use crate::{crypto, http, model};
 use bytes::Bytes;
 use futures_util::StreamExt;
@@ -171,6 +173,19 @@ impl LsHttpClient {
             LsHttpClient::V3(client) => client.cancel(protocol, ip, port, session_id).await,
         }
     }
+
+    /// Cryptographically authenticates a Relay server's identity proof over HTTPS.
+    pub async fn authenticate_relay_server(
+        &self,
+        protocol: model::discovery::ProtocolType,
+        ip: &str,
+        port: u16,
+    ) -> RelayPeerAuth {
+        match self {
+            LsHttpClient::V2(client) => client.authenticate_relay_server(protocol, ip, port).await,
+            LsHttpClient::V3(client) => client.authenticate_relay_server(protocol, ip, port).await,
+        }
+    }
 }
 
 /// Builds a streaming request body from the file content, invoking `progress`
@@ -291,6 +306,20 @@ pub(super) fn verify_cert_from_res(
 /// response was received over. This — not any fingerprint claimed in the
 /// body — is the peer's identity in HTTPS mode.
 pub(super) fn cert_fingerprint_from_res(response: &Response) -> anyhow::Result<String> {
+    Ok(crypto::cert::fingerprint_from_cert_der(
+        peer_certificate_from_res(response)?,
+    ))
+}
+
+/// The raw SHA-256 fingerprint of the certificate on this exact response's
+/// TLS connection.
+pub(super) fn cert_fingerprint_digest_from_res(response: &Response) -> anyhow::Result<[u8; 32]> {
+    Ok(crypto::cert::fingerprint_digest_from_cert_der(
+        peer_certificate_from_res(response)?,
+    ))
+}
+
+fn peer_certificate_from_res(response: &Response) -> anyhow::Result<&[u8]> {
     let tls_info_ext = response
         .extensions()
         .get::<reqwest::tls::TlsInfo>()
@@ -298,7 +327,7 @@ pub(super) fn cert_fingerprint_from_res(response: &Response) -> anyhow::Result<S
     let cert = tls_info_ext
         .peer_certificate()
         .ok_or_else(|| anyhow::anyhow!("Certificate not found"))?;
-    Ok(crypto::cert::fingerprint_from_cert_der(cert))
+    Ok(cert)
 }
 
 #[derive(Serialize, Deserialize)]
