@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:localsend_app/config/relay_brand.dart';
 import 'package:localsend_app/config/theme.dart';
 import 'package:localsend_app/gen/strings.g.dart';
 import 'package:localsend_app/model/persistence/color_mode.dart';
@@ -27,7 +28,7 @@ import 'package:localsend_app/widget/dialogs/quick_save_notice.dart';
 import 'package:localsend_app/widget/dialogs/text_field_tv.dart';
 import 'package:localsend_app/widget/dialogs/text_field_with_actions.dart';
 import 'package:localsend_app/widget/labeled_checkbox.dart';
-import 'package:localsend_app/widget/local_send_logo.dart';
+import 'package:localsend_app/widget/relay_logo.dart';
 import 'package:localsend_app/widget/responsive_list_view.dart';
 import 'package:localsend_isolates/constants.dart';
 import 'package:localsend_isolates/model/device.dart';
@@ -574,7 +575,7 @@ class SettingsTab extends StatelessWidget {
               ],
             ),
             const SizedBox(height: 20),
-            const LocalSendLogo(withText: true),
+            const RelayLogo(withText: true),
             const SizedBox(height: 5),
             ref
                 .watch(versionProvider)
@@ -585,8 +586,11 @@ class SettingsTab extends StatelessWidget {
                   ),
                   orElse: () => Container(),
                 ),
+            Text(RelayProduct.copyright, style: RelayTypography.legal(Theme.of(context).relayPalette.textSecondary), textAlign: TextAlign.center),
+            const SizedBox(height: 4),
             Text(
-              '© ${DateTime.now().year} Tien Do Nam',
+              RelayProduct.localSendAttribution,
+              style: RelayTypography.legal(Theme.of(context).relayPalette.textTertiary),
               textAlign: TextAlign.center,
             ),
             Center(

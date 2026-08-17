@@ -1,0 +1,188 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 1076" width="1280" height="1076" font-family="Inter, 'Segoe UI', 'Helvetica Neue', Arial, sans-serif">
+  <defs>
+    <linearGradient id="relayGrad" x1="16" y1="16" x2="112" y2="112" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#5B8CFF"/>
+      <stop offset="0.55" stop-color="#6E79FB"/>
+      <stop offset="1" stop-color="#8B5CF6"/>
+    </linearGradient>
+    <linearGradient id="plate" x1="54" y1="0" x2="54" y2="108" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#272C34"/>
+      <stop offset="0.52" stop-color="#1A1E25"/>
+      <stop offset="1" stop-color="#10131A"/>
+    </linearGradient>
+    <radialGradient id="sheen" cx="54" cy="11" r="70" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#FFFFFF" stop-opacity="0.07"/>
+      <stop offset="1" stop-color="#FFFFFF" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="edge" x1="54" y1="0" x2="54" y2="48" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#FFFFFF" stop-opacity="0.17"/>
+      <stop offset="1" stop-color="#FFFFFF" stop-opacity="0"/>
+    </linearGradient>
+
+    <symbol id="mark" viewBox="0 0 128 128">
+      <g fill="none" stroke="url(#relayGrad)" stroke-width="11">
+        <rect x="16" y="16" width="30" height="30" rx="10"/>
+        <rect x="82" y="82" width="30" height="30" rx="10"/>
+      </g>
+      <rect x="53" y="53" width="22" height="22" rx="6" transform="rotate(45 64 64)" fill="url(#relayGrad)"/>
+    </symbol>
+
+    <symbol id="markMono" viewBox="0 0 128 128">
+      <g fill="none" stroke="currentColor" stroke-width="11">
+        <rect x="16" y="16" width="30" height="30" rx="10"/>
+        <rect x="82" y="82" width="30" height="30" rx="10"/>
+      </g>
+      <rect x="53" y="53" width="22" height="22" rx="6" transform="rotate(45 64 64)" fill="currentColor"/>
+    </symbol>
+
+    <symbol id="markCompact" viewBox="0 0 128 128">
+      <g fill="currentColor">
+        <rect x="10" y="10" width="42" height="42" rx="14"/>
+        <rect x="76" y="76" width="42" height="42" rx="14"/>
+        <rect x="52" y="52" width="24" height="24" rx="7" transform="rotate(45 64 64)"/>
+      </g>
+    </symbol>
+
+    <symbol id="markConstruct" viewBox="0 0 128 128">
+      <line x1="6" y1="6" x2="122" y2="122" stroke="#39435A" stroke-width="1" stroke-dasharray="4 5"/>
+      <circle cx="64" cy="64" r="34" fill="none" stroke="#232B39" stroke-width="1"/>
+      <g fill="none" stroke="#7E93FF" stroke-width="1.4">
+        <rect x="10.5" y="10.5" width="41" height="41" rx="15.5"/>
+        <rect x="76.5" y="76.5" width="41" height="41" rx="15.5"/>
+        <rect x="21.5" y="21.5" width="19" height="19" rx="4.5"/>
+        <rect x="87.5" y="87.5" width="19" height="19" rx="4.5"/>
+      </g>
+      <rect x="53" y="53" width="22" height="22" rx="6" transform="rotate(45 64 64)" fill="none" stroke="#CBD6FF" stroke-width="1.4"/>
+      <line x1="55.5" y1="55.5" x2="43.5" y2="43.5" stroke="#F2B455" stroke-width="1.4"/>
+      <line x1="72.5" y1="72.5" x2="84.5" y2="84.5" stroke="#F2B455" stroke-width="1.4"/>
+    </symbol>
+
+    <symbol id="launcher" viewBox="0 0 108 108">
+      <rect width="108" height="108" rx="24" fill="url(#plate)"/>
+      <rect width="108" height="108" rx="24" fill="url(#sheen)"/>
+      <rect x="0.5" y="0.5" width="107" height="107" rx="23.5" fill="none" stroke="url(#edge)" stroke-width="1"/>
+      <use href="#mark" x="21" y="21" width="66" height="66"/>
+    </symbol>
+
+    <symbol id="adaptive" viewBox="0 0 108 108">
+      <rect width="108" height="108" fill="url(#plate)"/>
+      <rect width="108" height="108" fill="url(#sheen)"/>
+      <use href="#mark" x="21" y="21" width="66" height="66"/>
+    </symbol>
+  </defs>
+
+  <rect width="1280" height="1076" fill="#0B0D10"/>
+
+  <text x="60" y="62" font-size="26" font-weight="600" fill="#E8ECF4" letter-spacing="-0.2">Relay Symbol — Final</text>
+  <text x="60" y="88" font-size="13" fill="#7C8798">Two open endpoints on the handoff diagonal · one solid packet in transit · identical under 180° rotation, so neither end is the sender</text>
+
+  <!-- 1 · ANDROID ADAPTIVE -->
+  <g>
+    <rect x="60" y="120" width="290" height="300" rx="14" fill="#12151A" stroke="#1E232B"/>
+    <text x="84" y="150" font-size="11" letter-spacing="1.1" fill="#6E7A8C">1 · ANDROID ADAPTIVE</text>
+    <use href="#adaptive" x="117" y="176" width="176" height="176"/>
+    <rect x="117" y="176" width="176" height="176" rx="39" fill="none" stroke="#8C9BB2" stroke-opacity="0.5" stroke-width="1" stroke-dasharray="5 5"/>
+    <circle cx="205" cy="264" r="58.7" fill="none" stroke="#8C9BB2" stroke-opacity="0.32" stroke-width="1" stroke-dasharray="3 5"/>
+    <text x="205" y="382" font-size="11.5" fill="#6E7A8C" text-anchor="middle">108 × 108 dp · mark 66 dp inside the 72 dp safe circle</text>
+    <text x="205" y="400" font-size="11.5" fill="#4E5866" text-anchor="middle">background = graphite plate · foreground = mark only</text>
+  </g>
+
+  <!-- 2 · LINUX -->
+  <g>
+    <rect x="380" y="120" width="290" height="300" rx="14" fill="#12151A" stroke="#1E232B"/>
+    <text x="404" y="150" font-size="11" letter-spacing="1.1" fill="#6E7A8C">2 · LINUX APP ICON</text>
+    <use href="#launcher" x="437" y="176" width="176" height="176"/>
+    <text x="525" y="382" font-size="11.5" fill="#6E7A8C" text-anchor="middle">512 px · corner r 22.3% · one vertical tonal shift</text>
+    <text x="525" y="400" font-size="11.5" fill="#4E5866" text-anchor="middle">1 px top-edge highlight · no glow, no glass, no neon</text>
+  </g>
+
+  <!-- 3 · SYMBOL 128 + CONSTRUCTION -->
+  <g>
+    <rect x="700" y="120" width="520" height="300" rx="14" fill="#12151A" stroke="#1E232B"/>
+    <text x="724" y="150" font-size="11" letter-spacing="1.1" fill="#6E7A8C">3 · SYMBOL · 128 PX + CONSTRUCTION</text>
+    <use href="#mark" x="770" y="188" width="128" height="128"/>
+    <use href="#markConstruct" x="1010" y="188" width="128" height="128"/>
+    <text x="834" y="350" font-size="11.5" fill="#6E7A8C" text-anchor="middle">128 px</text>
+    <text x="1074" y="350" font-size="11.5" fill="#6E7A8C" text-anchor="middle">tile 41 u outer · stroke 11 u · packet 22 u · gap 26 u</text>
+    <text x="960" y="384" font-size="11.5" fill="#4E5866" text-anchor="middle">three elements, one axis: the tiles are open containers, the packet is the only solid mass in the mark</text>
+  </g>
+
+  <!-- 4–6 · SIZE LADDER -->
+  <g>
+    <rect x="60" y="450" width="610" height="200" rx="14" fill="#12151A" stroke="#1E232B"/>
+    <text x="84" y="480" font-size="11" letter-spacing="1.1" fill="#6E7A8C">4–6 · SIZE LADDER</text>
+    <use href="#mark" x="110" y="504" width="48" height="48"/>
+    <text x="134" y="588" font-size="11.5" fill="#6E7A8C" text-anchor="middle">48 px</text>
+    <use href="#mark" x="240" y="516" width="24" height="24"/>
+    <text x="252" y="588" font-size="11.5" fill="#6E7A8C" text-anchor="middle">24 px</text>
+    <use href="#markCompact" x="350" y="520" width="16" height="16" color="#FFFFFF"/>
+    <text x="358" y="588" font-size="11.5" fill="#6E7A8C" text-anchor="middle">16 px mono</text>
+    <use href="#markCompact" x="450" y="520" width="16" height="16" color="#FFFFFF"/>
+    <use href="#markCompact" x="486" y="520" width="16" height="16" color="#93A2BA"/>
+    <rect x="518" y="514" width="28" height="28" rx="7" fill="#E7EAF0"/>
+    <use href="#markCompact" x="524" y="520" width="16" height="16" color="#14161A"/>
+    <text x="498" y="588" font-size="11.5" fill="#4E5866" text-anchor="middle">16 px on-dark / muted / on-light</text>
+    <text x="365" y="624" font-size="11.5" fill="#4E5866" text-anchor="middle">outline down to 20 px; at 16 px the tiles go solid so the 1.4 px stroke and its counter do not mush together</text>
+  </g>
+
+  <!-- 7 · TRAY -->
+  <g>
+    <rect x="700" y="450" width="520" height="200" rx="14" fill="#12151A" stroke="#1E232B"/>
+    <text x="724" y="480" font-size="11" letter-spacing="1.1" fill="#6E7A8C">7 · TRAY / MONOCHROME</text>
+    <rect x="740" y="498" width="88" height="88" rx="16" fill="#1A1D23" stroke="#262B33"/>
+    <use href="#markMono" x="764" y="522" width="40" height="40" color="#FFFFFF"/>
+    <rect x="850" y="498" width="88" height="88" rx="16" fill="#E7EAF0"/>
+    <use href="#markMono" x="874" y="522" width="40" height="40" color="#14161A"/>
+    <use href="#markMono" x="972" y="510" width="32" height="32" color="#FFFFFF"/>
+    <use href="#markMono" x="1024" y="514" width="24" height="24" color="#FFFFFF"/>
+    <use href="#markCompact" x="1068" y="518" width="16" height="16" color="#FFFFFF"/>
+    <text x="784" y="610" font-size="11.5" fill="#6E7A8C" text-anchor="middle">dark tray</text>
+    <text x="894" y="610" font-size="11.5" fill="#6E7A8C" text-anchor="middle">light tray</text>
+    <text x="1030" y="562" font-size="11.5" fill="#4E5866" text-anchor="middle">32 / 24 / 16 px</text>
+    <text x="1030" y="610" font-size="11.5" fill="#6E7A8C" text-anchor="middle">flat fill, transparent ground</text>
+  </g>
+
+  <!-- 8 · LOCKUP -->
+  <g>
+    <rect x="60" y="680" width="1160" height="190" rx="14" fill="#12151A" stroke="#1E232B"/>
+    <text x="84" y="710" font-size="11" letter-spacing="1.1" fill="#6E7A8C">8 · SYMBOL + WORDMARK</text>
+    <use href="#mark" x="100" y="738" width="80" height="80"/>
+    <text x="206" y="798" font-size="52" font-weight="600" letter-spacing="-1.4" fill="#F2F5FA">Relay</text>
+    <line x1="430" y1="732" x2="430" y2="824" stroke="#1E232B"/>
+    <use href="#mark" x="474" y="762" width="34" height="34"/>
+    <text x="520" y="787" font-size="22" font-weight="600" letter-spacing="-0.5" fill="#E8ECF4">Relay</text>
+    <use href="#markMono" x="650" y="762" width="34" height="34" color="#FFFFFF"/>
+    <text x="696" y="787" font-size="22" font-weight="600" letter-spacing="-0.5" fill="#FFFFFF">Relay</text>
+    <rect x="826" y="749" width="200" height="60" rx="12" fill="#E7EAF0"/>
+    <use href="#markMono" x="848" y="762" width="34" height="34" color="#14161A"/>
+    <text x="894" y="787" font-size="22" font-weight="600" letter-spacing="-0.5" fill="#14161A">Relay</text>
+    <text x="1062" y="775" font-size="11.5" fill="#6E7A8C">clear space = one tile stroke × 2</text>
+    <text x="1062" y="795" font-size="11.5" fill="#4E5866">cap height matches symbol height</text>
+  </g>
+
+  <!-- 9 · LIGHT-BACKGROUND CHECK -->
+  <g>
+    <rect x="60" y="900" width="1160" height="140" rx="14" fill="#12151A" stroke="#1E232B"/>
+    <text x="84" y="930" font-size="11" letter-spacing="1.1" fill="#6E7A8C">LIGHT-BACKGROUND CHECK · 24 PX + 16 PX MONO</text>
+    <rect x="100" y="948" width="420" height="72" rx="12" fill="#F4F6F9"/>
+    <use href="#mark" x="132" y="972" width="24" height="24"/>
+    <text x="144" y="1012" font-size="10.5" fill="#6B7686" text-anchor="middle">24 px</text>
+    <use href="#markCompact" x="212" y="976" width="16" height="16" color="#14161A"/>
+    <text x="220" y="1012" font-size="10.5" fill="#6B7686" text-anchor="middle">16 px mono</text>
+    <use href="#markMono" x="280" y="968" width="32" height="32" color="#14161A"/>
+    <text x="296" y="1012" font-size="10.5" fill="#6B7686" text-anchor="middle">32 px mono</text>
+    <use href="#mark" x="356" y="960" width="48" height="48"/>
+    <text x="380" y="1012" font-size="10.5" fill="#6B7686" text-anchor="middle">48 px</text>
+    <use href="#markCompact" x="444" y="976" width="16" height="16" color="#5B6472"/>
+    <text x="452" y="1012" font-size="10.5" fill="#6B7686" text-anchor="middle">16 px muted</text>
+    <rect x="560" y="948" width="300" height="72" rx="12" fill="#FFFFFF"/>
+    <use href="#mark" x="592" y="972" width="24" height="24"/>
+    <use href="#markCompact" x="648" y="976" width="16" height="16" color="#14161A"/>
+    <use href="#markMono" x="700" y="968" width="32" height="32" color="#14161A"/>
+    <text x="770" y="992" font-size="11" fill="#6B7686">pure white</text>
+    <text x="900" y="978" font-size="11.5" fill="#6E7A8C">Colour mark holds on light; mono flips to #14161A.</text>
+    <text x="900" y="998" font-size="11.5" fill="#4E5866">16 px uses the solid treatment on both grounds.</text>
+  </g>
+
+  <text x="60" y="1064" font-size="11.5" fill="#454F5D">Endpoints and packet #5B8CFF → #8B5CF6 · plate #272C34 → #10131A · grid 128 u · handoff axis 45° · packet rotated 45° — the only tilted element</text>
+</svg>

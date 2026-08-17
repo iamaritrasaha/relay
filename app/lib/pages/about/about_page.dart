@@ -1,10 +1,11 @@
 import 'package:collection/collection.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:localsend_app/config/relay_brand.dart';
 import 'package:localsend_app/gen/strings.g.dart';
 import 'package:localsend_app/pages/debug/debug_page.dart';
 import 'package:localsend_app/util/i18n.dart';
-import 'package:localsend_app/widget/local_send_logo.dart';
+import 'package:localsend_app/widget/relay_logo.dart';
 import 'package:localsend_app/widget/responsive_list_view.dart';
 import 'package:routerino/routerino.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -25,25 +26,23 @@ class AboutPage extends StatelessWidget {
     final primaryColor = Theme.of(context).colorScheme.primary;
     return Scaffold(
       appBar: AppBar(
-        title: Text(t.aboutPage.title),
+        title: const Text('About Relay'),
       ),
       body: ResponsiveListView(
         padding: const EdgeInsets.symmetric(horizontal: 15),
         children: [
           const SizedBox(height: 20),
-          const LocalSendLogo(withText: true),
+          const RelayLogo(withText: true),
           Text(
-            '© ${DateTime.now().year} Tien Do Nam',
+            RelayProduct.copyright,
+            style: RelayTypography.legal(Theme.of(context).relayPalette.textSecondary),
             textAlign: TextAlign.center,
           ),
           const SizedBox(height: 10),
-          Center(
-            child: TextButton(
-              onPressed: () async {
-                await launchUrl(Uri.parse('https://localsend.org'));
-              },
-              child: const Text('localsend.org'),
-            ),
+          Text(
+            RelayProduct.localSendAttribution,
+            style: RelayTypography.legal(Theme.of(context).relayPalette.textTertiary),
+            textAlign: TextAlign.center,
           ),
           const SizedBox(height: 10),
           Text(t.aboutPage.description.join('\n\n')),
