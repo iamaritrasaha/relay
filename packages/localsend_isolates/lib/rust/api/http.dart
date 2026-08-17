@@ -13,7 +13,7 @@ import 'package:localsend_isolates/rust/frb_generated.dart';
 part 'http.freezed.dart';
 
 // These functions are ignored because they are not marked as `pub`: `resolve_file_content`
-// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `clone`, `clone`, `from`
+// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `clone`, `clone`, `clone`, `from`, `from`
 
 /// Creates an HTTP client.
 ///
@@ -37,6 +37,10 @@ RsHttpClient createClient({
 
 // Rust type: RustOpaqueMoi<flutter_rust_bridge::for_generated::RustAutoOpaqueInner<RsHttpClient>>
 abstract class RsHttpClient implements RustOpaqueInterface {
+  /// Authenticates the selected HTTPS peer's Relay proof. Rust owns the
+  /// nonce, observed TLS certificate fingerprint, and proof verification.
+  Future<RsRelayPeerAuth> authenticateRelayServer({required ProtocolType protocol, required String ip, required int port});
+
   Future<void> cancel({required ProtocolType protocol, required String ip, required int port, required String sessionId});
 
   Future<PrepareUploadResult> prepareUpload({
@@ -139,6 +143,23 @@ sealed class RsHttpClientError with _$RsHttpClientError implements FrbException 
   const factory RsHttpClientError.other(
     String field0,
   ) = RsHttpClientError_Other;
+}
+
+@freezed
+sealed class RsRelayPeerAuth with _$RsRelayPeerAuth {
+  const RsRelayPeerAuth._();
+
+  const factory RsRelayPeerAuth.notAttempted() = RsRelayPeerAuth_NotAttempted;
+  const factory RsRelayPeerAuth.unsupported() = RsRelayPeerAuth_Unsupported;
+  const factory RsRelayPeerAuth.transportUnauthenticated() = RsRelayPeerAuth_TransportUnauthenticated;
+  const factory RsRelayPeerAuth.signerUnavailable() = RsRelayPeerAuth_SignerUnavailable;
+  const factory RsRelayPeerAuth.malformed() = RsRelayPeerAuth_Malformed;
+  const factory RsRelayPeerAuth.roleMismatch() = RsRelayPeerAuth_RoleMismatch;
+  const factory RsRelayPeerAuth.challengeMismatch() = RsRelayPeerAuth_ChallengeMismatch;
+  const factory RsRelayPeerAuth.cryptoInvalid() = RsRelayPeerAuth_CryptoInvalid;
+  const factory RsRelayPeerAuth.authenticated({
+    required String relayId,
+  }) = RsRelayPeerAuth_Authenticated;
 }
 
 @freezed

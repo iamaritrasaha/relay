@@ -12,6 +12,7 @@ import 'package:localsend_app/pages/send_page.dart';
 import 'package:localsend_app/provider/device_info_provider.dart';
 import 'package:localsend_app/provider/file_transfer_provider.dart';
 import 'package:localsend_app/provider/http_provider.dart';
+import 'package:localsend_app/provider/network/relay_send_authenticator.dart';
 import 'package:localsend_app/provider/selection/selected_sending_files_provider.dart';
 import 'package:localsend_app/provider/settings_provider.dart';
 import 'package:localsend_app/widget/dialogs/pin_dialog.dart';
@@ -93,6 +94,15 @@ class SendNotifier extends Notifier<Map<String, SendSessionState>> {
     // Pinned to the device the user picked, so the request is not sent at all
     // if someone else answers on that address.
     final client = ref.read(httpProvider).pinnedTo(target.fingerprint);
+    final relayAuthenticator = RelaySendAttemptAuthenticator(log: _logger.info);
+    await relayAuthenticator.authenticate(
+      protocol: target.getProtocolType(),
+      attempt: () => client.authenticateRelayServer(
+        protocol: target.getProtocolType(),
+        ip: target.ip!,
+        port: target.port,
+      ),
+    );
     final sessionId = _uuid.v4();
     final createChecksums = ref.read(settingsProvider).createChecksums;
 
