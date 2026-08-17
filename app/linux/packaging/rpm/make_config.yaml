@@ -1,9 +1,9 @@
 display_name: Relay
-packager: Tienisto
-packagerEmail: dev.tien.donam@gmail.com
-url: https://localsend.org
+packager: Aritra Saha
+packagerEmail: aritrasab@gmail.com
+url: https://github.com/localsend/localsend
 buildArch: x86_64
-license: MIT
+license: Apache-2.0
 
 icon: assets/img/relay-icon-linux-512.png
 
@@ -16,7 +16,7 @@ keywords:
   - LAN
   - Files
 
-generic_name: An open source cross-platform alternative to AirDrop
+generic_name: Share files across your devices over the local network
 summary: Share files easily with Relay
 group: Applications/Utilities
 

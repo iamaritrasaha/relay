@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:localsend_app/config/relay_brand.dart';
 import 'package:routerino/routerino.dart';
 
 class CustomBottomSheet extends StatelessWidget {
@@ -16,8 +17,8 @@ class CustomBottomSheet extends StatelessWidget {
     return RouterinoBottomSheet(
       title: title,
       description: description,
-      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
-      borderRadius: 20,
+      backgroundColor: Theme.of(context).relayPalette.elevated,
+      borderRadius: 22,
       child: child,
     );
   }

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:localsend_app/config/theme.dart';
 import 'package:localsend_app/gen/strings.g.dart';
+import 'package:localsend_app/widget/relay/relay_dialog.dart';
 import 'package:nanoid2/nanoid2.dart';
 import 'package:routerino/routerino.dart';
 
@@ -33,9 +34,21 @@ class _PinDialogState extends State<PinDialog> {
 
   @override
   Widget build(BuildContext context) {
-    return AlertDialog(
-      title: Text(t.dialogs.pin.title),
-      content: Column(
+    return RelayDialog(
+      title: t.dialogs.pin.title,
+      actions: [
+        TextButton(
+          style: relayQuietButtonStyle(context),
+          onPressed: () => context.pop(),
+          child: Text(t.general.cancel),
+        ),
+        FilledButton(
+          style: relayPrimaryButtonStyle(context),
+          onPressed: () => context.pop(_textController.text),
+          child: Text(t.general.confirm),
+        ),
+      ],
+      child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
           TextFormField(
@@ -54,16 +67,6 @@ class _PinDialogState extends State<PinDialog> {
             ),
         ],
       ),
-      actions: [
-        TextButton(
-          onPressed: () => context.pop(),
-          child: Text(t.general.cancel),
-        ),
-        FilledButton(
-          onPressed: () => context.pop(_textController.text),
-          child: Text(t.general.confirm),
-        ),
-      ],
     );
   }
 }

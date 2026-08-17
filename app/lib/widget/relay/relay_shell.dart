@@ -1,16 +1,27 @@
 import 'package:flutter/material.dart';
+import 'package:localsend_app/config/relay_brand.dart';
 import 'package:localsend_app/pages/relay_home_vm.dart';
 import 'package:localsend_app/widget/relay/nearby_stage.dart';
 import 'package:localsend_app/widget/relay/payload_dock.dart';
+import 'package:localsend_app/widget/relay/relay_desktop_metrics.dart';
+import 'package:localsend_app/widget/relay/relay_top_bar.dart';
 import 'package:localsend_app/widget/relay/self_identity_block.dart';
 import 'package:localsend_app/widget/relay_symbol.dart';
 
+/// Relay's Home surface.
+///
+/// Desktop is composed as three regions with fixed jobs — a quiet identity bar,
+/// the nearby field which owns all the vertical slack, and the payload dock
+/// anchored at the bottom. Narrow windows (and therefore phones) fall back to
+/// the scrolling column composition through the same width breakpoint the rest
+/// of the app uses.
 class RelayShell extends StatelessWidget {
   final RelayHomeVm vm;
   final bool animationsEnabled;
   final ValueChanged<String>? onDeviceTap;
   final VoidCallback onSelectPayload;
   final VoidCallback? onClearPayload;
+  final VoidCallback? onCancelTransfer;
   final VoidCallback? onOpenHistory;
   final VoidCallback? onOpenSettings;
 
@@ -19,6 +30,7 @@ class RelayShell extends StatelessWidget {
     required this.animationsEnabled,
     required this.onSelectPayload,
     this.onClearPayload,
+    this.onCancelTransfer,
     this.onDeviceTap,
     this.onOpenHistory,
     this.onOpenSettings,
@@ -31,103 +43,198 @@ class RelayShell extends StatelessWidget {
       body: SafeArea(
         child: LayoutBuilder(
           builder: (context, constraints) {
-            final compact = constraints.maxHeight < 720 || constraints.maxWidth < 600;
-            final mobile = constraints.maxWidth < 600;
-            return Align(
-              alignment: Alignment.topCenter,
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 980),
-                child: SingleChildScrollView(
-                  padding: EdgeInsets.fromLTRB(mobile ? 22 : 40, mobile ? 20 : 32, mobile ? 22 : 40, mobile ? 28 : 42),
-                  child: Column(
-                    children: [
-                      _RelayHeader(
-                        alias: vm.selfAlias,
-                        presence: vm.presence,
-                        onOpenHistory: onOpenHistory,
-                        onOpenSettings: onOpenSettings,
-                      ),
-                      SizedBox(height: compact ? 35 : 58),
-                      NearbyStage(
-                        devices: vm.devices,
-                        animationsEnabled: animationsEnabled,
-                        payloadSelected: !vm.selection.isEmpty,
-                        onDeviceTap: vm.intents.canChooseTarget ? (device) => onDeviceTap?.call(device.key) : null,
-                      ),
-                      SizedBox(height: compact ? 25 : 34),
-                      PayloadDock(selection: vm.selection, onSelect: onSelectPayload, onClear: onClearPayload),
-                    ],
-                  ),
+            final desktop = RelayDesktopMetrics.isDesktopWidth(constraints.maxWidth);
+            final metrics = RelayDesktopMetrics.resolve(constraints.biggest);
+            return Column(
+              children: [
+                RelayTopBar.brand(
+                  horizontalInset: desktop ? metrics.topBarInset : 12,
+                  wordmark: const _Wordmark(),
+                  presence: SelfIdentityBlock(alias: vm.selfAlias, presence: vm.presence),
+                  actions: [
+                    RelayTopBarAction(
+                      key: const ValueKey('relay-history-button'),
+                      icon: Icons.history_rounded,
+                      tooltip: 'History',
+                      onPressed: onOpenHistory,
+                    ),
+                    RelayTopBarAction(
+                      key: const ValueKey('relay-settings-button'),
+                      icon: Icons.tune_rounded,
+                      tooltip: 'Settings',
+                      onPressed: onOpenSettings,
+                    ),
+                  ],
                 ),
-              ),
+                Expanded(
+                  child: desktop ? _DesktopBody(shell: this, metrics: metrics) : _MobileBody(shell: this),
+                ),
+              ],
             );
           },
         ),
       ),
     );
   }
+
+  String get _fieldMeta {
+    final transfer = vm.activeTransfer;
+    if (transfer != null) {
+      return 'Sending to ${transfer.targetAlias}';
+    }
+    if (vm.devices.isEmpty) {
+      return switch (vm.presence) {
+        RelayPresence.offline => 'Not listening',
+        RelayPresence.discovering => 'Looking for devices',
+        RelayPresence.ready => 'Listening on this network',
+      };
+    }
+    return '${vm.devices.length} ${vm.devices.length == 1 ? 'device' : 'devices'}';
+  }
+
+  Widget _stage({required bool compact, RelayResponsiveMetrics? metrics}) => NearbyStage(
+    devices: vm.devices,
+    selfDeviceType: vm.selfDeviceType,
+    animationsEnabled: animationsEnabled,
+    payloadSelected: !vm.selection.isEmpty,
+    compact: compact,
+    metrics: metrics,
+    onDeviceTap: vm.intents.canChooseTarget ? (device) => onDeviceTap?.call(device.key) : null,
+  );
+
+  Widget _dock({required bool compact, RelayResponsiveMetrics? metrics}) => PayloadDock(
+    selection: vm.selection,
+    transfer: vm.activeTransfer,
+    compact: compact,
+    metrics: metrics,
+    onSelect: onSelectPayload,
+    onClear: vm.selection.isEmpty ? null : onClearPayload,
+    onCancelTransfer: vm.activeTransfer == null ? null : onCancelTransfer,
+  );
 }
 
-class _RelayHeader extends StatelessWidget {
-  final String alias;
-  final RelayPresence presence;
-  final VoidCallback? onOpenHistory;
-  final VoidCallback? onOpenSettings;
-
-  const _RelayHeader({required this.alias, required this.presence, this.onOpenHistory, this.onOpenSettings});
+class _Wordmark extends StatelessWidget {
+  const _Wordmark();
 
   @override
   Widget build(BuildContext context) {
-    final wordmark = Row(
+    final palette = Theme.of(context).relayPalette;
+    return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        const RelaySymbol(size: 29),
-        const SizedBox(width: 10),
-        Text('Relay', style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w600)),
-      ],
-    );
-    final actions = Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Tooltip(
-          message: 'History',
-          child: IconButton(key: const ValueKey('relay-history-button'), onPressed: onOpenHistory, icon: const Icon(Icons.history_outlined)),
-        ),
-        const SizedBox(width: 4),
-        Tooltip(
-          message: 'Settings',
-          child: IconButton(key: const ValueKey('relay-settings-button'), onPressed: onOpenSettings, icon: const Icon(Icons.tune_rounded)),
+        const RelaySymbol(size: 22),
+        const SizedBox(width: 11),
+        Flexible(
+          child: Text(
+            RelayProduct.name,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(fontSize: 16, height: 1.2, fontWeight: FontWeight.w600, color: palette.textPrimary),
+          ),
         ),
       ],
     );
+  }
+}
+
+class _DesktopBody extends StatelessWidget {
+  final RelayShell shell;
+  final RelayResponsiveMetrics metrics;
+
+  const _DesktopBody({required this.shell, required this.metrics});
+
+  @override
+  Widget build(BuildContext context) {
     return LayoutBuilder(
       builder: (context, constraints) {
-        if (constraints.maxWidth < 500) {
-          return Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(children: [wordmark, const Spacer(), actions]),
-              const SizedBox(height: 10),
-              SelfIdentityBlock(alias: alias, presence: presence),
-            ],
-          );
-        }
-        return Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+        final frameWidth = constraints.maxWidth - metrics.horizontalGutter * 2;
+        return Center(
+          child: SizedBox(
+            width: frameWidth.clamp(0, metrics.maxContentWidth),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                wordmark,
-                const SizedBox(height: 9),
-                SelfIdentityBlock(alias: alias, presence: presence),
+                Padding(
+                  padding: EdgeInsets.fromLTRB(0, metrics.headingTopSpacing, 0, metrics.headingBottomSpacing),
+                  child: _FieldHeading(meta: shell._fieldMeta),
+                ),
+                Expanded(child: shell._stage(compact: false, metrics: metrics)),
+                Padding(
+                  padding: EdgeInsets.only(top: 20, bottom: metrics.dockBottomSpacing),
+                  child: Align(
+                    child: ConstrainedBox(
+                      constraints: BoxConstraints(maxWidth: metrics.payloadDockMaxWidth),
+                      child: shell._dock(compact: false, metrics: metrics),
+                    ),
+                  ),
+                ),
               ],
             ),
-            const Spacer(),
-            Padding(padding: const EdgeInsets.only(top: 3), child: actions),
-          ],
+          ),
         );
       },
+    );
+  }
+}
+
+/// Mobile-native composition: the nearby field owns the scrollable space and
+/// the transforming payload control stays in the lower thumb zone.
+class _MobileBody extends StatelessWidget {
+  final RelayShell shell;
+
+  const _MobileBody({required this.shell});
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        Expanded(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(RelayDesktopMetrics.compactGutter, 18, RelayDesktopMetrics.compactGutter, 8),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Padding(
+                  padding: const EdgeInsets.only(top: 6, bottom: 12),
+                  child: _FieldHeading(meta: shell._fieldMeta),
+                ),
+                Expanded(child: shell._stage(compact: true)),
+              ],
+            ),
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(RelayDesktopMetrics.compactGutter, 8, RelayDesktopMetrics.compactGutter, 14),
+          child: SizedBox(width: double.infinity, child: shell._dock(compact: true)),
+        ),
+      ],
+    );
+  }
+}
+
+class _FieldHeading extends StatelessWidget {
+  final String meta;
+
+  const _FieldHeading({required this.meta});
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = Theme.of(context).relayPalette;
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.end,
+      children: [
+        Text('NEARBY', style: RelayTypography.section(palette.textSecondary)),
+        const SizedBox(width: 24),
+        Expanded(
+          child: Text(
+            meta,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            textAlign: TextAlign.end,
+            style: TextStyle(fontSize: 12.5, color: palette.textTertiary),
+          ),
+        ),
+      ],
     );
   }
 }

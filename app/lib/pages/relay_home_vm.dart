@@ -27,6 +27,18 @@ class RelayPayloadVm {
   bool get isEmpty => fileCount == 0;
 }
 
+/// The one in-flight send the payload dock reports on.
+///
+/// Everything here is read off the existing send session state — the dock does
+/// not introduce any transfer information the model does not already expose.
+class RelayTransferVm {
+  final String sessionId;
+  final String targetAlias;
+  final double? progress;
+
+  const RelayTransferVm({required this.sessionId, required this.targetAlias, required this.progress});
+}
+
 class RelayIncomingVm {
   final bool hasActiveRequest;
 
@@ -51,6 +63,7 @@ class RelayHomeVm {
   final List<RelayDeviceVm> devices;
   final RelayIncomingVm incoming;
   final RelayHomeIntents intents;
+  final RelayTransferVm? activeTransfer;
 
   const RelayHomeVm({
     required this.selfAlias,
@@ -60,6 +73,7 @@ class RelayHomeVm {
     required this.devices,
     required this.incoming,
     required this.intents,
+    this.activeTransfer,
   });
 
   factory RelayHomeVm.fromState({
@@ -102,7 +116,26 @@ class RelayHomeVm {
       devices: devices,
       incoming: RelayIncomingVm(hasActiveRequest: server?.session != null),
       intents: RelayHomeIntents(canSelectPayload: true, canChooseTarget: !selection.isEmpty),
+      activeTransfer: _activeTransfer(sendSessions: sendSessions, transfers: transfers),
     );
+  }
+
+  static RelayTransferVm? _activeTransfer({
+    required Map<String, SendSessionState> sendSessions,
+    required FileTransferNotifier transfers,
+  }) {
+    for (final session in sendSessions.values) {
+      final hasTransferFailure = transfers.getStatuses(session.sessionId).contains(FileStatus.failed);
+      final phase = _phaseFor(session, hasTransferFailure);
+      if (phase == RelayDevicePhase.sending || phase == RelayDevicePhase.waiting || phase == RelayDevicePhase.verifying) {
+        return RelayTransferVm(
+          sessionId: session.sessionId,
+          targetAlias: session.target.alias,
+          progress: phase == RelayDevicePhase.sending ? _progressFor(session, transfers) : null,
+        );
+      }
+    }
+    return null;
   }
 
   static RelayDeviceVm _deviceVm({

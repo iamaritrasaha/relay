@@ -5,9 +5,11 @@ import 'package:localsend_app/config/theme.dart';
 import 'package:localsend_app/model/persistence/color_mode.dart';
 import 'package:localsend_app/model/ui/relay_device_vm.dart';
 import 'package:localsend_app/pages/relay_home_vm.dart';
-import 'package:localsend_app/pages/tabs/settings_tab.dart';
+import 'package:localsend_app/widget/relay/relay_desktop_metrics.dart';
 import 'package:localsend_app/widget/relay/relay_device_silhouette.dart';
+import 'package:localsend_app/widget/relay/relay_settings_primitives.dart';
 import 'package:localsend_app/widget/relay/relay_shell.dart';
+import 'package:localsend_app/widget/relay/relay_top_bar.dart';
 import 'package:localsend_app/widget/relay_components.dart';
 import 'package:localsend_app/widget/relay_logo.dart';
 import 'package:localsend_isolates/model/device.dart';
@@ -157,40 +159,40 @@ class _SettingsReview extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    Widget section(String title, List<Widget> rows) => RelayGroupedSurface(
-      child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [RelaySectionHeading(title), const SizedBox(height: 12), ...rows]),
-    );
-    Widget row(String label, [String? value]) => Padding(
-      padding: const EdgeInsets.symmetric(vertical: 8),
-      child: Row(
-        children: [
-          Expanded(child: Text(label)),
-          if (value != null) Text(value, style: RelayTypography.value(Theme.of(context).relayPalette.textSecondary)),
-        ],
-      ),
-    );
     return Scaffold(
       body: SafeArea(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.all(28),
-          child: Center(
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 1080),
-              child: RelaySettingsLayout(
-                header: [
-                  Text('Settings', style: RelayTypography.pageTitle(Theme.of(context).relayPalette.textPrimary)),
-                  const SizedBox(height: 22),
-                ],
-                sections: [
-                  section('General', [row('Device', 'Aritra’s Linux'), row('Receiving', 'Ready')]),
-                  section('Appearance', [row('Theme', 'Dark'), row('Animations', 'On')]),
-                  section('Sharing', [row('Save location', 'Downloads'), row('Verification', 'On')]),
-                  section('Advanced', [row('Network'), row('Diagnostics'), row('About Relay')]),
-                ],
-                footer: const [SizedBox(height: 28)],
+        child: Column(
+          children: [
+            RelayTopBar.titled(title: 'Settings', onBack: () {}),
+            Expanded(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.all(28),
+                child: Center(
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: RelayDesktopMetrics.settingsFrameWidth),
+                    child: RelaySettingsColumns(
+                      groups: [
+                        RelaySettingsGroup(
+                          title: 'General',
+                          children: [
+                            RelayNavigationEntry(label: 'Language', value: 'English', onTap: () {}),
+                            RelayBooleanEntry(label: 'Animations', value: true, onChanged: (_) {}),
+                          ],
+                        ),
+                        RelaySettingsGroup(
+                          title: 'Receiving',
+                          children: [
+                            RelayNavigationEntry(label: 'Save to', value: 'Downloads', onTap: () {}),
+                            RelayBooleanEntry(label: 'Require a PIN', value: false, onChanged: (_) {}),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
               ),
             ),
-          ),
+          ],
         ),
       ),
     );
@@ -217,7 +219,9 @@ class _AboutReview extends StatelessWidget {
                   children: [
                     const RelayLogo(withText: true, symbolSize: 100),
                     const SizedBox(height: 18),
-                    Text('Version 1.0.0 (1)', style: RelayTypography.value(palette.textSecondary)),
+                    Text('Version 0.1.0', style: RelayTypography.value(palette.textSecondary)),
+                    const SizedBox(height: 3),
+                    Text('Build 62', style: RelayTypography.legal(palette.textSecondary)),
                     const SizedBox(height: 12),
                     Text(RelayProduct.copyright, style: RelayTypography.legal(palette.textSecondary)),
                     const SizedBox(height: 18),

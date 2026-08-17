@@ -8,15 +8,18 @@ class RelayProgressRing extends StatelessWidget {
   final double size;
   final RelayDevicePhase phase;
   final double? progress;
-  final Widget child;
+
+  /// Optional content centred inside the ring. Relay's medallions draw the ring
+  /// as an overlay *around* the device instead, so it is usually null.
+  final Widget? child;
   final bool animationsEnabled;
 
   const RelayProgressRing({
     required this.size,
     required this.phase,
     required this.progress,
-    required this.child,
     required this.animationsEnabled,
+    this.child,
     super.key,
   });
 
@@ -37,7 +40,7 @@ class RelayProgressRing extends StatelessWidget {
           trackColor: colors.outlineVariant.withValues(alpha: 0.45),
           accentColor: phase == RelayDevicePhase.success ? colors.tertiary : colors.primary,
         ),
-        child: Center(child: child),
+        child: child == null ? null : Center(child: child),
       ),
     );
     if (targetProgress == null) {

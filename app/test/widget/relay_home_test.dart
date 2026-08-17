@@ -95,31 +95,38 @@ void main() {
     selectedFiles: files,
   );
 
-  Widget app(RelayHomeVm relayVm, Size size, {bool animationsEnabled = false}) => MediaQuery(
-    data: MediaQueryData(size: size),
-    child: MaterialApp(
-      theme: ThemeData.dark(useMaterial3: true),
-      home: RelayShell(vm: relayVm, animationsEnabled: animationsEnabled, onSelectPayload: () {}),
-    ),
+  Widget app(RelayHomeVm relayVm, {bool animationsEnabled = false}) => MaterialApp(
+    theme: ThemeData.dark(useMaterial3: true),
+    home: RelayShell(vm: relayVm, animationsEnabled: animationsEnabled, onSelectPayload: () {}),
   );
 
-  testWidgets('self alias renders', (tester) async {
-    await tester.pumpWidget(app(vm(), const Size(1280, 800)));
+  /// The shell reads its own constraints, so the surface has to be sized for
+  /// real rather than through a MediaQuery override.
+  Future<void> pump(WidgetTester tester, RelayHomeVm relayVm, Size size, {bool animationsEnabled = false}) async {
+    tester.view.physicalSize = size;
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    await tester.pumpWidget(app(relayVm, animationsEnabled: animationsEnabled));
+    await tester.pumpAndSettle();
+  }
 
-    expect(find.byKey(const ValueKey('relay-self-alias')), findsOneWidget);
-    expect(find.text('My Linux'), findsOneWidget);
-    expect(find.text('Offline'), findsOneWidget);
+  testWidgets('self alias renders', (tester) async {
+    await pump(tester, vm(), const Size(1280, 800));
+
+    // Presence and alias are one rich line, so match the rendered string.
+    final identity = tester.widget<Text>(find.byKey(const ValueKey('relay-self-alias')));
+    expect(identity.textSpan!.toPlainText(), 'Offline as My Linux');
   });
 
   testWidgets('nearby device renders with its stable key', (tester) async {
-    await tester.pumpWidget(app(vm(), const Size(1280, 800)));
+    await pump(tester, vm(), const Size(1280, 800));
 
     expect(find.byKey(const ValueKey('relay-device-pixel-fingerprint')), findsOneWidget);
     expect(find.text('Pixel'), findsOneWidget);
   });
 
   testWidgets('Relay home contains no HTTP or HTTPS jargon', (tester) async {
-    await tester.pumpWidget(app(vm(), const Size(1280, 800)));
+    await pump(tester, vm(), const Size(1280, 800));
 
     expect(find.text('HTTP'), findsNothing);
     expect(find.text('HTTPS'), findsNothing);
@@ -157,7 +164,7 @@ void main() {
   });
 
   testWidgets('selected payload summary renders', (tester) async {
-    await tester.pumpWidget(app(vm(files: [selectedFile(), selectedFile(), selectedFile()]), const Size(1280, 800)));
+    await pump(tester, vm(files: [selectedFile(), selectedFile(), selectedFile()]), const Size(1280, 800));
 
     expect(find.byKey(const ValueKey('relay-payload-summary')), findsOneWidget);
     expect(find.text('3 files · 36.0 MB'), findsOneWidget);
@@ -165,16 +172,14 @@ void main() {
   });
 
   testWidgets('animation-disabled rendering settles', (tester) async {
-    await tester.pumpWidget(app(vm(), const Size(1280, 800), animationsEnabled: false));
-    await tester.pumpAndSettle();
+    await pump(tester, vm(), const Size(1280, 800));
 
     expect(tester.takeException(), isNull);
   });
 
   for (final size in [const Size(1280, 800), const Size(900, 700), const Size(360, 740)]) {
     testWidgets('Relay home has no overflow at ${size.width.toInt()}x${size.height.toInt()}', (tester) async {
-      await tester.pumpWidget(app(vm(), size));
-      await tester.pumpAndSettle();
+      await pump(tester, vm(), size);
 
       expect(tester.takeException(), isNull);
     });

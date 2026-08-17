@@ -2,21 +2,20 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:localsend_app/config/relay_brand.dart';
 import 'package:localsend_app/config/theme.dart';
 import 'package:localsend_app/gen/strings.g.dart';
-import 'package:localsend_app/model/persistence/color_mode.dart';
 import 'package:localsend_app/pages/receive_options_page.dart';
 import 'package:localsend_app/pages/verify_page.dart';
 import 'package:localsend_app/pages/web_share_page.dart';
 import 'package:localsend_app/provider/favorites_provider.dart';
 import 'package:localsend_app/provider/selection/selected_receiving_files_provider.dart';
-import 'package:localsend_app/provider/settings_provider.dart';
-import 'package:localsend_app/util/device_type_ext.dart';
 import 'package:localsend_app/util/favorites.dart';
 import 'package:localsend_app/util/native/platform_check.dart';
 import 'package:localsend_app/util/native/taskbar_helper.dart';
 import 'package:localsend_app/util/ui/snackbar.dart';
-import 'package:localsend_app/widget/device_bage.dart';
+import 'package:localsend_app/widget/relay/relay_device_silhouette.dart';
+import 'package:localsend_app/widget/relay/relay_dialog.dart';
 import 'package:localsend_app/widget/responsive_list_view.dart';
 import 'package:localsend_isolates/model/device.dart';
 import 'package:localsend_isolates/model/dto/file_dto.dart';
@@ -117,18 +116,33 @@ class _ReceivePageState extends State<ReceivePage> with Refena {
                                       if (vm.showSenderInfo && !smallUi)
                                         Padding(
                                           padding: const EdgeInsets.only(bottom: 10),
-                                          child: Icon(vm.sender.deviceType.icon, size: 64),
+                                          child: Container(
+                                            width: smallUi ? 68 : 88,
+                                            height: smallUi ? 68 : 88,
+                                            decoration: BoxDecoration(
+                                              shape: BoxShape.circle,
+                                              color: Theme.of(context).relayPalette.elevated,
+                                              border: Border.all(color: Theme.of(context).relayPalette.hairline),
+                                            ),
+                                            child: Center(
+                                              child: RelayDeviceSilhouette(
+                                                deviceType: vm.sender.deviceType,
+                                                color: Theme.of(context).relayPalette.accentSoft,
+                                                size: smallUi ? 32 : 40,
+                                              ),
+                                            ),
+                                          ),
                                         ),
                                       Builder(
                                         builder: (context) {
                                           final alias = senderFavoriteEntry?.alias ?? vm.sender.alias;
                                           if (alias.isEmpty) {
-                                            return Text('', style: TextStyle(fontSize: smallUi ? 32 : 48));
+                                            return Text('', style: TextStyle(fontSize: smallUi ? 26 : 34));
                                           }
                                           return FittedBox(
                                             child: Text(
                                               alias,
-                                              style: TextStyle(fontSize: smallUi ? 32 : 48),
+                                              style: TextStyle(fontSize: smallUi ? 26 : 34, fontWeight: FontWeight.w600),
                                               textAlign: TextAlign.center,
                                             ),
                                           );
@@ -137,10 +151,9 @@ class _ReceivePageState extends State<ReceivePage> with Refena {
                                       if (vm.showSenderInfo && vm.sender.deviceModel != null) ...[
                                         const SizedBox(height: 10),
                                         Center(
-                                          child: DeviceBadge(
-                                            backgroundColor: Theme.of(context).colorScheme.onSecondaryContainer,
-                                            foregroundColor: Theme.of(context).colorScheme.onInverseSurface,
-                                            label: vm.sender.deviceModel!,
+                                          child: Text(
+                                            vm.sender.deviceModel!,
+                                            style: TextStyle(fontSize: 12.5, color: Theme.of(context).relayPalette.textTertiary),
                                           ),
                                         ),
                                       ],
@@ -197,7 +210,12 @@ class _ReceivePageState extends State<ReceivePage> with Refena {
                                               padding: const EdgeInsets.only(top: 20),
                                               child: SizedBox(
                                                 height: 100,
-                                                child: Card(
+                                                child: Material(
+                                                  color: Theme.of(context).relayPalette.softSurface,
+                                                  shape: RoundedRectangleBorder(
+                                                    borderRadius: BorderRadius.circular(12),
+                                                    side: BorderSide(color: Theme.of(context).relayPalette.hairline),
+                                                  ),
                                                   child: SingleChildScrollView(
                                                     child: Padding(
                                                       padding: const EdgeInsets.all(10),
@@ -287,7 +305,7 @@ class _Actions extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final selectedFiles = context.watch(selectedReceivingFilesProvider);
-    final colorMode = context.watch(settingsProvider.select((state) => state.colorMode));
+    final palette = Theme.of(context).relayPalette;
 
     if (vm.message != null) {
       return Center(
@@ -336,11 +354,7 @@ class _Actions extends StatelessWidget {
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             ElevatedButton.icon(
-              style: ElevatedButton.styleFrom(
-                elevation: colorMode == ColorMode.yaru ? 0 : null,
-                backgroundColor: colorMode == ColorMode.yaru ? Theme.of(context).colorScheme.surface : Theme.of(context).colorScheme.error,
-                foregroundColor: colorMode == ColorMode.yaru ? Theme.of(context).colorScheme.onSurface : Theme.of(context).colorScheme.onError,
-              ),
+              style: ElevatedButton.styleFrom(elevation: 0, backgroundColor: palette.softSurface, foregroundColor: palette.textPrimary),
               onPressed: () {
                 vm.onDecline();
                 context.global.dispatch(NavigateAction.popUntil<WebSharePage>());
@@ -349,11 +363,8 @@ class _Actions extends StatelessWidget {
               label: Text(t.general.decline),
             ),
             const SizedBox(width: 20),
-            ElevatedButton.icon(
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Theme.of(context).colorScheme.primary,
-                foregroundColor: Theme.of(context).colorScheme.onPrimary,
-              ),
+            FilledButton.icon(
+              style: relayPrimaryButtonStyle(context),
               onPressed: selectedFiles.isEmpty ? null : () => vm.onAccept(),
               icon: const Icon(Icons.check_circle),
               label: Text(t.general.accept),

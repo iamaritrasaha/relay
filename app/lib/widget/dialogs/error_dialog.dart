@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:localsend_app/gen/strings.g.dart';
+import 'package:localsend_app/widget/relay/relay_dialog.dart';
 import 'package:routerino/routerino.dart';
 
 class ErrorDialog extends StatelessWidget {
@@ -9,15 +10,16 @@ class ErrorDialog extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return AlertDialog(
-      title: Text(t.dialogs.errorDialog.title),
-      content: SelectableText(error),
+    return RelayDialog(
+      title: t.dialogs.errorDialog.title,
       actions: [
         TextButton(
+          style: relayQuietButtonStyle(context),
           onPressed: () => context.pop(),
           child: Text(t.general.close),
         ),
       ],
+      child: SelectableText(error),
     );
   }
 }
