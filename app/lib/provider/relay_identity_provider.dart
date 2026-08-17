@@ -2,6 +2,7 @@ import 'package:localsend_app/provider/persistence_provider.dart';
 import 'package:localsend_app/util/security/relay_identity_coordinator.dart';
 import 'package:localsend_app/util/security/relay_identity_metadata_store.dart';
 import 'package:localsend_app/util/security/relay_identity_secret_store_factory.dart';
+import 'package:localsend_app/util/security/relay_server_signer_port.dart';
 import 'package:refena_flutter/refena_flutter.dart';
 
 /// Lazily composes Relay identity recovery. It is intentionally not tied to UI
@@ -11,5 +12,6 @@ final relayIdentityCoordinatorProvider = Provider<RelayIdentityCoordinator>((ref
     secureStore: createRelayIdentitySecretStore(),
     identityApi: RustRelayIdentityApi(),
     metadataStore: PersistenceRelayIdentityMetadataStore(ref.read(persistenceProvider)),
+    signerPort: IsolateRelayServerSignerPort(ref),
   );
 });

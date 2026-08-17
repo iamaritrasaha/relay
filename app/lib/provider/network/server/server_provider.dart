@@ -7,8 +7,10 @@ import 'package:localsend_app/model/state/server/server_state.dart';
 import 'package:localsend_app/provider/network/server/controller/receive_controller.dart';
 import 'package:localsend_app/provider/network/server/controller/send_controller.dart';
 import 'package:localsend_app/provider/network/server/server_utils.dart';
+import 'package:localsend_app/provider/relay_identity_provider.dart';
 import 'package:localsend_app/provider/settings_provider.dart';
 import 'package:localsend_app/util/alias_generator.dart';
+import 'package:localsend_app/util/security/relay_server_signer_port.dart';
 import 'package:localsend_isolates/constants.dart';
 import 'package:localsend_isolates/isolate.dart';
 import 'package:localsend_isolates/model/dto/multicast_dto.dart';
@@ -70,6 +72,11 @@ class ServerService extends Notifier<ServerState?> {
 
   late final _receiveController = ReceiveController(_serverUtils);
   late final _sendController = SendController(_serverUtils);
+  late final _relaySignerActivation = RelayServerSignerActivationController(
+    activate: () async {
+      await ref.read(relayIdentityCoordinatorProvider).activateSigner();
+    },
+  );
 
   StreamSubscription<HttpServerEvent>? _subscription;
 
@@ -182,6 +189,10 @@ class ServerService extends Notifier<ServerState?> {
           if (!started.isCompleted) {
             started.complete();
           }
+          // The ordinary server is already listening. Relay signer activation
+          // is deliberately non-blocking so secret-store failures never make
+          // normal LocalSend transfers unavailable.
+          unawaited(_relaySignerActivation.onServerStarted());
           return;
         }
         _handleEvent(event);
@@ -226,6 +237,7 @@ class ServerService extends Notifier<ServerState?> {
     await _subscription?.cancel();
     _subscription = null;
     await ref.redux(parentIsolateProvider).dispatchAsync(IsolateHttpServerStopAction());
+    _relaySignerActivation.onServerStopped();
     state = null;
     _logger.info('Server stopped.');
   }
@@ -355,6 +367,10 @@ class ServerService extends Notifier<ServerState?> {
       case HttpServerWebFileDownloadEvent():
         // ignore: discarded_futures
         _sendController.onFileDownload(event);
+      default:
+        // Signer control-plane tasks use their own one-shot streams, so their
+        // result events are not expected on the long-lived server stream.
+        break;
     }
   }
 
