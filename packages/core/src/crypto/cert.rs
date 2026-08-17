@@ -99,10 +99,17 @@ fn verify_cert_from_cert(cert: X509Certificate, public_key: Option<&str>) -> any
 /// Computes the SHA-256 fingerprint of a certificate in DER format.
 /// Encoded as uppercase hex, the format used for LocalSend fingerprints.
 pub fn fingerprint_from_cert_der(cert: &[u8]) -> String {
-    crate::crypto::hash::sha256(cert)
+    fingerprint_digest_from_cert_der(cert)
         .iter()
         .map(|byte| format!("{byte:02X}"))
         .collect()
+}
+
+/// Computes the raw SHA-256 fingerprint of a certificate in DER format.
+pub fn fingerprint_digest_from_cert_der(cert: &[u8]) -> [u8; 32] {
+    crate::crypto::hash::sha256(cert)
+        .try_into()
+        .expect("SHA-256 digest has a fixed length")
 }
 
 /// Extracts the public key from the certificate which is in DER format.

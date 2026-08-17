@@ -5,6 +5,7 @@ use crate::http::dto_v2::{
     PrepareUploadResponseDtoV2, PrepareUploadResultV2, RegisterDtoV2, RegisterResponseDtoV2,
 };
 use crate::model::discovery::ProtocolType;
+use crate::relay::RelayPeerAuth;
 use futures_util::StreamExt;
 use reqwest::{Response, StatusCode};
 use tokio::io::AsyncWriteExt;
@@ -57,6 +58,16 @@ impl LsHttpClientV2 {
             .build()?;
 
         Ok(Self { client })
+    }
+
+    /// Cryptographically authenticates a Relay server proof over HTTPS.
+    pub async fn authenticate_relay_server(
+        &self,
+        protocol: ProtocolType,
+        ip: &str,
+        port: u16,
+    ) -> RelayPeerAuth {
+        super::relay::authenticate_relay_server(&self.client, protocol, ip, port).await
     }
 
     /// Registers with another device for discovery.

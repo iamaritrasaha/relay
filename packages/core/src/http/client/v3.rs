@@ -2,6 +2,7 @@ use super::{ClientError, ResponseExt, ResultWithPublicKey};
 use crate::http;
 use crate::http::client::url::{ApiVersion, TargetUrl};
 use crate::model::discovery::ProtocolType;
+use crate::relay::RelayPeerAuth;
 use crate::{crypto, util};
 use lru::LruCache;
 use reqwest::{Response, StatusCode};
@@ -36,6 +37,16 @@ impl LsHttpClientV3 {
                 NonZeroUsize::new(200).unwrap(),
             ))),
         })
+    }
+
+    /// Cryptographically authenticates a Relay server proof over HTTPS.
+    pub async fn authenticate_relay_server(
+        &self,
+        protocol: ProtocolType,
+        ip: &str,
+        port: u16,
+    ) -> RelayPeerAuth {
+        super::relay::authenticate_relay_server(&self.client, protocol, ip, port).await
     }
 
     pub async fn nonce(
