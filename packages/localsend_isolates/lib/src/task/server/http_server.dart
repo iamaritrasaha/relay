@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 import 'package:localsend_isolates/rust/api/model.dart';
 import 'package:localsend_isolates/rust/api/server.dart';
 import 'package:refena_flutter/refena_flutter.dart';
@@ -10,6 +12,23 @@ class HttpServerService {
   RsHttpServer? _server;
 
   bool get running => _server != null;
+
+  /// Installs the Relay proof signer on the currently running Rust server.
+  /// The service does not retain [privateKey].
+  Future<String> installRelaySigner({
+    required Uint8List privateKey,
+    required String expectedRelayId,
+  }) {
+    return _requireServer().installRelaySigner(
+      privateKey: privateKey,
+      expectedRelayId: expectedRelayId,
+    );
+  }
+
+  /// Revokes the Relay proof signer from the currently running Rust server.
+  Future<bool> revokeRelaySigner() {
+    return _requireServer().revokeRelaySigner();
+  }
 
   /// Starts the server and returns the stream of server events.
   /// The stream ends when the server is stopped.

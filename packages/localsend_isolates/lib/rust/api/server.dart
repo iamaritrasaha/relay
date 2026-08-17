@@ -76,6 +76,13 @@ abstract class RsHttpServer implements RustOpaqueInterface {
   /// as failed. Does nothing if the upload was already answered.
   Future<void> failFileUpload({required String sessionId, required String fileId});
 
+  /// Installs the running server's Relay proof signer from a PKCS#8 PEM
+  /// private key.
+  ///
+  /// The core server owns the signer lifecycle and wipes this input buffer
+  /// on every return path. Only the derived public RelayId is returned.
+  Future<String> installRelaySigner({required List<int> privateKey, required String expectedRelayId});
+
   /// Emits server events until the server is stopped.
   /// Can only be listened to once.
   ///
@@ -116,6 +123,11 @@ abstract class RsHttpServer implements RustOpaqueInterface {
   /// Passing the accepted file IDs (a subset of the offered files) accepts the request.
   /// Passing `None` declines the request.
   Future<void> respondPrepareUpload({List<String>? acceptedFileIds});
+
+  /// Revokes the running server's Relay proof signer.
+  ///
+  /// Returns whether a signer was installed.
+  Future<bool> revokeRelaySigner();
 
   /// Stops the server.
   /// Returns after the listeners are closed, so the port can be bound again.

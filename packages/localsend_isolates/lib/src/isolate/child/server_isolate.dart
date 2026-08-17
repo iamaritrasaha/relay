@@ -54,6 +54,27 @@ class HttpServerStartTask implements BaseHttpServerTask {
 /// The stream of this task completes once the server has released the port.
 class HttpServerStopTask implements BaseHttpServerTask {}
 
+/// Installs a Relay proof signer on the currently running HTTP server.
+///
+/// This is a one-shot control-plane command. Its private key is never added
+/// to [SyncState] or retained after the command finishes.
+class HttpServerInstallRelaySignerTask implements BaseHttpServerTask {
+  final Uint8List privateKey;
+  final String expectedRelayId;
+
+  HttpServerInstallRelaySignerTask({
+    required this.privateKey,
+    required this.expectedRelayId,
+  });
+
+  @override
+  String toString() => 'HttpServerInstallRelaySignerTask(expectedRelayId: $expectedRelayId, privateKey: <redacted>)';
+}
+
+/// Revokes the Relay proof signer from the currently running HTTP server.
+/// This is a one-shot control-plane command.
+class HttpServerRevokeRelaySignerTask implements BaseHttpServerTask {}
+
 /// Everything the server isolate needs to receive the accepted files on its
 /// own, without further involvement of the main isolate.
 class HttpServerReceiveConfig {
@@ -169,6 +190,41 @@ sealed class HttpServerEvent {}
 /// The server has been started and is listening.
 /// Always the first event emitted by a [HttpServerStartTask].
 class HttpServerStartedEvent extends HttpServerEvent {}
+
+/// The Relay proof signer was installed on the running HTTP server.
+class HttpServerRelaySignerInstalledEvent extends HttpServerEvent {
+  final String relayId;
+
+  HttpServerRelaySignerInstalledEvent({required this.relayId});
+}
+
+/// The Relay proof signer was revoked from the running HTTP server.
+class HttpServerRelaySignerRevokedEvent extends HttpServerEvent {
+  final bool hadSigner;
+
+  HttpServerRelaySignerRevokedEvent({required this.hadSigner});
+}
+
+/// Executes a one-shot Relay signer control-plane task against [service].
+/// The private key is only forwarded for the duration of an install call.
+Future<HttpServerEvent> executeHttpServerRelaySignerTask({
+  required HttpServerService service,
+  required BaseHttpServerTask task,
+}) async {
+  switch (task) {
+    case HttpServerInstallRelaySignerTask(:final privateKey, :final expectedRelayId):
+      final relayId = await service.installRelaySigner(
+        privateKey: privateKey,
+        expectedRelayId: expectedRelayId,
+      );
+      return HttpServerRelaySignerInstalledEvent(relayId: relayId);
+    case HttpServerRevokeRelaySignerTask _:
+      final hadSigner = await service.revokeRelaySigner();
+      return HttpServerRelaySignerRevokedEvent(hadSigner: hadSigner);
+    default:
+      throw ArgumentError.value(task, 'task', 'Not a Relay signer control-plane task');
+  }
+}
 
 /// A device registered itself on this server.
 ///
@@ -548,6 +604,58 @@ Future<void> setupHttpServerIsolate(
               id: task.id,
             ),
           );
+          return;
+        case HttpServerInstallRelaySignerTask installTask:
+          try {
+            final event = await executeHttpServerRelaySignerTask(
+              service: ref.read(httpServerProvider),
+              task: installTask,
+            );
+            sendToMain(
+              IsolateTaskStreamResult.event(
+                id: task.id,
+                data: event,
+              ),
+            );
+            sendToMain(
+              IsolateTaskStreamResult.done(
+                id: task.id,
+              ),
+            );
+          } catch (e) {
+            sendToMain(
+              IsolateTaskStreamResult.error(
+                id: task.id,
+                error: e.humanErrorMessage,
+              ),
+            );
+          }
+          return;
+        case HttpServerRevokeRelaySignerTask _:
+          try {
+            final event = await executeHttpServerRelaySignerTask(
+              service: ref.read(httpServerProvider),
+              task: task.data,
+            );
+            sendToMain(
+              IsolateTaskStreamResult.event(
+                id: task.id,
+                data: event,
+              ),
+            );
+            sendToMain(
+              IsolateTaskStreamResult.done(
+                id: task.id,
+              ),
+            );
+          } catch (e) {
+            sendToMain(
+              IsolateTaskStreamResult.error(
+                id: task.id,
+                error: e.humanErrorMessage,
+              ),
+            );
+          }
           return;
         case HttpServerPrepareUploadDecisionTask decisionTask:
           final config = decisionTask.config;
