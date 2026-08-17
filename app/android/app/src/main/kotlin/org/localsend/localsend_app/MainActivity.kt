@@ -31,6 +31,7 @@ private const val API_LEVEL_ANDROID_17 = 37
 class MainActivity : FlutterActivity() {
     private var pendingResult: MethodChannel.Result? = null
     private var pendingPermissionResult: MethodChannel.Result? = null
+    private lateinit var relayIdentitySecretStore: RelayIdentitySecretStore
 
     /// share_handler drops share intents arriving via onNewIntent while the Dart side
     /// is not subscribed to its media stream yet, which happens when this singleTask
@@ -71,6 +72,7 @@ class MainActivity : FlutterActivity() {
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
+        relayIdentitySecretStore = RelayIdentitySecretStore(applicationContext)
         MethodChannel(
             flutterEngine.dartExecutor.binaryMessenger,
             CHANNEL
@@ -130,6 +132,21 @@ class MainActivity : FlutterActivity() {
                         requestPermissions(arrayOf(PERMISSION_ACCESS_LOCAL_NETWORK), REQUEST_CODE_LOCAL_NETWORK)
                     }
                 }
+
+                "relayIdentitySecretLoad" -> result.success(relayIdentitySecretStore.load().toChannelMap())
+
+                "relayIdentitySecretSave" -> {
+                    val secret = call.argument<ByteArray>("secret")
+                    result.success(
+                        if (secret == null) {
+                            mapOf("state" to "failed")
+                        } else {
+                            relayIdentitySecretStore.save(secret).toChannelMap()
+                        },
+                    )
+                }
+
+                "relayIdentitySecretDelete" -> result.success(relayIdentitySecretStore.delete().toChannelMap())
 
                 else -> result.notImplemented()
             }
@@ -483,6 +500,24 @@ class MainActivity : FlutterActivity() {
         intent.type = "image/*"
         startActivity(intent)
     }
+}
+
+private fun RelayIdentitySecretLoadResult.toChannelMap(): Map<String, Any> = when (this) {
+    is RelayIdentitySecretLoadResult.Found -> mapOf("state" to "found", "secret" to secret)
+    RelayIdentitySecretLoadResult.NotFound -> mapOf("state" to "notFound")
+    RelayIdentitySecretLoadResult.Locked -> mapOf("state" to "locked")
+    RelayIdentitySecretLoadResult.NotAvailable -> mapOf("state" to "notAvailable")
+    RelayIdentitySecretLoadResult.PermissionDenied -> mapOf("state" to "permissionDenied")
+    RelayIdentitySecretLoadResult.Corrupt -> mapOf("state" to "corrupt")
+    RelayIdentitySecretLoadResult.Failed -> mapOf("state" to "failed")
+}
+
+private fun RelayIdentitySecretStoreResult.toChannelMap(): Map<String, String> = when (this) {
+    RelayIdentitySecretStoreResult.Success -> mapOf("state" to "success")
+    RelayIdentitySecretStoreResult.Locked -> mapOf("state" to "locked")
+    RelayIdentitySecretStoreResult.NotAvailable -> mapOf("state" to "notAvailable")
+    RelayIdentitySecretStoreResult.PermissionDenied -> mapOf("state" to "permissionDenied")
+    RelayIdentitySecretStoreResult.Failed -> mapOf("state" to "failed")
 }
 
 data class PickDirectoryResult(
