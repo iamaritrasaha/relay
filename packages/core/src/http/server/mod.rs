@@ -1,6 +1,7 @@
 pub mod common;
 pub mod internal;
 mod peer_ip;
+mod relay;
 pub mod v2;
 pub mod v3;
 pub mod web;
@@ -12,6 +13,7 @@ use crate::http::server::internal::{InternalConfig, InternalState};
 use crate::http::server::v2::ServerEventV2;
 use crate::http::server::web::{WebConfig, WebI18n};
 use crate::http::state::ClientInfo;
+use crate::relay::{RelayProofSigner, RelayTlsContext};
 use common::client_cert_verifier::CustomClientCertVerifier;
 use common::error::AppError;
 use common::response;
@@ -29,7 +31,7 @@ use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
 use std::num::NonZeroUsize;
 use std::ops::Deref;
 use std::sync::Arc;
-use tokio::sync::{mpsc, oneshot, Mutex};
+use tokio::sync::{mpsc, oneshot, Mutex, Semaphore};
 use tokio_util::sync::CancellationToken;
 use tokio_util::task::TaskTracker;
 use web::WebPageState;
@@ -66,6 +68,11 @@ pub(crate) struct V2State {
     pub(crate) pin_attempts: Mutex<LruCache<IpAddr, u32>>,
 }
 
+pub(crate) struct RelayProofState {
+    pub(crate) signer: Option<Arc<dyn RelayProofSigner>>,
+    pub(crate) semaphore: Arc<Semaphore>,
+}
+
 #[derive(Clone)]
 pub struct AppState {
     /// Information about server's device.
@@ -91,6 +98,9 @@ pub struct AppState {
 
     /// State of the v2 protocol endpoints. `None` disables the v2 routes.
     v2: Option<Arc<V2State>>,
+
+    /// State for the TLS-only Relay proof endpoint.
+    pub(crate) relay_proof: Arc<RelayProofState>,
 }
 
 impl AppState {
@@ -99,6 +109,7 @@ impl AppState {
         internal_config: Option<InternalConfig>,
         v2_config: Option<ServerConfigV2>,
         web_config: Option<WebConfig>,
+        relay_proof_signer: Option<Arc<dyn RelayProofSigner>>,
     ) -> Self {
         let v2 = v2_config.map(|config| {
             Arc::new(V2State {
@@ -133,6 +144,10 @@ impl AppState {
                 NonZeroUsize::new(200).unwrap(),
             ))),
             v2,
+            relay_proof: Arc::new(RelayProofState {
+                signer: relay_proof_signer,
+                semaphore: Arc::new(Semaphore::new(4)),
+            }),
         }
     }
 }
@@ -233,13 +248,47 @@ pub async fn start_with_port(
     web_config: Option<WebConfig>,
     stop_rx: oneshot::Receiver<()>,
 ) -> anyhow::Result<ServerHandle> {
+    start_with_port_with_relay_proof_signer(
+        port,
+        tls_config,
+        info,
+        internal_config,
+        v2_config,
+        web_config,
+        None,
+        stop_rx,
+    )
+    .await
+}
+
+/// Starts the server with an optional synchronous Relay proof signer.
+///
+/// The regular application wiring deliberately passes no signer until Phase
+/// 1B3 installs a Rust-resident production signer.
+#[allow(clippy::too_many_arguments)] // Mirrors the established start_with_port API plus test-only signer injection.
+pub async fn start_with_port_with_relay_proof_signer(
+    port: u16,
+    tls_config: Option<TlsConfig>,
+    info: ClientInfo,
+    internal_config: Option<InternalConfig>,
+    v2_config: Option<ServerConfigV2>,
+    web_config: Option<WebConfig>,
+    relay_proof_signer: Option<Arc<dyn RelayProofSigner>>,
+    stop_rx: oneshot::Receiver<()>,
+) -> anyhow::Result<ServerHandle> {
     // Installed before returning, so that a client built right after (which
     // skips the install when a provider exists) does not race the accept task.
     let _ = rustls::crypto::ring::default_provider().install_default();
 
     let ipv4_socket_addr = SocketAddr::new(Ipv4Addr::UNSPECIFIED.into(), port);
     let info = Arc::new(Mutex::new(info));
-    let state = AppState::new(info.clone(), internal_config, v2_config, web_config);
+    let state = AppState::new(
+        info.clone(),
+        internal_config,
+        v2_config,
+        web_config,
+        relay_proof_signer,
+    );
 
     let ipv4_listener = tokio::net::TcpListener::bind(ipv4_socket_addr).await?;
     // With port 0, the IPv6 listener must reuse the port the IPv4 listener got.
@@ -345,7 +394,7 @@ async fn start_server_with_listener(
     // the web pages are served. A certificate that is presented is still verified.
     let mandatory_client_auth = app_state.web.is_none() && !app_state.web_upload;
 
-    let tls_acceptor = match tls_config {
+    let tls_server_config = match tls_config {
         Some(tls_config) => Some(
             create_tls_config(&tls_config, mandatory_client_auth).inspect_err(|err| {
                 tracing::error!("failed to create tls config: {err:#}");
@@ -357,7 +406,7 @@ async fn start_server_with_listener(
     tracing::info!(
         "Started server on {} (TLS: {})",
         incoming.local_addr()?,
-        tls_acceptor.is_some()
+        tls_server_config.is_some()
     );
 
     let mut accept_backoff = ACCEPT_BACKOFF_MIN;
@@ -388,11 +437,11 @@ async fn start_server_with_listener(
             }
         };
 
-        let tls_acceptor = tls_acceptor.clone();
+        let tls_server_config = tls_server_config.clone();
         let app_state = app_state.clone();
         let cancel = cancel.clone();
         connections.spawn(async move {
-            let serve = serve_connection(tcp_stream, remote_addr, tls_acceptor, app_state);
+            let serve = serve_connection(tcp_stream, remote_addr, tls_server_config, app_state);
             tokio::select! {
                 _ = serve => {}
                 // Hard-drop the connection when the server is stopped.
@@ -405,12 +454,12 @@ async fn start_server_with_listener(
 async fn serve_connection(
     tcp_stream: tokio::net::TcpStream,
     remote_addr: SocketAddr,
-    tls_acceptor: Option<tokio_rustls::TlsAcceptor>,
+    tls_server_config: Option<ServerTlsConfig>,
     app_state: AppState,
 ) {
-    let res = match tls_acceptor {
-        Some(tls_acceptor) => {
-            let tls_stream = match tls_acceptor.accept(tcp_stream).await {
+    let res = match tls_server_config {
+        Some(tls_server_config) => {
+            let tls_stream = match tls_server_config.acceptor.accept(tcp_stream).await {
                 Ok(tls_stream) => tls_stream,
                 Err(err) => {
                     tracing::warn!("TLS handshake error: {err:#}");
@@ -418,18 +467,29 @@ async fn serve_connection(
                 }
             };
 
-            let client_info = {
+            let (client_info, tls_context) = {
                 let (_, server_connection) = tls_stream.get_ref();
-                RequestClientInfo {
-                    ip: PeerIp::from_remote_addr(&remote_addr),
-                    // No certificate when client auth is optional (web pages served)
-                    // and the client (e.g. a browser) did not present one.
-                    cert: server_connection
-                        .deref()
-                        .deref()
-                        .peer_certificates()
-                        .and_then(|certs| certs.first().map(|cert| cert.to_vec())),
-                }
+                let client_cert = server_connection
+                    .deref()
+                    .deref()
+                    .peer_certificates()
+                    .and_then(|certs| certs.first().map(|cert| cert.to_vec()));
+                (
+                    RequestClientInfo {
+                        ip: PeerIp::from_remote_addr(&remote_addr),
+                        // No certificate when client auth is optional (web pages served)
+                        // and the client (e.g. a browser) did not present one.
+                        cert: client_cert.clone(),
+                    },
+                    ConnectionTlsCtx {
+                        relay: tls_server_config.relay,
+                        peer_cert_fingerprint: client_cert.map(|cert| {
+                            crate::crypto::hash::sha256(&cert)
+                                .try_into()
+                                .expect("SHA-256 digest has a fixed length")
+                        }),
+                    },
+                )
             };
 
             Builder::new(TokioExecutor::new())
@@ -438,6 +498,8 @@ async fn serve_connection(
                     hyper::service::service_fn(move |mut req: Request<Incoming>| {
                         req.extensions_mut()
                             .insert::<RequestClientInfo>(client_info.clone());
+                        req.extensions_mut()
+                            .insert::<ConnectionTlsCtx>(tls_context.clone());
                         req.extensions_mut().insert::<AppState>(app_state.clone());
                         handle_request(req)
                     }),
@@ -467,22 +529,40 @@ async fn serve_connection(
     }
 }
 
+#[derive(Clone)]
+struct ServerTlsConfig {
+    acceptor: tokio_rustls::TlsAcceptor,
+    relay: RelayTlsContext,
+}
+
 fn create_tls_config(
     tls_config: &TlsConfig,
     mandatory_client_auth: bool,
-) -> anyhow::Result<tokio_rustls::TlsAcceptor> {
+) -> anyhow::Result<ServerTlsConfig> {
     let config = {
         let certs = vec![CertificateDer::from_pem_slice(&tls_config.cert.as_bytes())?];
+        let relay = RelayTlsContext::from_server_certificate_der(certs[0].as_ref());
         let key = PrivateKeyDer::from_pem_slice(&tls_config.private_key.as_bytes())?;
 
-        rustls::ServerConfig::builder()
+        let config = rustls::ServerConfig::builder()
             .with_client_cert_verifier(Arc::new(CustomClientCertVerifier::try_new(
                 &tls_config.cert,
                 mandatory_client_auth,
             )?))
-            .with_single_cert(certs, key)?
+            .with_single_cert(certs, key)?;
+        ServerTlsConfig {
+            acceptor: tokio_rustls::TlsAcceptor::from(Arc::new(config)),
+            relay,
+        }
     };
-    Ok(tokio_rustls::TlsAcceptor::from(Arc::new(config)))
+    Ok(config)
+}
+
+#[derive(Clone)]
+pub(crate) struct ConnectionTlsCtx {
+    pub(crate) relay: RelayTlsContext,
+    #[allow(dead_code)] // Retained for later client-proof authentication.
+    pub(crate) peer_cert_fingerprint: Option<[u8; 32]>,
 }
 
 #[derive(Clone, Debug)]
@@ -597,6 +677,7 @@ async fn handle_request_inner(mut req: Request<Incoming>) -> Result<Response<Box
                 .await?
                 .into_response())
         }
+        (&Method::POST, "/api/relay/v1/proof") => relay::proof(req, state).await,
         _ => {
             let mut res = Response::new(response::empty_body());
             *res.status_mut() = StatusCode::NOT_FOUND;

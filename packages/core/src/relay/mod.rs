@@ -13,14 +13,27 @@ use crate::crypto::relay_identity_proof::{RelayIdentityProofV1, RelayProofRole};
 ///
 /// Production construction is intentionally unavailable until the transport
 /// can bind this context to the actual TLS configuration.
-#[allow(dead_code)] // Constructed by the transport in Phase 1B2b.
+#[derive(Clone)]
+#[allow(dead_code)] // Accessed by production signer implementations in Phase 1B3.
 pub struct RelayTlsContext {
     role: RelayProofRole,
     own_tls_fingerprint: [u8; 32],
 }
 
-#[allow(dead_code)] // Accessed by production signer implementations in Phase 1B2b.
+#[allow(dead_code)] // Accessed by production signer implementations in Phase 1B3.
 impl RelayTlsContext {
+    /// Creates a server context from the exact DER certificate installed into
+    /// the rustls server configuration.
+    pub(crate) fn from_server_certificate_der(certificate_der: &[u8]) -> Self {
+        let own_tls_fingerprint: [u8; 32] = crate::crypto::hash::sha256(certificate_der)
+            .try_into()
+            .expect("SHA-256 digest has a fixed length");
+        Self {
+            role: RelayProofRole::Server,
+            own_tls_fingerprint,
+        }
+    }
+
     pub(crate) fn role(&self) -> RelayProofRole {
         self.role
     }
