@@ -1,4 +1,4 @@
-display_name: LocalSend
+display_name: Relay
 package_name: localsend
 maintainer:
   name: Tienisto
@@ -22,7 +22,7 @@ dependencies:
   - xdg-user-dirs
 
 postinstall_scripts:
-  - echo "Installed Localsend successfully"
+  - echo "Installed Relay successfully"
 postuninstall_scripts:
   - echo "Sorry to see you go :("
 

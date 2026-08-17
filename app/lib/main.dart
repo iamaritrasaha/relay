@@ -75,7 +75,7 @@ class LocalSendApp extends StatelessWidget {
           },
           child: ShortcutWatcher(
             child: MaterialApp(
-              title: t.appName,
+              title: 'Relay',
               locale: TranslationProvider.of(context).flutterLocale,
               supportedLocales: AppLocaleUtils.supportedLocales,
               localizationsDelegates: GlobalMaterialLocalizations.delegates,

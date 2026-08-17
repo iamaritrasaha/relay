@@ -133,7 +133,7 @@ class ServerService extends Notifier<ServerState?> {
 
     alias = alias.trim();
     if (alias.isEmpty) {
-      alias = generateRandomAlias();
+      alias = generatePlatformAlias();
     }
 
     if (port < 0 || port > 65535) {
