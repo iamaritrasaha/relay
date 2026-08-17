@@ -438,6 +438,13 @@ Additional rules:
 - Relay discovery, authenticated peer state, transfers, and startup work normally in every failure case.
 - D-Bus payload/content is absent from logs.
 
+### KC2 validation status
+
+- Automated D-Bus bridge tests: **PASS**.
+- Real `kdeconnectd` ↔ official KDE Connect Android interoperability: **DEFERRED**.
+- Physical validation will be performed on an isolated VM or dedicated test host so the KDE dependency stack is not installed on the primary GNOME development machine.
+- KDE compatibility remains experimental, optional, and disabled from the production Relay UI.
+
 ### If Relay Android must be the KC2 endpoint
 
 Do not label that work “clipboard proof-of-concept only.” Approve a separate **KC2A protocol foundation spike** containing only:
