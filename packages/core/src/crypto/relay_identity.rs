@@ -36,6 +36,12 @@ impl RelayIdentity {
         self.signing_key.verifying_key()
     }
 
+    pub(crate) fn sign(&self, message: &[u8]) -> ed25519_dalek::Signature {
+        use ed25519_dalek::Signer;
+
+        self.signing_key.sign(message)
+    }
+
     /// Exports the private key as PKCS#8 PEM. The returned buffer is
     /// zeroized on drop.
     pub fn private_key_export(&self) -> anyhow::Result<Zeroizing<String>> {
@@ -63,16 +69,20 @@ impl RelayIdentity {
 /// public key parsed from any valid encoding of the same key always yields
 /// the same RelayId.
 pub fn relay_id_from_public_key(public_key: &VerifyingKey) -> anyhow::Result<String> {
-    let der = public_key.to_public_key_der()?;
-    Ok(relay_id_from_public_key_der(der.as_bytes()))
-}
-
-/// Derives the RelayId directly from a public key's canonical SPKI DER bytes.
-fn relay_id_from_public_key_der(public_key_der: &[u8]) -> String {
-    hash::sha256(public_key_der)
+    Ok(relay_id_digest_from_public_key(public_key)?
         .iter()
         .map(|byte| format!("{byte:02X}"))
-        .collect()
+        .collect())
+}
+
+/// Derives the raw RelayId digest from a public key's canonical SPKI DER encoding.
+pub(crate) fn relay_id_digest_from_public_key(
+    public_key: &VerifyingKey,
+) -> anyhow::Result<[u8; 32]> {
+    let der = public_key.to_public_key_der()?;
+    hash::sha256(der.as_bytes())
+        .try_into()
+        .map_err(|_| anyhow::anyhow!("invalid SHA-256 digest length"))
 }
 
 /// Parses a public key from SPKI PEM, as produced by
@@ -154,7 +164,10 @@ mod tests {
         // Directly hashing the DER bytes must match the identity's own
         // computation, independent of how the PEM text happens to be
         // formatted (line endings, wrapping, surrounding whitespace).
-        let expected = relay_id_from_public_key_der(der.as_bytes());
+        let expected: String = hash::sha256(der.as_bytes())
+            .iter()
+            .map(|byte| format!("{byte:02X}"))
+            .collect();
         assert_eq!(identity.relay_id().unwrap(), expected);
 
         // Re-parsing from a PEM string with different incidental
