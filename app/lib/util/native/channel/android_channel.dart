@@ -7,6 +7,8 @@ part 'android_channel.mapper.dart';
 const _methodChannel = MethodChannel('org.localsend.localsend_app/localsend');
 final _logger = Logger('AndroidSaf');
 
+Future<T?> invokeAndroidMethod<T>(String method, [Object? arguments]) => _methodChannel.invokeMethod<T>(method, arguments);
+
 /// From Android 10 and above, we need to use the Storage Access Framework (SAF) to access files due to the scoped storage.
 /// SAF itself is available from Android 4.4 (API level 19).
 /// We implemented our own algorithm to build encode and decode content URIs.

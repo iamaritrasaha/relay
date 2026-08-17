@@ -438,6 +438,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   RegisterResponseDto dco_decode_register_response_dto(dynamic raw);
 
   @protected
+  RelayIdentityMaterial dco_decode_relay_identity_material(dynamic raw);
+
+  @protected
   ResultWithPublicKeyRegisterResponseDto dco_decode_result_with_public_key_register_response_dto(dynamic raw);
 
   @protected
@@ -908,6 +911,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   RegisterResponseDto sse_decode_register_response_dto(SseDeserializer deserializer);
+
+  @protected
+  RelayIdentityMaterial sse_decode_relay_identity_material(SseDeserializer deserializer);
 
   @protected
   ResultWithPublicKeyRegisterResponseDto sse_decode_result_with_public_key_register_response_dto(SseDeserializer deserializer);
@@ -1426,6 +1432,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   void sse_encode_register_response_dto(RegisterResponseDto self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_relay_identity_material(RelayIdentityMaterial self, SseSerializer serializer);
 
   @protected
   void sse_encode_result_with_public_key_register_response_dto(ResultWithPublicKeyRegisterResponseDto self, SseSerializer serializer);

@@ -9,6 +9,7 @@ import 'package:localsend_app/model/persistence/color_mode.dart';
 import 'package:localsend_app/model/persistence/favorite_device.dart';
 import 'package:localsend_app/model/persistence/quick_save_mode.dart';
 import 'package:localsend_app/model/persistence/receive_history_entry.dart';
+import 'package:localsend_app/model/persistence/relay_public_identity.dart';
 import 'package:localsend_app/model/send_mode.dart';
 import 'package:localsend_app/provider/window_dimensions_provider.dart';
 import 'package:localsend_app/util/alias_generator.dart';
@@ -95,6 +96,12 @@ const _createChecksums = 'ls_create_checksums';
 const _verifyChecksums = 'ls_verify_checksums';
 const _advancedSettingsKey = 'ls_advanced_settings';
 const _whatsNewKey = 'ls_whats_new';
+
+// Relay identity public metadata. The private PKCS#8 key is exclusively held
+// by the platform secret store and must never be added to SharedPreferences.
+const _relayIdentityVersionKey = 'ls_relay_identity_version';
+const _relayIdentityIdKey = 'ls_relay_identity_id';
+const _relayIdentityPublicKeyKey = 'ls_relay_identity_public_key';
 
 final persistenceProvider = Provider<PersistenceService>((ref) {
   throw Exception('persistenceProvider not initialized');
@@ -224,6 +231,28 @@ class PersistenceService {
 
   Future<void> setSecurityContext(StoredSecurityContext context) async {
     await _prefs.setString(_securityContext, jsonEncode(context));
+  }
+
+  RelayPublicIdentity? getRelayPublicIdentity() {
+    final version = _prefs.getInt(_relayIdentityVersionKey);
+    final relayId = _prefs.getString(_relayIdentityIdKey);
+    final publicKey = _prefs.getString(_relayIdentityPublicKeyKey);
+    if (version == null || relayId == null || publicKey == null) {
+      return null;
+    }
+    return RelayPublicIdentity(version: version, relayId: relayId, publicKey: publicKey);
+  }
+
+  Future<void> setRelayPublicIdentity(RelayPublicIdentity identity) async {
+    await _prefs.setInt(_relayIdentityVersionKey, identity.version);
+    await _prefs.setString(_relayIdentityIdKey, identity.relayId);
+    await _prefs.setString(_relayIdentityPublicKeyKey, identity.publicKey);
+  }
+
+  Future<void> clearRelayPublicIdentity() async {
+    await _prefs.remove(_relayIdentityVersionKey);
+    await _prefs.remove(_relayIdentityIdKey);
+    await _prefs.remove(_relayIdentityPublicKeyKey);
   }
 
   List<String>? getSignalingServers() {

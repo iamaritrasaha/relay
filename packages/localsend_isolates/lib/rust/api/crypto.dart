@@ -10,12 +10,22 @@ import 'package:localsend_isolates/rust/frb_generated.dart';
 
 part 'crypto.freezed.dart';
 
+// These functions are ignored because they are not marked as `pub`: `relay_identity_material`
 // These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `clone`
 
 Future<void> verifyCert({required String cert, required String publicKey}) =>
     RustLib.instance.api.crateApiCryptoVerifyCert(cert: cert, publicKey: publicKey);
 
 Future<KeyPair> generateKeyPair() => RustLib.instance.api.crateApiCryptoGenerateKeyPair();
+
+/// Generates a new Relay Ed25519 identity and returns its canonical exports.
+Future<RelayIdentityMaterial> generateRelayIdentity() => RustLib.instance.api.crateApiCryptoGenerateRelayIdentity();
+
+/// Restores a Relay Ed25519 identity from canonical PKCS#8 PEM bytes.
+///
+/// Invalid input is rejected without generating a replacement identity.
+Future<RelayIdentityMaterial> restoreRelayIdentity({required List<int> privateKey}) =>
+    RustLib.instance.api.crateApiCryptoRestoreRelayIdentity(privateKey: privateKey);
 
 /// Generates a new device identity: an RSA-2048 key pair and a self-signed
 /// certificate whose SHA-256 fingerprint identifies the device.
@@ -55,6 +65,34 @@ class KeyPair {
   bool operator ==(Object other) =>
       identical(this, other) ||
       other is KeyPair && runtimeType == other.runtimeType && privateKey == other.privateKey && publicKey == other.publicKey;
+}
+
+/// Relay identity material produced and validated exclusively by Rust.
+///
+/// `private_key` contains the canonical PKCS#8 PEM bytes and must be passed
+/// directly to the platform secure store by a later coordinator.
+class RelayIdentityMaterial {
+  final Uint8List privateKey;
+  final String publicKey;
+  final String relayId;
+
+  const RelayIdentityMaterial({
+    required this.privateKey,
+    required this.publicKey,
+    required this.relayId,
+  });
+
+  @override
+  int get hashCode => privateKey.hashCode ^ publicKey.hashCode ^ relayId.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is RelayIdentityMaterial &&
+          runtimeType == other.runtimeType &&
+          privateKey == other.privateKey &&
+          publicKey == other.publicKey &&
+          relayId == other.relayId;
 }
 
 @freezed
