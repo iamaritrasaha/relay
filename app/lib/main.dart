@@ -20,8 +20,10 @@ import 'package:routerino/routerino.dart';
 
 Future<void> main(List<String> args) async {
   final RefenaContainer container;
+  final NetworkBootstrapResult networkBootstrap;
   try {
     container = await preInit(args);
+    networkBootstrap = await createNetworkBootstrap(container).start();
   } catch (e, stackTrace) {
     showInitErrorApp(
       error: e,
@@ -34,14 +36,18 @@ Future<void> main(List<String> args) async {
     RefenaScope.withContainer(
       container: container,
       child: TranslationProvider(
-        child: const LocalSendApp(),
+        child: LocalSendApp(networkBootstrap: networkBootstrap),
       ),
     ),
   );
 }
 
 class LocalSendApp extends StatelessWidget {
-  const LocalSendApp();
+  final NetworkBootstrapResult networkBootstrap;
+
+  const LocalSendApp({
+    required this.networkBootstrap,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -79,9 +85,10 @@ class LocalSendApp extends StatelessWidget {
               themeMode: colorMode == ColorMode.oled ? ThemeMode.dark : themeMode,
               navigatorKey: context.read(navigationProvider).key,
               home: RouterinoHome(
-                builder: () => const HomePage(
+                builder: () => HomePage(
                   initialTab: HomeTab.receive,
                   appStart: true,
+                  networkBootstrap: networkBootstrap,
                 ),
               ),
             ),

@@ -38,6 +38,7 @@ enum HomeTab {
 
 class HomePage extends StatefulWidget {
   final HomeTab initialTab;
+  final NetworkBootstrapResult? networkBootstrap;
 
   /// It is important for the initializing step
   /// because the first init clears the cache
@@ -46,6 +47,7 @@ class HomePage extends StatefulWidget {
   const HomePage({
     required this.initialTab,
     required this.appStart,
+    this.networkBootstrap,
     super.key,
   });
 
@@ -62,7 +64,7 @@ class _HomePageState extends State<HomePage> with Refena {
 
     ensureRef((ref) async {
       ref.redux(homePageControllerProvider).dispatch(ChangeTabAction(widget.initialTab));
-      await postInit(context, ref, widget.appStart);
+      await postInit(context, ref, widget.appStart, widget.networkBootstrap);
     });
   }
 

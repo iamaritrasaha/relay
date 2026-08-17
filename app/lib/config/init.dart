@@ -182,8 +182,103 @@ Future<RefenaContainer> preInit(List<String> args) async {
 
 StreamSubscription? _sharedMediaSubscription;
 
+/// Starts networking after the child isolates have been created.
+///
+/// This is intentionally independent from [HomePage] so desktop apps started
+/// hidden can receive files before a window is shown.
+class NetworkBootstrap {
+  final Future<bool> Function()? _requestLocalNetworkPermission;
+  final Future<void> Function() _startServer;
+  final void Function() _startDiscoveryListener;
+
+  Future<NetworkBootstrapResult>? _startFuture;
+
+  NetworkBootstrap({
+    Future<bool> Function()? requestLocalNetworkPermission,
+    required Future<void> Function() startServer,
+    required void Function() startDiscoveryListener,
+  }) : _requestLocalNetworkPermission = requestLocalNetworkPermission,
+       _startServer = startServer,
+       _startDiscoveryListener = startDiscoveryListener;
+
+  Future<NetworkBootstrapResult> start() async {
+    final existingStart = _startFuture;
+    if (existingStart != null) {
+      return existingStart;
+    }
+
+    final start = _start();
+    _startFuture = start;
+    final result = await start;
+    if (!result.localNetworkGranted && identical(_startFuture, start)) {
+      _startFuture = null;
+    }
+    return result;
+  }
+
+  Future<NetworkBootstrapResult> _start() async {
+    var localNetworkGranted = true;
+    if (_requestLocalNetworkPermission != null) {
+      try {
+        localNetworkGranted = await _requestLocalNetworkPermission();
+      } catch (e) {
+        localNetworkGranted = false;
+        _logger.warning('Requesting local network permission failed', e);
+      }
+    }
+
+    if (!localNetworkGranted) {
+      return const NetworkBootstrapResult(
+        localNetworkGranted: false,
+        serverError: null,
+      );
+    }
+
+    Object? serverError;
+    try {
+      await _startServer();
+    } catch (e) {
+      serverError = e;
+      _logger.warning('Starting server failed', e);
+    }
+
+    try {
+      _startDiscoveryListener();
+    } catch (e) {
+      _logger.warning('Starting discovery listener failed', e);
+    }
+
+    return NetworkBootstrapResult(
+      localNetworkGranted: localNetworkGranted,
+      serverError: serverError,
+    );
+  }
+}
+
+class NetworkBootstrapResult {
+  final bool localNetworkGranted;
+  final Object? serverError;
+
+  const NetworkBootstrapResult({
+    required this.localNetworkGranted,
+    required this.serverError,
+  });
+}
+
+NetworkBootstrap createNetworkBootstrap(RefenaContainer container) {
+  return NetworkBootstrap(
+    requestLocalNetworkPermission: checkPlatform([TargetPlatform.android]) ? requestLocalNetworkPermissionAndroid : null,
+    startServer: () async {
+      await container.notifier(serverProvider).startServerFromSettings();
+    },
+    startDiscoveryListener: () {
+      unawaited(container.redux(nearbyDevicesProvider).dispatchAsync(StartDiscoveryListener()));
+    },
+  );
+}
+
 /// Will be called when home page has been initialized
-Future<void> postInit(BuildContext context, Ref ref, bool appStart) async {
+Future<void> postInit(BuildContext context, Ref ref, bool appStart, NetworkBootstrapResult? networkBootstrap) async {
   await updateSystemOverlayStyle(context);
 
   if (checkPlatform([TargetPlatform.android])) {
@@ -193,10 +288,7 @@ Future<void> postInit(BuildContext context, Ref ref, bool appStart) async {
       _logger.warning('Setting high refresh rate failed', e);
     }
 
-    // Android 17+ blocks multicast discovery and LAN connections until this permission is granted,
-    // so ask before the server and discovery start.
-    final localNetworkGranted = await requestLocalNetworkPermissionAndroid();
-    if (!localNetworkGranted) {
+    if (networkBootstrap?.localNetworkGranted == false) {
       _logger.warning('Local network permission denied. Discovery and transfers may not work.');
       if (context.mounted) {
         await context.pushBottomSheet(() => const LocalNetworkDialog());
@@ -204,18 +296,8 @@ Future<void> postInit(BuildContext context, Ref ref, bool appStart) async {
     }
   }
 
-  try {
-    await ref.notifier(serverProvider).startServerFromSettings();
-  } catch (e) {
-    if (context.mounted) {
-      context.showSnackBar(e.toString());
-    }
-  }
-
-  try {
-    ref.redux(nearbyDevicesProvider).dispatchAsync(StartDiscoveryListener()); // ignore: unawaited_futures
-  } catch (e) {
-    _logger.warning('Starting discovery listener failed', e);
+  if (networkBootstrap?.serverError != null && context.mounted) {
+    context.showSnackBar(networkBootstrap!.serverError.toString());
   }
 
   // ignore: dead_code
