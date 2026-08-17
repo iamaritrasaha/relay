@@ -21,6 +21,95 @@ pub struct KeyPair {
     pub public_key: String,
 }
 
+/// Relay identity material produced and validated exclusively by Rust.
+///
+/// `private_key` contains the canonical PKCS#8 PEM bytes and must be passed
+/// directly to the platform secure store by a later coordinator.
+pub struct RelayIdentityMaterial {
+    pub private_key: Vec<u8>,
+    pub public_key: String,
+    pub relay_id: String,
+}
+
+/// Generates a new Relay Ed25519 identity and returns its canonical exports.
+pub fn generate_relay_identity() -> anyhow::Result<RelayIdentityMaterial> {
+    relay_identity_material(localsend::crypto::relay_identity::RelayIdentity::generate())
+}
+
+/// Restores a Relay Ed25519 identity from canonical PKCS#8 PEM bytes.
+///
+/// Invalid input is rejected without generating a replacement identity.
+pub fn restore_relay_identity(private_key: Vec<u8>) -> anyhow::Result<RelayIdentityMaterial> {
+    if private_key.is_empty() {
+        anyhow::bail!("Relay identity private key is empty");
+    }
+
+    let private_key = std::str::from_utf8(&private_key)
+        .map_err(|_| anyhow::anyhow!("Relay identity private key is not valid UTF-8"))?;
+    let identity = localsend::crypto::relay_identity::RelayIdentity::from_private_key(private_key)
+        .map_err(|_| anyhow::anyhow!("Relay identity private key is not valid PKCS#8 PEM"))?;
+    relay_identity_material(identity)
+}
+
+fn relay_identity_material(
+    identity: localsend::crypto::relay_identity::RelayIdentity,
+) -> anyhow::Result<RelayIdentityMaterial> {
+    let private_key = identity.private_key_export()?.as_bytes().to_vec();
+    Ok(RelayIdentityMaterial {
+        private_key,
+        public_key: identity.public_key_export()?,
+        relay_id: identity.relay_id()?,
+    })
+}
+
+#[cfg(test)]
+mod relay_identity_tests {
+    use super::*;
+
+    #[test]
+    fn generate_returns_valid_relay_identity_material() {
+        let material = generate_relay_identity().unwrap();
+
+        assert!(!material.private_key.is_empty());
+        assert!(localsend::crypto::relay_identity::parse_public_key(&material.public_key).is_ok());
+        assert_eq!(material.relay_id.len(), 64);
+        assert!(material.relay_id.chars().all(|c| c.is_ascii_hexdigit() && !c.is_ascii_lowercase()));
+    }
+
+    #[test]
+    fn restore_generated_private_key_preserves_public_key_and_relay_id() {
+        let generated = generate_relay_identity().unwrap();
+        let restored = restore_relay_identity(generated.private_key).unwrap();
+
+        assert_eq!(restored.public_key, generated.public_key);
+        assert_eq!(restored.relay_id, generated.relay_id);
+    }
+
+    #[test]
+    fn restore_rejects_invalid_utf8() {
+        assert!(restore_relay_identity(vec![0xff]).is_err());
+    }
+
+    #[test]
+    fn restore_rejects_invalid_pkcs8_pem() {
+        assert!(restore_relay_identity(b"not a PKCS#8 PEM key".to_vec()).is_err());
+    }
+
+    #[test]
+    fn restore_rejects_empty_private_key() {
+        assert!(restore_relay_identity(Vec::new()).is_err());
+    }
+
+    #[test]
+    fn generated_identities_are_distinct() {
+        let first = generate_relay_identity().unwrap();
+        let second = generate_relay_identity().unwrap();
+
+        assert_ne!(first.public_key, second.public_key);
+        assert_ne!(first.relay_id, second.relay_id);
+    }
+}
+
 /// Generates a new device identity: an RSA-2048 key pair and a self-signed
 /// certificate whose SHA-256 fingerprint identifies the device.
 pub fn generate_security_context() -> anyhow::Result<SecurityContext> {

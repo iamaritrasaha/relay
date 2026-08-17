@@ -44,7 +44,7 @@ flutter_rust_bridge::frb_generated_boilerplate!(
     default_rust_auto_opaque = RustAutoOpaqueMoi,
 );
 pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_VERSION: &str = "2.12.0";
-pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = -1979579466;
+pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = 1905822917;
 
 // Section: executor
 
@@ -2998,6 +2998,40 @@ fn wire__crate__api__crypto__generate_key_pair_impl(
         },
     )
 }
+fn wire__crate__api__crypto__generate_relay_identity_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_normal::<flutter_rust_bridge::for_generated::SseCodec, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "generate_relay_identity",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            deserializer.end();
+            move |context| {
+                transform_result_sse::<_, flutter_rust_bridge::for_generated::anyhow::Error>(
+                    (move || {
+                        let output_ok = crate::api::crypto::generate_relay_identity()?;
+                        Ok(output_ok)
+                    })(),
+                )
+            }
+        },
+    )
+}
 fn wire__crate__api__crypto__generate_security_context_impl(
     port_: flutter_rust_bridge::for_generated::MessagePort,
     ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
@@ -3169,6 +3203,42 @@ fn wire__crate__api__metadata__read_file_metadata_impl(
                         Ok(output_ok)
                     })()
                     .await,
+                )
+            }
+        },
+    )
+}
+fn wire__crate__api__crypto__restore_relay_identity_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_normal::<flutter_rust_bridge::for_generated::SseCodec, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "restore_relay_identity",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_private_key = <Vec<u8>>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| {
+                transform_result_sse::<_, flutter_rust_bridge::for_generated::anyhow::Error>(
+                    (move || {
+                        let output_ok =
+                            crate::api::crypto::restore_relay_identity(api_private_key)?;
+                        Ok(output_ok)
+                    })(),
                 )
             }
         },
@@ -4582,6 +4652,20 @@ impl SseDecode for crate::api::model::RegisterResponseDto {
     }
 }
 
+impl SseDecode for crate::api::crypto::RelayIdentityMaterial {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_privateKey = <Vec<u8>>::sse_decode(deserializer);
+        let mut var_publicKey = <String>::sse_decode(deserializer);
+        let mut var_relayId = <String>::sse_decode(deserializer);
+        return crate::api::crypto::RelayIdentityMaterial {
+            private_key: var_privateKey,
+            public_key: var_publicKey,
+            relay_id: var_relayId,
+        };
+    }
+}
+
 impl SseDecode for crate::api::http::ResultWithPublicKeyRegisterResponseDto {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
@@ -5334,19 +5418,28 @@ fn pde_ffi_dispatcher_primary_impl(
             wire__crate__api__logging__enable_debug_logging_impl(port, ptr, rust_vec_len, data_len)
         }
         50 => wire__crate__api__crypto__generate_key_pair_impl(port, ptr, rust_vec_len, data_len),
-        51 => wire__crate__api__crypto__generate_security_context_impl(
+        51 => wire__crate__api__crypto__generate_relay_identity_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        52 => wire__crate__api__crypto__hash_file_impl(port, ptr, rust_vec_len, data_len),
-        54 => {
+        52 => wire__crate__api__crypto__generate_security_context_impl(
+            port,
+            ptr,
+            rust_vec_len,
+            data_len,
+        ),
+        53 => wire__crate__api__crypto__hash_file_impl(port, ptr, rust_vec_len, data_len),
+        55 => {
             wire__crate__api__metadata__read_file_metadata_impl(port, ptr, rust_vec_len, data_len)
         }
-        56 => wire__crate__api__discovery__start_discovery_impl(port, ptr, rust_vec_len, data_len),
-        57 => wire__crate__api__server__start_server_impl(port, ptr, rust_vec_len, data_len),
-        58 => wire__crate__api__crypto__verify_cert_impl(port, ptr, rust_vec_len, data_len),
+        56 => {
+            wire__crate__api__crypto__restore_relay_identity_impl(port, ptr, rust_vec_len, data_len)
+        }
+        58 => wire__crate__api__discovery__start_discovery_impl(port, ptr, rust_vec_len, data_len),
+        59 => wire__crate__api__server__start_server_impl(port, ptr, rust_vec_len, data_len),
+        60 => wire__crate__api__crypto__verify_cert_impl(port, ptr, rust_vec_len, data_len),
         _ => unreachable!(),
     }
 }
@@ -5363,8 +5456,8 @@ fn pde_ffi_dispatcher_sync_impl(
         6 => wire__crate__api__cancel__RsCancellationToken_cancel_impl(ptr, rust_vec_len, data_len),
         46 => wire__crate__api__cancel__create_cancellation_token_impl(ptr, rust_vec_len, data_len),
         47 => wire__crate__api__http__create_client_impl(ptr, rust_vec_len, data_len),
-        53 => wire__crate__api__filename__is_valid_file_name_impl(ptr, rust_vec_len, data_len),
-        55 => wire__crate__api__filename__sanitize_file_name_impl(ptr, rust_vec_len, data_len),
+        54 => wire__crate__api__filename__is_valid_file_name_impl(ptr, rust_vec_len, data_len),
+        57 => wire__crate__api__filename__sanitize_file_name_impl(ptr, rust_vec_len, data_len),
         _ => unreachable!(),
     }
 }
@@ -5961,6 +6054,28 @@ impl flutter_rust_bridge::IntoIntoDart<FrbWrapper<crate::api::model::RegisterRes
 {
     fn into_into_dart(self) -> FrbWrapper<crate::api::model::RegisterResponseDto> {
         self.into()
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::api::crypto::RelayIdentityMaterial {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.private_key.into_into_dart().into_dart(),
+            self.public_key.into_into_dart().into_dart(),
+            self.relay_id.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::api::crypto::RelayIdentityMaterial
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::api::crypto::RelayIdentityMaterial>
+    for crate::api::crypto::RelayIdentityMaterial
+{
+    fn into_into_dart(self) -> crate::api::crypto::RelayIdentityMaterial {
+        self
     }
 }
 // Codec=Dco (DartCObject based), see doc to use other codecs
@@ -7392,6 +7507,15 @@ impl SseEncode for crate::api::model::RegisterResponseDto {
         <Option<crate::api::model::DeviceType>>::sse_encode(self.device_type, serializer);
         <String>::sse_encode(self.token, serializer);
         <bool>::sse_encode(self.has_web_interface, serializer);
+    }
+}
+
+impl SseEncode for crate::api::crypto::RelayIdentityMaterial {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <Vec<u8>>::sse_encode(self.private_key, serializer);
+        <String>::sse_encode(self.public_key, serializer);
+        <String>::sse_encode(self.relay_id, serializer);
     }
 }
 
