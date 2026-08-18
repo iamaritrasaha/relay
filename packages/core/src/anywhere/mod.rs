@@ -3,20 +3,37 @@
 //! Iroh is started only through this module's explicit APIs. LAN HTTP/multicast
 //! startup never calls into this module.
 
+pub mod address;
 pub mod endpoint;
 pub mod error;
+pub mod identity;
 pub mod proof;
+pub mod runtime;
 pub mod stream;
 pub mod tls;
+pub mod transfer;
 
+pub use address::{
+    parse_relay_address, validate_relay_id, RelayAddressV1, MAX_RELAY_ADDRESS_LEN,
+    RELAY_ADDRESS_PREFIX, RELAY_ADDRESS_VERSION,
+};
 pub use endpoint::{
     bind_endpoint, iroh_endpoint_bind_count, selected_path, wrap_endpoint, AnywhereEndpoint,
     PathPreference, ALPN,
 };
-pub use error::AnywhereError;
+pub use error::{AnywhereError, TlsStage, TransportStage};
+pub use identity::AnywhereIdentity;
 pub use iroh::EndpointAddr;
 pub use proof::{authenticate_initiator, authenticate_server};
+pub use runtime::{
+    AnywhereDecision, AnywhereRespondError, AnywhereRuntime, AnywhereSessionId, IncomingTransferId,
+};
 pub use tls::InnerTlsPeer;
+pub use transfer::{
+    receive, send_batch, send_files_over_authenticated_stream, AnywhereBatch, AnywhereEvent,
+    AnywhereEventSink, AnywhereFileSource, AnywhereFileSpec, AnywhereIncomingFile, AnywhereOutcome,
+    AnywherePathClass, AnywhereReceiveRequest, AnywhereSendRequest,
+};
 
 use crate::relay::{
     authorize, AuthenticatedRelaySession, AuthorizationDecision, MemoryTrustDirectory,

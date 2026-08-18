@@ -296,6 +296,7 @@ class _Ra2bProofPageState extends State<Ra2bProofPage> {
   bool _ra4Receiver = false;
   bool _ra4Hashing = false;
   List<_Ra4IncomingFile> _incomingFiles = const [];
+  String? _incomingTransferId;
 
   String get _localRelayId => widget.localRelayId;
 
@@ -533,12 +534,12 @@ class _Ra2bProofPageState extends State<Ra2bProofPage> {
   }
 
   Future<void> _respondIncoming({required bool accept}) async {
-    if (!accept) {
-      rust_ra2b.ra4Respond(accept: false);
+    final transferId = _incomingTransferId;
+    if (transferId == null) {
       return;
     }
-    if (_incomingFiles.isEmpty) {
-      rust_ra2b.ra4Respond(accept: false);
+    if (!accept || _incomingFiles.isEmpty) {
+      rust_ra2b.ra4Respond(transferId: transferId, accept: false);
       return;
     }
     try {
@@ -556,15 +557,15 @@ class _Ra2bProofPageState extends State<Ra2bProofPage> {
           createdDirectories: createdDirectories,
         );
         if (target.path == null) {
-          rust_ra2b.ra4Respond(accept: false);
+          rust_ra2b.ra4Respond(transferId: transferId, accept: false);
           return;
         }
         targets[file.id] = target.path!;
       }
-      rust_ra2b.ra4Respond(accept: true, targetsJson: jsonEncode(targets));
+      rust_ra2b.ra4Respond(transferId: transferId, accept: true, targetsJson: jsonEncode(targets));
     } catch (error, stack) {
       debugPrint('RA4B save target preparation failed: $error\n$stack');
-      rust_ra2b.ra4Respond(accept: false);
+      rust_ra2b.ra4Respond(transferId: transferId, accept: false);
     }
   }
 
@@ -585,8 +586,28 @@ class _Ra2bProofPageState extends State<Ra2bProofPage> {
         _parseError = null;
         _ra4Receiver = false;
         _incomingFiles = const [];
+        _incomingTransferId = null;
       }
     });
+  }
+
+  /// The production runtime answers a specific request, so the prompt carries
+  /// the identifier the response must quote.
+  String? _incomingTransferIdFromEvent(rust_ra2b.RsRa2bEvent event) {
+    return event.maybeMap(
+      failed: (value) {
+        if (value.category != 'prompt') {
+          return null;
+        }
+        try {
+          final payload = jsonDecode(value.message) as Map<String, dynamic>;
+          return payload['transferId'] as String?;
+        } catch (_) {
+          return null;
+        }
+      },
+      orElse: () => null,
+    );
   }
 
   List<_Ra4IncomingFile> _incomingFilesFromEvent(rust_ra2b.RsRa2bEvent event) {
@@ -637,6 +658,7 @@ class _Ra2bProofPageState extends State<Ra2bProofPage> {
           _session = snapshotFromEvent(event, _session);
           if (_session.stage == Ra2bUiStage.incomingPrompt) {
             _incomingFiles = _incomingFilesFromEvent(event);
+            _incomingTransferId = _incomingTransferIdFromEvent(event) ?? _incomingTransferId;
           }
           if (_session.stage == Ra2bUiStage.complete ||
               _session.stage == Ra2bUiStage.rejected ||

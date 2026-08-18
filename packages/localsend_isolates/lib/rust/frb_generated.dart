@@ -15,7 +15,7 @@ import 'package:localsend_isolates/rust/api/http.dart';
 import 'package:localsend_isolates/rust/api/logging.dart';
 import 'package:localsend_isolates/rust/api/metadata.dart';
 import 'package:localsend_isolates/rust/api/model.dart';
-import 'package:localsend_isolates/rust/api/ra2b.dart';
+import 'package:localsend_isolates/rust/api/relay_anywhere.dart';
 import 'package:localsend_isolates/rust/api/server.dart';
 import 'package:localsend_isolates/rust/api/stream.dart';
 import 'package:localsend_isolates/rust/api/webrtc.dart';
@@ -77,7 +77,7 @@ class RustLib extends BaseEntrypoint<RustLibApi, RustLibApiImpl, RustLibWire> {
   String get codegenVersion => '2.12.0';
 
   @override
-  int get rustContentHash => -698623502;
+  int get rustContentHash => 1558555014;
 
   static const kDefaultExternalLibraryLoaderConfig = ExternalLibraryLoaderConfig(
     stem: 'rust_lib_localsend_app',
@@ -297,41 +297,38 @@ abstract class RustLibApi extends BaseApi {
 
   bool crateApiFilenameIsValidFileName({required String name});
 
-  void crateApiRa2BRa2BCancelSession();
-
-  RsRa2bLocalIdentity crateApiRa2BRa2BLocalIdentity();
-
-  RsRa2bParsedInvite crateApiRa2BRa2BParseInvite({required String invite});
-
-  Stream<RsRa2bEvent> crateApiRa2BRa2BRunJoin({
-    required String invite,
-    required RsRa2bPathPreference pathPreference,
-    required bool wrongIdentity,
-    required bool ra4FileTransfer,
-  });
-
-  bool crateApiRa2BRa2BSessionIsActive();
-
-  Stream<RsRa2bEvent> crateApiRa2BRa2BStartHost({
-    required RsRa2bPathPreference pathPreference,
-    required bool wrongIdentity,
-    required bool ra4FileTransfer,
-  });
-
-  void crateApiRa2BRa4Clear();
-
-  void crateApiRa2BRa4Respond({required bool accept, String? targetsJson});
-
-  void crateApiRa2BRa4SetSender({
-    String? path,
-    int? fileDescriptor,
-    required String name,
-    required BigInt size,
-    required String fileType,
-    String? sha256,
-  });
-
   Future<FileMetadata?> crateApiMetadataReadFileMetadata({required String path});
+
+  bool crateApiRelayAnywhereRelayAnywhereCancel({required BigInt sessionId});
+
+  bool crateApiRelayAnywhereRelayAnywhereCloseSession({required BigInt sessionId});
+
+  BigInt crateApiRelayAnywhereRelayAnywhereOpenSession();
+
+  int crateApiRelayAnywhereRelayAnywhereOpenSessionCount();
+
+  RsRelayAddress crateApiRelayAnywhereRelayAnywhereParseAddress({required String address});
+
+  Stream<RsRelayAnywhereEvent> crateApiRelayAnywhereRelayAnywhereReceive({
+    required BigInt sessionId,
+    required List<int> privateKeyPem,
+    required String relayId,
+    required String alias,
+    required RsRelayPathPreference pathPreference,
+    String? expectedRemoteRelayId,
+  });
+
+  void crateApiRelayAnywhereRelayAnywhereRespond({required BigInt sessionId, required BigInt transferId, required bool accept, String? targetsJson});
+
+  Stream<RsRelayAnywhereEvent> crateApiRelayAnywhereRelayAnywhereSend({
+    required BigInt sessionId,
+    required List<int> privateKeyPem,
+    required String relayId,
+    required String address,
+    required String alias,
+    required RsRelayPathPreference pathPreference,
+    required List<RsRelayAnywhereFile> files,
+  });
 
   Future<RelayIdentityMaterial> crateApiCryptoRestoreRelayIdentity({required List<int> privateKey});
 
@@ -2131,271 +2128,13 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   );
 
   @override
-  void crateApiRa2BRa2BCancelSession() {
-    return handler.executeSync(
-      SyncTask(
-        callFfi: () {
-          final serializer = SseSerializer(generalizedFrbRustBinding);
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 58)!;
-        },
-        codec: SseCodec(
-          decodeSuccessData: sse_decode_unit,
-          decodeErrorData: null,
-        ),
-        constMeta: kCrateApiRa2BRa2BCancelSessionConstMeta,
-        argValues: [],
-        apiImpl: this,
-      ),
-    );
-  }
-
-  TaskConstMeta get kCrateApiRa2BRa2BCancelSessionConstMeta => const TaskConstMeta(
-    debugName: 'ra2b_cancel_session',
-    argNames: [],
-  );
-
-  @override
-  RsRa2bLocalIdentity crateApiRa2BRa2BLocalIdentity() {
-    return handler.executeSync(
-      SyncTask(
-        callFfi: () {
-          final serializer = SseSerializer(generalizedFrbRustBinding);
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 59)!;
-        },
-        codec: SseCodec(
-          decodeSuccessData: sse_decode_rs_ra_2_b_local_identity,
-          decodeErrorData: sse_decode_AnyhowException,
-        ),
-        constMeta: kCrateApiRa2BRa2BLocalIdentityConstMeta,
-        argValues: [],
-        apiImpl: this,
-      ),
-    );
-  }
-
-  TaskConstMeta get kCrateApiRa2BRa2BLocalIdentityConstMeta => const TaskConstMeta(
-    debugName: 'ra2b_local_identity',
-    argNames: [],
-  );
-
-  @override
-  RsRa2bParsedInvite crateApiRa2BRa2BParseInvite({required String invite}) {
-    return handler.executeSync(
-      SyncTask(
-        callFfi: () {
-          final serializer = SseSerializer(generalizedFrbRustBinding);
-          sse_encode_String(invite, serializer);
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 60)!;
-        },
-        codec: SseCodec(
-          decodeSuccessData: sse_decode_rs_ra_2_b_parsed_invite,
-          decodeErrorData: sse_decode_AnyhowException,
-        ),
-        constMeta: kCrateApiRa2BRa2BParseInviteConstMeta,
-        argValues: [invite],
-        apiImpl: this,
-      ),
-    );
-  }
-
-  TaskConstMeta get kCrateApiRa2BRa2BParseInviteConstMeta => const TaskConstMeta(
-    debugName: 'ra2b_parse_invite',
-    argNames: ['invite'],
-  );
-
-  @override
-  Stream<RsRa2bEvent> crateApiRa2BRa2BRunJoin({
-    required String invite,
-    required RsRa2bPathPreference pathPreference,
-    required bool wrongIdentity,
-    required bool ra4FileTransfer,
-  }) {
-    final eventSink = RustStreamSink<RsRa2bEvent>();
-    unawaited(
-      handler.executeNormal(
-        NormalTask(
-          callFfi: (port_) {
-            final serializer = SseSerializer(generalizedFrbRustBinding);
-            sse_encode_String(invite, serializer);
-            sse_encode_rs_ra_2_b_path_preference(pathPreference, serializer);
-            sse_encode_bool(wrongIdentity, serializer);
-            sse_encode_bool(ra4FileTransfer, serializer);
-            sse_encode_StreamSink_rs_ra_2_b_event_Sse(eventSink, serializer);
-            pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 61, port: port_);
-          },
-          codec: SseCodec(
-            decodeSuccessData: sse_decode_unit,
-            decodeErrorData: sse_decode_AnyhowException,
-          ),
-          constMeta: kCrateApiRa2BRa2BRunJoinConstMeta,
-          argValues: [invite, pathPreference, wrongIdentity, ra4FileTransfer, eventSink],
-          apiImpl: this,
-        ),
-      ),
-    );
-    return eventSink.stream;
-  }
-
-  TaskConstMeta get kCrateApiRa2BRa2BRunJoinConstMeta => const TaskConstMeta(
-    debugName: 'ra2b_run_join',
-    argNames: ['invite', 'pathPreference', 'wrongIdentity', 'ra4FileTransfer', 'eventSink'],
-  );
-
-  @override
-  bool crateApiRa2BRa2BSessionIsActive() {
-    return handler.executeSync(
-      SyncTask(
-        callFfi: () {
-          final serializer = SseSerializer(generalizedFrbRustBinding);
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 62)!;
-        },
-        codec: SseCodec(
-          decodeSuccessData: sse_decode_bool,
-          decodeErrorData: null,
-        ),
-        constMeta: kCrateApiRa2BRa2BSessionIsActiveConstMeta,
-        argValues: [],
-        apiImpl: this,
-      ),
-    );
-  }
-
-  TaskConstMeta get kCrateApiRa2BRa2BSessionIsActiveConstMeta => const TaskConstMeta(
-    debugName: 'ra2b_session_is_active',
-    argNames: [],
-  );
-
-  @override
-  Stream<RsRa2bEvent> crateApiRa2BRa2BStartHost({
-    required RsRa2bPathPreference pathPreference,
-    required bool wrongIdentity,
-    required bool ra4FileTransfer,
-  }) {
-    final eventSink = RustStreamSink<RsRa2bEvent>();
-    unawaited(
-      handler.executeNormal(
-        NormalTask(
-          callFfi: (port_) {
-            final serializer = SseSerializer(generalizedFrbRustBinding);
-            sse_encode_rs_ra_2_b_path_preference(pathPreference, serializer);
-            sse_encode_bool(wrongIdentity, serializer);
-            sse_encode_bool(ra4FileTransfer, serializer);
-            sse_encode_StreamSink_rs_ra_2_b_event_Sse(eventSink, serializer);
-            pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 63, port: port_);
-          },
-          codec: SseCodec(
-            decodeSuccessData: sse_decode_unit,
-            decodeErrorData: sse_decode_AnyhowException,
-          ),
-          constMeta: kCrateApiRa2BRa2BStartHostConstMeta,
-          argValues: [pathPreference, wrongIdentity, ra4FileTransfer, eventSink],
-          apiImpl: this,
-        ),
-      ),
-    );
-    return eventSink.stream;
-  }
-
-  TaskConstMeta get kCrateApiRa2BRa2BStartHostConstMeta => const TaskConstMeta(
-    debugName: 'ra2b_start_host',
-    argNames: ['pathPreference', 'wrongIdentity', 'ra4FileTransfer', 'eventSink'],
-  );
-
-  @override
-  void crateApiRa2BRa4Clear() {
-    return handler.executeSync(
-      SyncTask(
-        callFfi: () {
-          final serializer = SseSerializer(generalizedFrbRustBinding);
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 64)!;
-        },
-        codec: SseCodec(
-          decodeSuccessData: sse_decode_unit,
-          decodeErrorData: null,
-        ),
-        constMeta: kCrateApiRa2BRa4ClearConstMeta,
-        argValues: [],
-        apiImpl: this,
-      ),
-    );
-  }
-
-  TaskConstMeta get kCrateApiRa2BRa4ClearConstMeta => const TaskConstMeta(
-    debugName: 'ra4_clear',
-    argNames: [],
-  );
-
-  @override
-  void crateApiRa2BRa4Respond({required bool accept, String? targetsJson}) {
-    return handler.executeSync(
-      SyncTask(
-        callFfi: () {
-          final serializer = SseSerializer(generalizedFrbRustBinding);
-          sse_encode_bool(accept, serializer);
-          sse_encode_opt_String(targetsJson, serializer);
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 65)!;
-        },
-        codec: SseCodec(
-          decodeSuccessData: sse_decode_unit,
-          decodeErrorData: sse_decode_AnyhowException,
-        ),
-        constMeta: kCrateApiRa2BRa4RespondConstMeta,
-        argValues: [accept, targetsJson],
-        apiImpl: this,
-      ),
-    );
-  }
-
-  TaskConstMeta get kCrateApiRa2BRa4RespondConstMeta => const TaskConstMeta(
-    debugName: 'ra4_respond',
-    argNames: ['accept', 'targetsJson'],
-  );
-
-  @override
-  void crateApiRa2BRa4SetSender({
-    String? path,
-    int? fileDescriptor,
-    required String name,
-    required BigInt size,
-    required String fileType,
-    String? sha256,
-  }) {
-    return handler.executeSync(
-      SyncTask(
-        callFfi: () {
-          final serializer = SseSerializer(generalizedFrbRustBinding);
-          sse_encode_opt_String(path, serializer);
-          sse_encode_opt_box_autoadd_i_32(fileDescriptor, serializer);
-          sse_encode_String(name, serializer);
-          sse_encode_u_64(size, serializer);
-          sse_encode_String(fileType, serializer);
-          sse_encode_opt_String(sha256, serializer);
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 66)!;
-        },
-        codec: SseCodec(
-          decodeSuccessData: sse_decode_unit,
-          decodeErrorData: sse_decode_AnyhowException,
-        ),
-        constMeta: kCrateApiRa2BRa4SetSenderConstMeta,
-        argValues: [path, fileDescriptor, name, size, fileType, sha256],
-        apiImpl: this,
-      ),
-    );
-  }
-
-  TaskConstMeta get kCrateApiRa2BRa4SetSenderConstMeta => const TaskConstMeta(
-    debugName: 'ra4_set_sender',
-    argNames: ['path', 'fileDescriptor', 'name', 'size', 'fileType', 'sha256'],
-  );
-
-  @override
   Future<FileMetadata?> crateApiMetadataReadFileMetadata({required String path}) {
     return handler.executeNormal(
       NormalTask(
         callFfi: (port_) {
           final serializer = SseSerializer(generalizedFrbRustBinding);
           sse_encode_String(path, serializer);
-          pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 67, port: port_);
+          pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 58, port: port_);
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_opt_box_autoadd_file_metadata,
@@ -2414,13 +2153,250 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   );
 
   @override
+  bool crateApiRelayAnywhereRelayAnywhereCancel({required BigInt sessionId}) {
+    return handler.executeSync(
+      SyncTask(
+        callFfi: () {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_u_64(sessionId, serializer);
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 59)!;
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_bool,
+          decodeErrorData: null,
+        ),
+        constMeta: kCrateApiRelayAnywhereRelayAnywhereCancelConstMeta,
+        argValues: [sessionId],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiRelayAnywhereRelayAnywhereCancelConstMeta => const TaskConstMeta(
+    debugName: 'relay_anywhere_cancel',
+    argNames: ['sessionId'],
+  );
+
+  @override
+  bool crateApiRelayAnywhereRelayAnywhereCloseSession({required BigInt sessionId}) {
+    return handler.executeSync(
+      SyncTask(
+        callFfi: () {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_u_64(sessionId, serializer);
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 60)!;
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_bool,
+          decodeErrorData: null,
+        ),
+        constMeta: kCrateApiRelayAnywhereRelayAnywhereCloseSessionConstMeta,
+        argValues: [sessionId],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiRelayAnywhereRelayAnywhereCloseSessionConstMeta => const TaskConstMeta(
+    debugName: 'relay_anywhere_close_session',
+    argNames: ['sessionId'],
+  );
+
+  @override
+  BigInt crateApiRelayAnywhereRelayAnywhereOpenSession() {
+    return handler.executeSync(
+      SyncTask(
+        callFfi: () {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 61)!;
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_u_64,
+          decodeErrorData: null,
+        ),
+        constMeta: kCrateApiRelayAnywhereRelayAnywhereOpenSessionConstMeta,
+        argValues: [],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiRelayAnywhereRelayAnywhereOpenSessionConstMeta => const TaskConstMeta(
+    debugName: 'relay_anywhere_open_session',
+    argNames: [],
+  );
+
+  @override
+  int crateApiRelayAnywhereRelayAnywhereOpenSessionCount() {
+    return handler.executeSync(
+      SyncTask(
+        callFfi: () {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 62)!;
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_u_32,
+          decodeErrorData: null,
+        ),
+        constMeta: kCrateApiRelayAnywhereRelayAnywhereOpenSessionCountConstMeta,
+        argValues: [],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiRelayAnywhereRelayAnywhereOpenSessionCountConstMeta => const TaskConstMeta(
+    debugName: 'relay_anywhere_open_session_count',
+    argNames: [],
+  );
+
+  @override
+  RsRelayAddress crateApiRelayAnywhereRelayAnywhereParseAddress({required String address}) {
+    return handler.executeSync(
+      SyncTask(
+        callFfi: () {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_String(address, serializer);
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 63)!;
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_rs_relay_address,
+          decodeErrorData: sse_decode_AnyhowException,
+        ),
+        constMeta: kCrateApiRelayAnywhereRelayAnywhereParseAddressConstMeta,
+        argValues: [address],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiRelayAnywhereRelayAnywhereParseAddressConstMeta => const TaskConstMeta(
+    debugName: 'relay_anywhere_parse_address',
+    argNames: ['address'],
+  );
+
+  @override
+  Stream<RsRelayAnywhereEvent> crateApiRelayAnywhereRelayAnywhereReceive({
+    required BigInt sessionId,
+    required List<int> privateKeyPem,
+    required String relayId,
+    required String alias,
+    required RsRelayPathPreference pathPreference,
+    String? expectedRemoteRelayId,
+  }) {
+    final eventSink = RustStreamSink<RsRelayAnywhereEvent>();
+    unawaited(
+      handler.executeNormal(
+        NormalTask(
+          callFfi: (port_) {
+            final serializer = SseSerializer(generalizedFrbRustBinding);
+            sse_encode_u_64(sessionId, serializer);
+            sse_encode_list_prim_u_8_loose(privateKeyPem, serializer);
+            sse_encode_String(relayId, serializer);
+            sse_encode_String(alias, serializer);
+            sse_encode_rs_relay_path_preference(pathPreference, serializer);
+            sse_encode_opt_String(expectedRemoteRelayId, serializer);
+            sse_encode_StreamSink_rs_relay_anywhere_event_Sse(eventSink, serializer);
+            pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 64, port: port_);
+          },
+          codec: SseCodec(
+            decodeSuccessData: sse_decode_unit,
+            decodeErrorData: sse_decode_AnyhowException,
+          ),
+          constMeta: kCrateApiRelayAnywhereRelayAnywhereReceiveConstMeta,
+          argValues: [sessionId, privateKeyPem, relayId, alias, pathPreference, expectedRemoteRelayId, eventSink],
+          apiImpl: this,
+        ),
+      ),
+    );
+    return eventSink.stream;
+  }
+
+  TaskConstMeta get kCrateApiRelayAnywhereRelayAnywhereReceiveConstMeta => const TaskConstMeta(
+    debugName: 'relay_anywhere_receive',
+    argNames: ['sessionId', 'privateKeyPem', 'relayId', 'alias', 'pathPreference', 'expectedRemoteRelayId', 'eventSink'],
+  );
+
+  @override
+  void crateApiRelayAnywhereRelayAnywhereRespond({required BigInt sessionId, required BigInt transferId, required bool accept, String? targetsJson}) {
+    return handler.executeSync(
+      SyncTask(
+        callFfi: () {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_u_64(sessionId, serializer);
+          sse_encode_u_64(transferId, serializer);
+          sse_encode_bool(accept, serializer);
+          sse_encode_opt_String(targetsJson, serializer);
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 65)!;
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_unit,
+          decodeErrorData: sse_decode_AnyhowException,
+        ),
+        constMeta: kCrateApiRelayAnywhereRelayAnywhereRespondConstMeta,
+        argValues: [sessionId, transferId, accept, targetsJson],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiRelayAnywhereRelayAnywhereRespondConstMeta => const TaskConstMeta(
+    debugName: 'relay_anywhere_respond',
+    argNames: ['sessionId', 'transferId', 'accept', 'targetsJson'],
+  );
+
+  @override
+  Stream<RsRelayAnywhereEvent> crateApiRelayAnywhereRelayAnywhereSend({
+    required BigInt sessionId,
+    required List<int> privateKeyPem,
+    required String relayId,
+    required String address,
+    required String alias,
+    required RsRelayPathPreference pathPreference,
+    required List<RsRelayAnywhereFile> files,
+  }) {
+    final eventSink = RustStreamSink<RsRelayAnywhereEvent>();
+    unawaited(
+      handler.executeNormal(
+        NormalTask(
+          callFfi: (port_) {
+            final serializer = SseSerializer(generalizedFrbRustBinding);
+            sse_encode_u_64(sessionId, serializer);
+            sse_encode_list_prim_u_8_loose(privateKeyPem, serializer);
+            sse_encode_String(relayId, serializer);
+            sse_encode_String(address, serializer);
+            sse_encode_String(alias, serializer);
+            sse_encode_rs_relay_path_preference(pathPreference, serializer);
+            sse_encode_list_rs_relay_anywhere_file(files, serializer);
+            sse_encode_StreamSink_rs_relay_anywhere_event_Sse(eventSink, serializer);
+            pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 66, port: port_);
+          },
+          codec: SseCodec(
+            decodeSuccessData: sse_decode_unit,
+            decodeErrorData: sse_decode_AnyhowException,
+          ),
+          constMeta: kCrateApiRelayAnywhereRelayAnywhereSendConstMeta,
+          argValues: [sessionId, privateKeyPem, relayId, address, alias, pathPreference, files, eventSink],
+          apiImpl: this,
+        ),
+      ),
+    );
+    return eventSink.stream;
+  }
+
+  TaskConstMeta get kCrateApiRelayAnywhereRelayAnywhereSendConstMeta => const TaskConstMeta(
+    debugName: 'relay_anywhere_send',
+    argNames: ['sessionId', 'privateKeyPem', 'relayId', 'address', 'alias', 'pathPreference', 'files', 'eventSink'],
+  );
+
+  @override
   Future<RelayIdentityMaterial> crateApiCryptoRestoreRelayIdentity({required List<int> privateKey}) {
     return handler.executeNormal(
       NormalTask(
         callFfi: (port_) {
           final serializer = SseSerializer(generalizedFrbRustBinding);
           sse_encode_list_prim_u_8_loose(privateKey, serializer);
-          pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 68, port: port_);
+          pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 67, port: port_);
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_relay_identity_material,
@@ -2445,7 +2421,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         callFfi: () {
           final serializer = SseSerializer(generalizedFrbRustBinding);
           sse_encode_String(name, serializer);
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 69)!;
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 68)!;
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_String,
@@ -2498,7 +2474,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           sse_encode_String(certPem, serializer);
           sse_encode_String(privateKeyPem, serializer);
           sse_encode_u_64(timeoutMs, serializer);
-          pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 70, port: port_);
+          pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 69, port: port_);
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerRsDiscovery,
@@ -2575,7 +2551,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           sse_encode_bool(verifyChecksums, serializer);
           sse_encode_opt_box_autoadd_web_params(web, serializer);
           sse_encode_opt_String(showToken, serializer);
-          pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 71, port: port_);
+          pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 70, port: port_);
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerRsHttpServer,
@@ -2601,7 +2577,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           final serializer = SseSerializer(generalizedFrbRustBinding);
           sse_encode_String(cert, serializer);
           sse_encode_String(publicKey, serializer);
-          pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 72, port: port_);
+          pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 71, port: port_);
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_unit,
@@ -2979,7 +2955,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
-  RustStreamSink<RsRa2bEvent> dco_decode_StreamSink_rs_ra_2_b_event_Sse(dynamic raw) {
+  RustStreamSink<RsRelayAnywhereEvent> dco_decode_StreamSink_rs_relay_anywhere_event_Sse(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     throw UnimplementedError();
   }
@@ -3332,6 +3308,18 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   List<RsDeviceLog> dco_decode_list_rs_device_log(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return (raw as List<dynamic>).map(dco_decode_rs_device_log).toList();
+  }
+
+  @protected
+  List<RsRelayAnywhereFile> dco_decode_list_rs_relay_anywhere_file(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return (raw as List<dynamic>).map(dco_decode_rs_relay_anywhere_file).toList();
+  }
+
+  @protected
+  List<RsRelayIncomingFile> dco_decode_list_rs_relay_incoming_file(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return (raw as List<dynamic>).map(dco_decode_rs_relay_incoming_file).toList();
   }
 
   @protected
@@ -3694,87 +3682,103 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
-  RsRa2bEvent dco_decode_rs_ra_2_b_event(dynamic raw) {
+  RsRelayAddress dco_decode_rs_relay_address(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 3) throw Exception('unexpected arr length: expect 3 but see ${arr.length}');
+    return RsRelayAddress(
+      version: dco_decode_u_32(arr[0]),
+      claimedRelayId: dco_decode_String(arr[1]),
+      routingAvailable: dco_decode_bool(arr[2]),
+    );
+  }
+
+  @protected
+  RsRelayAnywhereEvent dco_decode_rs_relay_anywhere_event(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     switch (raw[0]) {
       case 0:
-        return RsRa2bEvent_Starting();
+        return RsRelayAnywhereEvent_Starting();
       case 1:
-        return RsRa2bEvent_InviteReady(
-          invite: dco_decode_String(raw[1]),
+        return RsRelayAnywhereEvent_AddressReady(
+          address: dco_decode_String(raw[1]),
           localRelayId: dco_decode_String(raw[2]),
-          autoRelayAvailable: dco_decode_bool(raw[3]),
         );
       case 2:
-        return RsRa2bEvent_WaitingForPeer();
+        return RsRelayAnywhereEvent_WaitingForPeer();
       case 3:
-        return RsRa2bEvent_Connecting();
+        return RsRelayAnywhereEvent_Connecting();
       case 4:
-        return RsRa2bEvent_IrohConnected();
+        return RsRelayAnywhereEvent_PeerConnected();
       case 5:
-        return RsRa2bEvent_TlsAuthenticated();
+        return RsRelayAnywhereEvent_TlsEstablished();
       case 6:
-        return RsRa2bEvent_RelayIdentityVerified(
+        return RsRelayAnywhereEvent_PeerAuthenticated(
           remoteRelayId: dco_decode_String(raw[1]),
         );
       case 7:
-        return RsRa2bEvent_Transferring(
+        return RsRelayAnywhereEvent_IncomingBatch(
+          transferId: dco_decode_u_64(raw[1]),
+          files: dco_decode_list_rs_relay_incoming_file(raw[2]),
+          remoteRelayId: dco_decode_String(raw[3]),
+        );
+      case 8:
+        return RsRelayAnywhereEvent_Transferring(
           bytes: dco_decode_u_64(raw[1]),
           total: dco_decode_u_64(raw[2]),
         );
-      case 8:
-        return RsRa2bEvent_Complete(
-          path: dco_decode_String(raw[1]),
-          bytes: dco_decode_u_32(raw[2]),
-          hashHex: dco_decode_String(raw[3]),
-          localRelayId: dco_decode_String(raw[4]),
-          remoteRelayId: dco_decode_String(raw[5]),
-          durationMs: dco_decode_u_64(raw[6]),
-        );
       case 9:
-        return RsRa2bEvent_Rejected(
-          message: dco_decode_String(raw[1]),
-          category: dco_decode_String(raw[2]),
+        return RsRelayAnywhereEvent_Completed(
+          path: dco_decode_String(raw[1]),
+          bytes: dco_decode_u_64(raw[2]),
+          localRelayId: dco_decode_String(raw[3]),
+          remoteRelayId: dco_decode_String(raw[4]),
+          durationMs: dco_decode_u_64(raw[5]),
         );
       case 10:
-        return RsRa2bEvent_Failed(
+        return RsRelayAnywhereEvent_Failed(
           message: dco_decode_String(raw[1]),
           category: dco_decode_String(raw[2]),
+          stage: dco_decode_opt_String(raw[3]),
         );
       case 11:
-        return RsRa2bEvent_Cancelled();
+        return RsRelayAnywhereEvent_Cancelled();
       default:
         throw Exception('unreachable');
     }
   }
 
   @protected
-  RsRa2bLocalIdentity dco_decode_rs_ra_2_b_local_identity(dynamic raw) {
+  RsRelayAnywhereFile dco_decode_rs_relay_anywhere_file(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 1) throw Exception('unexpected arr length: expect 1 but see ${arr.length}');
-    return RsRa2bLocalIdentity(
-      relayId: dco_decode_String(arr[0]),
+    if (arr.length != 6) throw Exception('unexpected arr length: expect 6 but see ${arr.length}');
+    return RsRelayAnywhereFile(
+      path: dco_decode_opt_String(arr[0]),
+      fileDescriptor: dco_decode_opt_box_autoadd_i_32(arr[1]),
+      name: dco_decode_String(arr[2]),
+      size: dco_decode_u_64(arr[3]),
+      fileType: dco_decode_String(arr[4]),
+      sha256: dco_decode_opt_String(arr[5]),
     );
   }
 
   @protected
-  RsRa2bParsedInvite dco_decode_rs_ra_2_b_parsed_invite(dynamic raw) {
+  RsRelayIncomingFile dco_decode_rs_relay_incoming_file(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 4) throw Exception('unexpected arr length: expect 4 but see ${arr.length}');
-    return RsRa2bParsedInvite(
-      version: dco_decode_u_32(arr[0]),
-      hostRelayId: dco_decode_String(arr[1]),
-      routingAvailable: dco_decode_bool(arr[2]),
-      capability: dco_decode_opt_String(arr[3]),
+    if (arr.length != 3) throw Exception('unexpected arr length: expect 3 but see ${arr.length}');
+    return RsRelayIncomingFile(
+      id: dco_decode_String(arr[0]),
+      name: dco_decode_String(arr[1]),
+      size: dco_decode_u_64(arr[2]),
     );
   }
 
   @protected
-  RsRa2bPathPreference dco_decode_rs_ra_2_b_path_preference(dynamic raw) {
+  RsRelayPathPreference dco_decode_rs_relay_path_preference(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
-    return RsRa2bPathPreference.values[raw as int];
+    return RsRelayPathPreference.values[raw as int];
   }
 
   @protected
@@ -4391,7 +4395,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
-  RustStreamSink<RsRa2bEvent> sse_decode_StreamSink_rs_ra_2_b_event_Sse(SseDeserializer deserializer) {
+  RustStreamSink<RsRelayAnywhereEvent> sse_decode_StreamSink_rs_relay_anywhere_event_Sse(SseDeserializer deserializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     throw UnimplementedError('Unreachable ()');
   }
@@ -4780,6 +4784,30 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var ans_ = <RsDeviceLog>[];
     for (var idx_ = 0; idx_ < len_; ++idx_) {
       ans_.add(sse_decode_rs_device_log(deserializer));
+    }
+    return ans_;
+  }
+
+  @protected
+  List<RsRelayAnywhereFile> sse_decode_list_rs_relay_anywhere_file(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    var len_ = sse_decode_i_32(deserializer);
+    var ans_ = <RsRelayAnywhereFile>[];
+    for (var idx_ = 0; idx_ < len_; ++idx_) {
+      ans_.add(sse_decode_rs_relay_anywhere_file(deserializer));
+    }
+    return ans_;
+  }
+
+  @protected
+  List<RsRelayIncomingFile> sse_decode_list_rs_relay_incoming_file(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    var len_ = sse_decode_i_32(deserializer);
+    var ans_ = <RsRelayIncomingFile>[];
+    for (var idx_ = 0; idx_ < len_; ++idx_) {
+      ans_.add(sse_decode_rs_relay_incoming_file(deserializer));
     }
     return ans_;
   }
@@ -5194,85 +5222,104 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
-  RsRa2bEvent sse_decode_rs_ra_2_b_event(SseDeserializer deserializer) {
+  RsRelayAddress sse_decode_rs_relay_address(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_version = sse_decode_u_32(deserializer);
+    var var_claimedRelayId = sse_decode_String(deserializer);
+    var var_routingAvailable = sse_decode_bool(deserializer);
+    return RsRelayAddress(version: var_version, claimedRelayId: var_claimedRelayId, routingAvailable: var_routingAvailable);
+  }
+
+  @protected
+  RsRelayAnywhereEvent sse_decode_rs_relay_anywhere_event(SseDeserializer deserializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
 
     var tag_ = sse_decode_i_32(deserializer);
     switch (tag_) {
       case 0:
-        return RsRa2bEvent_Starting();
+        return RsRelayAnywhereEvent_Starting();
       case 1:
-        var var_invite = sse_decode_String(deserializer);
+        var var_address = sse_decode_String(deserializer);
         var var_localRelayId = sse_decode_String(deserializer);
-        var var_autoRelayAvailable = sse_decode_bool(deserializer);
-        return RsRa2bEvent_InviteReady(invite: var_invite, localRelayId: var_localRelayId, autoRelayAvailable: var_autoRelayAvailable);
+        return RsRelayAnywhereEvent_AddressReady(address: var_address, localRelayId: var_localRelayId);
       case 2:
-        return RsRa2bEvent_WaitingForPeer();
+        return RsRelayAnywhereEvent_WaitingForPeer();
       case 3:
-        return RsRa2bEvent_Connecting();
+        return RsRelayAnywhereEvent_Connecting();
       case 4:
-        return RsRa2bEvent_IrohConnected();
+        return RsRelayAnywhereEvent_PeerConnected();
       case 5:
-        return RsRa2bEvent_TlsAuthenticated();
+        return RsRelayAnywhereEvent_TlsEstablished();
       case 6:
         var var_remoteRelayId = sse_decode_String(deserializer);
-        return RsRa2bEvent_RelayIdentityVerified(remoteRelayId: var_remoteRelayId);
+        return RsRelayAnywhereEvent_PeerAuthenticated(remoteRelayId: var_remoteRelayId);
       case 7:
+        var var_transferId = sse_decode_u_64(deserializer);
+        var var_files = sse_decode_list_rs_relay_incoming_file(deserializer);
+        var var_remoteRelayId = sse_decode_String(deserializer);
+        return RsRelayAnywhereEvent_IncomingBatch(transferId: var_transferId, files: var_files, remoteRelayId: var_remoteRelayId);
+      case 8:
         var var_bytes = sse_decode_u_64(deserializer);
         var var_total = sse_decode_u_64(deserializer);
-        return RsRa2bEvent_Transferring(bytes: var_bytes, total: var_total);
-      case 8:
+        return RsRelayAnywhereEvent_Transferring(bytes: var_bytes, total: var_total);
+      case 9:
         var var_path = sse_decode_String(deserializer);
-        var var_bytes = sse_decode_u_32(deserializer);
-        var var_hashHex = sse_decode_String(deserializer);
+        var var_bytes = sse_decode_u_64(deserializer);
         var var_localRelayId = sse_decode_String(deserializer);
         var var_remoteRelayId = sse_decode_String(deserializer);
         var var_durationMs = sse_decode_u_64(deserializer);
-        return RsRa2bEvent_Complete(
+        return RsRelayAnywhereEvent_Completed(
           path: var_path,
           bytes: var_bytes,
-          hashHex: var_hashHex,
           localRelayId: var_localRelayId,
           remoteRelayId: var_remoteRelayId,
           durationMs: var_durationMs,
         );
-      case 9:
-        var var_message = sse_decode_String(deserializer);
-        var var_category = sse_decode_String(deserializer);
-        return RsRa2bEvent_Rejected(message: var_message, category: var_category);
       case 10:
         var var_message = sse_decode_String(deserializer);
         var var_category = sse_decode_String(deserializer);
-        return RsRa2bEvent_Failed(message: var_message, category: var_category);
+        var var_stage = sse_decode_opt_String(deserializer);
+        return RsRelayAnywhereEvent_Failed(message: var_message, category: var_category, stage: var_stage);
       case 11:
-        return RsRa2bEvent_Cancelled();
+        return RsRelayAnywhereEvent_Cancelled();
       default:
         throw UnimplementedError('');
     }
   }
 
   @protected
-  RsRa2bLocalIdentity sse_decode_rs_ra_2_b_local_identity(SseDeserializer deserializer) {
+  RsRelayAnywhereFile sse_decode_rs_relay_anywhere_file(SseDeserializer deserializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
-    var var_relayId = sse_decode_String(deserializer);
-    return RsRa2bLocalIdentity(relayId: var_relayId);
+    var var_path = sse_decode_opt_String(deserializer);
+    var var_fileDescriptor = sse_decode_opt_box_autoadd_i_32(deserializer);
+    var var_name = sse_decode_String(deserializer);
+    var var_size = sse_decode_u_64(deserializer);
+    var var_fileType = sse_decode_String(deserializer);
+    var var_sha256 = sse_decode_opt_String(deserializer);
+    return RsRelayAnywhereFile(
+      path: var_path,
+      fileDescriptor: var_fileDescriptor,
+      name: var_name,
+      size: var_size,
+      fileType: var_fileType,
+      sha256: var_sha256,
+    );
   }
 
   @protected
-  RsRa2bParsedInvite sse_decode_rs_ra_2_b_parsed_invite(SseDeserializer deserializer) {
+  RsRelayIncomingFile sse_decode_rs_relay_incoming_file(SseDeserializer deserializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
-    var var_version = sse_decode_u_32(deserializer);
-    var var_hostRelayId = sse_decode_String(deserializer);
-    var var_routingAvailable = sse_decode_bool(deserializer);
-    var var_capability = sse_decode_opt_String(deserializer);
-    return RsRa2bParsedInvite(version: var_version, hostRelayId: var_hostRelayId, routingAvailable: var_routingAvailable, capability: var_capability);
+    var var_id = sse_decode_String(deserializer);
+    var var_name = sse_decode_String(deserializer);
+    var var_size = sse_decode_u_64(deserializer);
+    return RsRelayIncomingFile(id: var_id, name: var_name, size: var_size);
   }
 
   @protected
-  RsRa2bPathPreference sse_decode_rs_ra_2_b_path_preference(SseDeserializer deserializer) {
+  RsRelayPathPreference sse_decode_rs_relay_path_preference(SseDeserializer deserializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     var inner = sse_decode_i_32(deserializer);
-    return RsRa2bPathPreference.values[inner];
+    return RsRelayPathPreference.values[inner];
   }
 
   @protected
@@ -5957,12 +6004,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
-  void sse_encode_StreamSink_rs_ra_2_b_event_Sse(RustStreamSink<RsRa2bEvent> self, SseSerializer serializer) {
+  void sse_encode_StreamSink_rs_relay_anywhere_event_Sse(RustStreamSink<RsRelayAnywhereEvent> self, SseSerializer serializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     sse_encode_String(
       self.setupAndSerialize(
         codec: SseCodec(
-          decodeSuccessData: sse_decode_rs_ra_2_b_event,
+          decodeSuccessData: sse_decode_rs_relay_anywhere_event,
           decodeErrorData: sse_decode_AnyhowException,
         ),
       ),
@@ -6369,6 +6416,24 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  void sse_encode_list_rs_relay_anywhere_file(List<RsRelayAnywhereFile> self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_i_32(self.length, serializer);
+    for (final item in self) {
+      sse_encode_rs_relay_anywhere_file(item, serializer);
+    }
+  }
+
+  @protected
+  void sse_encode_list_rs_relay_incoming_file(List<RsRelayIncomingFile> self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_i_32(self.length, serializer);
+    for (final item in self) {
+      sse_encode_rs_relay_incoming_file(item, serializer);
+    }
+  }
+
+  @protected
   void sse_encode_ls_http_client_version(LsHttpClientVersion self, SseSerializer serializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     sse_encode_i_32(self.index, serializer);
@@ -6704,76 +6769,87 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
-  void sse_encode_rs_ra_2_b_event(RsRa2bEvent self, SseSerializer serializer) {
+  void sse_encode_rs_relay_address(RsRelayAddress self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_u_32(self.version, serializer);
+    sse_encode_String(self.claimedRelayId, serializer);
+    sse_encode_bool(self.routingAvailable, serializer);
+  }
+
+  @protected
+  void sse_encode_rs_relay_anywhere_event(RsRelayAnywhereEvent self, SseSerializer serializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     switch (self) {
-      case RsRa2bEvent_Starting():
+      case RsRelayAnywhereEvent_Starting():
         sse_encode_i_32(0, serializer);
-      case RsRa2bEvent_InviteReady(invite: final invite, localRelayId: final localRelayId, autoRelayAvailable: final autoRelayAvailable):
+      case RsRelayAnywhereEvent_AddressReady(address: final address, localRelayId: final localRelayId):
         sse_encode_i_32(1, serializer);
-        sse_encode_String(invite, serializer);
+        sse_encode_String(address, serializer);
         sse_encode_String(localRelayId, serializer);
-        sse_encode_bool(autoRelayAvailable, serializer);
-      case RsRa2bEvent_WaitingForPeer():
+      case RsRelayAnywhereEvent_WaitingForPeer():
         sse_encode_i_32(2, serializer);
-      case RsRa2bEvent_Connecting():
+      case RsRelayAnywhereEvent_Connecting():
         sse_encode_i_32(3, serializer);
-      case RsRa2bEvent_IrohConnected():
+      case RsRelayAnywhereEvent_PeerConnected():
         sse_encode_i_32(4, serializer);
-      case RsRa2bEvent_TlsAuthenticated():
+      case RsRelayAnywhereEvent_TlsEstablished():
         sse_encode_i_32(5, serializer);
-      case RsRa2bEvent_RelayIdentityVerified(remoteRelayId: final remoteRelayId):
+      case RsRelayAnywhereEvent_PeerAuthenticated(remoteRelayId: final remoteRelayId):
         sse_encode_i_32(6, serializer);
         sse_encode_String(remoteRelayId, serializer);
-      case RsRa2bEvent_Transferring(bytes: final bytes, total: final total):
+      case RsRelayAnywhereEvent_IncomingBatch(transferId: final transferId, files: final files, remoteRelayId: final remoteRelayId):
         sse_encode_i_32(7, serializer);
+        sse_encode_u_64(transferId, serializer);
+        sse_encode_list_rs_relay_incoming_file(files, serializer);
+        sse_encode_String(remoteRelayId, serializer);
+      case RsRelayAnywhereEvent_Transferring(bytes: final bytes, total: final total):
+        sse_encode_i_32(8, serializer);
         sse_encode_u_64(bytes, serializer);
         sse_encode_u_64(total, serializer);
-      case RsRa2bEvent_Complete(
+      case RsRelayAnywhereEvent_Completed(
         path: final path,
         bytes: final bytes,
-        hashHex: final hashHex,
         localRelayId: final localRelayId,
         remoteRelayId: final remoteRelayId,
         durationMs: final durationMs,
       ):
-        sse_encode_i_32(8, serializer);
+        sse_encode_i_32(9, serializer);
         sse_encode_String(path, serializer);
-        sse_encode_u_32(bytes, serializer);
-        sse_encode_String(hashHex, serializer);
+        sse_encode_u_64(bytes, serializer);
         sse_encode_String(localRelayId, serializer);
         sse_encode_String(remoteRelayId, serializer);
         sse_encode_u_64(durationMs, serializer);
-      case RsRa2bEvent_Rejected(message: final message, category: final category):
-        sse_encode_i_32(9, serializer);
-        sse_encode_String(message, serializer);
-        sse_encode_String(category, serializer);
-      case RsRa2bEvent_Failed(message: final message, category: final category):
+      case RsRelayAnywhereEvent_Failed(message: final message, category: final category, stage: final stage):
         sse_encode_i_32(10, serializer);
         sse_encode_String(message, serializer);
         sse_encode_String(category, serializer);
-      case RsRa2bEvent_Cancelled():
+        sse_encode_opt_String(stage, serializer);
+      case RsRelayAnywhereEvent_Cancelled():
         sse_encode_i_32(11, serializer);
     }
   }
 
   @protected
-  void sse_encode_rs_ra_2_b_local_identity(RsRa2bLocalIdentity self, SseSerializer serializer) {
+  void sse_encode_rs_relay_anywhere_file(RsRelayAnywhereFile self, SseSerializer serializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
-    sse_encode_String(self.relayId, serializer);
+    sse_encode_opt_String(self.path, serializer);
+    sse_encode_opt_box_autoadd_i_32(self.fileDescriptor, serializer);
+    sse_encode_String(self.name, serializer);
+    sse_encode_u_64(self.size, serializer);
+    sse_encode_String(self.fileType, serializer);
+    sse_encode_opt_String(self.sha256, serializer);
   }
 
   @protected
-  void sse_encode_rs_ra_2_b_parsed_invite(RsRa2bParsedInvite self, SseSerializer serializer) {
+  void sse_encode_rs_relay_incoming_file(RsRelayIncomingFile self, SseSerializer serializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
-    sse_encode_u_32(self.version, serializer);
-    sse_encode_String(self.hostRelayId, serializer);
-    sse_encode_bool(self.routingAvailable, serializer);
-    sse_encode_opt_String(self.capability, serializer);
+    sse_encode_String(self.id, serializer);
+    sse_encode_String(self.name, serializer);
+    sse_encode_u_64(self.size, serializer);
   }
 
   @protected
-  void sse_encode_rs_ra_2_b_path_preference(RsRa2bPathPreference self, SseSerializer serializer) {
+  void sse_encode_rs_relay_path_preference(RsRelayPathPreference self, SseSerializer serializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     sse_encode_i_32(self.index, serializer);
   }

@@ -6,7 +6,9 @@ pub mod http;
 pub mod logging;
 pub mod metadata;
 pub mod model;
+#[cfg(feature = "ra2b-harness")]
 pub mod ra2b;
+pub mod relay_anywhere;
 pub mod server;
 pub mod stream;
 pub mod webrtc;

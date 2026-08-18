@@ -786,11 +786,15 @@ fn map_anywhere(error: AnywhereError) -> anyhow::Error {
             anyhow::anyhow!("{IDENTITY_REJECTED}")
         }
         AnywhereError::Cancelled => anyhow::anyhow!("cancelled"),
-        AnywhereError::Timeout => anyhow::anyhow!("timed out"),
+        AnywhereError::Timeout { .. } => anyhow::anyhow!("timed out"),
         AnywhereError::ProtocolCompletion => anyhow::anyhow!("session result / completion frame"),
         AnywhereError::AuthorizationDenied => anyhow::anyhow!("transfer denied"),
-        AnywhereError::Tls => anyhow::anyhow!("inner TLS failed"),
-        AnywhereError::Transport => anyhow::anyhow!("transport failed"),
+        AnywhereError::Tls { stage, cause } => {
+            anyhow::anyhow!("inner TLS failed at {stage}: {cause}")
+        }
+        AnywhereError::Transport { stage, cause } => {
+            anyhow::anyhow!("transport failed at {stage}: {cause}")
+        }
     }
 }
 

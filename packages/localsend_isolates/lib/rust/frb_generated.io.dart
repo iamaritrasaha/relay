@@ -16,7 +16,7 @@ import 'package:localsend_isolates/rust/api/http.dart';
 import 'package:localsend_isolates/rust/api/logging.dart';
 import 'package:localsend_isolates/rust/api/metadata.dart';
 import 'package:localsend_isolates/rust/api/model.dart';
-import 'package:localsend_isolates/rust/api/ra2b.dart';
+import 'package:localsend_isolates/rust/api/relay_anywhere.dart';
 import 'package:localsend_isolates/rust/api/server.dart';
 import 'package:localsend_isolates/rust/api/stream.dart';
 import 'package:localsend_isolates/rust/api/webrtc.dart';
@@ -199,7 +199,7 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   RustStreamSink<RsHashFileEvent> dco_decode_StreamSink_rs_hash_file_event_Sse(dynamic raw);
 
   @protected
-  RustStreamSink<RsRa2bEvent> dco_decode_StreamSink_rs_ra_2_b_event_Sse(dynamic raw);
+  RustStreamSink<RsRelayAnywhereEvent> dco_decode_StreamSink_rs_relay_anywhere_event_Sse(dynamic raw);
 
   @protected
   RustStreamSink<RsServerEvent> dco_decode_StreamSink_rs_server_event_Sse(dynamic raw);
@@ -357,6 +357,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   List<RsDeviceLog> dco_decode_list_rs_device_log(dynamic raw);
 
   @protected
+  List<RsRelayAnywhereFile> dco_decode_list_rs_relay_anywhere_file(dynamic raw);
+
+  @protected
+  List<RsRelayIncomingFile> dco_decode_list_rs_relay_incoming_file(dynamic raw);
+
+  @protected
   LsHttpClientVersion dco_decode_ls_http_client_version(dynamic raw);
 
   @protected
@@ -463,16 +469,19 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   RsHttpClientError dco_decode_rs_http_client_error(dynamic raw);
 
   @protected
-  RsRa2bEvent dco_decode_rs_ra_2_b_event(dynamic raw);
+  RsRelayAddress dco_decode_rs_relay_address(dynamic raw);
 
   @protected
-  RsRa2bLocalIdentity dco_decode_rs_ra_2_b_local_identity(dynamic raw);
+  RsRelayAnywhereEvent dco_decode_rs_relay_anywhere_event(dynamic raw);
 
   @protected
-  RsRa2bParsedInvite dco_decode_rs_ra_2_b_parsed_invite(dynamic raw);
+  RsRelayAnywhereFile dco_decode_rs_relay_anywhere_file(dynamic raw);
 
   @protected
-  RsRa2bPathPreference dco_decode_rs_ra_2_b_path_preference(dynamic raw);
+  RsRelayIncomingFile dco_decode_rs_relay_incoming_file(dynamic raw);
+
+  @protected
+  RsRelayPathPreference dco_decode_rs_relay_path_preference(dynamic raw);
 
   @protected
   RsRelayPeerAuth dco_decode_rs_relay_peer_auth(dynamic raw);
@@ -690,7 +699,7 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   RustStreamSink<RsHashFileEvent> sse_decode_StreamSink_rs_hash_file_event_Sse(SseDeserializer deserializer);
 
   @protected
-  RustStreamSink<RsRa2bEvent> sse_decode_StreamSink_rs_ra_2_b_event_Sse(SseDeserializer deserializer);
+  RustStreamSink<RsRelayAnywhereEvent> sse_decode_StreamSink_rs_relay_anywhere_event_Sse(SseDeserializer deserializer);
 
   @protected
   RustStreamSink<RsServerEvent> sse_decode_StreamSink_rs_server_event_Sse(SseDeserializer deserializer);
@@ -848,6 +857,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   List<RsDeviceLog> sse_decode_list_rs_device_log(SseDeserializer deserializer);
 
   @protected
+  List<RsRelayAnywhereFile> sse_decode_list_rs_relay_anywhere_file(SseDeserializer deserializer);
+
+  @protected
+  List<RsRelayIncomingFile> sse_decode_list_rs_relay_incoming_file(SseDeserializer deserializer);
+
+  @protected
   LsHttpClientVersion sse_decode_ls_http_client_version(SseDeserializer deserializer);
 
   @protected
@@ -956,16 +971,19 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   RsHttpClientError sse_decode_rs_http_client_error(SseDeserializer deserializer);
 
   @protected
-  RsRa2bEvent sse_decode_rs_ra_2_b_event(SseDeserializer deserializer);
+  RsRelayAddress sse_decode_rs_relay_address(SseDeserializer deserializer);
 
   @protected
-  RsRa2bLocalIdentity sse_decode_rs_ra_2_b_local_identity(SseDeserializer deserializer);
+  RsRelayAnywhereEvent sse_decode_rs_relay_anywhere_event(SseDeserializer deserializer);
 
   @protected
-  RsRa2bParsedInvite sse_decode_rs_ra_2_b_parsed_invite(SseDeserializer deserializer);
+  RsRelayAnywhereFile sse_decode_rs_relay_anywhere_file(SseDeserializer deserializer);
 
   @protected
-  RsRa2bPathPreference sse_decode_rs_ra_2_b_path_preference(SseDeserializer deserializer);
+  RsRelayIncomingFile sse_decode_rs_relay_incoming_file(SseDeserializer deserializer);
+
+  @protected
+  RsRelayPathPreference sse_decode_rs_relay_path_preference(SseDeserializer deserializer);
 
   @protected
   RsRelayPeerAuth sse_decode_rs_relay_peer_auth(SseDeserializer deserializer);
@@ -1227,7 +1245,7 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   void sse_encode_StreamSink_rs_hash_file_event_Sse(RustStreamSink<RsHashFileEvent> self, SseSerializer serializer);
 
   @protected
-  void sse_encode_StreamSink_rs_ra_2_b_event_Sse(RustStreamSink<RsRa2bEvent> self, SseSerializer serializer);
+  void sse_encode_StreamSink_rs_relay_anywhere_event_Sse(RustStreamSink<RsRelayAnywhereEvent> self, SseSerializer serializer);
 
   @protected
   void sse_encode_StreamSink_rs_server_event_Sse(RustStreamSink<RsServerEvent> self, SseSerializer serializer);
@@ -1386,6 +1404,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   void sse_encode_list_rs_device_log(List<RsDeviceLog> self, SseSerializer serializer);
 
   @protected
+  void sse_encode_list_rs_relay_anywhere_file(List<RsRelayAnywhereFile> self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_list_rs_relay_incoming_file(List<RsRelayIncomingFile> self, SseSerializer serializer);
+
+  @protected
   void sse_encode_ls_http_client_version(LsHttpClientVersion self, SseSerializer serializer);
 
   @protected
@@ -1495,16 +1519,19 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   void sse_encode_rs_http_client_error(RsHttpClientError self, SseSerializer serializer);
 
   @protected
-  void sse_encode_rs_ra_2_b_event(RsRa2bEvent self, SseSerializer serializer);
+  void sse_encode_rs_relay_address(RsRelayAddress self, SseSerializer serializer);
 
   @protected
-  void sse_encode_rs_ra_2_b_local_identity(RsRa2bLocalIdentity self, SseSerializer serializer);
+  void sse_encode_rs_relay_anywhere_event(RsRelayAnywhereEvent self, SseSerializer serializer);
 
   @protected
-  void sse_encode_rs_ra_2_b_parsed_invite(RsRa2bParsedInvite self, SseSerializer serializer);
+  void sse_encode_rs_relay_anywhere_file(RsRelayAnywhereFile self, SseSerializer serializer);
 
   @protected
-  void sse_encode_rs_ra_2_b_path_preference(RsRa2bPathPreference self, SseSerializer serializer);
+  void sse_encode_rs_relay_incoming_file(RsRelayIncomingFile self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_rs_relay_path_preference(RsRelayPathPreference self, SseSerializer serializer);
 
   @protected
   void sse_encode_rs_relay_peer_auth(RsRelayPeerAuth self, SseSerializer serializer);
