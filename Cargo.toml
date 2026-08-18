@@ -4,6 +4,7 @@ members = [
     "cli",
     "packages/core",
     "packages/localsend_isolates/rust",
+    "model-development/relay-anywhere-ra2b",
     "server",
 ]
 

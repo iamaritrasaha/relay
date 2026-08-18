@@ -59,4 +59,5 @@ http = ["crypto", "form_urlencoded", "http-body-util", "hyper", "hyper-util", "i
 multicast = ["if-addrs", "socket2", "tokio-util"]
 webrtc-signaling = ["tokio-tungstenite"]
 webrtc = ["crypto", "flate2", "dep:webrtc", "webrtc-signaling", "x509-parser"]
+anywhere-dev = ["crypto", "http"]
 full = ["crypto", "discovery", "http", "multicast", "webrtc"]

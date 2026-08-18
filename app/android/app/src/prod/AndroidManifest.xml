@@ -1,0 +1,5 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+    <!-- Production Relay must not pick up mobile_scanner's CAMERA merge. -->
+    <uses-permission android:name="android.permission.CAMERA" tools:node="remove" />
+</manifest>

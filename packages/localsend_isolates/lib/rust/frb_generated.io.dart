@@ -16,6 +16,7 @@ import 'package:localsend_isolates/rust/api/http.dart';
 import 'package:localsend_isolates/rust/api/logging.dart';
 import 'package:localsend_isolates/rust/api/metadata.dart';
 import 'package:localsend_isolates/rust/api/model.dart';
+import 'package:localsend_isolates/rust/api/ra2b.dart';
 import 'package:localsend_isolates/rust/api/server.dart';
 import 'package:localsend_isolates/rust/api/stream.dart';
 import 'package:localsend_isolates/rust/api/webrtc.dart';
@@ -196,6 +197,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   RustStreamSink<RsHashFileEvent> dco_decode_StreamSink_rs_hash_file_event_Sse(dynamic raw);
+
+  @protected
+  RustStreamSink<RsRa2bEvent> dco_decode_StreamSink_rs_ra_2_b_event_Sse(dynamic raw);
 
   @protected
   RustStreamSink<RsServerEvent> dco_decode_StreamSink_rs_server_event_Sse(dynamic raw);
@@ -459,6 +463,18 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   RsHttpClientError dco_decode_rs_http_client_error(dynamic raw);
 
   @protected
+  RsRa2bEvent dco_decode_rs_ra_2_b_event(dynamic raw);
+
+  @protected
+  RsRa2bLocalIdentity dco_decode_rs_ra_2_b_local_identity(dynamic raw);
+
+  @protected
+  RsRa2bParsedInvite dco_decode_rs_ra_2_b_parsed_invite(dynamic raw);
+
+  @protected
+  RsRa2bPathPreference dco_decode_rs_ra_2_b_path_preference(dynamic raw);
+
+  @protected
   RsRelayPeerAuth dco_decode_rs_relay_peer_auth(dynamic raw);
 
   @protected
@@ -672,6 +688,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   RustStreamSink<RsHashFileEvent> sse_decode_StreamSink_rs_hash_file_event_Sse(SseDeserializer deserializer);
+
+  @protected
+  RustStreamSink<RsRa2bEvent> sse_decode_StreamSink_rs_ra_2_b_event_Sse(SseDeserializer deserializer);
 
   @protected
   RustStreamSink<RsServerEvent> sse_decode_StreamSink_rs_server_event_Sse(SseDeserializer deserializer);
@@ -937,6 +956,18 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   RsHttpClientError sse_decode_rs_http_client_error(SseDeserializer deserializer);
 
   @protected
+  RsRa2bEvent sse_decode_rs_ra_2_b_event(SseDeserializer deserializer);
+
+  @protected
+  RsRa2bLocalIdentity sse_decode_rs_ra_2_b_local_identity(SseDeserializer deserializer);
+
+  @protected
+  RsRa2bParsedInvite sse_decode_rs_ra_2_b_parsed_invite(SseDeserializer deserializer);
+
+  @protected
+  RsRa2bPathPreference sse_decode_rs_ra_2_b_path_preference(SseDeserializer deserializer);
+
+  @protected
   RsRelayPeerAuth sse_decode_rs_relay_peer_auth(SseDeserializer deserializer);
 
   @protected
@@ -1194,6 +1225,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   void sse_encode_StreamSink_rs_hash_file_event_Sse(RustStreamSink<RsHashFileEvent> self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_StreamSink_rs_ra_2_b_event_Sse(RustStreamSink<RsRa2bEvent> self, SseSerializer serializer);
 
   @protected
   void sse_encode_StreamSink_rs_server_event_Sse(RustStreamSink<RsServerEvent> self, SseSerializer serializer);
@@ -1459,6 +1493,18 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   void sse_encode_rs_http_client_error(RsHttpClientError self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_rs_ra_2_b_event(RsRa2bEvent self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_rs_ra_2_b_local_identity(RsRa2bLocalIdentity self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_rs_ra_2_b_parsed_invite(RsRa2bParsedInvite self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_rs_ra_2_b_path_preference(RsRa2bPathPreference self, SseSerializer serializer);
 
   @protected
   void sse_encode_rs_relay_peer_auth(RsRelayPeerAuth self, SseSerializer serializer);

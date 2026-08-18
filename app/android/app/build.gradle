@@ -50,6 +50,17 @@ android {
         versionName flutterVersionName
     }
 
+    flavorDimensions "relay"
+    productFlavors {
+        prod {
+            dimension "relay"
+            isDefault true
+        }
+        ra2b {
+            dimension "relay"
+        }
+    }
+
     signingConfigs {
         release {
             def keystoreProperties = new Properties()
