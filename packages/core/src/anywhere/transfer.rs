@@ -21,7 +21,7 @@ use super::endpoint::{AnywhereEndpoint, PathPreference, bind_endpoint, selected_
 use super::error::{AnywhereError, TlsStage, TransportStage};
 use super::identity::AnywhereIdentity;
 use super::proof::{authenticate_initiator, authenticate_server};
-use super::runtime::{AnywhereRuntime, AnywhereSessionId, IncomingTransferId};
+use super::runtime::{AnywhereRuntime, AnywhereSaveTarget, AnywhereSessionId, IncomingTransferId};
 use super::stream::{
     IrohBiStream, client_peer_certificate_fingerprint, server_peer_certificate_fingerprint,
 };
@@ -63,6 +63,9 @@ impl AnywherePathClass {
 #[derive(Debug)]
 pub enum AnywhereFileSource {
     Path(PathBuf),
+    /// Bounded inline content for the existing text/share-sheet source.
+    /// Picker and folder files retain path/SAF streaming sources.
+    Bytes(Vec<u8>),
     #[cfg(target_os = "android")]
     FileDescriptor(std::os::fd::RawFd),
 }
@@ -91,6 +94,9 @@ pub struct AnywhereIncomingFile {
     pub id: String,
     pub name: String,
     pub size: u64,
+    /// Canonical v2 metadata required by normal receive save decisions.
+    pub file_type: String,
+    pub sha256: Option<String>,
 }
 
 /// Progress and lifecycle events for one session.
@@ -529,6 +535,14 @@ where
                     AnywhereFileSource::Path(path) => {
                         crate::model::transfer::FileContent::Path(path)
                     }
+                    AnywhereFileSource::Bytes(bytes) => {
+                        let (tx, rx) = tokio::sync::mpsc::channel(1);
+                        // The FRB boundary caps inline content.  This remains
+                        // a stream source and is never used for picker files.
+                        let _ = tx.try_send(bytes::Bytes::from(bytes));
+                        drop(tx);
+                        crate::model::transfer::FileContent::Stream(rx)
+                    }
                     #[cfg(target_os = "android")]
                     AnywhereFileSource::FileDescriptor(fd) => {
                         crate::model::transfer::FileContent::Fd(fd)
@@ -603,7 +617,7 @@ where
         .map_err(|error| AnywhereError::transport(TransportStage::Stream, error))?;
 
     let mut accepted_files: HashMap<String, FileDto> = HashMap::new();
-    let mut targets: HashMap<String, PathBuf> = HashMap::new();
+    let mut targets: HashMap<String, AnywhereSaveTarget> = HashMap::new();
     let mut started_files: Vec<String> = Vec::new();
     let mut saved_files: HashSet<String> = HashSet::new();
     let mut total_bytes = 0_u64;
@@ -630,6 +644,8 @@ where
                             id: file.id.clone(),
                             name: file.file_name.clone(),
                             size: file.size,
+                            file_type: file.file_type.clone(),
+                            sha256: file.sha256.clone(),
                         })
                         .collect::<Vec<_>>();
                     incoming.sort_by(|left, right| left.name.cmp(&right.name));
@@ -662,14 +678,15 @@ where
                         let _ = decision_tx.send(PrepareUploadDecisionV2::Decline);
                         stop_with!(AnywhereError::AuthorizationDenied);
                     }
-                    if decision.targets.len() != files.len()
-                        || !files.keys().all(|file_id| decision.targets.contains_key(file_id))
-                    {
+                    if !decision.targets.keys().all(|file_id| files.contains_key(file_id)) {
                         let _ = decision_tx.send(PrepareUploadDecisionV2::Decline);
                         stop_with!(AnywhereError::ProtocolCompletion);
                     }
                     targets = decision.targets;
-                    accepted_files = files;
+                    accepted_files = files
+                        .into_iter()
+                        .filter(|(file_id, _)| targets.contains_key(file_id))
+                        .collect();
                     if decision_tx
                         .send(PrepareUploadDecisionV2::Accept(
                             accepted_files.keys().cloned().collect(),
@@ -686,7 +703,7 @@ where
                     if !accepted_files.contains_key(&file_id) {
                         stop_with!(AnywhereError::ProtocolCompletion);
                     }
-                    let Some(path) = targets.remove(&file_id) else {
+                    let Some(target) = targets.remove(&file_id) else {
                         stop_with!(AnywhereError::ProtocolCompletion);
                     };
                     let completed = started_files
@@ -713,12 +730,21 @@ where
                             .unwrap_or_else(|_| Err("upload save result dropped".to_owned()));
                         let _ = save_tx.send((file_id.clone(), result)).await;
                     });
-                    if target_tx
-                        .send(FileUploadTarget::Path {
+                    let target = match target {
+                        AnywhereSaveTarget::Path(path) => FileUploadTarget::Path {
                             path,
                             result_tx,
                             progress_tx: Some(progress_tx),
-                        })
+                        },
+                        #[cfg(target_os = "android")]
+                        AnywhereSaveTarget::FileDescriptor(fd) => FileUploadTarget::Fd {
+                            fd,
+                            result_tx,
+                            progress_tx: Some(progress_tx),
+                        },
+                    };
+                    if target_tx
+                        .send(target)
                         .is_err()
                     {
                         stop_with!(AnywhereError::transport_reason(

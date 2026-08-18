@@ -17,8 +17,8 @@ use localsend::anywhere::{
     AnywhereBatch, AnywhereDecision, AnywhereError, AnywhereEvent, AnywhereFileSource,
     AnywhereFileSpec, AnywhereIdentity, AnywhereListener, AnywhereListenerConfig,
     AnywhereListenerEvent, AnywhereReceiveRequest, AnywhereRoutingKey, AnywhereRuntime,
-    AnywhereSendRequest, AnywhereSessionId, IncomingTransferId, PathPreference, RelayAddressV1,
-    authenticate_address, receive, send_batch,
+    AnywhereSaveTarget, AnywhereSendRequest, AnywhereSessionId, IncomingTransferId, PathPreference,
+    RelayAddressV1, authenticate_address, receive, send_batch,
 };
 
 /// Registry of live sessions. A map keyed by session id — never a single-slot
@@ -64,10 +64,20 @@ pub struct RsRelayAddress {
 pub struct RsRelayAnywhereFile {
     pub path: Option<String>,
     pub file_descriptor: Option<i32>,
+    /// Bounded inline text/share content. Picker and folder selections retain
+    /// their path or Android SAF descriptor streaming source.
+    pub bytes: Option<Vec<u8>>,
     pub name: String,
     pub size: u64,
     pub file_type: String,
     pub sha256: Option<String>,
+}
+
+#[derive(serde::Deserialize)]
+#[serde(tag = "kind", rename_all = "camelCase")]
+enum RsRelayAnywhereSaveTarget {
+    Path { path: String },
+    FileDescriptor { file_descriptor: i32 },
 }
 
 #[derive(Clone, Debug)]
@@ -75,6 +85,8 @@ pub struct RsRelayIncomingFile {
     pub id: String,
     pub name: String,
     pub size: u64,
+    pub file_type: String,
+    pub sha256: Option<String>,
 }
 
 #[derive(Clone, Debug)]
@@ -202,6 +214,8 @@ fn map_event(event: AnywhereEvent) -> RsRelayAnywhereEvent {
                     id: file.id,
                     name: file.name,
                     size: file.size,
+                    file_type: file.file_type,
+                    sha256: file.sha256,
                 })
                 .collect(),
             remote_relay_id,
@@ -274,6 +288,8 @@ fn map_listener_event(event: AnywhereListenerEvent) -> RsRelayAnywhereListenerEv
                         id: file.id,
                         name: file.name,
                         size: file.size,
+                        file_type: file.file_type,
+                        sha256: file.sha256,
                     })
                     .collect(),
                 remote_relay_id,
@@ -472,8 +488,31 @@ pub fn relay_anywhere_respond(
     accept: bool,
     targets_json: Option<String>,
 ) -> anyhow::Result<()> {
-    let targets: HashMap<String, PathBuf> = match targets_json {
-        Some(json) if accept => serde_json::from_str(&json)?,
+    let targets: HashMap<String, AnywhereSaveTarget> = match targets_json {
+        Some(json) if accept => {
+            serde_json::from_str::<HashMap<String, RsRelayAnywhereSaveTarget>>(&json)?
+                .into_iter()
+                .map(|(file_id, target)| {
+                    let target = match target {
+                        RsRelayAnywhereSaveTarget::Path { path } => {
+                            AnywhereSaveTarget::Path(PathBuf::from(path))
+                        }
+                        RsRelayAnywhereSaveTarget::FileDescriptor { file_descriptor } => {
+                            #[cfg(target_os = "android")]
+                            {
+                                AnywhereSaveTarget::FileDescriptor(file_descriptor)
+                            }
+                            #[cfg(not(target_os = "android"))]
+                            {
+                                let _ = file_descriptor;
+                                anyhow::bail!("SAF file descriptors are only available on Android")
+                            }
+                        }
+                    };
+                    Ok((file_id, target))
+                })
+                .collect::<anyhow::Result<_>>()?
+        }
         _ => HashMap::new(),
     };
     anywhere_runtime()
@@ -612,13 +651,25 @@ pub async fn relay_anywhere_authenticate_address(
 }
 
 fn file_spec(file: RsRelayAnywhereFile) -> anyhow::Result<AnywhereFileSpec> {
-    let source = match (file.path, file.file_descriptor) {
-        (Some(path), _) => AnywhereFileSource::Path(PathBuf::from(path)),
+    let source = match (file.path, file.file_descriptor, file.bytes) {
+        (Some(_), Some(_), _) | (Some(_), _, Some(_)) | (_, Some(_), Some(_)) => {
+            anyhow::bail!("a Relay file source must have exactly one source")
+        }
+        (Some(path), None, None) => AnywhereFileSource::Path(PathBuf::from(path)),
         #[cfg(target_os = "android")]
-        (None, Some(fd)) => AnywhereFileSource::FileDescriptor(fd),
+        (None, Some(fd), None) => AnywhereFileSource::FileDescriptor(fd),
         #[cfg(not(target_os = "android"))]
-        (None, Some(_)) => anyhow::bail!("file descriptors are only supported on Android"),
-        (None, None) => anyhow::bail!("an Anywhere file needs a path or file descriptor"),
+        (None, Some(_), None) => anyhow::bail!("file descriptors are only supported on Android"),
+        (None, None, Some(bytes)) => {
+            const MAX_INLINE_SOURCE_BYTES: usize = 1024 * 1024;
+            if bytes.len() > MAX_INLINE_SOURCE_BYTES {
+                anyhow::bail!("an inline Relay source exceeds 1 MiB")
+            }
+            AnywhereFileSource::Bytes(bytes)
+        }
+        (None, None, None) => anyhow::bail!(
+            "an Anywhere file needs a path, file descriptor, or bounded inline source"
+        ),
     };
     Ok(AnywhereFileSpec {
         id: uuid::Uuid::new_v4().to_string(),

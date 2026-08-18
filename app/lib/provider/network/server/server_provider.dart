@@ -14,6 +14,7 @@ import 'package:localsend_app/util/security/relay_server_signer_port.dart';
 import 'package:localsend_isolates/constants.dart';
 import 'package:localsend_isolates/isolate.dart';
 import 'package:localsend_isolates/model/dto/multicast_dto.dart';
+import 'package:localsend_isolates/rust/api/relay_anywhere.dart' as rust_relay_anywhere;
 import 'package:localsend_isolates/rust/api/server.dart' show WebI18n, WebParams, WebSendParams;
 import 'package:localsend_isolates/util/rust.dart';
 import 'package:logging/logging.dart';
@@ -285,6 +286,31 @@ class ServerService extends Notifier<ServerState?> {
   /// Clears the session.
   void closeSession() {
     _receiveController.closeSession();
+  }
+
+  /// Adapts an authenticated Anywhere prepare-upload into the existing normal
+  /// receive decision/save UI. The receive controller owns decisions and
+  /// platform save targets; the listener only owns the remote transport.
+  Future<void> onRelayAnywhereIncoming({
+    required BigInt sessionId,
+    required BigInt transferId,
+    required String remoteRelayId,
+    required List<rust_relay_anywhere.RsRelayIncomingFile> files,
+  }) => _receiveController.onAnywhereIncoming(
+    sessionId: sessionId,
+    transferId: transferId,
+    remoteRelayId: remoteRelayId,
+    incomingFiles: files,
+  );
+
+  void onRelayAnywhereProgress({required BigInt sessionId, required BigInt bytes, required BigInt total}) {
+    _receiveController.onAnywhereProgress(sessionId: sessionId, bytes: bytes, total: total);
+  }
+
+  Future<void> onRelayAnywhereCompleted({required BigInt sessionId}) => _receiveController.onAnywhereCompleted(sessionId: sessionId);
+
+  void onRelayAnywhereTerminal({required BigInt sessionId, required bool cancelled}) {
+    _receiveController.onAnywhereTerminal(sessionId: sessionId, cancelled: cancelled);
   }
 
   /// Restarts the server with web send (the download API) enabled for [files].

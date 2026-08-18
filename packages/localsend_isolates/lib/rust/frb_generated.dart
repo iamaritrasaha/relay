@@ -4029,14 +4029,15 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   RsRelayAnywhereFile dco_decode_rs_relay_anywhere_file(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 6) throw Exception('unexpected arr length: expect 6 but see ${arr.length}');
+    if (arr.length != 7) throw Exception('unexpected arr length: expect 7 but see ${arr.length}');
     return RsRelayAnywhereFile(
       path: dco_decode_opt_String(arr[0]),
       fileDescriptor: dco_decode_opt_box_autoadd_i_32(arr[1]),
-      name: dco_decode_String(arr[2]),
-      size: dco_decode_u_64(arr[3]),
-      fileType: dco_decode_String(arr[4]),
-      sha256: dco_decode_opt_String(arr[5]),
+      bytes: dco_decode_opt_list_prim_u_8_strict(arr[2]),
+      name: dco_decode_String(arr[3]),
+      size: dco_decode_u_64(arr[4]),
+      fileType: dco_decode_String(arr[5]),
+      sha256: dco_decode_opt_String(arr[6]),
     );
   }
 
@@ -4114,11 +4115,13 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   RsRelayIncomingFile dco_decode_rs_relay_incoming_file(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 3) throw Exception('unexpected arr length: expect 3 but see ${arr.length}');
+    if (arr.length != 5) throw Exception('unexpected arr length: expect 5 but see ${arr.length}');
     return RsRelayIncomingFile(
       id: dco_decode_String(arr[0]),
       name: dco_decode_String(arr[1]),
       size: dco_decode_u_64(arr[2]),
+      fileType: dco_decode_String(arr[3]),
+      sha256: dco_decode_opt_String(arr[4]),
     );
   }
 
@@ -5749,6 +5752,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     // Codec=Sse (Serialization based), see doc to use other codecs
     var var_path = sse_decode_opt_String(deserializer);
     var var_fileDescriptor = sse_decode_opt_box_autoadd_i_32(deserializer);
+    var var_bytes = sse_decode_opt_list_prim_u_8_strict(deserializer);
     var var_name = sse_decode_String(deserializer);
     var var_size = sse_decode_u_64(deserializer);
     var var_fileType = sse_decode_String(deserializer);
@@ -5756,6 +5760,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     return RsRelayAnywhereFile(
       path: var_path,
       fileDescriptor: var_fileDescriptor,
+      bytes: var_bytes,
       name: var_name,
       size: var_size,
       fileType: var_fileType,
@@ -5842,7 +5847,9 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var var_id = sse_decode_String(deserializer);
     var var_name = sse_decode_String(deserializer);
     var var_size = sse_decode_u_64(deserializer);
-    return RsRelayIncomingFile(id: var_id, name: var_name, size: var_size);
+    var var_fileType = sse_decode_String(deserializer);
+    var var_sha256 = sse_decode_opt_String(deserializer);
+    return RsRelayIncomingFile(id: var_id, name: var_name, size: var_size, fileType: var_fileType, sha256: var_sha256);
   }
 
   @protected
@@ -7505,6 +7512,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     // Codec=Sse (Serialization based), see doc to use other codecs
     sse_encode_opt_String(self.path, serializer);
     sse_encode_opt_box_autoadd_i_32(self.fileDescriptor, serializer);
+    sse_encode_opt_list_prim_u_8_strict(self.bytes, serializer);
     sse_encode_String(self.name, serializer);
     sse_encode_u_64(self.size, serializer);
     sse_encode_String(self.fileType, serializer);
@@ -7591,6 +7599,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_String(self.id, serializer);
     sse_encode_String(self.name, serializer);
     sse_encode_u_64(self.size, serializer);
+    sse_encode_String(self.fileType, serializer);
+    sse_encode_opt_String(self.sha256, serializer);
   }
 
   @protected

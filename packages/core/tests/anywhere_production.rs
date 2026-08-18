@@ -9,7 +9,8 @@ use localsend::anywhere::AnywhereError;
 use localsend::anywhere::{
     AnywhereBatch, AnywhereDecision, AnywhereEvent, AnywhereFileSource, AnywhereFileSpec,
     AnywhereIdentity, AnywhereOutcome, AnywherePathClass, AnywhereReceiveRequest, AnywhereRuntime,
-    AnywhereSendRequest, PathPreference, RelayAddressV1, authenticate_address, receive, send_batch,
+    AnywhereSaveTarget, AnywhereSendRequest, PathPreference, RelayAddressV1, authenticate_address,
+    receive, send_batch,
 };
 use localsend::crypto::relay_identity::RelayIdentity;
 use tokio::sync::mpsc;
@@ -175,7 +176,10 @@ async fn production_api_moves_a_real_file_without_the_development_harness() {
             transfer_id,
             AnywhereDecision {
                 accept: true,
-                targets: HashMap::from([("file-1".to_owned(), target.clone())]),
+                targets: HashMap::from([(
+                    "file-1".to_owned(),
+                    AnywhereSaveTarget::Path(target.clone()),
+                )]),
             },
         )
         .unwrap();
@@ -229,7 +233,10 @@ async fn two_inbound_sessions_are_approved_and_declined_independently() {
             accept_id,
             AnywhereDecision {
                 accept: true,
-                targets: HashMap::from([("file-1".to_owned(), target.clone())]),
+                targets: HashMap::from([(
+                    "file-1".to_owned(),
+                    AnywhereSaveTarget::Path(target.clone()),
+                )]),
             },
         )
         .unwrap();

@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 import 'package:localsend_app/model/cross_file.dart';
 import 'package:localsend_app/model/persistence/relay_paired_address.dart';
 import 'package:localsend_app/provider/network/send_provider.dart';
@@ -126,15 +128,13 @@ class RelaySendService {
     for (final file in files) {
       final path = file.path;
       final isContentUri = path?.startsWith('content://') ?? false;
-      if (path == null && file.bytes != null) {
-        // The native v2 source is intentionally streaming-only. The normal
-        // picker produces a path/descriptor for files and folders.
-        throw StateError('Relay remote send requires a streaming file source');
-      }
       result.add(
         rust_relay_anywhere.RsRelayAnywhereFile(
           path: isContentUri ? null : path,
           fileDescriptor: isContentUri ? await getFileDescriptorAndroid(uri: path!) : null,
+          // This variant is only used for the pre-existing small text/share
+          // source. Picker and folder data remains path/SAF streamed by Rust.
+          bytes: path == null && file.bytes != null ? Uint8List.fromList(file.bytes!) : null,
           name: file.name,
           size: BigInt.from(file.size),
           fileType: file.fileType.name,

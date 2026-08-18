@@ -11,8 +11,8 @@
 
 use std::collections::HashMap;
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Mutex;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use thiserror::Error;
 use tokio::sync::oneshot;
@@ -46,12 +46,23 @@ impl IncomingTransferId {
     }
 }
 
+/// A platform-owned destination selected by the normal receive UI.
+///
+/// Android SAF documents are represented by an owned descriptor instead of
+/// pretending every user-selected destination has a filesystem path.
+#[derive(Debug)]
+pub enum AnywhereSaveTarget {
+    Path(PathBuf),
+    #[cfg(target_os = "android")]
+    FileDescriptor(std::os::fd::RawFd),
+}
+
 /// Session-scoped receiver decision. Save targets come from the existing UI and
 /// save-target machinery; nothing here is persisted as trust.
 #[derive(Debug)]
 pub struct AnywhereDecision {
     pub accept: bool,
-    pub targets: HashMap<String, PathBuf>,
+    pub targets: HashMap<String, AnywhereSaveTarget>,
 }
 
 impl AnywhereDecision {
