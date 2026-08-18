@@ -1,0 +1,9 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+    <!-- RA2B release test Join scanner. Not requested at process start. -->
+    <uses-permission android:name="android.permission.CAMERA" tools:node="replace" />
+    <uses-feature android:name="android.hardware.camera" android:required="false" />
+    <application
+        android:label="RA2B Test"
+        tools:replace="android:label" />
+</manifest>

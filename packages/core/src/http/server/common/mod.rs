@@ -1,4 +1,6 @@
 pub mod client_cert_verifier;
+#[cfg(feature = "anywhere-dev")]
+pub(crate) use client_cert_verifier::CustomClientCertVerifier;
 pub mod collect_to_json;
 pub mod error;
 pub mod pin;
