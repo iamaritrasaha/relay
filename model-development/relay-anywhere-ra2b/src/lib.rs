@@ -5,21 +5,20 @@
 
 mod endpoint_codec;
 mod invite;
-mod iroh_stream;
 mod relay_auth;
 mod session;
 mod session_guard;
 
 pub use endpoint_codec::{decode_endpoint_addr, encode_endpoint_addr};
 pub use invite::{
-    INVITE_PREFIX, INVITE_VERSION, MAX_INVITE_LEN, Ra2bInviteV1, parse_invite, validate_relay_id,
+    parse_invite, validate_relay_id, Ra2bInviteV1, INVITE_PREFIX, INVITE_VERSION, MAX_INVITE_LEN,
 };
 pub use relay_auth::IDENTITY_REJECTED;
 pub use session::{
-    Ra2bCancellation, Ra2bPathClass, Ra2bPathPreference, Ra2bPeerMaterial, Ra2bPhase,
-    Ra2bProofResult, Ra2bRole, error_category, run_proof,
+    error_category, run_proof, Ra2bCancellation, Ra2bPathClass, Ra2bPathPreference,
+    Ra2bPeerMaterial, Ra2bPhase, Ra2bProofResult, Ra2bRole,
 };
-pub use session_guard::{ActiveSessionGuard, cancel_active_session, session_is_active};
+pub use session_guard::{cancel_active_session, session_is_active, ActiveSessionGuard};
 
 use std::sync::{Arc, OnceLock};
 

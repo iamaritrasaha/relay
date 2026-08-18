@@ -1,7 +1,6 @@
 mod relay;
 mod scoped_host;
 mod server_cert_verifier;
-#[cfg(feature = "anywhere-dev")]
 pub(crate) use server_cert_verifier::PinnedServerCertVerifier;
 mod url;
 pub mod v2;

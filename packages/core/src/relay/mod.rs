@@ -1,7 +1,23 @@
-//! Relay transport-facing proof abstractions.
+//! Relay transport-facing proof abstractions and RA3A production auth boundary.
 //!
 //! TLS context construction is deliberately deferred until transport code can
 //! derive it from the exact rustls configuration in use.
+
+mod coordinator;
+mod id;
+mod path;
+mod policy;
+mod session;
+
+pub use coordinator::{RelayAuthCoordinator, RelayAuthError};
+pub use id::{ClaimedRelayId, RelayId};
+pub use path::{ChannelBinding, PathDescriptor};
+pub use policy::{
+    authorize, authorize_with_memory_directory, AuthorizationAdvisory, AuthorizationDecision,
+    DeviceBinding, MemoryTrustDirectory, TransferAuthorization, TransferRequestContext,
+    TrustDirectory, TrustRecord,
+};
+pub use session::{AuthenticatedRelaySession, LegacyLanInboundSession, LocalSendPeer, SessionRole};
 
 use std::fmt;
 
@@ -278,3 +294,6 @@ mod tests {
         );
     }
 }
+
+#[cfg(test)]
+mod ra3a;

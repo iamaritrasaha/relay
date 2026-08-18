@@ -239,6 +239,13 @@ pub(crate) async fn prepare_upload(
         return Err(AppError::BadRequest("No files provided".to_string()));
     }
 
+    let inbound = crate::relay::LegacyLanInboundSession::from_production_lan(
+        payload.info.fingerprint.clone(),
+        payload.info.alias.clone(),
+        client_info.cert_fingerprint().as_deref(),
+        crate::relay::PathDescriptor::lan(client_info.ip.to_string(), None),
+    );
+
     let session_id = Uuid::new_v4().to_string();
     let cancelled = CancellationToken::new();
 
@@ -266,7 +273,9 @@ pub(crate) async fn prepare_upload(
         session_id: session_id.clone(),
         ip: client_info.ip,
         info: payload.info,
-        cert_fingerprint: client_info.cert_fingerprint(),
+        cert_fingerprint: inbound
+            .observed_cert_fingerprint_hex()
+            .or_else(|| client_info.cert_fingerprint()),
         files: payload.files.clone(),
         decision_tx,
     };

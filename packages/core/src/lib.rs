@@ -1,3 +1,5 @@
+#[cfg(feature = "anywhere")]
+pub mod anywhere;
 #[cfg(feature = "anywhere-dev")]
 pub mod anywhere_dev;
 #[cfg(feature = "crypto")]

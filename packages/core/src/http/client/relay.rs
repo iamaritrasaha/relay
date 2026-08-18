@@ -96,9 +96,12 @@ fn authenticate_proof(
         return RelayPeerAuth::ChallengeMismatch;
     }
     match verify_relay_identity_proof(proof, RelayProofRole::Server, observed_tls_fingerprint) {
-        Ok(relay_id) => RelayPeerAuth::Authenticated {
-            relay_id,
-            tls_fingerprint: observed_tls_fingerprint,
+        Ok(relay_id) => match crate::relay::RelayId::from_verified_hex(&relay_id) {
+            Ok(proven) => RelayPeerAuth::Authenticated {
+                relay_id: proven.as_hex(),
+                tls_fingerprint: observed_tls_fingerprint,
+            },
+            Err(_) => RelayPeerAuth::CryptoInvalid,
         },
         Err(_) => RelayPeerAuth::CryptoInvalid,
     }

@@ -4,6 +4,8 @@ pub mod client;
 pub mod dto;
 pub mod dto_relay;
 pub mod dto_v2;
+#[cfg(any(feature = "anywhere", feature = "anywhere-dev"))]
+pub(crate) mod inner_tls;
 pub mod server;
 pub mod state;
 
