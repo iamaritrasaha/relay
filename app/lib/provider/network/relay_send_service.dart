@@ -2,6 +2,7 @@ import 'dart:typed_data';
 
 import 'package:localsend_app/model/cross_file.dart';
 import 'package:localsend_app/model/persistence/relay_paired_address.dart';
+import 'package:localsend_app/provider/http_provider.dart';
 import 'package:localsend_app/provider/network/send_provider.dart';
 import 'package:localsend_app/provider/relay_identity_provider.dart';
 import 'package:localsend_app/provider/relay_remote_transfer_provider.dart';
@@ -9,9 +10,11 @@ import 'package:localsend_app/provider/settings_provider.dart';
 import 'package:localsend_app/util/security/relay_identity_coordinator.dart';
 import 'package:localsend_isolates/model/device.dart';
 import 'package:localsend_isolates/rust/api/cancel.dart' as rust_cancel;
+import 'package:localsend_isolates/rust/api/http.dart' as rust_http;
 import 'package:localsend_isolates/rust/api/relay_anywhere.dart' as rust_relay_anywhere;
 import 'package:localsend_isolates/util/android_channel.dart' show getFileDescriptorAndroid;
 import 'package:localsend_isolates/util/file_hash.dart';
+import 'package:localsend_isolates/util/rust.dart';
 import 'package:refena_flutter/refena_flutter.dart';
 
 /// Product send entrypoint used by Relay Home.
@@ -51,6 +54,63 @@ class RelaySendService {
         background: background,
       );
 
+  /// Resolves one proven Relay identity without exposing transport selection to
+  /// Home. A verified LAN candidate is tried first. Only a pre-auth transport
+  /// failure may move to the paired authenticated Anywhere route; a proof
+  /// mismatch is terminal and never falls back.
+  Future<void> sendRelayDevice({
+    required String relayId,
+    required Device? verifiedLanTarget,
+    required RelayPairedAddress? pairedRoute,
+    required List<CrossFile> files,
+    required bool background,
+  }) async {
+    if (verifiedLanTarget != null) {
+      final lanResult = await _verifyLanRelayId(target: verifiedLanTarget, expectedRelayId: relayId);
+      switch (lanResult) {
+        case _LanRelayVerification.verified:
+          return send(target: verifiedLanTarget, files: files, background: background);
+        case _LanRelayVerification.identityFailure:
+          throw const RelaySendFailure('identity');
+        case _LanRelayVerification.unavailable:
+          if (pairedRoute == null) {
+            throw const RelaySendFailure('connection');
+          }
+      }
+    }
+    if (pairedRoute == null) {
+      throw const RelaySendFailure('connection');
+    }
+    return sendPaired(route: pairedRoute, files: files);
+  }
+
+  Future<_LanRelayVerification> _verifyLanRelayId({required Device target, required String expectedRelayId}) async {
+    try {
+      final result = await _ref
+          .read(httpProvider)
+          .pinnedTo(target.fingerprint)
+          .authenticateRelayServer(
+            protocol: target.getProtocolType(),
+            ip: target.ip!,
+            port: target.port,
+          );
+      return switch (result) {
+        rust_http.RsRelayPeerAuth_Authenticated(:final relayId) =>
+          relayId == expectedRelayId ? _LanRelayVerification.verified : _LanRelayVerification.identityFailure,
+        rust_http.RsRelayPeerAuth_Malformed() ||
+        rust_http.RsRelayPeerAuth_RoleMismatch() ||
+        rust_http.RsRelayPeerAuth_ChallengeMismatch() ||
+        rust_http.RsRelayPeerAuth_CryptoInvalid() => _LanRelayVerification.identityFailure,
+        rust_http.RsRelayPeerAuth_NotAttempted() ||
+        rust_http.RsRelayPeerAuth_Unsupported() ||
+        rust_http.RsRelayPeerAuth_TransportUnauthenticated() ||
+        rust_http.RsRelayPeerAuth_SignerUnavailable() => _LanRelayVerification.unavailable,
+      };
+    } catch (_) {
+      return _LanRelayVerification.unavailable;
+    }
+  }
+
   void cancel(String sessionId) {
     if (_ref.read(relayRemoteTransfersProvider).containsKey(sessionId)) {
       rust_relay_anywhere.relayAnywhereCancel(sessionId: BigInt.parse(sessionId));
@@ -77,6 +137,7 @@ class RelaySendService {
         totalBytes: files.fold(0, (total, file) => total + file.size),
       ),
     );
+    bool cancelled = false;
     final result = await _identityCoordinator.withPrivateKey((privateKey, identity) async {
       final sources = await _anywhereSources(files);
       await for (final event in rust_relay_anywhere.relayAnywhereSend(
@@ -100,6 +161,7 @@ class RelaySendService {
             throw RelaySendFailure(category);
           case rust_relay_anywhere.RsRelayAnywhereEvent_Cancelled():
             transfers.update(sessionKey, (transfer) => transfer.copyWith(phase: RelayRemoteTransferPhase.cancelled));
+            cancelled = true;
             return false;
           case rust_relay_anywhere.RsRelayAnywhereEvent_Transferring(:final bytes, :final total):
             transfers.update(
@@ -116,10 +178,15 @@ class RelaySendService {
       }
       return false;
     });
-    if (result != true) {
+    if (result == true || cancelled) {
+      return;
+    }
+    if (result == null) {
       transfers.update(sessionKey, (transfer) => transfer.copyWith(phase: RelayRemoteTransferPhase.failed));
       throw const RelaySendFailure('identity');
     }
+    transfers.update(sessionKey, (transfer) => transfer.copyWith(phase: RelayRemoteTransferPhase.failed));
+    throw const RelaySendFailure('transfer_failed');
   }
 
   Future<List<rust_relay_anywhere.RsRelayAnywhereFile>> _anywhereSources(List<CrossFile> files) async {
@@ -145,3 +212,5 @@ class RelaySendService {
     return result;
   }
 }
+
+enum _LanRelayVerification { verified, unavailable, identityFailure }

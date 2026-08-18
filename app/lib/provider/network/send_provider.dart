@@ -14,6 +14,7 @@ import 'package:localsend_app/provider/device_info_provider.dart';
 import 'package:localsend_app/provider/file_transfer_provider.dart';
 import 'package:localsend_app/provider/http_provider.dart';
 import 'package:localsend_app/provider/network/relay_send_authenticator.dart';
+import 'package:localsend_app/provider/relay_verified_lan_devices_provider.dart';
 import 'package:localsend_app/provider/selection/selected_sending_files_provider.dart';
 import 'package:localsend_app/provider/settings_provider.dart';
 import 'package:localsend_app/widget/dialogs/pin_dialog.dart';
@@ -98,7 +99,7 @@ class SendNotifier extends Notifier<Map<String, SendSessionState>> {
     // if someone else answers on that address.
     final client = ref.read(httpProvider).pinnedTo(target.fingerprint);
     final relayAuthenticator = RelaySendAttemptAuthenticator(log: _logger.info);
-    await relayAuthenticator.authenticate(
+    final relayAuth = await relayAuthenticator.authenticate(
       protocol: target.getProtocolType(),
       attempt: () => client.authenticateRelayServer(
         protocol: target.getProtocolType(),
@@ -106,6 +107,12 @@ class SendNotifier extends Notifier<Map<String, SendSessionState>> {
         port: target.port,
       ),
     );
+    if (relayAuth case rust_http.RsRelayPeerAuth_Authenticated(:final relayId)) {
+      // The proof ran through the same certificate-pinned client that the
+      // canonical transfer will consume. This records reachability metadata
+      // only; it has no trust or authorization side effect.
+      ref.notifier(relayVerifiedLanDevicesProvider).record(relayId: relayId, device: target);
+    }
     final sessionId = _uuid.v4();
     final createChecksums = ref.read(settingsProvider).createChecksums;
 

@@ -12,6 +12,7 @@ import 'package:localsend_app/provider/network/send_provider.dart';
 import 'package:localsend_app/provider/network/server/server_provider.dart';
 import 'package:localsend_app/provider/relay_paired_routes_provider.dart';
 import 'package:localsend_app/provider/relay_remote_transfer_provider.dart';
+import 'package:localsend_app/provider/relay_verified_lan_devices_provider.dart';
 import 'package:localsend_app/provider/selection/selected_sending_files_provider.dart';
 import 'package:localsend_app/provider/settings_provider.dart';
 import 'package:localsend_isolates/model/device.dart';
@@ -90,28 +91,40 @@ class RelayHomeVm {
     required List<CrossFile> selectedFiles,
     List<RelayPairedAddress> pairedRoutes = const [],
     Map<String, RelayRemoteTransfer> remoteTransfers = const {},
+    Map<String, RelayVerifiedLanDevice> verifiedLanDevices = const {},
   }) {
     final selection = RelayPayloadVm(
       fileCount: selectedFiles.length,
       totalBytes: selectedFiles.fold(0, (total, file) => total + file.size),
     );
+    final pairedByRelayId = {for (final route in pairedRoutes) route.relayId: route};
+    final verifiedByFingerprint = {
+      for (final verified in verifiedLanDevices.values) verified.device.fingerprint: verified,
+    };
     final devices =
-        nearby.allDevices.values
-            .map(
-              (device) => _deviceVm(
+        <RelayDeviceVm>[
+          for (final device in nearby.allDevices.values)
+            if (!verifiedByFingerprint.containsKey(device.fingerprint))
+              _deviceVm(
                 device: device,
                 session: sendSessions.values.firstWhereOrNull((session) => session.target.fingerprint == device.fingerprint),
                 transfers: transfers,
               ),
-            )
-            .toList()
-          ..addAll(
-            pairedRoutes.map((route) => _pairedDeviceVm(route, remoteTransfers.values.firstWhereOrNull((entry) => entry.relayId == route.relayId))),
-          )
-          ..sort((a, b) {
-            final aliasComparison = a.alias.toLowerCase().compareTo(b.alias.toLowerCase());
-            return aliasComparison != 0 ? aliasComparison : a.key.compareTo(b.key);
-          });
+          for (final verified in verifiedLanDevices.values)
+            if (nearby.allDevices.containsKey(verified.device.fingerprint))
+              _verifiedDeviceVm(
+                verified: verified,
+                route: pairedByRelayId.remove(verified.relayId),
+                transfer: remoteTransfers.values.firstWhereOrNull((entry) => entry.relayId == verified.relayId),
+                session: sendSessions.values.firstWhereOrNull((session) => session.target.fingerprint == verified.device.fingerprint),
+                transfers: transfers,
+              ),
+          for (final route in pairedByRelayId.values)
+            _pairedDeviceVm(route, remoteTransfers.values.firstWhereOrNull((entry) => entry.relayId == route.relayId)),
+        ]..sort((a, b) {
+          final aliasComparison = a.alias.toLowerCase().compareTo(b.alias.toLowerCase());
+          return aliasComparison != 0 ? aliasComparison : a.key.compareTo(b.key);
+        });
 
     return RelayHomeVm(
       selfAlias: server?.alias ?? configuredAlias,
@@ -204,6 +217,32 @@ class RelayHomeVm {
     relayId: route.relayId,
   );
 
+  static RelayDeviceVm _verifiedDeviceVm({
+    required RelayVerifiedLanDevice verified,
+    required RelayPairedAddress? route,
+    required RelayRemoteTransfer? transfer,
+    required SendSessionState? session,
+    required FileTransferNotifier transfers,
+  }) {
+    final lan = _deviceVm(device: verified.device, session: session, transfers: transfers);
+    final useLanState = session != null || transfer == null;
+    return RelayDeviceVm(
+      key: 'relay:${verified.relayId}',
+      alias: route?.displayLabel ?? verified.device.alias,
+      deviceType: verified.device.deviceType,
+      phase: useLanState ? lan.phase : _pairedPhase(transfer),
+      progress: useLanState
+          ? lan.progress
+          : transfer.totalBytes == 0
+          ? null
+          : transfer.bytes / transfer.totalBytes,
+      detail: useLanState ? lan.detail : _pairedDetail(transfer),
+      targetKind: RelayDeviceTargetKind.verifiedRelay,
+      relayId: verified.relayId,
+      lanFingerprint: verified.device.fingerprint,
+    );
+  }
+
   static RelayDevicePhase _pairedPhase(RelayRemoteTransfer? transfer) => switch (transfer?.phase) {
     null => RelayDevicePhase.idle,
     RelayRemoteTransferPhase.preparing => RelayDevicePhase.verifying,
@@ -283,5 +322,6 @@ final relayHomeVmProvider = ViewProvider<RelayHomeVm>((ref) {
     selectedFiles: ref.watch(selectedSendingFilesProvider),
     pairedRoutes: ref.watch(relayPairedRoutesProvider),
     remoteTransfers: ref.watch(relayRemoteTransfersProvider),
+    verifiedLanDevices: ref.watch(relayVerifiedLanDevicesProvider),
   );
 }, debugLabel: 'relayHomeVmProvider');

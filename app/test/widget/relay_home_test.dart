@@ -1,12 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:localsend_app/model/cross_file.dart';
+import 'package:localsend_app/model/persistence/relay_paired_address.dart';
 import 'package:localsend_app/model/state/nearby_devices_state.dart';
 import 'package:localsend_app/model/state/send/send_session_state.dart';
 import 'package:localsend_app/model/state/send/sending_file.dart';
 import 'package:localsend_app/model/ui/relay_device_vm.dart';
 import 'package:localsend_app/pages/relay_home_vm.dart';
 import 'package:localsend_app/provider/file_transfer_provider.dart';
+import 'package:localsend_app/provider/relay_verified_lan_devices_provider.dart';
 import 'package:localsend_app/widget/relay/relay_shell.dart';
 import 'package:localsend_isolates/model/device.dart';
 import 'package:localsend_isolates/model/dto/file_dto.dart';
@@ -199,5 +201,34 @@ void main() {
     );
 
     expect(relayVm.devices.single.phase, RelayDevicePhase.failed);
+  });
+
+  test('a proof-backed LAN observation and paired route render as one Relay device', () {
+    const relayId = 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+    final relayVm = RelayHomeVm.fromState(
+      configuredAlias: 'My Linux',
+      selfDeviceType: DeviceType.desktop,
+      server: null,
+      nearby: nearby(),
+      sendSessions: const {},
+      transfers: FileTransferNotifier(),
+      selectedFiles: const [],
+      pairedRoutes: [
+        RelayPairedAddress(
+          relayId: relayId,
+          displayLabel: 'Pixel Relay',
+          relayAddress: 'RELAY1.test',
+          updatedAt: DateTime.utc(2026),
+        ),
+      ],
+      verifiedLanDevices: const {
+        relayId: RelayVerifiedLanDevice(relayId: relayId, device: device),
+      },
+    );
+
+    expect(relayVm.devices, hasLength(1));
+    expect(relayVm.devices.single.key, 'relay:$relayId');
+    expect(relayVm.devices.single.targetKind, RelayDeviceTargetKind.verifiedRelay);
+    expect(relayVm.devices.single.alias, 'Pixel Relay');
   });
 }

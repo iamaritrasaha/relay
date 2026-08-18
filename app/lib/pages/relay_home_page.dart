@@ -7,6 +7,7 @@ import 'package:localsend_app/provider/animation_provider.dart';
 import 'package:localsend_app/provider/network/nearby_devices_provider.dart';
 import 'package:localsend_app/provider/network/relay_send_service.dart';
 import 'package:localsend_app/provider/relay_paired_routes_provider.dart';
+import 'package:localsend_app/provider/relay_verified_lan_devices_provider.dart';
 import 'package:localsend_app/provider/selection/selected_sending_files_provider.dart';
 import 'package:localsend_app/util/native/file_picker.dart';
 import 'package:localsend_app/widget/dialogs/add_file_dialog.dart';
@@ -56,17 +57,27 @@ class RelayHomePage extends StatelessWidget {
             }
             final relayId = key.startsWith('relay:') ? key.substring('relay:'.length) : null;
             final route = relayId == null ? null : ref.read(relayPairedRoutesProvider).firstWhereOrNull((entry) => entry.relayId == relayId);
-            if (route != null) {
+            final verifiedLan = relayId == null ? null : ref.read(relayVerifiedLanDevicesProvider)[relayId];
+            if (relayId != null && (route != null || verifiedLan != null)) {
               unawaited(
-                ref.read(relaySendServiceProvider).sendPaired(route: route, files: files).onError((error, _) {
-                  if (!context.mounted) {
-                    return;
-                  }
-                  final message = error is RelaySendFailure && error.category == 'identity'
-                      ? 'Device identity could not be verified.'
-                      : 'Transfer failed.';
-                  ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
-                }),
+                ref
+                    .read(relaySendServiceProvider)
+                    .sendRelayDevice(
+                      relayId: relayId,
+                      verifiedLanTarget: verifiedLan == null ? null : ref.read(nearbyDevicesProvider).allDevices[verifiedLan.device.fingerprint],
+                      pairedRoute: route,
+                      files: files,
+                      background: true,
+                    )
+                    .onError((error, _) {
+                      if (!context.mounted) {
+                        return;
+                      }
+                      final message = error is RelaySendFailure && error.category == 'identity'
+                          ? 'Device identity could not be verified.'
+                          : 'Transfer failed.';
+                      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+                    }),
               );
             }
           },

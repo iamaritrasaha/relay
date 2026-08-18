@@ -12,7 +12,7 @@ enum RelayDevicePhase {
 /// UI target namespace. Nearby observations remain unresolved LAN candidates;
 /// a paired route is keyed by an authenticated RelayId and is never folded
 /// into a LocalSend compatibility peer.
-enum RelayDeviceTargetKind { unresolvedLan, pairedRelay }
+enum RelayDeviceTargetKind { unresolvedLan, verifiedRelay, pairedRelay }
 
 /// Immutable, presentation-only description of a nearby Relay target.
 class RelayDeviceVm {
@@ -24,6 +24,7 @@ class RelayDeviceVm {
   final String detail;
   final RelayDeviceTargetKind targetKind;
   final String? relayId;
+  final String? lanFingerprint;
 
   const RelayDeviceVm({
     required this.key,
@@ -34,5 +35,6 @@ class RelayDeviceVm {
     required this.detail,
     this.targetKind = RelayDeviceTargetKind.unresolvedLan,
     this.relayId,
+    this.lanFingerprint,
   });
 }
