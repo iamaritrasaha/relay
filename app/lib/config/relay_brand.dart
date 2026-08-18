@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+export 'package:localsend_app/config/relay_typography.dart';
+
 abstract final class RelayProduct {
   static const name = 'Relay';
   static const copyright = '© 2026 Aritra Saha';
@@ -93,29 +95,6 @@ abstract final class RelayComponentTokens {
   static const double dialogRadius = 24;
   static const double compactControlHeight = 40;
   static const double sectionTracking = 1.1;
-}
-
-abstract final class RelayTypography {
-  static const FontWeight regular = FontWeight.w400;
-  static const FontWeight medium = FontWeight.w500;
-
-  static TextStyle pageTitle(Color color) => TextStyle(fontSize: 25, height: 1.2, fontWeight: medium, color: color);
-
-  static TextStyle wordmark(Color color) => TextStyle(fontSize: 17.5, height: 1.2, fontWeight: medium, color: color);
-
-  static TextStyle section(Color color) => TextStyle(
-    fontSize: 10.5,
-    height: 1.3,
-    fontWeight: medium,
-    letterSpacing: RelayComponentTokens.sectionTracking,
-    color: color,
-  );
-
-  static TextStyle row(Color color) => TextStyle(fontSize: 14, height: 1.35, fontWeight: regular, color: color);
-
-  static TextStyle value(Color color) => TextStyle(fontSize: 12.75, height: 1.35, fontWeight: regular, color: color);
-
-  static TextStyle legal(Color color) => TextStyle(fontSize: 11.5, height: 1.45, fontWeight: regular, color: color);
 }
 
 ColorScheme relayColorScheme(Brightness brightness) {
