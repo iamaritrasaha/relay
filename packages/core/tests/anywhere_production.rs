@@ -279,7 +279,7 @@ async fn cancelling_one_session_leaves_a_second_receiver_waiting() {
     let _ = untouched.join.await;
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn wrong_expected_relay_id_fails_before_any_transfer() {
     let runtime = Arc::new(AnywhereRuntime::new());
     let receiver = start_receiver(runtime.clone()).await;

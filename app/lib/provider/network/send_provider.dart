@@ -802,6 +802,23 @@ class SendNotifier extends Notifier<Map<String, SendSessionState>> {
       );
     }
 
+    // Canonical transfers never re-enter the older isolate upload loop. A
+    // retry is a new, transport-neutral prepare/upload operation with the
+    // same selected source and the same certificate-pinned client.
+    if (file.token == 'canonical') {
+      final session = state[sessionId];
+      if (session == null) {
+        return;
+      }
+      await _sendCanonicalLanTransfer(
+        sessionId: sessionId,
+        target: session.target,
+        requestState: session.copyWith(files: {file.file.id: file}),
+        client: ref.read(httpProvider).pinnedTo(session.target.fingerprint),
+      );
+      return;
+    }
+
     await _sendFiles(
       sessionId: sessionId,
       files: [file],
