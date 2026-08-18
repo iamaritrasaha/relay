@@ -151,6 +151,27 @@ No folders, multi-file support, or normal Home integration.
 
 The normal Relay Home/send flow chooses the peer. If LAN is available, use LAN; if a remote Anywhere path is available, use Anywhere. Transport is secondary UI only: Direct or Relayed. The user should not need to know Iroh or EndpointIds.
 
+#### RA4C1 — unified resolution boundary
+
+RA4C1 introduces the core-only `RelayDevice`, unresolved legacy-LAN candidate,
+transport candidate, resolver, session-factory, and send-service boundaries.
+LAN discovery remains a routing observation (alias, address, port, protocol,
+fingerprint, compatibility metadata) and does not create a `RelayId`.
+Verified devices are keyed only by proven `RelayId`; LocalSend remains a
+separate compatibility namespace. A verified device may use an associated LAN
+route only when that outbound route re-proves the expected RelayId; otherwise
+its authenticated Anywhere route is selected.
+
+Pre-RA3C this LAN exception applies only to the outbound initiator: the
+existing HTTPS client obtains the remote Server-role Relay proof, verifies its
+TLS binding, and checks the expected RelayId before transfer. It is not mutual
+LAN responder authentication. Inbound legacy LAN remains
+`LegacyLanInboundSession` with no Client-role proof; RA3C owns that work.
+
+No remote-address persistence, account, presence, directory, or rendezvous
+service is introduced in RA4C1. RA4C2 must define any persisted remote routing
+metadata separately from trust, using only an explicit local source of truth.
+
 ## Verdict
 
 **READY FOR RA4A IMPLEMENTATION.**
