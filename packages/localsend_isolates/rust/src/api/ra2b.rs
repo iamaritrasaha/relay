@@ -10,25 +10,107 @@ use std::sync::{Arc, Mutex, OnceLock};
 use crate::frb_generated::StreamSink;
 use anyhow::Context as _;
 use flutter_rust_bridge::frb;
-use relay_anywhere_ra2b::{
-    ActiveSessionGuard, Ra2bPathPreference, Ra2bPeerMaterial, Ra2bPhase, Ra2bRole, Ra4BatchSpec,
-    Ra4Decision, Ra4FileSource, Ra4FileSpec, cancel_active_session, fresh_unrelated_relay_id,
-    parse_invite, process_identity, process_relay_id, run_proof, run_ra4_batch_sender,
-    run_ra4_receiver, session_is_active,
+use localsend::anywhere::{
+    AnywhereBatch, AnywhereError, AnywhereEvent, AnywhereFileSource, AnywhereFileSpec,
+    AnywhereIdentity, AnywhereReceiveRequest, AnywhereSendRequest, AnywhereSessionId,
+    PathPreference, RelayAddressV1, receive as anywhere_receive, send_batch as anywhere_send,
 };
+use relay_anywhere_ra2b::{
+    ActiveSessionGuard, Ra2bPathPreference, Ra2bPeerMaterial, Ra2bPhase, Ra2bRole,
+    cancel_active_session, fresh_unrelated_relay_id, parse_invite, process_identity,
+    process_relay_id, run_proof, session_is_active,
+};
+
+use super::relay_anywhere::anywhere_runtime;
+
+/// The harness UI drives one session at a time; the production runtime does
+/// not. This slot only remembers which production session this UI started so
+/// its single Cancel button can target it.
+fn harness_session() -> &'static Mutex<Option<u64>> {
+    static SESSION: OnceLock<Mutex<Option<u64>>> = OnceLock::new();
+    SESSION.get_or_init(|| Mutex::new(None))
+}
+
+fn set_harness_session(session: Option<u64>) {
+    *harness_session()
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner()) = session;
+}
+
+fn map_anywhere_event(event: AnywhereEvent) -> Option<RsRa2bEvent> {
+    Some(match event {
+        AnywhereEvent::Starting => RsRa2bEvent::Starting,
+        AnywhereEvent::EndpointReady {
+            address,
+            local_relay_id,
+        } => RsRa2bEvent::InviteReady {
+            invite: address,
+            local_relay_id,
+            auto_relay_available: true,
+        },
+        AnywhereEvent::WaitingForConnection => RsRa2bEvent::WaitingForPeer,
+        AnywhereEvent::Connecting => RsRa2bEvent::Connecting,
+        AnywhereEvent::PeerConnected => RsRa2bEvent::IrohConnected,
+        AnywhereEvent::TlsEstablished => RsRa2bEvent::TlsAuthenticated,
+        AnywhereEvent::PeerAuthenticated { remote_relay_id } => {
+            RsRa2bEvent::RelayIdentityVerified { remote_relay_id }
+        }
+        AnywhereEvent::IncomingBatch {
+            transfer_id,
+            files,
+            remote_relay_id,
+        } => RsRa2bEvent::Failed {
+            message: serde_json::json!({
+                "transferId": transfer_id.as_u64().to_string(),
+                "files": files
+                    .into_iter()
+                    .map(|file| serde_json::json!({
+                        "id": file.id,
+                        "name": file.name,
+                        "size": file.size,
+                    }))
+                    .collect::<Vec<_>>(),
+                "remoteRelayId": remote_relay_id,
+            })
+            .to_string(),
+            category: "prompt".to_owned(),
+        },
+        AnywhereEvent::Transferring { bytes, total } => RsRa2bEvent::Transferring { bytes, total },
+        AnywhereEvent::Completed { outcome } => RsRa2bEvent::Complete {
+            path: outcome.path.as_str().to_uppercase(),
+            bytes: u32::try_from(outcome.bytes).unwrap_or(u32::MAX),
+            hash_hex: "per-file SHA-256 verified".to_owned(),
+            local_relay_id: outcome.local_relay_id,
+            remote_relay_id: outcome.remote_relay_id,
+            duration_ms: outcome.duration_ms,
+        },
+        AnywhereEvent::Cancelled => RsRa2bEvent::Cancelled,
+    })
+}
+
+fn map_anywhere_failure(error: &AnywhereError) -> RsRa2bEvent {
+    match error {
+        AnywhereError::Cancelled => RsRa2bEvent::Cancelled,
+        AnywhereError::ExpectedIdentityMismatch { .. } | AnywhereError::RelayProof => {
+            RsRa2bEvent::Rejected {
+                message: error.to_string(),
+                category: error.category().to_owned(),
+            }
+        }
+        other => RsRa2bEvent::Failed {
+            message: match other.stage() {
+                Some(stage) => format!("{other} [stage={stage}]"),
+                None => other.to_string(),
+            },
+            category: other.category().to_owned(),
+        },
+    }
+}
 
 enum Ra4RuntimeConfig {
     Sender { files: Vec<Ra4RuntimeFile> },
 }
 
-/// Chooses the post-authentication application protocol before either side
-/// reads from the authenticated stream. RA4 uses ordinary HTTP/1.1; the
-/// legacy proof framing is retained only when explicitly requested.
-enum Ra2bApplicationMode {
-    LegacyProof,
-    Ra4HttpReceiver,
-    Ra4HttpSender,
-}
 
 struct Ra4RuntimeFile {
     path: Option<String>,
@@ -45,16 +127,19 @@ fn ra4_config() -> &'static Mutex<Option<Ra4RuntimeConfig>> {
     CONFIG.get_or_init(|| Mutex::new(None))
 }
 
-fn ra4_decision_sender() -> &'static Mutex<Option<tokio::sync::mpsc::Sender<Ra4Decision>>> {
-    static SENDER: OnceLock<Mutex<Option<tokio::sync::mpsc::Sender<Ra4Decision>>>> =
-        OnceLock::new();
-    SENDER.get_or_init(|| Mutex::new(None))
-}
-
 #[derive(Clone, Debug)]
 pub enum RsRa2bPathPreference {
     Auto,
     ForceRelay,
+}
+
+impl From<RsRa2bPathPreference> for PathPreference {
+    fn from(value: RsRa2bPathPreference) -> Self {
+        match value {
+            RsRa2bPathPreference::Auto => Self::Auto,
+            RsRa2bPathPreference::ForceRelay => Self::ForceRelay,
+        }
+    }
 }
 
 impl From<RsRa2bPathPreference> for Ra2bPathPreference {
@@ -207,6 +292,14 @@ pub fn ra2b_local_identity() -> anyhow::Result<RsRa2bLocalIdentity> {
 /// Parses a development invite. Fail-closed; never panics on bad input.
 #[frb(sync)]
 pub fn ra2b_parse_invite(invite: String) -> anyhow::Result<RsRa2bParsedInvite> {
+    if let Ok(address) = RelayAddressV1::decode(&invite) {
+        return Ok(RsRa2bParsedInvite {
+            version: address.version,
+            host_relay_id: address.claimed_relay_id,
+            routing_available: true,
+            capability: None,
+        });
+    }
     let parsed = parse_invite(&invite)?;
     Ok(RsRa2bParsedInvite {
         version: parsed.version,
@@ -219,12 +312,23 @@ pub fn ra2b_parse_invite(invite: String) -> anyhow::Result<RsRa2bParsedInvite> {
 #[frb(sync)]
 pub fn ra2b_session_is_active() -> bool {
     session_is_active()
+        || harness_session()
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .is_some()
 }
 
 /// Cancels the single active host or join session, if any.
 #[frb(sync)]
 pub fn ra2b_cancel_session() {
     cancel_active_session();
+    let session = harness_session()
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .take();
+    if let Some(session) = session {
+        anywhere_runtime().cancel(AnywhereSessionId::from_u64(session));
+    }
 }
 
 /// Adds one real file to the RA4B sender batch without copying it into Dart.
@@ -269,29 +373,30 @@ pub fn ra4_clear() {
     *ra4_config()
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner()) = None;
-    *ra4_decision_sender()
-        .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner()) = None;
 }
 
-/// Answers the session-scoped incoming batch prompt.
+/// Answers one specific pending inbound batch.
+///
+/// The decision is routed to `(session, transfer_id)` in the production
+/// runtime, so it can never answer a different request.
 #[frb(sync)]
-pub fn ra4_respond(accept: bool, targets_json: Option<String>) -> anyhow::Result<()> {
-    let sender = ra4_decision_sender()
+pub fn ra4_respond(
+    transfer_id: String,
+    accept: bool,
+    targets_json: Option<String>,
+) -> anyhow::Result<()> {
+    let session = harness_session()
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner())
-        .clone()
-        .ok_or_else(|| anyhow::anyhow!("no RA4B transfer is awaiting approval"))?;
-    let targets = match targets_json {
-        Some(json) if accept => serde_json::from_str(&json).context("parse RA4B save targets")?,
-        _ => Default::default(),
-    };
-    sender
-        .try_send(Ra4Decision { accept, targets })
-        .map_err(|_| anyhow::anyhow!("RA4B approval prompt is no longer active"))
+        .ok_or_else(|| anyhow::anyhow!("no Anywhere session is running"))?;
+    let transfer_id: u64 = transfer_id
+        .parse()
+        .context("parse pending transfer identifier")?;
+    super::relay_anywhere::relay_anywhere_respond(session, transfer_id, accept, targets_json)
 }
 
-/// Starts the in-process RA2B host (responder). Emits invite + progress events.
+/// Starts the harness host. RA4 file transfer runs on the production
+/// orchestration; only the legacy proof mode still uses the harness session.
 pub async fn ra2b_start_host(
     path_preference: RsRa2bPathPreference,
     wrong_identity: bool,
@@ -304,35 +409,38 @@ pub async fn ra2b_start_host(
     } else {
         None
     };
+    if ra4_file_transfer {
+        let runtime = anywhere_runtime().clone();
+        let (session, cancel) = runtime.open_session();
+        set_harness_session(Some(session.as_u64()));
+        let sink = production_sink(event_sink.clone());
+        let result = anywhere_receive(
+            runtime.clone(),
+            session,
+            cancel,
+            AnywhereReceiveRequest {
+                identity: AnywhereIdentity::from_shared(process_identity())?,
+                preference: path_preference.into(),
+                alias: "Relay Anywhere".to_owned(),
+                expected_remote_relay_id: expected,
+            },
+            sink,
+        )
+        .await;
+        return finish_production(&runtime, session, guard, &event_sink, result.map(|_| ()));
+    }
     let peer = Ra2bPeerMaterial::from_arc(process_identity(), expected)?;
-    let application_mode = if ra4_file_transfer {
-        Ra2bApplicationMode::Ra4HttpReceiver
-    } else {
-        Ra2bApplicationMode::LegacyProof
-    };
-    let decision_rx = if ra4_file_transfer {
-        let (sender, receiver) = tokio::sync::mpsc::channel(1);
-        *ra4_decision_sender()
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner()) = Some(sender);
-        Some(receiver)
-    } else {
-        None
-    };
-    run_session(
+    run_legacy_proof(
         Ra2bRole::Responder,
         peer,
         path_preference.into(),
         guard,
         event_sink,
-        application_mode,
-        None,
-        decision_rx,
     )
     .await
 }
 
-/// Join using a development invite. `wrong_identity` mutates expected host RelayId.
+/// Joins a host. RA4 file transfer sends through the production orchestration.
 pub async fn ra2b_run_join(
     invite: String,
     path_preference: RsRa2bPathPreference,
@@ -341,6 +449,47 @@ pub async fn ra2b_run_join(
     event_sink: StreamSink<RsRa2bEvent>,
 ) -> anyhow::Result<()> {
     let guard = ActiveSessionGuard::acquire()?;
+    let config = ra4_config()
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .take();
+    if ra4_file_transfer {
+        let Some(Ra4RuntimeConfig::Sender { files }) = config else {
+            anyhow::bail!("RA4 file-transfer mode requires a configured sender batch");
+        };
+        let mut remote = production_address(&invite)?;
+        if wrong_identity {
+            remote.claimed_relay_id = fresh_unrelated_relay_id()?;
+        }
+        let batch = AnywhereBatch {
+            files: files
+                .into_iter()
+                .map(production_file)
+                .collect::<anyhow::Result<Vec<_>>>()?,
+        };
+        let runtime = anywhere_runtime().clone();
+        let (session, cancel) = runtime.open_session();
+        set_harness_session(Some(session.as_u64()));
+        let sink = production_sink(event_sink.clone());
+        let result = anywhere_send(
+            session,
+            cancel,
+            AnywhereSendRequest {
+                identity: AnywhereIdentity::from_shared(process_identity())?,
+                remote,
+                preference: path_preference.into(),
+                alias: "Relay Anywhere".to_owned(),
+                batch,
+            },
+            sink,
+        )
+        .await;
+        return finish_production(&runtime, session, guard, &event_sink, result.map(|_| ()));
+    }
+    anyhow::ensure!(
+        config.is_none(),
+        "RA4 sender configuration requires file-transfer mode"
+    );
     let parsed = parse_invite(&invite)?;
     let expected = if wrong_identity {
         fresh_unrelated_relay_id()?
@@ -348,24 +497,7 @@ pub async fn ra2b_run_join(
         parsed.host_relay_id.clone()
     };
     let peer = Ra2bPeerMaterial::from_arc(process_identity(), Some(expected))?;
-    let config = ra4_config()
-        .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner())
-        .take();
-    let application_mode = if ra4_file_transfer {
-        anyhow::ensure!(
-            matches!(&config, Some(Ra4RuntimeConfig::Sender { .. })),
-            "RA4 file-transfer mode requires a configured sender batch"
-        );
-        Ra2bApplicationMode::Ra4HttpSender
-    } else {
-        anyhow::ensure!(
-            config.is_none(),
-            "RA4 sender configuration requires file-transfer mode"
-        );
-        Ra2bApplicationMode::LegacyProof
-    };
-    run_session(
+    run_legacy_proof(
         Ra2bRole::Initiator {
             remote_endpoint: parsed.endpoint,
         },
@@ -373,90 +505,80 @@ pub async fn ra2b_run_join(
         path_preference.into(),
         guard,
         event_sink,
-        application_mode,
-        config,
-        None,
     )
     .await
 }
 
-async fn run_session(
+/// Accepts a production Relay address, or an older RA2B invite, as routing.
+fn production_address(raw: &str) -> anyhow::Result<RelayAddressV1> {
+    if let Ok(address) = RelayAddressV1::decode(raw) {
+        return Ok(address);
+    }
+    let legacy = parse_invite(raw)?;
+    RelayAddressV1::new(legacy.host_relay_id, legacy.endpoint)
+}
+
+fn production_file(file: Ra4RuntimeFile) -> anyhow::Result<AnywhereFileSpec> {
+    let source = if let Some(path) = file.path {
+        AnywhereFileSource::Path(PathBuf::from(path))
+    } else {
+        #[cfg(target_os = "android")]
+        {
+            AnywhereFileSource::FileDescriptor(
+                file.file_descriptor
+                    .ok_or_else(|| anyhow::anyhow!("Anywhere file needs a path or descriptor"))?,
+            )
+        }
+        #[cfg(not(target_os = "android"))]
+        {
+            anyhow::bail!("file descriptors are only supported on Android")
+        }
+    };
+    Ok(AnywhereFileSpec {
+        id: uuid::Uuid::new_v4().to_string(),
+        name: file.name,
+        size: file.size,
+        file_type: file.file_type,
+        sha256: file.sha256,
+        source,
+    })
+}
+
+fn production_sink(event_sink: StreamSink<RsRa2bEvent>) -> localsend::anywhere::AnywhereEventSink {
+    Arc::new(move |event: AnywhereEvent| {
+        if let Some(mapped) = map_anywhere_event(event) {
+            let _ = event_sink.add(mapped);
+        }
+    })
+}
+
+fn finish_production(
+    runtime: &Arc<localsend::anywhere::AnywhereRuntime>,
+    session: AnywhereSessionId,
+    guard: ActiveSessionGuard,
+    event_sink: &StreamSink<RsRa2bEvent>,
+    result: Result<(), AnywhereError>,
+) -> anyhow::Result<()> {
+    runtime.close_session(session);
+    set_harness_session(None);
+    drop(guard);
+    if let Err(error) = result {
+        let _ = event_sink.add(map_anywhere_failure(&error));
+    }
+    Ok(())
+}
+
+async fn run_legacy_proof(
     role: Ra2bRole,
     peer: Ra2bPeerMaterial,
     path_preference: Ra2bPathPreference,
     guard: ActiveSessionGuard,
     event_sink: StreamSink<RsRa2bEvent>,
-    application_mode: Ra2bApplicationMode,
-    config: Option<Ra4RuntimeConfig>,
-    mut decision_rx: Option<tokio::sync::mpsc::Receiver<Ra4Decision>>,
 ) -> anyhow::Result<()> {
     let callback: Arc<dyn Fn(Ra2bPhase) + Send + Sync> = Arc::new(move |phase: Ra2bPhase| {
         let _ = event_sink.add(phase.into());
     });
-    let result = match (application_mode, config, role) {
-        (
-            Ra2bApplicationMode::Ra4HttpSender,
-            Some(Ra4RuntimeConfig::Sender { files }),
-            Ra2bRole::Initiator { remote_endpoint },
-        ) => {
-            let specs = files
-                .into_iter()
-                .map(|file| {
-                    let source = if let Some(path) = file.path {
-                        Ra4FileSource::Path(PathBuf::from(path))
-                    } else {
-                        #[cfg(target_os = "android")]
-                        {
-                            Ra4FileSource::FileDescriptor(
-                                file.file_descriptor.expect("validated descriptor"),
-                            )
-                        }
-                        #[cfg(not(target_os = "android"))]
-                        {
-                            unreachable!("non-Android descriptor rejected above")
-                        }
-                    };
-                    Ra4FileSpec {
-                        id: uuid::Uuid::new_v4().to_string(),
-                        name: file.name,
-                        size: file.size,
-                        file_type: file.file_type,
-                        sha256: file.sha256,
-                        source,
-                    }
-                })
-                .collect();
-            run_ra4_batch_sender(
-                remote_endpoint,
-                peer,
-                path_preference,
-                guard.cancellation(),
-                &callback,
-                Ra4BatchSpec { files: specs },
-            )
-            .await
-        }
-        (Ra2bApplicationMode::Ra4HttpReceiver, None, Ra2bRole::Responder) => {
-            let mut decision_rx = decision_rx
-                .take()
-                .ok_or_else(|| anyhow::anyhow!("RA4A receiver approval channel is unavailable"))?;
-            run_ra4_receiver(
-                peer,
-                path_preference,
-                guard.cancellation(),
-                &callback,
-                &mut decision_rx,
-            )
-            .await
-        }
-        (Ra2bApplicationMode::LegacyProof, None, role) => {
-            run_proof(role, peer, path_preference, guard.cancellation(), callback).await
-        }
-        _ => anyhow::bail!("RA2B application mode/configuration role mismatch"),
-    };
-    *ra4_decision_sender()
-        .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner()) = None;
+    let result = run_proof(role, peer, path_preference, guard.cancellation(), callback).await;
     drop(guard);
     match result {
         Ok(_) => Ok(()),

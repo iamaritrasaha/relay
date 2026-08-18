@@ -33,7 +33,7 @@ use crate::api::server::*;
 use crate::api::stream::*;
 use crate::api::webrtc::*;
 use flutter_rust_bridge::for_generated::byteorder::{NativeEndian, ReadBytesExt, WriteBytesExt};
-use flutter_rust_bridge::for_generated::{Lifetimeable, Lockable, transform_result_dco};
+use flutter_rust_bridge::for_generated::{transform_result_dco, Lifetimeable, Lockable};
 use flutter_rust_bridge::{Handler, IntoIntoDart};
 
 // Section: boilerplate
@@ -44,7 +44,7 @@ flutter_rust_bridge::frb_generated_boilerplate!(
     default_rust_auto_opaque = RustAutoOpaqueMoi,
 );
 pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_VERSION: &str = "2.12.0";
-pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = -698623502;
+pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = 1558555014;
 
 // Section: executor
 
@@ -3344,337 +3344,6 @@ fn wire__crate__api__filename__is_valid_file_name_impl(
         },
     )
 }
-fn wire__crate__api__ra2b__ra2b_cancel_session_impl(
-    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
-    rust_vec_len_: i32,
-    data_len_: i32,
-) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
-    FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync::<flutter_rust_bridge::for_generated::SseCodec, _>(
-        flutter_rust_bridge::for_generated::TaskInfo {
-            debug_name: "ra2b_cancel_session",
-            port: None,
-            mode: flutter_rust_bridge::for_generated::FfiCallMode::Sync,
-        },
-        move || {
-            let message = unsafe {
-                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
-                    ptr_,
-                    rust_vec_len_,
-                    data_len_,
-                )
-            };
-            let mut deserializer =
-                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
-            deserializer.end();
-            transform_result_sse::<_, ()>((move || {
-                let output_ok = Result::<_, ()>::Ok({
-                    crate::api::ra2b::ra2b_cancel_session();
-                })?;
-                Ok(output_ok)
-            })())
-        },
-    )
-}
-fn wire__crate__api__ra2b__ra2b_local_identity_impl(
-    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
-    rust_vec_len_: i32,
-    data_len_: i32,
-) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
-    FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync::<flutter_rust_bridge::for_generated::SseCodec, _>(
-        flutter_rust_bridge::for_generated::TaskInfo {
-            debug_name: "ra2b_local_identity",
-            port: None,
-            mode: flutter_rust_bridge::for_generated::FfiCallMode::Sync,
-        },
-        move || {
-            let message = unsafe {
-                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
-                    ptr_,
-                    rust_vec_len_,
-                    data_len_,
-                )
-            };
-            let mut deserializer =
-                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
-            deserializer.end();
-            transform_result_sse::<_, flutter_rust_bridge::for_generated::anyhow::Error>(
-                (move || {
-                    let output_ok = crate::api::ra2b::ra2b_local_identity()?;
-                    Ok(output_ok)
-                })(),
-            )
-        },
-    )
-}
-fn wire__crate__api__ra2b__ra2b_parse_invite_impl(
-    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
-    rust_vec_len_: i32,
-    data_len_: i32,
-) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
-    FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync::<flutter_rust_bridge::for_generated::SseCodec, _>(
-        flutter_rust_bridge::for_generated::TaskInfo {
-            debug_name: "ra2b_parse_invite",
-            port: None,
-            mode: flutter_rust_bridge::for_generated::FfiCallMode::Sync,
-        },
-        move || {
-            let message = unsafe {
-                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
-                    ptr_,
-                    rust_vec_len_,
-                    data_len_,
-                )
-            };
-            let mut deserializer =
-                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
-            let api_invite = <String>::sse_decode(&mut deserializer);
-            deserializer.end();
-            transform_result_sse::<_, flutter_rust_bridge::for_generated::anyhow::Error>(
-                (move || {
-                    let output_ok = crate::api::ra2b::ra2b_parse_invite(api_invite)?;
-                    Ok(output_ok)
-                })(),
-            )
-        },
-    )
-}
-fn wire__crate__api__ra2b__ra2b_run_join_impl(
-    port_: flutter_rust_bridge::for_generated::MessagePort,
-    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
-    rust_vec_len_: i32,
-    data_len_: i32,
-) {
-    FLUTTER_RUST_BRIDGE_HANDLER.wrap_async::<flutter_rust_bridge::for_generated::SseCodec, _, _, _>(
-        flutter_rust_bridge::for_generated::TaskInfo {
-            debug_name: "ra2b_run_join",
-            port: Some(port_),
-            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
-        },
-        move || {
-            let message = unsafe {
-                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
-                    ptr_,
-                    rust_vec_len_,
-                    data_len_,
-                )
-            };
-            let mut deserializer =
-                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
-            let api_invite = <String>::sse_decode(&mut deserializer);
-            let api_path_preference =
-                <crate::api::ra2b::RsRa2bPathPreference>::sse_decode(&mut deserializer);
-            let api_wrong_identity = <bool>::sse_decode(&mut deserializer);
-            let api_ra4_file_transfer = <bool>::sse_decode(&mut deserializer);
-            let api_event_sink = <StreamSink<
-                crate::api::ra2b::RsRa2bEvent,
-                flutter_rust_bridge::for_generated::SseCodec,
-            >>::sse_decode(&mut deserializer);
-            deserializer.end();
-            move |context| async move {
-                transform_result_sse::<_, flutter_rust_bridge::for_generated::anyhow::Error>(
-                    (move || async move {
-                        let output_ok = crate::api::ra2b::ra2b_run_join(
-                            api_invite,
-                            api_path_preference,
-                            api_wrong_identity,
-                            api_ra4_file_transfer,
-                            api_event_sink,
-                        )
-                        .await?;
-                        Ok(output_ok)
-                    })()
-                    .await,
-                )
-            }
-        },
-    )
-}
-fn wire__crate__api__ra2b__ra2b_session_is_active_impl(
-    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
-    rust_vec_len_: i32,
-    data_len_: i32,
-) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
-    FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync::<flutter_rust_bridge::for_generated::SseCodec, _>(
-        flutter_rust_bridge::for_generated::TaskInfo {
-            debug_name: "ra2b_session_is_active",
-            port: None,
-            mode: flutter_rust_bridge::for_generated::FfiCallMode::Sync,
-        },
-        move || {
-            let message = unsafe {
-                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
-                    ptr_,
-                    rust_vec_len_,
-                    data_len_,
-                )
-            };
-            let mut deserializer =
-                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
-            deserializer.end();
-            transform_result_sse::<_, ()>((move || {
-                let output_ok = Result::<_, ()>::Ok(crate::api::ra2b::ra2b_session_is_active())?;
-                Ok(output_ok)
-            })())
-        },
-    )
-}
-fn wire__crate__api__ra2b__ra2b_start_host_impl(
-    port_: flutter_rust_bridge::for_generated::MessagePort,
-    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
-    rust_vec_len_: i32,
-    data_len_: i32,
-) {
-    FLUTTER_RUST_BRIDGE_HANDLER.wrap_async::<flutter_rust_bridge::for_generated::SseCodec, _, _, _>(
-        flutter_rust_bridge::for_generated::TaskInfo {
-            debug_name: "ra2b_start_host",
-            port: Some(port_),
-            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
-        },
-        move || {
-            let message = unsafe {
-                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
-                    ptr_,
-                    rust_vec_len_,
-                    data_len_,
-                )
-            };
-            let mut deserializer =
-                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
-            let api_path_preference =
-                <crate::api::ra2b::RsRa2bPathPreference>::sse_decode(&mut deserializer);
-            let api_wrong_identity = <bool>::sse_decode(&mut deserializer);
-            let api_ra4_file_transfer = <bool>::sse_decode(&mut deserializer);
-            let api_event_sink = <StreamSink<
-                crate::api::ra2b::RsRa2bEvent,
-                flutter_rust_bridge::for_generated::SseCodec,
-            >>::sse_decode(&mut deserializer);
-            deserializer.end();
-            move |context| async move {
-                transform_result_sse::<_, flutter_rust_bridge::for_generated::anyhow::Error>(
-                    (move || async move {
-                        let output_ok = crate::api::ra2b::ra2b_start_host(
-                            api_path_preference,
-                            api_wrong_identity,
-                            api_ra4_file_transfer,
-                            api_event_sink,
-                        )
-                        .await?;
-                        Ok(output_ok)
-                    })()
-                    .await,
-                )
-            }
-        },
-    )
-}
-fn wire__crate__api__ra2b__ra4_clear_impl(
-    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
-    rust_vec_len_: i32,
-    data_len_: i32,
-) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
-    FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync::<flutter_rust_bridge::for_generated::SseCodec, _>(
-        flutter_rust_bridge::for_generated::TaskInfo {
-            debug_name: "ra4_clear",
-            port: None,
-            mode: flutter_rust_bridge::for_generated::FfiCallMode::Sync,
-        },
-        move || {
-            let message = unsafe {
-                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
-                    ptr_,
-                    rust_vec_len_,
-                    data_len_,
-                )
-            };
-            let mut deserializer =
-                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
-            deserializer.end();
-            transform_result_sse::<_, ()>((move || {
-                let output_ok = Result::<_, ()>::Ok({
-                    crate::api::ra2b::ra4_clear();
-                })?;
-                Ok(output_ok)
-            })())
-        },
-    )
-}
-fn wire__crate__api__ra2b__ra4_respond_impl(
-    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
-    rust_vec_len_: i32,
-    data_len_: i32,
-) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
-    FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync::<flutter_rust_bridge::for_generated::SseCodec, _>(
-        flutter_rust_bridge::for_generated::TaskInfo {
-            debug_name: "ra4_respond",
-            port: None,
-            mode: flutter_rust_bridge::for_generated::FfiCallMode::Sync,
-        },
-        move || {
-            let message = unsafe {
-                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
-                    ptr_,
-                    rust_vec_len_,
-                    data_len_,
-                )
-            };
-            let mut deserializer =
-                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
-            let api_accept = <bool>::sse_decode(&mut deserializer);
-            let api_targets_json = <Option<String>>::sse_decode(&mut deserializer);
-            deserializer.end();
-            transform_result_sse::<_, flutter_rust_bridge::for_generated::anyhow::Error>(
-                (move || {
-                    let output_ok = crate::api::ra2b::ra4_respond(api_accept, api_targets_json)?;
-                    Ok(output_ok)
-                })(),
-            )
-        },
-    )
-}
-fn wire__crate__api__ra2b__ra4_set_sender_impl(
-    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
-    rust_vec_len_: i32,
-    data_len_: i32,
-) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
-    FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync::<flutter_rust_bridge::for_generated::SseCodec, _>(
-        flutter_rust_bridge::for_generated::TaskInfo {
-            debug_name: "ra4_set_sender",
-            port: None,
-            mode: flutter_rust_bridge::for_generated::FfiCallMode::Sync,
-        },
-        move || {
-            let message = unsafe {
-                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
-                    ptr_,
-                    rust_vec_len_,
-                    data_len_,
-                )
-            };
-            let mut deserializer =
-                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
-            let api_path = <Option<String>>::sse_decode(&mut deserializer);
-            let api_file_descriptor = <Option<i32>>::sse_decode(&mut deserializer);
-            let api_name = <String>::sse_decode(&mut deserializer);
-            let api_size = <u64>::sse_decode(&mut deserializer);
-            let api_file_type = <String>::sse_decode(&mut deserializer);
-            let api_sha256 = <Option<String>>::sse_decode(&mut deserializer);
-            deserializer.end();
-            transform_result_sse::<_, flutter_rust_bridge::for_generated::anyhow::Error>(
-                (move || {
-                    let output_ok = crate::api::ra2b::ra4_set_sender(
-                        api_path,
-                        api_file_descriptor,
-                        api_name,
-                        api_size,
-                        api_file_type,
-                        api_sha256,
-                    )?;
-                    Ok(output_ok)
-                })(),
-            )
-        },
-    )
-}
 fn wire__crate__api__metadata__read_file_metadata_impl(
     port_: flutter_rust_bridge::for_generated::MessagePort,
     ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
@@ -3705,6 +3374,318 @@ fn wire__crate__api__metadata__read_file_metadata_impl(
                         let output_ok = Result::<_, ()>::Ok(
                             crate::api::metadata::read_file_metadata(api_path).await,
                         )?;
+                        Ok(output_ok)
+                    })()
+                    .await,
+                )
+            }
+        },
+    )
+}
+fn wire__crate__api__relay_anywhere__relay_anywhere_cancel_impl(
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync::<flutter_rust_bridge::for_generated::SseCodec, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "relay_anywhere_cancel",
+            port: None,
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Sync,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_session_id = <u64>::sse_decode(&mut deserializer);
+            deserializer.end();
+            transform_result_sse::<_, ()>((move || {
+                let output_ok = Result::<_, ()>::Ok(
+                    crate::api::relay_anywhere::relay_anywhere_cancel(api_session_id),
+                )?;
+                Ok(output_ok)
+            })())
+        },
+    )
+}
+fn wire__crate__api__relay_anywhere__relay_anywhere_close_session_impl(
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync::<flutter_rust_bridge::for_generated::SseCodec, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "relay_anywhere_close_session",
+            port: None,
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Sync,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_session_id = <u64>::sse_decode(&mut deserializer);
+            deserializer.end();
+            transform_result_sse::<_, ()>((move || {
+                let output_ok = Result::<_, ()>::Ok(
+                    crate::api::relay_anywhere::relay_anywhere_close_session(api_session_id),
+                )?;
+                Ok(output_ok)
+            })())
+        },
+    )
+}
+fn wire__crate__api__relay_anywhere__relay_anywhere_open_session_impl(
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync::<flutter_rust_bridge::for_generated::SseCodec, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "relay_anywhere_open_session",
+            port: None,
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Sync,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            deserializer.end();
+            transform_result_sse::<_, ()>((move || {
+                let output_ok =
+                    Result::<_, ()>::Ok(crate::api::relay_anywhere::relay_anywhere_open_session())?;
+                Ok(output_ok)
+            })())
+        },
+    )
+}
+fn wire__crate__api__relay_anywhere__relay_anywhere_open_session_count_impl(
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync::<flutter_rust_bridge::for_generated::SseCodec, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "relay_anywhere_open_session_count",
+            port: None,
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Sync,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            deserializer.end();
+            transform_result_sse::<_, ()>((move || {
+                let output_ok = Result::<_, ()>::Ok(
+                    crate::api::relay_anywhere::relay_anywhere_open_session_count(),
+                )?;
+                Ok(output_ok)
+            })())
+        },
+    )
+}
+fn wire__crate__api__relay_anywhere__relay_anywhere_parse_address_impl(
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync::<flutter_rust_bridge::for_generated::SseCodec, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "relay_anywhere_parse_address",
+            port: None,
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Sync,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_address = <String>::sse_decode(&mut deserializer);
+            deserializer.end();
+            transform_result_sse::<_, flutter_rust_bridge::for_generated::anyhow::Error>(
+                (move || {
+                    let output_ok =
+                        crate::api::relay_anywhere::relay_anywhere_parse_address(api_address)?;
+                    Ok(output_ok)
+                })(),
+            )
+        },
+    )
+}
+fn wire__crate__api__relay_anywhere__relay_anywhere_receive_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_async::<flutter_rust_bridge::for_generated::SseCodec, _, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "relay_anywhere_receive",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_session_id = <u64>::sse_decode(&mut deserializer);
+            let api_private_key_pem = <Vec<u8>>::sse_decode(&mut deserializer);
+            let api_relay_id = <String>::sse_decode(&mut deserializer);
+            let api_alias = <String>::sse_decode(&mut deserializer);
+            let api_path_preference =
+                <crate::api::relay_anywhere::RsRelayPathPreference>::sse_decode(&mut deserializer);
+            let api_expected_remote_relay_id = <Option<String>>::sse_decode(&mut deserializer);
+            let api_event_sink = <StreamSink<
+                crate::api::relay_anywhere::RsRelayAnywhereEvent,
+                flutter_rust_bridge::for_generated::SseCodec,
+            >>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| async move {
+                transform_result_sse::<_, flutter_rust_bridge::for_generated::anyhow::Error>(
+                    (move || async move {
+                        let output_ok = crate::api::relay_anywhere::relay_anywhere_receive(
+                            api_session_id,
+                            api_private_key_pem,
+                            api_relay_id,
+                            api_alias,
+                            api_path_preference,
+                            api_expected_remote_relay_id,
+                            api_event_sink,
+                        )
+                        .await?;
+                        Ok(output_ok)
+                    })()
+                    .await,
+                )
+            }
+        },
+    )
+}
+fn wire__crate__api__relay_anywhere__relay_anywhere_respond_impl(
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync::<flutter_rust_bridge::for_generated::SseCodec, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "relay_anywhere_respond",
+            port: None,
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Sync,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_session_id = <u64>::sse_decode(&mut deserializer);
+            let api_transfer_id = <u64>::sse_decode(&mut deserializer);
+            let api_accept = <bool>::sse_decode(&mut deserializer);
+            let api_targets_json = <Option<String>>::sse_decode(&mut deserializer);
+            deserializer.end();
+            transform_result_sse::<_, flutter_rust_bridge::for_generated::anyhow::Error>(
+                (move || {
+                    let output_ok = crate::api::relay_anywhere::relay_anywhere_respond(
+                        api_session_id,
+                        api_transfer_id,
+                        api_accept,
+                        api_targets_json,
+                    )?;
+                    Ok(output_ok)
+                })(),
+            )
+        },
+    )
+}
+fn wire__crate__api__relay_anywhere__relay_anywhere_send_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_async::<flutter_rust_bridge::for_generated::SseCodec, _, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "relay_anywhere_send",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_session_id = <u64>::sse_decode(&mut deserializer);
+            let api_private_key_pem = <Vec<u8>>::sse_decode(&mut deserializer);
+            let api_relay_id = <String>::sse_decode(&mut deserializer);
+            let api_address = <String>::sse_decode(&mut deserializer);
+            let api_alias = <String>::sse_decode(&mut deserializer);
+            let api_path_preference =
+                <crate::api::relay_anywhere::RsRelayPathPreference>::sse_decode(&mut deserializer);
+            let api_files = <Vec<crate::api::relay_anywhere::RsRelayAnywhereFile>>::sse_decode(
+                &mut deserializer,
+            );
+            let api_event_sink = <StreamSink<
+                crate::api::relay_anywhere::RsRelayAnywhereEvent,
+                flutter_rust_bridge::for_generated::SseCodec,
+            >>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| async move {
+                transform_result_sse::<_, flutter_rust_bridge::for_generated::anyhow::Error>(
+                    (move || async move {
+                        let output_ok = crate::api::relay_anywhere::relay_anywhere_send(
+                            api_session_id,
+                            api_private_key_pem,
+                            api_relay_id,
+                            api_address,
+                            api_alias,
+                            api_path_preference,
+                            api_files,
+                            api_event_sink,
+                        )
+                        .await?;
                         Ok(output_ok)
                     })()
                     .await,
@@ -4476,7 +4457,10 @@ impl SseDecode
 }
 
 impl SseDecode
-    for StreamSink<crate::api::ra2b::RsRa2bEvent, flutter_rust_bridge::for_generated::SseCodec>
+    for StreamSink<
+        crate::api::relay_anywhere::RsRelayAnywhereEvent,
+        flutter_rust_bridge::for_generated::SseCodec,
+    >
 {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
@@ -4815,6 +4799,30 @@ impl SseDecode for Vec<crate::api::discovery::RsDeviceLog> {
             ans_.push(<crate::api::discovery::RsDeviceLog>::sse_decode(
                 deserializer,
             ));
+        }
+        return ans_;
+    }
+}
+
+impl SseDecode for Vec<crate::api::relay_anywhere::RsRelayAnywhereFile> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut len_ = <i32>::sse_decode(deserializer);
+        let mut ans_ = Vec::with_capacity(len_ as usize);
+        for idx_ in 0..len_ {
+            ans_.push(<crate::api::relay_anywhere::RsRelayAnywhereFile>::sse_decode(deserializer));
+        }
+        return ans_;
+    }
+}
+
+impl SseDecode for Vec<crate::api::relay_anywhere::RsRelayIncomingFile> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut len_ = <i32>::sse_decode(deserializer);
+        let mut ans_ = Vec::with_capacity(len_ as usize);
+        for idx_ in 0..len_ {
+            ans_.push(<crate::api::relay_anywhere::RsRelayIncomingFile>::sse_decode(deserializer));
         }
         return ans_;
     }
@@ -5303,84 +5311,101 @@ impl SseDecode for crate::api::http::RsHttpClientError {
     }
 }
 
-impl SseDecode for crate::api::ra2b::RsRa2bEvent {
+impl SseDecode for crate::api::relay_anywhere::RsRelayAddress {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_version = <u32>::sse_decode(deserializer);
+        let mut var_claimedRelayId = <String>::sse_decode(deserializer);
+        let mut var_routingAvailable = <bool>::sse_decode(deserializer);
+        return crate::api::relay_anywhere::RsRelayAddress {
+            version: var_version,
+            claimed_relay_id: var_claimedRelayId,
+            routing_available: var_routingAvailable,
+        };
+    }
+}
+
+impl SseDecode for crate::api::relay_anywhere::RsRelayAnywhereEvent {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
         let mut tag_ = <i32>::sse_decode(deserializer);
         match tag_ {
             0 => {
-                return crate::api::ra2b::RsRa2bEvent::Starting;
+                return crate::api::relay_anywhere::RsRelayAnywhereEvent::Starting;
             }
             1 => {
-                let mut var_invite = <String>::sse_decode(deserializer);
+                let mut var_address = <String>::sse_decode(deserializer);
                 let mut var_localRelayId = <String>::sse_decode(deserializer);
-                let mut var_autoRelayAvailable = <bool>::sse_decode(deserializer);
-                return crate::api::ra2b::RsRa2bEvent::InviteReady {
-                    invite: var_invite,
+                return crate::api::relay_anywhere::RsRelayAnywhereEvent::AddressReady {
+                    address: var_address,
                     local_relay_id: var_localRelayId,
-                    auto_relay_available: var_autoRelayAvailable,
                 };
             }
             2 => {
-                return crate::api::ra2b::RsRa2bEvent::WaitingForPeer;
+                return crate::api::relay_anywhere::RsRelayAnywhereEvent::WaitingForPeer;
             }
             3 => {
-                return crate::api::ra2b::RsRa2bEvent::Connecting;
+                return crate::api::relay_anywhere::RsRelayAnywhereEvent::Connecting;
             }
             4 => {
-                return crate::api::ra2b::RsRa2bEvent::IrohConnected;
+                return crate::api::relay_anywhere::RsRelayAnywhereEvent::PeerConnected;
             }
             5 => {
-                return crate::api::ra2b::RsRa2bEvent::TlsAuthenticated;
+                return crate::api::relay_anywhere::RsRelayAnywhereEvent::TlsEstablished;
             }
             6 => {
                 let mut var_remoteRelayId = <String>::sse_decode(deserializer);
-                return crate::api::ra2b::RsRa2bEvent::RelayIdentityVerified {
+                return crate::api::relay_anywhere::RsRelayAnywhereEvent::PeerAuthenticated {
                     remote_relay_id: var_remoteRelayId,
                 };
             }
             7 => {
+                let mut var_transferId = <u64>::sse_decode(deserializer);
+                let mut var_files =
+                    <Vec<crate::api::relay_anywhere::RsRelayIncomingFile>>::sse_decode(
+                        deserializer,
+                    );
+                let mut var_remoteRelayId = <String>::sse_decode(deserializer);
+                return crate::api::relay_anywhere::RsRelayAnywhereEvent::IncomingBatch {
+                    transfer_id: var_transferId,
+                    files: var_files,
+                    remote_relay_id: var_remoteRelayId,
+                };
+            }
+            8 => {
                 let mut var_bytes = <u64>::sse_decode(deserializer);
                 let mut var_total = <u64>::sse_decode(deserializer);
-                return crate::api::ra2b::RsRa2bEvent::Transferring {
+                return crate::api::relay_anywhere::RsRelayAnywhereEvent::Transferring {
                     bytes: var_bytes,
                     total: var_total,
                 };
             }
-            8 => {
+            9 => {
                 let mut var_path = <String>::sse_decode(deserializer);
-                let mut var_bytes = <u32>::sse_decode(deserializer);
-                let mut var_hashHex = <String>::sse_decode(deserializer);
+                let mut var_bytes = <u64>::sse_decode(deserializer);
                 let mut var_localRelayId = <String>::sse_decode(deserializer);
                 let mut var_remoteRelayId = <String>::sse_decode(deserializer);
                 let mut var_durationMs = <u64>::sse_decode(deserializer);
-                return crate::api::ra2b::RsRa2bEvent::Complete {
+                return crate::api::relay_anywhere::RsRelayAnywhereEvent::Completed {
                     path: var_path,
                     bytes: var_bytes,
-                    hash_hex: var_hashHex,
                     local_relay_id: var_localRelayId,
                     remote_relay_id: var_remoteRelayId,
                     duration_ms: var_durationMs,
                 };
             }
-            9 => {
-                let mut var_message = <String>::sse_decode(deserializer);
-                let mut var_category = <String>::sse_decode(deserializer);
-                return crate::api::ra2b::RsRa2bEvent::Rejected {
-                    message: var_message,
-                    category: var_category,
-                };
-            }
             10 => {
                 let mut var_message = <String>::sse_decode(deserializer);
                 let mut var_category = <String>::sse_decode(deserializer);
-                return crate::api::ra2b::RsRa2bEvent::Failed {
+                let mut var_stage = <Option<String>>::sse_decode(deserializer);
+                return crate::api::relay_anywhere::RsRelayAnywhereEvent::Failed {
                     message: var_message,
                     category: var_category,
+                    stage: var_stage,
                 };
             }
             11 => {
-                return crate::api::ra2b::RsRa2bEvent::Cancelled;
+                return crate::api::relay_anywhere::RsRelayAnywhereEvent::Cancelled;
             }
             _ => {
                 unimplemented!("");
@@ -5389,40 +5414,49 @@ impl SseDecode for crate::api::ra2b::RsRa2bEvent {
     }
 }
 
-impl SseDecode for crate::api::ra2b::RsRa2bLocalIdentity {
+impl SseDecode for crate::api::relay_anywhere::RsRelayAnywhereFile {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
-        let mut var_relayId = <String>::sse_decode(deserializer);
-        return crate::api::ra2b::RsRa2bLocalIdentity {
-            relay_id: var_relayId,
+        let mut var_path = <Option<String>>::sse_decode(deserializer);
+        let mut var_fileDescriptor = <Option<i32>>::sse_decode(deserializer);
+        let mut var_name = <String>::sse_decode(deserializer);
+        let mut var_size = <u64>::sse_decode(deserializer);
+        let mut var_fileType = <String>::sse_decode(deserializer);
+        let mut var_sha256 = <Option<String>>::sse_decode(deserializer);
+        return crate::api::relay_anywhere::RsRelayAnywhereFile {
+            path: var_path,
+            file_descriptor: var_fileDescriptor,
+            name: var_name,
+            size: var_size,
+            file_type: var_fileType,
+            sha256: var_sha256,
         };
     }
 }
 
-impl SseDecode for crate::api::ra2b::RsRa2bParsedInvite {
+impl SseDecode for crate::api::relay_anywhere::RsRelayIncomingFile {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
-        let mut var_version = <u32>::sse_decode(deserializer);
-        let mut var_hostRelayId = <String>::sse_decode(deserializer);
-        let mut var_routingAvailable = <bool>::sse_decode(deserializer);
-        let mut var_capability = <Option<String>>::sse_decode(deserializer);
-        return crate::api::ra2b::RsRa2bParsedInvite {
-            version: var_version,
-            host_relay_id: var_hostRelayId,
-            routing_available: var_routingAvailable,
-            capability: var_capability,
+        let mut var_id = <String>::sse_decode(deserializer);
+        let mut var_name = <String>::sse_decode(deserializer);
+        let mut var_size = <u64>::sse_decode(deserializer);
+        return crate::api::relay_anywhere::RsRelayIncomingFile {
+            id: var_id,
+            name: var_name,
+            size: var_size,
         };
     }
 }
 
-impl SseDecode for crate::api::ra2b::RsRa2bPathPreference {
+impl SseDecode for crate::api::relay_anywhere::RsRelayPathPreference {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
         let mut inner = <i32>::sse_decode(deserializer);
         return match inner {
-            0 => crate::api::ra2b::RsRa2bPathPreference::Auto,
-            1 => crate::api::ra2b::RsRa2bPathPreference::ForceRelay,
-            _ => unreachable!("Invalid variant for RsRa2bPathPreference: {}", inner),
+            0 => crate::api::relay_anywhere::RsRelayPathPreference::Auto,
+            1 => crate::api::relay_anywhere::RsRelayPathPreference::ForceDirect,
+            2 => crate::api::relay_anywhere::RsRelayPathPreference::ForceRelay,
+            _ => unreachable!("Invalid variant for RsRelayPathPreference: {}", inner),
         };
     }
 }
@@ -6130,17 +6164,27 @@ fn pde_ffi_dispatcher_primary_impl(
             data_len,
         ),
         56 => wire__crate__api__crypto__hash_file_impl(port, ptr, rust_vec_len, data_len),
-        61 => wire__crate__api__ra2b__ra2b_run_join_impl(port, ptr, rust_vec_len, data_len),
-        63 => wire__crate__api__ra2b__ra2b_start_host_impl(port, ptr, rust_vec_len, data_len),
-        67 => {
+        58 => {
             wire__crate__api__metadata__read_file_metadata_impl(port, ptr, rust_vec_len, data_len)
         }
-        68 => {
+        64 => wire__crate__api__relay_anywhere__relay_anywhere_receive_impl(
+            port,
+            ptr,
+            rust_vec_len,
+            data_len,
+        ),
+        66 => wire__crate__api__relay_anywhere__relay_anywhere_send_impl(
+            port,
+            ptr,
+            rust_vec_len,
+            data_len,
+        ),
+        67 => {
             wire__crate__api__crypto__restore_relay_identity_impl(port, ptr, rust_vec_len, data_len)
         }
-        70 => wire__crate__api__discovery__start_discovery_impl(port, ptr, rust_vec_len, data_len),
-        71 => wire__crate__api__server__start_server_impl(port, ptr, rust_vec_len, data_len),
-        72 => wire__crate__api__crypto__verify_cert_impl(port, ptr, rust_vec_len, data_len),
+        69 => wire__crate__api__discovery__start_discovery_impl(port, ptr, rust_vec_len, data_len),
+        70 => wire__crate__api__server__start_server_impl(port, ptr, rust_vec_len, data_len),
+        71 => wire__crate__api__crypto__verify_cert_impl(port, ptr, rust_vec_len, data_len),
         _ => unreachable!(),
     }
 }
@@ -6158,14 +6202,37 @@ fn pde_ffi_dispatcher_sync_impl(
         49 => wire__crate__api__cancel__create_cancellation_token_impl(ptr, rust_vec_len, data_len),
         50 => wire__crate__api__http__create_client_impl(ptr, rust_vec_len, data_len),
         57 => wire__crate__api__filename__is_valid_file_name_impl(ptr, rust_vec_len, data_len),
-        58 => wire__crate__api__ra2b__ra2b_cancel_session_impl(ptr, rust_vec_len, data_len),
-        59 => wire__crate__api__ra2b__ra2b_local_identity_impl(ptr, rust_vec_len, data_len),
-        60 => wire__crate__api__ra2b__ra2b_parse_invite_impl(ptr, rust_vec_len, data_len),
-        62 => wire__crate__api__ra2b__ra2b_session_is_active_impl(ptr, rust_vec_len, data_len),
-        64 => wire__crate__api__ra2b__ra4_clear_impl(ptr, rust_vec_len, data_len),
-        65 => wire__crate__api__ra2b__ra4_respond_impl(ptr, rust_vec_len, data_len),
-        66 => wire__crate__api__ra2b__ra4_set_sender_impl(ptr, rust_vec_len, data_len),
-        69 => wire__crate__api__filename__sanitize_file_name_impl(ptr, rust_vec_len, data_len),
+        59 => wire__crate__api__relay_anywhere__relay_anywhere_cancel_impl(
+            ptr,
+            rust_vec_len,
+            data_len,
+        ),
+        60 => wire__crate__api__relay_anywhere__relay_anywhere_close_session_impl(
+            ptr,
+            rust_vec_len,
+            data_len,
+        ),
+        61 => wire__crate__api__relay_anywhere__relay_anywhere_open_session_impl(
+            ptr,
+            rust_vec_len,
+            data_len,
+        ),
+        62 => wire__crate__api__relay_anywhere__relay_anywhere_open_session_count_impl(
+            ptr,
+            rust_vec_len,
+            data_len,
+        ),
+        63 => wire__crate__api__relay_anywhere__relay_anywhere_parse_address_impl(
+            ptr,
+            rust_vec_len,
+            data_len,
+        ),
+        65 => wire__crate__api__relay_anywhere__relay_anywhere_respond_impl(
+            ptr,
+            rust_vec_len,
+            data_len,
+        ),
+        68 => wire__crate__api__filename__sanitize_file_name_impl(ptr, rust_vec_len, data_len),
         _ => unreachable!(),
     }
 }
@@ -6946,136 +7013,187 @@ impl flutter_rust_bridge::IntoIntoDart<crate::api::http::RsHttpClientError>
     }
 }
 // Codec=Dco (DartCObject based), see doc to use other codecs
-impl flutter_rust_bridge::IntoDart for crate::api::ra2b::RsRa2bEvent {
+impl flutter_rust_bridge::IntoDart for crate::api::relay_anywhere::RsRelayAddress {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.version.into_into_dart().into_dart(),
+            self.claimed_relay_id.into_into_dart().into_dart(),
+            self.routing_available.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::api::relay_anywhere::RsRelayAddress
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::api::relay_anywhere::RsRelayAddress>
+    for crate::api::relay_anywhere::RsRelayAddress
+{
+    fn into_into_dart(self) -> crate::api::relay_anywhere::RsRelayAddress {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::api::relay_anywhere::RsRelayAnywhereEvent {
     fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
         match self {
-            crate::api::ra2b::RsRa2bEvent::Starting => [0.into_dart()].into_dart(),
-            crate::api::ra2b::RsRa2bEvent::InviteReady {
-                invite,
+            crate::api::relay_anywhere::RsRelayAnywhereEvent::Starting => {
+                [0.into_dart()].into_dart()
+            }
+            crate::api::relay_anywhere::RsRelayAnywhereEvent::AddressReady {
+                address,
                 local_relay_id,
-                auto_relay_available,
             } => [
                 1.into_dart(),
-                invite.into_into_dart().into_dart(),
+                address.into_into_dart().into_dart(),
                 local_relay_id.into_into_dart().into_dart(),
-                auto_relay_available.into_into_dart().into_dart(),
             ]
             .into_dart(),
-            crate::api::ra2b::RsRa2bEvent::WaitingForPeer => [2.into_dart()].into_dart(),
-            crate::api::ra2b::RsRa2bEvent::Connecting => [3.into_dart()].into_dart(),
-            crate::api::ra2b::RsRa2bEvent::IrohConnected => [4.into_dart()].into_dart(),
-            crate::api::ra2b::RsRa2bEvent::TlsAuthenticated => [5.into_dart()].into_dart(),
-            crate::api::ra2b::RsRa2bEvent::RelayIdentityVerified { remote_relay_id } => {
-                [6.into_dart(), remote_relay_id.into_into_dart().into_dart()].into_dart()
+            crate::api::relay_anywhere::RsRelayAnywhereEvent::WaitingForPeer => {
+                [2.into_dart()].into_dart()
             }
-            crate::api::ra2b::RsRa2bEvent::Transferring { bytes, total } => [
+            crate::api::relay_anywhere::RsRelayAnywhereEvent::Connecting => {
+                [3.into_dart()].into_dart()
+            }
+            crate::api::relay_anywhere::RsRelayAnywhereEvent::PeerConnected => {
+                [4.into_dart()].into_dart()
+            }
+            crate::api::relay_anywhere::RsRelayAnywhereEvent::TlsEstablished => {
+                [5.into_dart()].into_dart()
+            }
+            crate::api::relay_anywhere::RsRelayAnywhereEvent::PeerAuthenticated {
+                remote_relay_id,
+            } => [6.into_dart(), remote_relay_id.into_into_dart().into_dart()].into_dart(),
+            crate::api::relay_anywhere::RsRelayAnywhereEvent::IncomingBatch {
+                transfer_id,
+                files,
+                remote_relay_id,
+            } => [
                 7.into_dart(),
+                transfer_id.into_into_dart().into_dart(),
+                files.into_into_dart().into_dart(),
+                remote_relay_id.into_into_dart().into_dart(),
+            ]
+            .into_dart(),
+            crate::api::relay_anywhere::RsRelayAnywhereEvent::Transferring { bytes, total } => [
+                8.into_dart(),
                 bytes.into_into_dart().into_dart(),
                 total.into_into_dart().into_dart(),
             ]
             .into_dart(),
-            crate::api::ra2b::RsRa2bEvent::Complete {
+            crate::api::relay_anywhere::RsRelayAnywhereEvent::Completed {
                 path,
                 bytes,
-                hash_hex,
                 local_relay_id,
                 remote_relay_id,
                 duration_ms,
             } => [
-                8.into_dart(),
+                9.into_dart(),
                 path.into_into_dart().into_dart(),
                 bytes.into_into_dart().into_dart(),
-                hash_hex.into_into_dart().into_dart(),
                 local_relay_id.into_into_dart().into_dart(),
                 remote_relay_id.into_into_dart().into_dart(),
                 duration_ms.into_into_dart().into_dart(),
             ]
             .into_dart(),
-            crate::api::ra2b::RsRa2bEvent::Rejected { message, category } => [
-                9.into_dart(),
-                message.into_into_dart().into_dart(),
-                category.into_into_dart().into_dart(),
-            ]
-            .into_dart(),
-            crate::api::ra2b::RsRa2bEvent::Failed { message, category } => [
+            crate::api::relay_anywhere::RsRelayAnywhereEvent::Failed {
+                message,
+                category,
+                stage,
+            } => [
                 10.into_dart(),
                 message.into_into_dart().into_dart(),
                 category.into_into_dart().into_dart(),
+                stage.into_into_dart().into_dart(),
             ]
             .into_dart(),
-            crate::api::ra2b::RsRa2bEvent::Cancelled => [11.into_dart()].into_dart(),
+            crate::api::relay_anywhere::RsRelayAnywhereEvent::Cancelled => {
+                [11.into_dart()].into_dart()
+            }
             _ => {
                 unimplemented!("");
             }
         }
     }
 }
-impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive for crate::api::ra2b::RsRa2bEvent {}
-impl flutter_rust_bridge::IntoIntoDart<crate::api::ra2b::RsRa2bEvent>
-    for crate::api::ra2b::RsRa2bEvent
-{
-    fn into_into_dart(self) -> crate::api::ra2b::RsRa2bEvent {
-        self
-    }
-}
-// Codec=Dco (DartCObject based), see doc to use other codecs
-impl flutter_rust_bridge::IntoDart for crate::api::ra2b::RsRa2bLocalIdentity {
-    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
-        [self.relay_id.into_into_dart().into_dart()].into_dart()
-    }
-}
 impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
-    for crate::api::ra2b::RsRa2bLocalIdentity
+    for crate::api::relay_anywhere::RsRelayAnywhereEvent
 {
 }
-impl flutter_rust_bridge::IntoIntoDart<crate::api::ra2b::RsRa2bLocalIdentity>
-    for crate::api::ra2b::RsRa2bLocalIdentity
+impl flutter_rust_bridge::IntoIntoDart<crate::api::relay_anywhere::RsRelayAnywhereEvent>
+    for crate::api::relay_anywhere::RsRelayAnywhereEvent
 {
-    fn into_into_dart(self) -> crate::api::ra2b::RsRa2bLocalIdentity {
+    fn into_into_dart(self) -> crate::api::relay_anywhere::RsRelayAnywhereEvent {
         self
     }
 }
 // Codec=Dco (DartCObject based), see doc to use other codecs
-impl flutter_rust_bridge::IntoDart for crate::api::ra2b::RsRa2bParsedInvite {
+impl flutter_rust_bridge::IntoDart for crate::api::relay_anywhere::RsRelayAnywhereFile {
     fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
         [
-            self.version.into_into_dart().into_dart(),
-            self.host_relay_id.into_into_dart().into_dart(),
-            self.routing_available.into_into_dart().into_dart(),
-            self.capability.into_into_dart().into_dart(),
+            self.path.into_into_dart().into_dart(),
+            self.file_descriptor.into_into_dart().into_dart(),
+            self.name.into_into_dart().into_dart(),
+            self.size.into_into_dart().into_dart(),
+            self.file_type.into_into_dart().into_dart(),
+            self.sha256.into_into_dart().into_dart(),
         ]
         .into_dart()
     }
 }
 impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
-    for crate::api::ra2b::RsRa2bParsedInvite
+    for crate::api::relay_anywhere::RsRelayAnywhereFile
 {
 }
-impl flutter_rust_bridge::IntoIntoDart<crate::api::ra2b::RsRa2bParsedInvite>
-    for crate::api::ra2b::RsRa2bParsedInvite
+impl flutter_rust_bridge::IntoIntoDart<crate::api::relay_anywhere::RsRelayAnywhereFile>
+    for crate::api::relay_anywhere::RsRelayAnywhereFile
 {
-    fn into_into_dart(self) -> crate::api::ra2b::RsRa2bParsedInvite {
+    fn into_into_dart(self) -> crate::api::relay_anywhere::RsRelayAnywhereFile {
         self
     }
 }
 // Codec=Dco (DartCObject based), see doc to use other codecs
-impl flutter_rust_bridge::IntoDart for crate::api::ra2b::RsRa2bPathPreference {
+impl flutter_rust_bridge::IntoDart for crate::api::relay_anywhere::RsRelayIncomingFile {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.id.into_into_dart().into_dart(),
+            self.name.into_into_dart().into_dart(),
+            self.size.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::api::relay_anywhere::RsRelayIncomingFile
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::api::relay_anywhere::RsRelayIncomingFile>
+    for crate::api::relay_anywhere::RsRelayIncomingFile
+{
+    fn into_into_dart(self) -> crate::api::relay_anywhere::RsRelayIncomingFile {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::api::relay_anywhere::RsRelayPathPreference {
     fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
         match self {
             Self::Auto => 0.into_dart(),
-            Self::ForceRelay => 1.into_dart(),
+            Self::ForceDirect => 1.into_dart(),
+            Self::ForceRelay => 2.into_dart(),
             _ => unreachable!(),
         }
     }
 }
 impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
-    for crate::api::ra2b::RsRa2bPathPreference
+    for crate::api::relay_anywhere::RsRelayPathPreference
 {
 }
-impl flutter_rust_bridge::IntoIntoDart<crate::api::ra2b::RsRa2bPathPreference>
-    for crate::api::ra2b::RsRa2bPathPreference
+impl flutter_rust_bridge::IntoIntoDart<crate::api::relay_anywhere::RsRelayPathPreference>
+    for crate::api::relay_anywhere::RsRelayPathPreference
 {
-    fn into_into_dart(self) -> crate::api::ra2b::RsRa2bPathPreference {
+    fn into_into_dart(self) -> crate::api::relay_anywhere::RsRelayPathPreference {
         self
     }
 }
@@ -7824,7 +7942,10 @@ impl SseEncode
 }
 
 impl SseEncode
-    for StreamSink<crate::api::ra2b::RsRa2bEvent, flutter_rust_bridge::for_generated::SseCodec>
+    for StreamSink<
+        crate::api::relay_anywhere::RsRelayAnywhereEvent,
+        flutter_rust_bridge::for_generated::SseCodec,
+    >
 {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
@@ -8108,6 +8229,26 @@ impl SseEncode for Vec<crate::api::discovery::RsDeviceLog> {
         <i32>::sse_encode(self.len() as _, serializer);
         for item in self {
             <crate::api::discovery::RsDeviceLog>::sse_encode(item, serializer);
+        }
+    }
+}
+
+impl SseEncode for Vec<crate::api::relay_anywhere::RsRelayAnywhereFile> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <i32>::sse_encode(self.len() as _, serializer);
+        for item in self {
+            <crate::api::relay_anywhere::RsRelayAnywhereFile>::sse_encode(item, serializer);
+        }
+    }
+}
+
+impl SseEncode for Vec<crate::api::relay_anywhere::RsRelayIncomingFile> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <i32>::sse_encode(self.len() as _, serializer);
+        for item in self {
+            <crate::api::relay_anywhere::RsRelayIncomingFile>::sse_encode(item, serializer);
         }
     }
 }
@@ -8496,71 +8637,90 @@ impl SseEncode for crate::api::http::RsHttpClientError {
     }
 }
 
-impl SseEncode for crate::api::ra2b::RsRa2bEvent {
+impl SseEncode for crate::api::relay_anywhere::RsRelayAddress {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <u32>::sse_encode(self.version, serializer);
+        <String>::sse_encode(self.claimed_relay_id, serializer);
+        <bool>::sse_encode(self.routing_available, serializer);
+    }
+}
+
+impl SseEncode for crate::api::relay_anywhere::RsRelayAnywhereEvent {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
         match self {
-            crate::api::ra2b::RsRa2bEvent::Starting => {
+            crate::api::relay_anywhere::RsRelayAnywhereEvent::Starting => {
                 <i32>::sse_encode(0, serializer);
             }
-            crate::api::ra2b::RsRa2bEvent::InviteReady {
-                invite,
+            crate::api::relay_anywhere::RsRelayAnywhereEvent::AddressReady {
+                address,
                 local_relay_id,
-                auto_relay_available,
             } => {
                 <i32>::sse_encode(1, serializer);
-                <String>::sse_encode(invite, serializer);
+                <String>::sse_encode(address, serializer);
                 <String>::sse_encode(local_relay_id, serializer);
-                <bool>::sse_encode(auto_relay_available, serializer);
             }
-            crate::api::ra2b::RsRa2bEvent::WaitingForPeer => {
+            crate::api::relay_anywhere::RsRelayAnywhereEvent::WaitingForPeer => {
                 <i32>::sse_encode(2, serializer);
             }
-            crate::api::ra2b::RsRa2bEvent::Connecting => {
+            crate::api::relay_anywhere::RsRelayAnywhereEvent::Connecting => {
                 <i32>::sse_encode(3, serializer);
             }
-            crate::api::ra2b::RsRa2bEvent::IrohConnected => {
+            crate::api::relay_anywhere::RsRelayAnywhereEvent::PeerConnected => {
                 <i32>::sse_encode(4, serializer);
             }
-            crate::api::ra2b::RsRa2bEvent::TlsAuthenticated => {
+            crate::api::relay_anywhere::RsRelayAnywhereEvent::TlsEstablished => {
                 <i32>::sse_encode(5, serializer);
             }
-            crate::api::ra2b::RsRa2bEvent::RelayIdentityVerified { remote_relay_id } => {
+            crate::api::relay_anywhere::RsRelayAnywhereEvent::PeerAuthenticated {
+                remote_relay_id,
+            } => {
                 <i32>::sse_encode(6, serializer);
                 <String>::sse_encode(remote_relay_id, serializer);
             }
-            crate::api::ra2b::RsRa2bEvent::Transferring { bytes, total } => {
+            crate::api::relay_anywhere::RsRelayAnywhereEvent::IncomingBatch {
+                transfer_id,
+                files,
+                remote_relay_id,
+            } => {
                 <i32>::sse_encode(7, serializer);
+                <u64>::sse_encode(transfer_id, serializer);
+                <Vec<crate::api::relay_anywhere::RsRelayIncomingFile>>::sse_encode(
+                    files, serializer,
+                );
+                <String>::sse_encode(remote_relay_id, serializer);
+            }
+            crate::api::relay_anywhere::RsRelayAnywhereEvent::Transferring { bytes, total } => {
+                <i32>::sse_encode(8, serializer);
                 <u64>::sse_encode(bytes, serializer);
                 <u64>::sse_encode(total, serializer);
             }
-            crate::api::ra2b::RsRa2bEvent::Complete {
+            crate::api::relay_anywhere::RsRelayAnywhereEvent::Completed {
                 path,
                 bytes,
-                hash_hex,
                 local_relay_id,
                 remote_relay_id,
                 duration_ms,
             } => {
-                <i32>::sse_encode(8, serializer);
+                <i32>::sse_encode(9, serializer);
                 <String>::sse_encode(path, serializer);
-                <u32>::sse_encode(bytes, serializer);
-                <String>::sse_encode(hash_hex, serializer);
+                <u64>::sse_encode(bytes, serializer);
                 <String>::sse_encode(local_relay_id, serializer);
                 <String>::sse_encode(remote_relay_id, serializer);
                 <u64>::sse_encode(duration_ms, serializer);
             }
-            crate::api::ra2b::RsRa2bEvent::Rejected { message, category } => {
-                <i32>::sse_encode(9, serializer);
-                <String>::sse_encode(message, serializer);
-                <String>::sse_encode(category, serializer);
-            }
-            crate::api::ra2b::RsRa2bEvent::Failed { message, category } => {
+            crate::api::relay_anywhere::RsRelayAnywhereEvent::Failed {
+                message,
+                category,
+                stage,
+            } => {
                 <i32>::sse_encode(10, serializer);
                 <String>::sse_encode(message, serializer);
                 <String>::sse_encode(category, serializer);
+                <Option<String>>::sse_encode(stage, serializer);
             }
-            crate::api::ra2b::RsRa2bEvent::Cancelled => {
+            crate::api::relay_anywhere::RsRelayAnywhereEvent::Cancelled => {
                 <i32>::sse_encode(11, serializer);
             }
             _ => {
@@ -8570,30 +8730,35 @@ impl SseEncode for crate::api::ra2b::RsRa2bEvent {
     }
 }
 
-impl SseEncode for crate::api::ra2b::RsRa2bLocalIdentity {
+impl SseEncode for crate::api::relay_anywhere::RsRelayAnywhereFile {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
-        <String>::sse_encode(self.relay_id, serializer);
+        <Option<String>>::sse_encode(self.path, serializer);
+        <Option<i32>>::sse_encode(self.file_descriptor, serializer);
+        <String>::sse_encode(self.name, serializer);
+        <u64>::sse_encode(self.size, serializer);
+        <String>::sse_encode(self.file_type, serializer);
+        <Option<String>>::sse_encode(self.sha256, serializer);
     }
 }
 
-impl SseEncode for crate::api::ra2b::RsRa2bParsedInvite {
+impl SseEncode for crate::api::relay_anywhere::RsRelayIncomingFile {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
-        <u32>::sse_encode(self.version, serializer);
-        <String>::sse_encode(self.host_relay_id, serializer);
-        <bool>::sse_encode(self.routing_available, serializer);
-        <Option<String>>::sse_encode(self.capability, serializer);
+        <String>::sse_encode(self.id, serializer);
+        <String>::sse_encode(self.name, serializer);
+        <u64>::sse_encode(self.size, serializer);
     }
 }
 
-impl SseEncode for crate::api::ra2b::RsRa2bPathPreference {
+impl SseEncode for crate::api::relay_anywhere::RsRelayPathPreference {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
         <i32>::sse_encode(
             match self {
-                crate::api::ra2b::RsRa2bPathPreference::Auto => 0,
-                crate::api::ra2b::RsRa2bPathPreference::ForceRelay => 1,
+                crate::api::relay_anywhere::RsRelayPathPreference::Auto => 0,
+                crate::api::relay_anywhere::RsRelayPathPreference::ForceDirect => 1,
+                crate::api::relay_anywhere::RsRelayPathPreference::ForceRelay => 2,
                 _ => {
                     unimplemented!("");
                 }
@@ -8985,7 +9150,7 @@ mod io {
     use flutter_rust_bridge::for_generated::byteorder::{
         NativeEndian, ReadBytesExt, WriteBytesExt,
     };
-    use flutter_rust_bridge::for_generated::{Lifetimeable, Lockable, transform_result_dco};
+    use flutter_rust_bridge::for_generated::{transform_result_dco, Lifetimeable, Lockable};
     use flutter_rust_bridge::{Handler, IntoIntoDart};
 
     // Section: boilerplate
@@ -9169,7 +9334,7 @@ mod web {
     };
     use flutter_rust_bridge::for_generated::wasm_bindgen;
     use flutter_rust_bridge::for_generated::wasm_bindgen::prelude::*;
-    use flutter_rust_bridge::for_generated::{Lifetimeable, Lockable, transform_result_dco};
+    use flutter_rust_bridge::for_generated::{transform_result_dco, Lifetimeable, Lockable};
     use flutter_rust_bridge::{Handler, IntoIntoDart};
 
     // Section: boilerplate

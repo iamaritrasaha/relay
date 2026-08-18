@@ -1,0 +1,29 @@
+# Development RA2B proof-harness bridge configuration.
+#
+# The checked-in generated bridge is the PRODUCTION one (flutter_rust_bridge.yaml):
+# it contains no `api::ra2b` bindings and the plugin crate then has no
+# model-development dependency at all.
+#
+# flutter_rust_bridge emits a single dispatch table per feature set, so the
+# harness surface cannot coexist with the production surface in the same
+# generated files. To run the historical RA2B proof harness:
+#
+#   flutter_rust_bridge_codegen generate --config-file flutter_rust_bridge.ra2b.yaml
+#
+# The Flutter build must also enable the cargo feature, which cargokit takes
+# from rust/cargokit.yaml. Create it for the harness build only:
+#
+#   cargo:
+#     release:
+#       extra_flags: [--features, ra2b-harness]
+#
+#   fvm flutter build apk --release --flavor ra2b -t lib/main_ra2b.dart
+#
+# Afterwards delete rust/cargokit.yaml and regenerate with
+# flutter_rust_bridge.yaml, so the committed tree stays production-generated.
+rust_input: crate::api
+rust_root: rust/
+dart_output: lib/rust
+dart_format_line_length: 150
+rust_features:
+  - ra2b-harness

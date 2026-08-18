@@ -32,20 +32,34 @@ async fn iroh_direct_mutual_auth_and_wrong_identity() {
         let host_tls = host_tls.clone();
         tokio::spawn(async move {
             let incoming = host_endpoint.accept().await?;
-            let connection = incoming
-                .await
-                .map_err(|_| crate::anywhere::AnywhereError::Transport)?;
-            let (send, recv) = connection
-                .accept_bi()
-                .await
-                .map_err(|_| crate::anywhere::AnywhereError::Transport)?;
+            let connection = incoming.await.map_err(|_| {
+                crate::anywhere::AnywhereError::transport_reason(
+                    crate::anywhere::TransportStage::Stream,
+                    "test stream",
+                )
+            })?;
+            let (send, recv) = connection.accept_bi().await.map_err(|_| {
+                crate::anywhere::AnywhereError::transport_reason(
+                    crate::anywhere::TransportStage::Stream,
+                    "test stream",
+                )
+            })?;
             let mut tls = host_tls
                 .acceptor()
                 .accept(IrohBiStream::new(send, recv))
                 .await
-                .map_err(|_| crate::anywhere::AnywhereError::Tls)?;
-            let observed = server_peer_certificate_fingerprint(&tls)
-                .map_err(|_| crate::anywhere::AnywhereError::Tls)?;
+                .map_err(|_| {
+                    crate::anywhere::AnywhereError::tls(
+                        crate::anywhere::TlsStage::ClientHandshake,
+                        "test tls",
+                    )
+                })?;
+            let observed = server_peer_certificate_fingerprint(&tls).map_err(|_| {
+                crate::anywhere::AnywhereError::tls(
+                    crate::anywhere::TlsStage::ClientHandshake,
+                    "test tls",
+                )
+            })?;
             authenticate_server(
                 &mut tls,
                 &host_identity,
@@ -101,20 +115,34 @@ async fn iroh_direct_mutual_auth_and_wrong_identity() {
     let host2_fp = host2_tls.cert_fingerprint;
     let host2_task = tokio::spawn(async move {
         let incoming = host2_ep.accept().await?;
-        let connection = incoming
-            .await
-            .map_err(|_| crate::anywhere::AnywhereError::Transport)?;
-        let (send, recv) = connection
-            .accept_bi()
-            .await
-            .map_err(|_| crate::anywhere::AnywhereError::Transport)?;
+        let connection = incoming.await.map_err(|_| {
+            crate::anywhere::AnywhereError::transport_reason(
+                crate::anywhere::TransportStage::Stream,
+                "test stream",
+            )
+        })?;
+        let (send, recv) = connection.accept_bi().await.map_err(|_| {
+            crate::anywhere::AnywhereError::transport_reason(
+                crate::anywhere::TransportStage::Stream,
+                "test stream",
+            )
+        })?;
         let mut tls = host2_tls
             .acceptor()
             .accept(IrohBiStream::new(send, recv))
             .await
-            .map_err(|_| crate::anywhere::AnywhereError::Tls)?;
-        let observed = server_peer_certificate_fingerprint(&tls)
-            .map_err(|_| crate::anywhere::AnywhereError::Tls)?;
+            .map_err(|_| {
+                crate::anywhere::AnywhereError::tls(
+                    crate::anywhere::TlsStage::ClientHandshake,
+                    "test tls",
+                )
+            })?;
+        let observed = server_peer_certificate_fingerprint(&tls).map_err(|_| {
+            crate::anywhere::AnywhereError::tls(
+                crate::anywhere::TlsStage::ClientHandshake,
+                "test tls",
+            )
+        })?;
         authenticate_server(&mut tls, &host2, host2_fp, None, observed, direct_path()).await
     });
     sleep(Duration::from_millis(200)).await;

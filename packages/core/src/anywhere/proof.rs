@@ -4,7 +4,7 @@
 
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 
-use super::error::AnywhereError;
+use super::error::{AnywhereError, TransportStage};
 use crate::crypto::nonce::generate_nonce_32;
 use crate::crypto::relay_identity::RelayIdentity;
 use crate::crypto::relay_identity_proof::{
@@ -34,14 +34,17 @@ where
     stream
         .write_all(&server_nonce)
         .await
-        .map_err(|_| AnywhereError::Transport)?;
-    stream.flush().await.map_err(|_| AnywhereError::Transport)?;
+        .map_err(|error| AnywhereError::transport(TransportStage::ProofIo, error))?;
+    stream
+        .flush()
+        .await
+        .map_err(|error| AnywhereError::transport(TransportStage::ProofIo, error))?;
 
     let mut server_proof_bytes = [0_u8; PROOF_LEN];
     stream
         .read_exact(&mut server_proof_bytes)
         .await
-        .map_err(|_| AnywhereError::Transport)?;
+        .map_err(|error| AnywhereError::transport(TransportStage::ProofIo, error))?;
     let server_proof =
         RelayIdentityProofV1::decode(&server_proof_bytes).map_err(|_| AnywhereError::RelayProof)?;
     if server_proof.nonce != server_nonce {
@@ -61,7 +64,7 @@ where
     stream
         .read_exact(&mut client_nonce)
         .await
-        .map_err(|_| AnywhereError::Transport)?;
+        .map_err(|error| AnywhereError::transport(TransportStage::ProofIo, error))?;
     let client_proof = create_relay_identity_proof(
         identity,
         RelayProofRole::Client,
@@ -72,12 +75,15 @@ where
     stream
         .write_all(&client_proof.encode())
         .await
-        .map_err(|_| AnywhereError::Transport)?;
-    stream.flush().await.map_err(|_| AnywhereError::Transport)?;
+        .map_err(|error| AnywhereError::transport(TransportStage::ProofIo, error))?;
+    stream
+        .flush()
+        .await
+        .map_err(|error| AnywhereError::transport(TransportStage::ProofIo, error))?;
     let ack = stream
         .read_u8()
         .await
-        .map_err(|_| AnywhereError::Transport)?;
+        .map_err(|error| AnywhereError::transport(TransportStage::ProofIo, error))?;
     if ack != AUTH_OK {
         return Err(AnywhereError::RelayProof);
     }
@@ -104,7 +110,7 @@ where
     stream
         .read_exact(&mut server_nonce)
         .await
-        .map_err(|_| AnywhereError::Transport)?;
+        .map_err(|error| AnywhereError::transport(TransportStage::ProofIo, error))?;
     let proof = create_relay_identity_proof(
         identity,
         RelayProofRole::Server,
@@ -115,20 +121,23 @@ where
     stream
         .write_all(&proof.encode())
         .await
-        .map_err(|_| AnywhereError::Transport)?;
+        .map_err(|error| AnywhereError::transport(TransportStage::ProofIo, error))?;
 
     let client_nonce = generate_nonce_32();
     stream
         .write_all(&client_nonce)
         .await
-        .map_err(|_| AnywhereError::Transport)?;
-    stream.flush().await.map_err(|_| AnywhereError::Transport)?;
+        .map_err(|error| AnywhereError::transport(TransportStage::ProofIo, error))?;
+    stream
+        .flush()
+        .await
+        .map_err(|error| AnywhereError::transport(TransportStage::ProofIo, error))?;
 
     let mut client_proof_bytes = [0_u8; PROOF_LEN];
     stream
         .read_exact(&mut client_proof_bytes)
         .await
-        .map_err(|_| AnywhereError::Transport)?;
+        .map_err(|error| AnywhereError::transport(TransportStage::ProofIo, error))?;
     let client_proof =
         RelayIdentityProofV1::decode(&client_proof_bytes).map_err(|_| AnywhereError::RelayProof)?;
     if client_proof.nonce != client_nonce {
@@ -147,7 +156,10 @@ where
     stream
         .write_u8(AUTH_OK)
         .await
-        .map_err(|_| AnywhereError::Transport)?;
-    stream.flush().await.map_err(|_| AnywhereError::Transport)?;
+        .map_err(|error| AnywhereError::transport(TransportStage::ProofIo, error))?;
+    stream
+        .flush()
+        .await
+        .map_err(|error| AnywhereError::transport(TransportStage::ProofIo, error))?;
     Ok(session)
 }

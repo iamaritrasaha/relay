@@ -8,7 +8,7 @@ use iroh::{
 };
 use tokio::time::{sleep, timeout};
 
-use super::error::AnywhereError;
+use super::error::{AnywhereError, TransportStage};
 use crate::relay::PathDescriptor;
 
 /// Production Anywhere ALPN. Distinct from LAN HTTP.
@@ -57,14 +57,16 @@ impl AnywhereEndpoint {
     }
 
     pub async fn accept(&self) -> Result<iroh::endpoint::Incoming, AnywhereError> {
-        self.inner.accept().await.ok_or(AnywhereError::Transport)
+        self.inner.accept().await.ok_or_else(|| {
+            AnywhereError::transport_reason(TransportStage::Accept, "Iroh endpoint is closed")
+        })
     }
 
     pub async fn connect(&self, addr: EndpointAddr) -> Result<Connection, AnywhereError> {
         self.inner
             .connect(addr, ALPN)
             .await
-            .map_err(|_| AnywhereError::Transport)
+            .map_err(|error| AnywhereError::transport(TransportStage::Connect, error))
     }
 }
 
@@ -76,20 +78,20 @@ pub async fn bind_endpoint(preference: PathPreference) -> Result<AnywhereEndpoin
             .alpns(vec![ALPN.to_vec()])
             .bind()
             .await
-            .map_err(|_| AnywhereError::Transport)?,
+            .map_err(|error| AnywhereError::transport(TransportStage::Bind, error))?,
         PathPreference::ForceRelay => Endpoint::builder(presets::N0)
             .relay_mode(RelayMode::Default)
             .clear_ip_transports()
             .alpns(vec![ALPN.to_vec()])
             .bind()
             .await
-            .map_err(|_| AnywhereError::Transport)?,
+            .map_err(|error| AnywhereError::transport(TransportStage::Bind, error))?,
         PathPreference::ForceDirect => Endpoint::builder(presets::Minimal)
             .relay_mode(RelayMode::Disabled)
             .alpns(vec![ALPN.to_vec()])
             .bind()
             .await
-            .map_err(|_| AnywhereError::Transport)?,
+            .map_err(|error| AnywhereError::transport(TransportStage::Bind, error))?,
     };
     mark_iroh_bound();
     Ok(AnywhereEndpoint { inner: endpoint })
