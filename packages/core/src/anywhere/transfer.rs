@@ -32,7 +32,7 @@ use crate::http::server::v2::{PrepareUploadDecisionV2, ServerEventV2, SessionEnd
 use crate::http::server::{ConnectionOrigin, ServerConfigV2, start_v2_stream_only};
 use crate::http::state::ClientInfo;
 use crate::model::discovery::ProtocolType;
-use crate::model::transfer::FileDto;
+use crate::model::transfer::{FileDto, FileMetadata};
 use crate::relay::{
     AnywhereTransferTransport, AuthenticatedRelaySession, PathDescriptor, RelayId, RelaySendError,
     RelayTransferEngine, RelayTransferEvent, RelayTransferFile, RelayTransferRequest,
@@ -78,6 +78,8 @@ pub struct AnywhereFileSpec {
     pub size: u64,
     pub file_type: String,
     pub sha256: Option<String>,
+    pub preview: Option<String>,
+    pub metadata: Option<FileMetadata>,
     pub source: AnywhereFileSource,
 }
 
@@ -528,8 +530,8 @@ where
                     size: spec.size,
                     file_type: spec.file_type.clone(),
                     sha256: spec.sha256.clone(),
-                    preview: None,
-                    metadata: None,
+                    preview: spec.preview.clone(),
+                    metadata: spec.metadata.clone(),
                 },
                 content: match spec.source {
                     AnywhereFileSource::Path(path) => {

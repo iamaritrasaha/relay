@@ -40,8 +40,15 @@ class RelayTransferVm {
   final String targetAlias;
   final double? progress;
   final bool remote;
+  final String? origin;
 
-  const RelayTransferVm({required this.sessionId, required this.targetAlias, required this.progress, this.remote = false});
+  const RelayTransferVm({
+    required this.sessionId,
+    required this.targetAlias,
+    required this.progress,
+    this.remote = false,
+    this.origin,
+  });
 }
 
 class RelayIncomingVm {
@@ -155,6 +162,7 @@ class RelayHomeVm {
           sessionId: session.sessionId,
           targetAlias: session.target.alias,
           progress: phase == RelayDevicePhase.sending ? _progressFor(session, transfers) : null,
+          origin: 'Local',
         );
       }
     }
@@ -165,6 +173,11 @@ class RelayHomeVm {
           targetAlias: transfer.alias,
           progress: transfer.totalBytes == 0 ? null : transfer.bytes / transfer.totalBytes,
           remote: true,
+          origin: switch (transfer.origin) {
+            'direct' => 'Direct',
+            'relay' => 'Relayed',
+            _ => null,
+          },
         );
       }
     }

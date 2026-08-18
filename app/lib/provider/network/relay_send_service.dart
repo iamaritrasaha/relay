@@ -206,6 +206,9 @@ class RelaySendService {
           size: BigInt.from(file.size),
           fileType: file.fileType.name,
           sha256: await calculateFileHash(path: file.path, bytes: file.bytes, cancelToken: hashCancelToken),
+          preview: files.length == 1 && file.fileType.name == 'text' && file.bytes != null ? String.fromCharCodes(file.bytes!) : null,
+          lastModified: file.lastModified,
+          lastAccessed: file.lastAccessed,
         ),
       );
     }

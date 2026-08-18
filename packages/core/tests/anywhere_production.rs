@@ -39,6 +39,8 @@ fn file_spec(path: &std::path::Path, size: u64) -> AnywhereFileSpec {
         size,
         file_type: "application/octet-stream".to_owned(),
         sha256: None,
+        preview: None,
+        metadata: None,
         source: AnywhereFileSource::Path(path.to_path_buf()),
     }
 }

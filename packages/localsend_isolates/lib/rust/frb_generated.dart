@@ -4029,7 +4029,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   RsRelayAnywhereFile dco_decode_rs_relay_anywhere_file(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 7) throw Exception('unexpected arr length: expect 7 but see ${arr.length}');
+    if (arr.length != 10) throw Exception('unexpected arr length: expect 10 but see ${arr.length}');
     return RsRelayAnywhereFile(
       path: dco_decode_opt_String(arr[0]),
       fileDescriptor: dco_decode_opt_box_autoadd_i_32(arr[1]),
@@ -4038,6 +4038,9 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       size: dco_decode_u_64(arr[4]),
       fileType: dco_decode_String(arr[5]),
       sha256: dco_decode_opt_String(arr[6]),
+      preview: dco_decode_opt_String(arr[7]),
+      lastModified: dco_decode_opt_String(arr[8]),
+      lastAccessed: dco_decode_opt_String(arr[9]),
     );
   }
 
@@ -5757,6 +5760,9 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var var_size = sse_decode_u_64(deserializer);
     var var_fileType = sse_decode_String(deserializer);
     var var_sha256 = sse_decode_opt_String(deserializer);
+    var var_preview = sse_decode_opt_String(deserializer);
+    var var_lastModified = sse_decode_opt_String(deserializer);
+    var var_lastAccessed = sse_decode_opt_String(deserializer);
     return RsRelayAnywhereFile(
       path: var_path,
       fileDescriptor: var_fileDescriptor,
@@ -5765,6 +5771,9 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       size: var_size,
       fileType: var_fileType,
       sha256: var_sha256,
+      preview: var_preview,
+      lastModified: var_lastModified,
+      lastAccessed: var_lastAccessed,
     );
   }
 
@@ -7517,6 +7526,9 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_u_64(self.size, serializer);
     sse_encode_String(self.fileType, serializer);
     sse_encode_opt_String(self.sha256, serializer);
+    sse_encode_opt_String(self.preview, serializer);
+    sse_encode_opt_String(self.lastModified, serializer);
+    sse_encode_opt_String(self.lastAccessed, serializer);
   }
 
   @protected

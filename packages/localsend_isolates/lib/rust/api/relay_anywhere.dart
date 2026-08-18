@@ -207,6 +207,9 @@ class RsRelayAnywhereFile {
   final BigInt size;
   final String fileType;
   final String? sha256;
+  final String? preview;
+  final String? lastModified;
+  final String? lastAccessed;
 
   const RsRelayAnywhereFile({
     this.path,
@@ -216,10 +219,23 @@ class RsRelayAnywhereFile {
     required this.size,
     required this.fileType,
     this.sha256,
+    this.preview,
+    this.lastModified,
+    this.lastAccessed,
   });
 
   @override
-  int get hashCode => path.hashCode ^ fileDescriptor.hashCode ^ bytes.hashCode ^ name.hashCode ^ size.hashCode ^ fileType.hashCode ^ sha256.hashCode;
+  int get hashCode =>
+      path.hashCode ^
+      fileDescriptor.hashCode ^
+      bytes.hashCode ^
+      name.hashCode ^
+      size.hashCode ^
+      fileType.hashCode ^
+      sha256.hashCode ^
+      preview.hashCode ^
+      lastModified.hashCode ^
+      lastAccessed.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -232,7 +248,10 @@ class RsRelayAnywhereFile {
           name == other.name &&
           size == other.size &&
           fileType == other.fileType &&
-          sha256 == other.sha256;
+          sha256 == other.sha256 &&
+          preview == other.preview &&
+          lastModified == other.lastModified &&
+          lastAccessed == other.lastAccessed;
 }
 
 @freezed

@@ -5800,6 +5800,9 @@ impl SseDecode for crate::api::relay_anywhere::RsRelayAnywhereFile {
         let mut var_size = <u64>::sse_decode(deserializer);
         let mut var_fileType = <String>::sse_decode(deserializer);
         let mut var_sha256 = <Option<String>>::sse_decode(deserializer);
+        let mut var_preview = <Option<String>>::sse_decode(deserializer);
+        let mut var_lastModified = <Option<String>>::sse_decode(deserializer);
+        let mut var_lastAccessed = <Option<String>>::sse_decode(deserializer);
         return crate::api::relay_anywhere::RsRelayAnywhereFile {
             path: var_path,
             file_descriptor: var_fileDescriptor,
@@ -5808,6 +5811,9 @@ impl SseDecode for crate::api::relay_anywhere::RsRelayAnywhereFile {
             size: var_size,
             file_type: var_fileType,
             sha256: var_sha256,
+            preview: var_preview,
+            last_modified: var_lastModified,
+            last_accessed: var_lastAccessed,
         };
     }
 }
@@ -7785,6 +7791,9 @@ impl flutter_rust_bridge::IntoDart for crate::api::relay_anywhere::RsRelayAnywhe
             self.size.into_into_dart().into_dart(),
             self.file_type.into_into_dart().into_dart(),
             self.sha256.into_into_dart().into_dart(),
+            self.preview.into_into_dart().into_dart(),
+            self.last_modified.into_into_dart().into_dart(),
+            self.last_accessed.into_into_dart().into_dart(),
         ]
         .into_dart()
     }
@@ -9637,6 +9646,9 @@ impl SseEncode for crate::api::relay_anywhere::RsRelayAnywhereFile {
         <u64>::sse_encode(self.size, serializer);
         <String>::sse_encode(self.file_type, serializer);
         <Option<String>>::sse_encode(self.sha256, serializer);
+        <Option<String>>::sse_encode(self.preview, serializer);
+        <Option<String>>::sse_encode(self.last_modified, serializer);
+        <Option<String>>::sse_encode(self.last_accessed, serializer);
     }
 }
 

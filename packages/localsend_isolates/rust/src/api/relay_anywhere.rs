@@ -20,6 +20,7 @@ use localsend::anywhere::{
     AnywhereSaveTarget, AnywhereSendRequest, AnywhereSessionId, IncomingTransferId, PathPreference,
     RelayAddressV1, authenticate_address, receive, send_batch,
 };
+use localsend::model::transfer::FileMetadata;
 
 /// Registry of live sessions. A map keyed by session id — never a single-slot
 /// lease, so independent transfers coexist.
@@ -71,6 +72,9 @@ pub struct RsRelayAnywhereFile {
     pub size: u64,
     pub file_type: String,
     pub sha256: Option<String>,
+    pub preview: Option<String>,
+    pub last_modified: Option<String>,
+    pub last_accessed: Option<String>,
 }
 
 #[derive(serde::Deserialize)]
@@ -677,6 +681,11 @@ fn file_spec(file: RsRelayAnywhereFile) -> anyhow::Result<AnywhereFileSpec> {
         size: file.size,
         file_type: file.file_type,
         sha256: file.sha256,
+        preview: file.preview,
+        metadata: match (file.last_modified, file.last_accessed) {
+            (None, None) => None,
+            (modified, accessed) => Some(FileMetadata { modified, accessed }),
+        },
         source,
     })
 }
