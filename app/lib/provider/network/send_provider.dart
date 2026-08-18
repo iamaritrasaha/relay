@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:localsend_app/model/cross_file.dart';
 import 'package:localsend_app/model/send_mode.dart';
@@ -25,6 +26,8 @@ import 'package:localsend_isolates/model/session_status.dart';
 import 'package:localsend_isolates/rust/api/cancel.dart' as rust_cancel;
 import 'package:localsend_isolates/rust/api/http.dart' as rust_http;
 import 'package:localsend_isolates/rust/api/model.dart' as rust_model;
+import 'package:localsend_isolates/rust/api/relay_transfer.dart' as rust_relay_transfer;
+import 'package:localsend_isolates/util/android_channel.dart' show getFileDescriptorAndroid;
 import 'package:localsend_isolates/util/file_hash.dart';
 import 'package:localsend_isolates/util/rust.dart';
 import 'package:localsend_isolates/util/sleep.dart';
@@ -240,6 +243,15 @@ class SendNotifier extends Notifier<Map<String, SendSessionState>> {
       sessionId: sessionId,
       state: (_) => requestState,
     );
+
+    if (await _sendCanonicalLanTransfer(
+      sessionId: sessionId,
+      target: target,
+      requestState: requestState,
+      client: client,
+    )) {
+      return;
+    }
 
     final originDevice = ref.read(deviceFullInfoProvider);
     final requestDto = rust_model.PrepareUploadRequestDto(
@@ -461,6 +473,205 @@ class SendNotifier extends Notifier<Map<String, SendSessionState>> {
     TransferNotification.start(sessionId: sessionId, receiving: false);
 
     await _sendLoop(sessionId, sendingFiles);
+  }
+
+  /// Drives the presentation state from the production canonical Rust events.
+  ///
+  /// Dart still selects platform-owned sources and displays PIN UI, but it no
+  /// longer interprets v2 prepare-upload or owns the file upload loop.
+  Future<bool> _sendCanonicalLanTransfer({
+    required String sessionId,
+    required Device target,
+    required SendSessionState requestState,
+    required rust_http.RsHttpClient client,
+  }) async {
+    final originDevice = ref.read(deviceFullInfoProvider);
+    final info = rust_model.RegisterDto(
+      alias: originDevice.alias,
+      version: originDevice.version,
+      deviceModel: originDevice.deviceModel,
+      deviceType: originDevice.deviceType.toRust(),
+      token: originDevice.fingerprint,
+      port: originDevice.port,
+      protocol: originDevice.https ? rust_model.ProtocolType.https : rust_model.ProtocolType.http,
+      hasWebInterface: originDevice.download,
+    );
+    final cancelToken = rust_cancel.createCancellationToken();
+    _prepareUploadCancelTokens[sessionId] = cancelToken;
+    String? pin;
+    bool firstPinAttempt = true;
+    try {
+      while (state[sessionId] != null) {
+        String? terminalCategory;
+        final files = await _canonicalTransferFiles(requestState.files.values);
+        await for (final event in rust_relay_transfer.relayTransferSendLan(
+          client: client,
+          protocol: target.getProtocolType(),
+          ip: target.ip!,
+          port: target.port,
+          transferId: sessionId,
+          info: info,
+          files: files,
+          pin: pin,
+          cancelToken: cancelToken,
+        )) {
+          switch (event) {
+            case rust_relay_transfer.RsRelayTransferEvent_Accepted():
+              _onCanonicalAccepted(
+                localSessionId: sessionId,
+                remoteSessionId: event.sessionId,
+                acceptedFileIds: event.acceptedFileIds.toSet(),
+              );
+            case rust_relay_transfer.RsRelayTransferEvent_Declined(:final fileId):
+              if (fileId != null && state[sessionId] != null) {
+                ref.notifier(fileTransferProvider).setStatus(sessionId: sessionId, fileId: fileId, status: FileStatus.skipped);
+              }
+            case rust_relay_transfer.RsRelayTransferEvent_FileStarted(:final fileId):
+              if (state[sessionId] != null) {
+                ref.notifier(fileTransferProvider).setStatus(sessionId: sessionId, fileId: fileId, status: FileStatus.sending);
+              }
+            case rust_relay_transfer.RsRelayTransferEvent_FileProgress(:final fileId, :final bytes, :final totalBytes):
+              if (state[sessionId] != null) {
+                ref
+                    .notifier(fileTransferProvider)
+                    .setProgress(sessionId: sessionId, fileId: fileId, progress: totalBytes == BigInt.zero ? 1 : (bytes / totalBytes).toDouble());
+                _updateForegroundServiceProgress(sessionId);
+              }
+            case rust_relay_transfer.RsRelayTransferEvent_Completed():
+              _onCanonicalCompleted(sessionId);
+            case rust_relay_transfer.RsRelayTransferEvent_Cancelled():
+              terminalCategory ??= 'cancelled';
+            case rust_relay_transfer.RsRelayTransferEvent_Failed(:final category):
+              if (terminalCategory == null || terminalCategory == 'transfer_failed') {
+                terminalCategory = category;
+              }
+            case rust_relay_transfer.RsRelayTransferEvent_OutgoingStarted() || rust_relay_transfer.RsRelayTransferEvent_OverallProgress():
+              break;
+          }
+        }
+        if (terminalCategory == 'pin_required' && state[sessionId] != null) {
+          await sleepAsync(500);
+          pin = await showDialog<String>(
+            context: Routerino.context, // ignore: use_build_context_synchronously
+            builder: (_) => PinDialog(obscureText: true, showInvalidPin: !firstPinAttempt),
+          );
+          firstPinAttempt = false;
+          if (pin != null) {
+            continue;
+          }
+          state = state.updateSession(
+            sessionId: sessionId,
+            state: (session) => session?.copyWith(status: SessionStatus.canceledBySender),
+          );
+          _finish(sessionId: sessionId);
+          return true;
+        }
+        if (terminalCategory != null && state[sessionId] != null) {
+          _onCanonicalFailure(sessionId, terminalCategory);
+        }
+        return true;
+      }
+    } catch (error, stackTrace) {
+      _logger.warning('Error while starting canonical Relay transfer', error, stackTrace);
+      if (state[sessionId] != null) {
+        _onCanonicalFailure(sessionId, 'transfer_failed');
+      }
+    } finally {
+      _prepareUploadCancelTokens.remove(sessionId);
+    }
+    return true;
+  }
+
+  Future<List<rust_relay_transfer.RsRelayTransferFile>> _canonicalTransferFiles(Iterable<SendingFile> files) async {
+    final sources = <rust_relay_transfer.RsRelayTransferFile>[];
+    for (final sendingFile in files) {
+      final path = sendingFile.path;
+      final isContentUri = path?.startsWith('content://') ?? false;
+      sources.add(
+        rust_relay_transfer.RsRelayTransferFile(
+          file: sendingFile.file.toRust(),
+          path: isContentUri ? null : path,
+          fileDescriptor: isContentUri ? await getFileDescriptorAndroid(uri: path!) : null,
+          bytes: path == null && sendingFile.bytes != null ? Uint8List.fromList(sendingFile.bytes!) : null,
+        ),
+      );
+    }
+    return sources;
+  }
+
+  void _onCanonicalAccepted({
+    required String localSessionId,
+    required String remoteSessionId,
+    required Set<String> acceptedFileIds,
+  }) {
+    final current = state[localSessionId];
+    if (current == null) {
+      return;
+    }
+    final files = {
+      for (final file in current.files.values) file.file.id: acceptedFileIds.contains(file.file.id) ? file.copyWith(token: 'canonical') : file,
+    };
+    final transferNotifier = ref.notifier(fileTransferProvider);
+    transferNotifier.removeSession(localSessionId);
+    transferNotifier.setStatuses(
+      sessionId: localSessionId,
+      statuses: {for (final file in files.values) file.file.id: file.token != null ? FileStatus.queue : FileStatus.skipped},
+    );
+    if (current.background == false) {
+      final background = ref.read(settingsProvider).sendMode == SendMode.multiple;
+      unawaited(
+        Routerino.context
+            .pushAndRemoveUntil(
+              removeUntil: HomePage,
+              transition: RouterinoTransition.fade(),
+              builder: () => ProgressPage(showAppBar: background, closeSessionOnClose: !background, sessionId: localSessionId),
+            )
+            .then((_) {
+              if (background) {
+                setBackground(localSessionId, true);
+              }
+            }),
+      );
+    }
+    state = state.updateSession(
+      sessionId: localSessionId,
+      state: (_) => current.copyWith(
+        remoteSessionId: remoteSessionId,
+        status: SessionStatus.sending,
+        files: files,
+        startTime: DateTime.now().millisecondsSinceEpoch,
+      ),
+    );
+    TransferNotification.start(sessionId: localSessionId, receiving: false);
+  }
+
+  void _onCanonicalCompleted(String sessionId) {
+    final current = state[sessionId];
+    if (current == null) {
+      return;
+    }
+    final transfers = ref.notifier(fileTransferProvider);
+    for (final file in current.files.values) {
+      if (file.token != null) {
+        transfers.setProgress(sessionId: sessionId, fileId: file.file.id, progress: 1);
+        transfers.setStatus(sessionId: sessionId, fileId: file.file.id, status: FileStatus.finished);
+      }
+    }
+    _updateForegroundServiceProgress(sessionId);
+    _finish(sessionId: sessionId);
+  }
+
+  void _onCanonicalFailure(String sessionId, String category) {
+    final status = switch (category) {
+      'declined' => SessionStatus.declined,
+      'cancelled' => SessionStatus.canceledBySender,
+      _ => SessionStatus.finishedWithErrors,
+    };
+    state = state.updateSession(
+      sessionId: sessionId,
+      state: (session) => session?.copyWith(status: status, endTime: DateTime.now().millisecondsSinceEpoch),
+    );
+    _finish(sessionId: sessionId);
   }
 
   /// Reports the total session progress to the foreground service notification,
