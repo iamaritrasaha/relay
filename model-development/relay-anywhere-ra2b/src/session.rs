@@ -3,26 +3,26 @@ use std::{
     io::ErrorKind,
     path::PathBuf,
     sync::{
-        atomic::{AtomicBool, Ordering},
         Arc,
+        atomic::{AtomicBool, Ordering},
     },
     time::{Duration, Instant},
 };
 
-use anyhow::{bail, ensure, Context as _, Result};
+use anyhow::{Context as _, Result, bail, ensure};
 use iroh::EndpointAddr;
 use localsend::anywhere::{
-    authenticate_initiator, authenticate_server, authorize_unknown_authenticated, bind_endpoint,
-    empty_trust, selected_path, stream::client_peer_certificate_fingerprint,
-    stream::server_peer_certificate_fingerprint, stream::IrohBiStream, AnywhereEndpoint,
-    AnywhereError, InnerTlsPeer, PathPreference,
+    AnywhereEndpoint, AnywhereError, InnerTlsPeer, PathPreference, authenticate_initiator,
+    authenticate_server, authorize_unknown_authenticated, bind_endpoint, empty_trust,
+    selected_path, stream::IrohBiStream, stream::client_peer_certificate_fingerprint,
+    stream::server_peer_certificate_fingerprint,
 };
 use localsend::crypto::relay_identity::RelayIdentity;
 use localsend::http::client::AnywhereHttpClient;
 use localsend::http::dto_v2::{PrepareUploadRequestDtoV2, RegisterDtoV2};
 use localsend::http::server::common::save::FileUploadTarget;
 use localsend::http::server::v2::{PrepareUploadDecisionV2, ServerEventV2, SessionEndReasonV2};
-use localsend::http::server::{start_v2_stream_only, ConnectionOrigin, ServerConfigV2};
+use localsend::http::server::{ConnectionOrigin, ServerConfigV2, start_v2_stream_only};
 use localsend::http::state::ClientInfo;
 use localsend::model::discovery::ProtocolType;
 use localsend::model::transfer::{FileContent, FileDto};
@@ -31,7 +31,7 @@ use rand::RngCore;
 use sha2::{Digest, Sha256};
 use tokio::{
     io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt},
-    sync::{mpsc, oneshot, Notify},
+    sync::{Notify, mpsc, oneshot},
     time::sleep,
 };
 use tokio_util::sync::CancellationToken;
@@ -268,8 +268,13 @@ pub async fn send_files_over_authenticated_stream<S>(
 where
     S: AsyncRead + AsyncWrite + Unpin + Send + 'static,
 {
-    ensure!(!batch.files.is_empty(), "RA4B batch must contain at least one file");
-    batch.files.sort_by(|left, right| left.name.cmp(&right.name));
+    ensure!(
+        !batch.files.is_empty(),
+        "RA4B batch must contain at least one file"
+    );
+    batch
+        .files
+        .sort_by(|left, right| left.name.cmp(&right.name));
     let mut ids = HashSet::new();
     ensure!(
         batch.files.iter().all(|file| ids.insert(file.id.as_str())),
@@ -391,7 +396,10 @@ pub async fn run_ra4_batch_sender(
     batch: Ra4BatchSpec,
 ) -> Result<Ra2bProofResult> {
     let started = Instant::now();
-    ensure!(!batch.files.is_empty(), "RA4B batch must contain at least one file");
+    ensure!(
+        !batch.files.is_empty(),
+        "RA4B batch must contain at least one file"
+    );
     let total = batch.files.iter().map(|file| file.size).sum::<u64>();
     let (endpoint, relay_guard) = build_endpoint(path_preference).await?;
     if path_preference != Ra2bPathPreference::ForceDirect {
@@ -408,7 +416,10 @@ pub async fn run_ra4_batch_sender(
         connection = endpoint.connect(remote_endpoint) => connection.map_err(map_anywhere)?,
     };
     on_status(Ra2bPhase::IrohConnected);
-    let (send, recv) = connection.open_bi().await.context("open Iroh bidirectional stream")?;
+    let (send, recv) = connection
+        .open_bi()
+        .await
+        .context("open Iroh bidirectional stream")?;
     let path = selected_path(&connection, to_path_preference(path_preference))
         .await
         .unwrap_or(PathDescriptor::InternetDirect {
@@ -434,7 +445,9 @@ pub async fn run_ra4_batch_sender(
         &mut tls,
         &peer.identity,
         peer.tls.cert_fingerprint,
-        expected.as_ref().context("join requires expected host RelayId")?,
+        expected
+            .as_ref()
+            .context("join requires expected host RelayId")?,
         observed_server_cert,
         path.clone(),
     )
@@ -465,10 +478,7 @@ pub async fn run_ra4_batch_sender(
         {
             let on_status = on_status.clone();
             move |bytes| {
-                on_status(Ra2bPhase::Transferring {
-                    bytes,
-                    total,
-                });
+                on_status(Ra2bPhase::Transferring { bytes, total });
             }
         },
     )
@@ -521,7 +531,10 @@ pub async fn run_ra4_receiver(
         connection = incoming => connection.context("complete Iroh server handshake")?,
     };
     on_status(Ra2bPhase::IrohConnected);
-    let (send, recv) = connection.accept_bi().await.context("accept Iroh bidirectional stream")?;
+    let (send, recv) = connection
+        .accept_bi()
+        .await
+        .context("accept Iroh bidirectional stream")?;
     let path = selected_path(&connection, to_path_preference(path_preference))
         .await
         .unwrap_or(PathDescriptor::InternetDirect {
@@ -581,6 +594,7 @@ pub async fn run_ra4_receiver(
         }
         _ => ConnectionOrigin::InternetDirect,
     };
+    diag("RA4_HTTP_START");
     server
         .serve_authenticated_stream(tls, session, origin)
         .await?;
@@ -700,7 +714,10 @@ pub async fn run_ra4_receiver(
     server.wait_stopped().await;
     endpoint.close().await;
     drop(relay_guard);
-    ensure!(!accepted_files.is_empty(), "RA4B receiver completed without files");
+    ensure!(
+        !accepted_files.is_empty(),
+        "RA4B receiver completed without files"
+    );
     Ok(Ra2bProofResult {
         path: path_class(&path),
         bytes: usize::try_from(total_bytes).context("batch size exceeds usize")?,
@@ -1384,9 +1401,11 @@ mod tests {
                 .any(|phase| matches!(phase, Ra2bPhase::Transferring { .. })),
             "payload must not start before identity verification"
         );
-        assert!(!join_snapshot
-            .iter()
-            .any(|phase| matches!(phase, Ra2bPhase::RelayIdentityAuthenticated { .. })));
+        assert!(
+            !join_snapshot
+                .iter()
+                .any(|phase| matches!(phase, Ra2bPhase::RelayIdentityAuthenticated { .. }))
+        );
 
         host_cancel.cancel();
         let _ = timeout(Duration::from_secs(8), host_task).await;
@@ -1553,7 +1572,10 @@ mod tests {
             {
                 break invite;
             }
-            assert!(!host_task.is_finished(), "RA4A host stopped before publishing invite");
+            assert!(
+                !host_task.is_finished(),
+                "RA4A host stopped before publishing invite"
+            );
         };
         let parsed = crate::parse_invite(&invite).unwrap();
         let sender_bytes = bytes.clone();
@@ -1596,7 +1618,10 @@ mod tests {
                     .unwrap();
                 break;
             }
-            assert!(!sender_task.is_finished(), "sender stopped before prepare-upload prompt");
+            assert!(
+                !sender_task.is_finished(),
+                "sender stopped before prepare-upload prompt"
+            );
         }
 
         let sender_result = timeout(Duration::from_secs(20), sender_task)
@@ -1674,7 +1699,10 @@ mod tests {
             {
                 break invite;
             }
-            assert!(!host_task.is_finished(), "RA4B host stopped before publishing invite");
+            assert!(
+                !host_task.is_finished(),
+                "RA4B host stopped before publishing invite"
+            );
         };
         let endpoint = crate::parse_invite(&invite).unwrap().endpoint;
         let sender_callback: Ra2bStatusCallback =
@@ -1724,15 +1752,24 @@ mod tests {
                     .send(Ra4Decision {
                         accept: true,
                         targets: HashMap::from([
-                            ("first".to_owned(), destination_root.join("photos/first.txt")),
-                            ("second".to_owned(), destination_root.join("photos/second.txt")),
+                            (
+                                "first".to_owned(),
+                                destination_root.join("photos/first.txt"),
+                            ),
+                            (
+                                "second".to_owned(),
+                                destination_root.join("photos/second.txt"),
+                            ),
                         ]),
                     })
                     .await
                     .unwrap();
                 break;
             }
-            assert!(!sender_task.is_finished(), "sender stopped before RA4B batch prompt");
+            assert!(
+                !sender_task.is_finished(),
+                "sender stopped before RA4B batch prompt"
+            );
         }
 
         let sender_result = timeout(Duration::from_secs(20), sender_task)
@@ -1747,8 +1784,14 @@ mod tests {
             .expect("host transfer");
         assert_eq!(sender_result.bytes, first_len + second_len);
         assert_eq!(host_result.bytes, first_len + second_len);
-        assert_eq!(std::fs::read(destination_root.join("photos/first.txt")).unwrap(), first_expected);
-        assert_eq!(std::fs::read(destination_root.join("photos/second.txt")).unwrap(), second_expected);
+        assert_eq!(
+            std::fs::read(destination_root.join("photos/first.txt")).unwrap(),
+            first_expected
+        );
+        assert_eq!(
+            std::fs::read(destination_root.join("photos/second.txt")).unwrap(),
+            second_expected
+        );
         assert!(sender_phases
             .lock()
             .unwrap()

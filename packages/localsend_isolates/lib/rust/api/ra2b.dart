@@ -9,7 +9,8 @@ import 'package:localsend_isolates/rust/frb_generated.dart';
 
 part 'ra2b.freezed.dart';
 
-// These functions are ignored because they are not marked as `pub`: `run_session`
+// These functions are ignored because they are not marked as `pub`: `ra4_config`, `ra4_decision_sender`, `run_session`
+// These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `Ra2bApplicationMode`, `Ra4RuntimeConfig`, `Ra4RuntimeFile`
 // These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `clone`, `clone`, `clone`, `clone`, `fmt`, `fmt`, `fmt`, `fmt`, `from`, `from`
 
 /// Returns this process's in-memory development RelayId. Not a stored favorite.
@@ -23,7 +24,9 @@ bool ra2BSessionIsActive() => RustLib.instance.api.crateApiRa2BRa2BSessionIsActi
 /// Cancels the single active host or join session, if any.
 void ra2BCancelSession() => RustLib.instance.api.crateApiRa2BRa2BCancelSession();
 
-/// Configures the one real file used by the RA4A sender test.
+/// Adds one real file to the RA4B sender batch without copying it into Dart.
+/// Android passes a SAF descriptor; desktop passes a regular path. Call
+/// [ra4_clear] before beginning a new batch.
 void ra4SetSender({String? path, int? fileDescriptor, required String name, required BigInt size, required String fileType, String? sha256}) =>
     RustLib.instance.api.crateApiRa2BRa4SetSender(
       path: path,
@@ -34,20 +37,27 @@ void ra4SetSender({String? path, int? fileDescriptor, required String name, requ
       sha256: sha256,
     );
 
-/// Configures the RA4A receiver test; approval supplies the save target.
-void ra4SetReceiver() => RustLib.instance.api.crateApiRa2BRa4SetReceiver();
-
 void ra4Clear() => RustLib.instance.api.crateApiRa2BRa4Clear();
 
+/// Answers the session-scoped incoming batch prompt.
 void ra4Respond({required bool accept, String? targetsJson}) => RustLib.instance.api.crateApiRa2BRa4Respond(accept: accept, targetsJson: targetsJson);
 
 /// Starts the in-process RA2B host (responder). Emits invite + progress events.
-Stream<RsRa2bEvent> ra2BStartHost({required RsRa2bPathPreference pathPreference, required bool wrongIdentity}) =>
-    RustLib.instance.api.crateApiRa2BRa2BStartHost(pathPreference: pathPreference, wrongIdentity: wrongIdentity);
+Stream<RsRa2bEvent> ra2BStartHost({required RsRa2bPathPreference pathPreference, required bool wrongIdentity, required bool ra4FileTransfer}) =>
+    RustLib.instance.api.crateApiRa2BRa2BStartHost(pathPreference: pathPreference, wrongIdentity: wrongIdentity, ra4FileTransfer: ra4FileTransfer);
 
 /// Join using a development invite. `wrong_identity` mutates expected host RelayId.
-Stream<RsRa2bEvent> ra2BRunJoin({required String invite, required RsRa2bPathPreference pathPreference, required bool wrongIdentity}) =>
-    RustLib.instance.api.crateApiRa2BRa2BRunJoin(invite: invite, pathPreference: pathPreference, wrongIdentity: wrongIdentity);
+Stream<RsRa2bEvent> ra2BRunJoin({
+  required String invite,
+  required RsRa2bPathPreference pathPreference,
+  required bool wrongIdentity,
+  required bool ra4FileTransfer,
+}) => RustLib.instance.api.crateApiRa2BRa2BRunJoin(
+  invite: invite,
+  pathPreference: pathPreference,
+  wrongIdentity: wrongIdentity,
+  ra4FileTransfer: ra4FileTransfer,
+);
 
 @freezed
 sealed class RsRa2bEvent with _$RsRa2bEvent {

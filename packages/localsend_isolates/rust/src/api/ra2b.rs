@@ -7,22 +7,27 @@
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex, OnceLock};
 
-use anyhow::Context as _;
 use crate::frb_generated::StreamSink;
+use anyhow::Context as _;
 use flutter_rust_bridge::frb;
 use relay_anywhere_ra2b::{
-    ActiveSessionGuard, Ra2bPathPreference, Ra2bPeerMaterial, Ra2bPhase, Ra2bRole, Ra4Decision,
-    Ra4BatchSpec, Ra4FileSource, Ra4FileSpec, cancel_active_session, fresh_unrelated_relay_id,
+    ActiveSessionGuard, Ra2bPathPreference, Ra2bPeerMaterial, Ra2bPhase, Ra2bRole, Ra4BatchSpec,
+    Ra4Decision, Ra4FileSource, Ra4FileSpec, cancel_active_session, fresh_unrelated_relay_id,
     parse_invite, process_identity, process_relay_id, run_proof, run_ra4_batch_sender,
-    run_ra4_receiver,
-    session_is_active,
+    run_ra4_receiver, session_is_active,
 };
 
 enum Ra4RuntimeConfig {
-    Sender {
-        files: Vec<Ra4RuntimeFile>,
-    },
-    Receiver,
+    Sender { files: Vec<Ra4RuntimeFile> },
+}
+
+/// Chooses the post-authentication application protocol before either side
+/// reads from the authenticated stream. RA4 uses ordinary HTTP/1.1; the
+/// legacy proof framing is retained only when explicitly requested.
+enum Ra2bApplicationMode {
+    LegacyProof,
+    Ra4HttpReceiver,
+    Ra4HttpSender,
 }
 
 struct Ra4RuntimeFile {
@@ -249,26 +254,21 @@ pub fn ra4_set_sender(
         file_type,
         sha256,
     };
-    let mut config = ra4_config().lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+    let mut config = ra4_config()
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
     match config.as_mut() {
         Some(Ra4RuntimeConfig::Sender { files }) => files.push(file),
-        Some(Ra4RuntimeConfig::Receiver) => anyhow::bail!("RA4B receiver is configured; clear it before selecting files"),
         None => *config = Some(Ra4RuntimeConfig::Sender { files: vec![file] }),
     }
     Ok(())
 }
 
-/// Configures the RA4B receiver. Save targets are supplied per batch by the
-/// existing approval/save-target machinery and are never persisted as trust.
-#[frb(sync)]
-pub fn ra4_set_receiver() {
-    *ra4_config().lock().unwrap_or_else(|poisoned| poisoned.into_inner()) =
-        Some(Ra4RuntimeConfig::Receiver);
-}
-
 #[frb(sync)]
 pub fn ra4_clear() {
-    *ra4_config().lock().unwrap_or_else(|poisoned| poisoned.into_inner()) = None;
+    *ra4_config()
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner()) = None;
     *ra4_decision_sender()
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner()) = None;
@@ -287,10 +287,7 @@ pub fn ra4_respond(accept: bool, targets_json: Option<String>) -> anyhow::Result
         _ => Default::default(),
     };
     sender
-        .try_send(Ra4Decision {
-            accept,
-            targets,
-        })
+        .try_send(Ra4Decision { accept, targets })
         .map_err(|_| anyhow::anyhow!("RA4B approval prompt is no longer active"))
 }
 
@@ -298,6 +295,7 @@ pub fn ra4_respond(accept: bool, targets_json: Option<String>) -> anyhow::Result
 pub async fn ra2b_start_host(
     path_preference: RsRa2bPathPreference,
     wrong_identity: bool,
+    ra4_file_transfer: bool,
     event_sink: StreamSink<RsRa2bEvent>,
 ) -> anyhow::Result<()> {
     let guard = ActiveSessionGuard::acquire()?;
@@ -307,20 +305,19 @@ pub async fn ra2b_start_host(
         None
     };
     let peer = Ra2bPeerMaterial::from_arc(process_identity(), expected)?;
-    let decision_rx = {
-        let config = ra4_config()
+    let application_mode = if ra4_file_transfer {
+        Ra2bApplicationMode::Ra4HttpReceiver
+    } else {
+        Ra2bApplicationMode::LegacyProof
+    };
+    let decision_rx = if ra4_file_transfer {
+        let (sender, receiver) = tokio::sync::mpsc::channel(1);
+        *ra4_decision_sender()
             .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner());
-        let is_receiver = matches!(config.as_ref(), Some(Ra4RuntimeConfig::Receiver));
-        if is_receiver {
-            let (sender, receiver) = tokio::sync::mpsc::channel(1);
-            *ra4_decision_sender()
-                .lock()
-                .unwrap_or_else(|poisoned| poisoned.into_inner()) = Some(sender);
-            Some(receiver)
-        } else {
-            None
-        }
+            .unwrap_or_else(|poisoned| poisoned.into_inner()) = Some(sender);
+        Some(receiver)
+    } else {
+        None
     };
     run_session(
         Ra2bRole::Responder,
@@ -328,6 +325,8 @@ pub async fn ra2b_start_host(
         path_preference.into(),
         guard,
         event_sink,
+        application_mode,
+        None,
         decision_rx,
     )
     .await
@@ -338,6 +337,7 @@ pub async fn ra2b_run_join(
     invite: String,
     path_preference: RsRa2bPathPreference,
     wrong_identity: bool,
+    ra4_file_transfer: bool,
     event_sink: StreamSink<RsRa2bEvent>,
 ) -> anyhow::Result<()> {
     let guard = ActiveSessionGuard::acquire()?;
@@ -348,6 +348,23 @@ pub async fn ra2b_run_join(
         parsed.host_relay_id.clone()
     };
     let peer = Ra2bPeerMaterial::from_arc(process_identity(), Some(expected))?;
+    let config = ra4_config()
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .take();
+    let application_mode = if ra4_file_transfer {
+        anyhow::ensure!(
+            matches!(&config, Some(Ra4RuntimeConfig::Sender { .. })),
+            "RA4 file-transfer mode requires a configured sender batch"
+        );
+        Ra2bApplicationMode::Ra4HttpSender
+    } else {
+        anyhow::ensure!(
+            config.is_none(),
+            "RA4 sender configuration requires file-transfer mode"
+        );
+        Ra2bApplicationMode::LegacyProof
+    };
     run_session(
         Ra2bRole::Initiator {
             remote_endpoint: parsed.endpoint,
@@ -356,6 +373,8 @@ pub async fn ra2b_run_join(
         path_preference.into(),
         guard,
         event_sink,
+        application_mode,
+        config,
         None,
     )
     .await
@@ -367,17 +386,16 @@ async fn run_session(
     path_preference: Ra2bPathPreference,
     guard: ActiveSessionGuard,
     event_sink: StreamSink<RsRa2bEvent>,
+    application_mode: Ra2bApplicationMode,
+    config: Option<Ra4RuntimeConfig>,
     mut decision_rx: Option<tokio::sync::mpsc::Receiver<Ra4Decision>>,
 ) -> anyhow::Result<()> {
-    let config = ra4_config()
-        .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner())
-        .take();
     let callback: Arc<dyn Fn(Ra2bPhase) + Send + Sync> = Arc::new(move |phase: Ra2bPhase| {
         let _ = event_sink.add(phase.into());
     });
-    let result = match (config, role) {
+    let result = match (application_mode, config, role) {
         (
+            Ra2bApplicationMode::Ra4HttpSender,
             Some(Ra4RuntimeConfig::Sender { files }),
             Ra2bRole::Initiator { remote_endpoint },
         ) => {
@@ -389,7 +407,9 @@ async fn run_session(
                     } else {
                         #[cfg(target_os = "android")]
                         {
-                            Ra4FileSource::FileDescriptor(file.file_descriptor.expect("validated descriptor"))
+                            Ra4FileSource::FileDescriptor(
+                                file.file_descriptor.expect("validated descriptor"),
+                            )
                         }
                         #[cfg(not(target_os = "android"))]
                         {
@@ -416,7 +436,7 @@ async fn run_session(
             )
             .await
         }
-        (Some(Ra4RuntimeConfig::Receiver), Ra2bRole::Responder) => {
+        (Ra2bApplicationMode::Ra4HttpReceiver, None, Ra2bRole::Responder) => {
             let mut decision_rx = decision_rx
                 .take()
                 .ok_or_else(|| anyhow::anyhow!("RA4A receiver approval channel is unavailable"))?;
@@ -429,8 +449,10 @@ async fn run_session(
             )
             .await
         }
-        (None, role) => run_proof(role, peer, path_preference, guard.cancellation(), callback).await,
-        (Some(_), _) => anyhow::bail!("RA4A sender/receiver role mismatch"),
+        (Ra2bApplicationMode::LegacyProof, None, role) => {
+            run_proof(role, peer, path_preference, guard.cancellation(), callback).await
+        }
+        _ => anyhow::bail!("RA2B application mode/configuration role mismatch"),
     };
     *ra4_decision_sender()
         .lock()

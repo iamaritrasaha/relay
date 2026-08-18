@@ -2,25 +2,74 @@
 
 use bytes::Bytes;
 use localsend::crypto::relay_identity::RelayIdentity;
-use localsend::crypto::relay_identity_proof::{create_relay_identity_proof, RelayProofRole};
+use localsend::crypto::relay_identity_proof::{RelayProofRole, create_relay_identity_proof};
 use localsend::http::client::AnywhereHttpClient;
 use localsend::http::dto_v2::{PrepareUploadRequestDtoV2, RegisterDtoV2};
 use localsend::http::server::common::save::FileUploadTarget;
 use localsend::http::server::v2::{PrepareUploadDecisionV2, ServerEventV2};
-use localsend::http::server::{start_with_port, ConnectionOrigin, ServerConfigV2};
+use localsend::http::server::{ConnectionOrigin, ServerConfigV2, start_with_port};
 use localsend::http::state::ClientInfo as ServerInfo;
 use localsend::model::discovery::ProtocolType;
 use localsend::model::transfer::{FileContent, FileDto};
 use localsend::relay::{AuthenticatedRelaySession, PathDescriptor, RelayAuthCoordinator};
 use std::collections::{HashMap, HashSet};
+use std::io;
 use std::path::PathBuf;
+use std::pin::Pin;
 use std::sync::{
-    atomic::{AtomicU64, Ordering},
     Arc,
+    atomic::{AtomicU64, Ordering},
 };
+use std::task::{Context, Poll};
 use std::time::Duration;
+use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
 use tokio::sync::{mpsc, oneshot};
 use tokio_util::sync::CancellationToken;
+
+/// Records the first application bytes consumed by the Anywhere HTTP server
+/// without altering the caller-owned stream semantics.
+struct CaptureFirstRead<S> {
+    inner: S,
+    captured: Arc<std::sync::Mutex<Vec<u8>>>,
+}
+
+impl<S: AsyncRead + Unpin> AsyncRead for CaptureFirstRead<S> {
+    fn poll_read(
+        mut self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        buf: &mut ReadBuf<'_>,
+    ) -> Poll<io::Result<()>> {
+        let result = Pin::new(&mut self.inner).poll_read(cx, buf);
+        if let Poll::Ready(Ok(())) = &result {
+            let bytes = buf.filled();
+            if !bytes.is_empty() {
+                let mut captured = self.captured.lock().unwrap();
+                if captured.is_empty() {
+                    captured.extend_from_slice(bytes);
+                }
+            }
+        }
+        result
+    }
+}
+
+impl<S: AsyncWrite + Unpin> AsyncWrite for CaptureFirstRead<S> {
+    fn poll_write(
+        mut self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        buf: &[u8],
+    ) -> Poll<io::Result<usize>> {
+        Pin::new(&mut self.inner).poll_write(cx, buf)
+    }
+
+    fn poll_flush(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+        Pin::new(&mut self.inner).poll_flush(cx)
+    }
+
+    fn poll_shutdown(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+        Pin::new(&mut self.inner).poll_shutdown(cx)
+    }
+}
 
 fn session() -> AuthenticatedRelaySession {
     let local = RelayIdentity::generate();
@@ -89,9 +138,17 @@ async fn anywhere_uses_existing_v2_prepare_and_streaming_save_on_a_non_tcp_strea
     let (event_tx, mut event_rx) = mpsc::channel(8);
     let (server, stop_tx) = server(event_tx).await;
     let (client_stream, server_stream) = tokio::io::duplex(64 * 1024);
+    let first_application_bytes = Arc::new(std::sync::Mutex::new(Vec::new()));
     let auth = session();
     server
-        .serve_authenticated_stream(server_stream, auth.clone(), ConnectionOrigin::IrohRelay)
+        .serve_authenticated_stream(
+            CaptureFirstRead {
+                inner: server_stream,
+                captured: first_application_bytes.clone(),
+            },
+            auth.clone(),
+            ConnectionOrigin::IrohRelay,
+        )
         .await
         .unwrap();
     let client = AnywhereHttpClient::handshake(client_stream, auth)
@@ -122,6 +179,11 @@ async fn anywhere_uses_existing_v2_prepare_and_streaming_save_on_a_non_tcp_strea
         })
     };
     let event = event_rx.recv().await.expect("prepare event");
+    assert_eq!(
+        first_application_bytes.lock().unwrap().first().copied(),
+        Some(b'P'),
+        "the RA4 client must start normal HTTP POST; the legacy proof decoder must not consume it"
+    );
     let (decision_tx, file_id) = match event {
         ServerEventV2::PrepareUpload {
             session_id: _,
@@ -283,7 +345,9 @@ async fn transfer_generated_chunks(size: usize) {
         .serve_authenticated_stream(server_stream, auth.clone(), ConnectionOrigin::IrohRelay)
         .await
         .unwrap();
-    let client = AnywhereHttpClient::handshake(client_stream, auth).await.unwrap();
+    let client = AnywhereHttpClient::handshake(client_stream, auth)
+        .await
+        .unwrap();
     let file = FileDto {
         id: "streamed".into(),
         file_name: "streamed.bin".into(),
@@ -306,7 +370,9 @@ async fn transfer_generated_chunks(size: usize) {
         other => panic!("unexpected event: {other:?}"),
     };
     decision_tx
-        .send(PrepareUploadDecisionV2::Accept(HashSet::from(["streamed".to_owned()])))
+        .send(PrepareUploadDecisionV2::Accept(HashSet::from([
+            "streamed".to_owned()
+        ])))
         .unwrap();
     let (mut client, prepared) = prepare.await.unwrap();
     let prepared = prepared.unwrap().response.unwrap();
@@ -321,7 +387,10 @@ async fn transfer_generated_chunks(size: usize) {
         let mut remaining = size;
         while remaining > 0 {
             let chunk_len = remaining.min(CHUNK_SIZE);
-            source_tx.send(Bytes::from(vec![0x5a; chunk_len])).await.unwrap();
+            source_tx
+                .send(Bytes::from(vec![0x5a; chunk_len]))
+                .await
+                .unwrap();
             source_counter.fetch_add(chunk_len as u64, Ordering::Relaxed);
             remaining -= chunk_len;
         }
@@ -344,7 +413,10 @@ async fn transfer_generated_chunks(size: usize) {
     let path = temp_path("anywhere-small-chunks");
     let (target_tx, target_rx) = oneshot::channel();
     match event_rx.recv().await.expect("file upload event") {
-        ServerEventV2::FileUpload { target_tx: responder, .. } => responder
+        ServerEventV2::FileUpload {
+            target_tx: responder,
+            ..
+        } => responder
             .send(FileUploadTarget::Path {
                 path: path.clone(),
                 result_tx: target_tx,
@@ -355,10 +427,22 @@ async fn transfer_generated_chunks(size: usize) {
     }
     producer.await.unwrap();
     upload.await.unwrap().unwrap();
-    assert_eq!(source_bytes.load(Ordering::Relaxed), size as u64, "source bytes");
-    assert_eq!(body_bytes.load(Ordering::Relaxed), size as u64, "Hyper body bytes");
+    assert_eq!(
+        source_bytes.load(Ordering::Relaxed),
+        size as u64,
+        "source bytes"
+    );
+    assert_eq!(
+        body_bytes.load(Ordering::Relaxed),
+        size as u64,
+        "Hyper body bytes"
+    );
     assert_eq!(target_rx.await.unwrap(), Ok(()));
-    assert_eq!(tokio::fs::metadata(&path).await.unwrap().len(), size as u64, "saved bytes");
+    assert_eq!(
+        tokio::fs::metadata(&path).await.unwrap().len(),
+        size as u64,
+        "saved bytes"
+    );
     let _ = tokio::fs::remove_file(&path).await;
     let _ = stop_tx.send(());
     server.wait_stopped().await;

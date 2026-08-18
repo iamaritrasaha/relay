@@ -512,9 +512,6 @@ class _Ra2bProofPageState extends State<Ra2bProofPage> {
   }
 
   void _openRa4Host() {
-    if (widget.bindNative) {
-      rust_ra2b.ra4SetReceiver();
-    }
     setState(() {
       _ra4Receiver = true;
       _screen = Ra2bScreen.host;
@@ -578,9 +575,6 @@ class _Ra2bProofPageState extends State<Ra2bProofPage> {
     _events = null;
     if (!mounted) {
       return;
-    }
-    if (_ra4Receiver) {
-      rust_ra2b.ra4SetReceiver();
     }
     setState(() {
       _busy = false;
@@ -693,9 +687,6 @@ class _Ra2bProofPageState extends State<Ra2bProofPage> {
       });
       return;
     }
-    if (_ra4Receiver) {
-      rust_ra2b.ra4SetReceiver();
-    }
     setState(() {
       _screen = Ra2bScreen.host;
       _busy = true;
@@ -711,6 +702,7 @@ class _Ra2bProofPageState extends State<Ra2bProofPage> {
         rust_ra2b.ra2BStartHost(
           pathPreference: _path,
           wrongIdentity: wrongIdentity,
+          ra4FileTransfer: _ra4Receiver,
         ),
       );
     } catch (error, stack) {
@@ -900,6 +892,7 @@ class _Ra2bProofPageState extends State<Ra2bProofPage> {
           invite: invite,
           pathPreference: _path,
           wrongIdentity: wrongIdentity,
+          ra4FileTransfer: _ra4Files.isNotEmpty,
         ),
       );
     } catch (error, stack) {
