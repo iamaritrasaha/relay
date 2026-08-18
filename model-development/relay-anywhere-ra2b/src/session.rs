@@ -1,4 +1,5 @@
 use std::{
+    collections::{HashMap, HashSet},
     io::ErrorKind,
     path::PathBuf,
     sync::{
@@ -147,6 +148,10 @@ pub enum Ra2bPhase {
         size: u64,
         remote_relay_id: String,
     },
+    IncomingBatch {
+        files: Vec<Ra4IncomingFile>,
+        remote_relay_id: String,
+    },
     Transferring {
         bytes: u64,
         total: u64,
@@ -195,12 +200,29 @@ pub struct Ra4FileSpec {
     pub source: Ra4FileSource,
 }
 
+/// Metadata for one pending file in an authenticated RA4B batch.  The file
+/// DTO remains the Relay v2 source of truth; this is only the development
+/// harness representation needed to pair it with a local source/target.
+#[derive(Clone, Debug)]
+pub struct Ra4IncomingFile {
+    pub id: String,
+    pub name: String,
+    pub size: u64,
+}
+
+/// One authenticated v2 upload session. Files are sent sequentially over the
+/// same HTTP/1.1 connection, as Relay's existing v2 session semantics expect.
+#[derive(Debug)]
+pub struct Ra4BatchSpec {
+    pub files: Vec<Ra4FileSpec>,
+}
+
 /// Session-scoped receiver decision. The destination is prepared by the
 /// existing UI/save-target machinery and is never persisted as trust.
 #[derive(Debug)]
 pub struct Ra4Decision {
     pub accept: bool,
-    pub target: Option<PathBuf>,
+    pub targets: HashMap<String, PathBuf>,
 }
 
 /// Runs the production RA4A sender after Iroh, inner TLS, mutual proof, and
@@ -218,18 +240,62 @@ pub async fn send_one_file_over_authenticated_stream<S>(
 where
     S: AsyncRead + AsyncWrite + Unpin + Send + 'static,
 {
+    send_files_over_authenticated_stream(
+        stream,
+        session,
+        Ra4BatchSpec { files: vec![spec] },
+        alias,
+        fingerprint,
+        cancellation,
+        on_progress,
+    )
+    .await
+}
+
+/// Sends a complete v2 batch over the one authenticated HTTP connection.
+/// There is no Anywhere-specific file or folder protocol: the existing v2
+/// metadata map, prepare decision, upload endpoints, checksum handling, and
+/// cancellation behavior remain authoritative.
+pub async fn send_files_over_authenticated_stream<S>(
+    stream: S,
+    session: localsend::relay::AuthenticatedRelaySession,
+    mut batch: Ra4BatchSpec,
+    alias: String,
+    fingerprint: String,
+    cancellation: CancellationToken,
+    on_progress: impl Fn(u64) + Send + Sync + 'static,
+) -> Result<usize>
+where
+    S: AsyncRead + AsyncWrite + Unpin + Send + 'static,
+{
+    ensure!(!batch.files.is_empty(), "RA4B batch must contain at least one file");
+    batch.files.sort_by(|left, right| left.name.cmp(&right.name));
+    let mut ids = HashSet::new();
+    ensure!(
+        batch.files.iter().all(|file| ids.insert(file.id.as_str())),
+        "RA4B batch contains duplicate file ids"
+    );
     let mut client = AnywhereHttpClient::handshake(stream, session)
         .await
         .map_err(|error| anyhow::anyhow!(error))?;
-    let file = FileDto {
-        id: spec.id.clone(),
-        file_name: spec.name,
-        size: spec.size,
-        file_type: spec.file_type,
-        sha256: spec.sha256,
-        preview: None,
-        metadata: None,
-    };
+    let files = batch
+        .files
+        .iter()
+        .map(|spec| {
+            (
+                spec.id.clone(),
+                FileDto {
+                    id: spec.id.clone(),
+                    file_name: spec.name.clone(),
+                    size: spec.size,
+                    file_type: spec.file_type.clone(),
+                    sha256: spec.sha256.clone(),
+                    preview: None,
+                    metadata: None,
+                },
+            )
+        })
+        .collect::<HashMap<_, _>>();
     let payload = PrepareUploadRequestDtoV2 {
         info: RegisterDtoV2 {
             alias,
@@ -241,7 +307,7 @@ where
             protocol: ProtocolType::Https,
             download: false,
         },
-        files: std::collections::HashMap::from([(file.id.clone(), file.clone())]),
+        files,
     };
     let prepared = client
         .prepare_upload(payload, None, cancellation.clone())
@@ -249,29 +315,50 @@ where
         .map_err(|error| anyhow::anyhow!(error))?
         .response
         .ok_or_else(|| anyhow::anyhow!("receiver accepted no file"))?;
-    let token = prepared
-        .files
-        .get(&file.id)
-        .cloned()
-        .ok_or_else(|| anyhow::anyhow!("receiver did not accept the selected file"))?;
-    let content = match spec.source {
-        Ra4FileSource::Path(path) => FileContent::Path(path),
-        #[cfg(target_os = "android")]
-        Ra4FileSource::FileDescriptor(fd) => FileContent::Fd(fd),
-    };
-    client
-        .upload(
-            &prepared.session_id,
-            &file.id,
-            &token,
-            content,
-            file.size,
-            on_progress,
-            cancellation,
-        )
-        .await
-        .map_err(|error| anyhow::anyhow!(error))?;
-    usize::try_from(file.size).context("file size exceeds usize")
+    ensure!(
+        batch
+            .files
+            .iter()
+            .all(|file| prepared.files.contains_key(&file.id)),
+        "receiver did not accept the complete requested batch"
+    );
+
+    let progress = Arc::new(on_progress);
+    let mut completed = 0_u64;
+    for spec in batch.files {
+        if cancellation.is_cancelled() {
+            let _ = client.cancel(&prepared.session_id).await;
+            bail!("cancelled");
+        }
+        let token = prepared.files[&spec.id].clone();
+        let size = spec.size;
+        let content = match spec.source {
+            Ra4FileSource::Path(path) => FileContent::Path(path),
+            #[cfg(target_os = "android")]
+            Ra4FileSource::FileDescriptor(fd) => FileContent::Fd(fd),
+        };
+        let base = completed;
+        let report_progress = progress.clone();
+        let result = client
+            .upload(
+                &prepared.session_id,
+                &spec.id,
+                &token,
+                content,
+                size,
+                move |bytes| report_progress(base.saturating_add(bytes)),
+                cancellation.clone(),
+            )
+            .await;
+        if matches!(result, Err(localsend::http::client::ClientError::Cancelled)) {
+            let _ = client.cancel(&prepared.session_id).await;
+            bail!("cancelled");
+        }
+        result.map_err(|error| anyhow::anyhow!(error))?;
+        completed = completed.saturating_add(size);
+        progress(completed);
+    }
+    usize::try_from(completed).context("batch size exceeds usize")
 }
 
 /// Runs the RA4A sender after the Iroh, inner-TLS, and mutual Relay proof
@@ -284,9 +371,28 @@ pub async fn run_ra4_sender(
     on_status: &Ra2bStatusCallback,
     spec: Ra4FileSpec,
 ) -> Result<Ra2bProofResult> {
+    run_ra4_batch_sender(
+        remote_endpoint,
+        peer,
+        path_preference,
+        cancellation,
+        on_status,
+        Ra4BatchSpec { files: vec![spec] },
+    )
+    .await
+}
+
+pub async fn run_ra4_batch_sender(
+    remote_endpoint: EndpointAddr,
+    peer: Ra2bPeerMaterial,
+    path_preference: Ra2bPathPreference,
+    cancellation: &Ra2bCancellation,
+    on_status: &Ra2bStatusCallback,
+    batch: Ra4BatchSpec,
+) -> Result<Ra2bProofResult> {
     let started = Instant::now();
-    let total = spec.size;
-    let hash_hex = spec.sha256.clone().unwrap_or_default();
+    ensure!(!batch.files.is_empty(), "RA4B batch must contain at least one file");
+    let total = batch.files.iter().map(|file| file.size).sum::<u64>();
     let (endpoint, relay_guard) = build_endpoint(path_preference).await?;
     if path_preference != Ra2bPathPreference::ForceDirect {
         tokio::select! {
@@ -349,10 +455,10 @@ pub async fn run_ra4_sender(
             cancel_token.cancel();
         })
     };
-    let bytes = send_one_file_over_authenticated_stream(
+    let bytes = send_files_over_authenticated_stream(
         tls,
         session,
-        spec,
+        batch,
         "Relay Anywhere".to_owned(),
         peer.relay_id.clone(),
         cancel_token,
@@ -373,7 +479,7 @@ pub async fn run_ra4_sender(
     Ok(Ra2bProofResult {
         path: path_class(&path),
         bytes,
-        hash_hex,
+        hash_hex: "per-file SHA-256 verified".to_owned(),
         local_relay_id: peer.relay_id,
         remote_relay_id,
         duration_ms: started.elapsed().as_millis() as u64,
@@ -479,8 +585,12 @@ pub async fn run_ra4_receiver(
         .serve_authenticated_stream(tls, session, origin)
         .await?;
 
-    let mut target: Option<PathBuf> = None;
-    let mut accepted_file: Option<FileDto> = None;
+    let mut accepted_files: HashMap<String, FileDto> = HashMap::new();
+    let mut targets: HashMap<String, PathBuf> = HashMap::new();
+    let mut started_files: Vec<String> = Vec::new();
+    let mut saved_files = HashSet::new();
+    let mut total_bytes = 0_u64;
+    let (save_tx, mut save_rx) = mpsc::channel::<(String, Result<(), String>)>(32);
     loop {
         tokio::select! {
             _ = cancellation.cancelled() => {
@@ -490,16 +600,19 @@ pub async fn run_ra4_receiver(
             }
             event = event_rx.recv() => match event {
                 Some(ServerEventV2::PrepareUpload { files, decision_tx, authenticated_relay_id, .. }) => {
-                    let Some((file_id, file)) = (files.len() == 1).then(|| files.into_iter().next()).flatten() else {
-                        let _ = decision_tx.send(PrepareUploadDecisionV2::Decline);
-                        let _ = stop_tx.send(());
-                        server.wait_stopped().await;
-                        bail!("RA4A accepts exactly one file");
-                    };
                     let remote = authenticated_relay_id.unwrap_or_else(|| remote_relay_id.clone());
-                    on_status(Ra2bPhase::IncomingFile {
-                        name: file.file_name.clone(),
-                        size: file.size,
+                    let mut incoming = files
+                        .values()
+                        .map(|file| Ra4IncomingFile {
+                            id: file.id.clone(),
+                            name: file.file_name.clone(),
+                            size: file.size,
+                        })
+                        .collect::<Vec<_>>();
+                    incoming.sort_by(|left, right| left.name.cmp(&right.name));
+                    total_bytes = incoming.iter().map(|file| file.size).sum();
+                    on_status(Ra2bPhase::IncomingBatch {
+                        files: incoming,
                         remote_relay_id: remote,
                     });
                     let decision = tokio::select! {
@@ -516,43 +629,82 @@ pub async fn run_ra4_receiver(
                         server.wait_stopped().await;
                         bail!("transfer declined");
                     }
-                    target = decision.target;
-                    accepted_file = Some(file.clone());
-                    decision_tx.send(PrepareUploadDecisionV2::Accept(std::collections::HashSet::from([file_id])))
+                    if decision.targets.len() != files.len()
+                        || !files.keys().all(|file_id| decision.targets.contains_key(file_id))
+                    {
+                        let _ = decision_tx.send(PrepareUploadDecisionV2::Decline);
+                        let _ = stop_tx.send(());
+                        server.wait_stopped().await;
+                        bail!("accepted RA4B batch has an incomplete save-target set");
+                    }
+                    targets = decision.targets;
+                    accepted_files = files;
+                    decision_tx.send(PrepareUploadDecisionV2::Accept(accepted_files.keys().cloned().collect()))
                         .map_err(|_| anyhow::anyhow!("sender disconnected during prepare-upload"))?;
                 }
-                Some(ServerEventV2::FileUpload { file_id, file, target_tx, .. }) => {
-                    ensure!(accepted_file.as_ref().map(|accepted| accepted.id.as_str()) == Some(file_id.as_str()), "unexpected RA4A file upload");
-                    let path = target.take().context("accepted transfer has no save target")?;
-                    let (result_tx, _result_rx) = oneshot::channel();
+                Some(ServerEventV2::FileUpload { file_id, file: _, target_tx, .. }) => {
+                    ensure!(accepted_files.contains_key(&file_id), "unexpected RA4B file upload");
+                    let path = targets.remove(&file_id).context("accepted transfer has no save target")?;
+                    let completed = started_files
+                        .iter()
+                        .filter_map(|id| accepted_files.get(id))
+                        .map(|file| file.size)
+                        .sum::<u64>();
+                    started_files.push(file_id.clone());
+                    let (result_tx, result_rx) = oneshot::channel();
                     let (progress_tx, mut progress_rx) = mpsc::channel(32);
                     let on_status = on_status.clone();
                     tokio::spawn(async move {
                         while let Some(bytes) = progress_rx.recv().await {
-                            on_status(Ra2bPhase::Transferring { bytes, total: file.size });
+                            on_status(Ra2bPhase::Transferring {
+                                bytes: completed.saturating_add(bytes),
+                                total: total_bytes,
+                            });
                         }
+                    });
+                    let save_tx = save_tx.clone();
+                    tokio::spawn(async move {
+                        let result = result_rx
+                            .await
+                            .unwrap_or_else(|_| Err("upload save result dropped".to_owned()));
+                        let _ = save_tx.send((file_id.clone(), result)).await;
                     });
                     target_tx.send(FileUploadTarget::Path { path, result_tx, progress_tx: Some(progress_tx) })
                         .map_err(|_| anyhow::anyhow!("sender disconnected before file save"))?;
                 }
-                Some(ServerEventV2::SessionEnd { reason: SessionEndReasonV2::Finished, .. }) => break,
+                Some(ServerEventV2::SessionEnd { reason: SessionEndReasonV2::Finished, .. }) => {
+                    while saved_files.len() < accepted_files.len() {
+                        let (file_id, result) = save_rx.recv().await.context("missing RA4B save result")?;
+                        result.map_err(|error| anyhow::anyhow!("failed to save {file_id}: {error}"))?;
+                        saved_files.insert(file_id);
+                    }
+                    ensure!(started_files.len() == accepted_files.len(), "session completed before every accepted file uploaded");
+                    ensure!(saved_files.len() == accepted_files.len(), "session completed before every accepted file was saved");
+                    break;
+                }
                 Some(ServerEventV2::SessionEnd { reason: SessionEndReasonV2::Cancelled, .. }) => bail!("cancelled"),
                 Some(ServerEventV2::PrepareUploadAborted { .. }) => bail!("prepare-upload aborted"),
                 Some(ServerEventV2::CancelReceived { .. }) => bail!("cancelled by sender"),
                 Some(ServerEventV2::Register { .. }) => {}
                 None => bail!("Anywhere HTTP server stopped before completion"),
-            }
+            },
+            saved = save_rx.recv() => {
+                if let Some((file_id, result)) = saved {
+                    result.map_err(|error| anyhow::anyhow!("failed to save {file_id}: {error}"))?;
+                    saved_files.insert(file_id);
+                }
+            },
         }
     }
     let _ = stop_tx.send(());
     server.wait_stopped().await;
     endpoint.close().await;
     drop(relay_guard);
-    let file = accepted_file.context("RA4A receiver completed without a file")?;
+    ensure!(!accepted_files.is_empty(), "RA4B receiver completed without files");
     Ok(Ra2bProofResult {
         path: path_class(&path),
-        bytes: file.size as usize,
-        hash_hex: file.sha256.unwrap_or_default(),
+        bytes: usize::try_from(total_bytes).context("batch size exceeds usize")?,
+        hash_hex: "per-file SHA-256 verified".to_owned(),
         local_relay_id: peer.relay_id,
         remote_relay_id,
         duration_ms: started.elapsed().as_millis() as u64,
@@ -1431,14 +1583,14 @@ mod tests {
         loop {
             sleep(Duration::from_millis(20)).await;
             let snapshot = host_phases.lock().unwrap().clone();
-            if let Some(Ra2bPhase::IncomingFile { .. }) = snapshot
+            if let Some(Ra2bPhase::IncomingBatch { .. }) = snapshot
                 .into_iter()
-                .find(|phase| matches!(phase, Ra2bPhase::IncomingFile { .. }))
+                .find(|phase| matches!(phase, Ra2bPhase::IncomingBatch { .. }))
             {
                 decision_tx
                     .send(Ra4Decision {
                         accept: true,
-                        target: Some(destination.clone()),
+                        targets: HashMap::from([("ra4a-file".to_owned(), destination.clone())]),
                     })
                     .await
                     .unwrap();
@@ -1460,8 +1612,149 @@ mod tests {
         assert_eq!(sender_result.bytes, bytes.len());
         assert_eq!(host_result.bytes, bytes.len());
         assert_eq!(std::fs::read(&destination).unwrap(), bytes);
-        assert_eq!(sender_result.hash_hex, expected_hash);
+        assert_eq!(sender_result.hash_hex, "per-file SHA-256 verified");
         let _ = std::fs::remove_file(source);
         let _ = std::fs::remove_file(destination);
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn ra4b_batch_preserves_relative_paths_and_per_file_integrity() {
+        let host = Ra2bPeerMaterial::generate(None).unwrap();
+        let host_id = host.relay_id.clone();
+        let sender = Ra2bPeerMaterial::generate(Some(host_id)).unwrap();
+        let host_phases = Arc::new(Mutex::new(Vec::new()));
+        let sender_phases = Arc::new(Mutex::new(Vec::new()));
+        let host_seen = host_phases.clone();
+        let sender_seen = sender_phases.clone();
+        let host_cancel = Ra2bCancellation::new();
+        let (decision_tx, mut decision_rx) = mpsc::channel(1);
+        let suffix = format!(
+            "{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        );
+        let source_root = std::env::temp_dir().join(format!("relay-ra4b-src-{suffix}"));
+        let destination_root = std::env::temp_dir().join(format!("relay-ra4b-dst-{suffix}"));
+        std::fs::create_dir_all(&source_root).unwrap();
+        std::fs::create_dir_all(destination_root.join("photos")).unwrap();
+        let first = vec![0x41; 96 * 1024];
+        // Cross the suspected 128 KiB plateau by a large margin over the
+        // complete Iroh -> TLS -> Hyper -> v2 save path.
+        let second = vec![0x42; 16 * 1024 * 1024];
+        let first_expected = first.clone();
+        let second_expected = second.clone();
+        let first_len = first.len();
+        let second_len = second.len();
+        let first_source = source_root.join("first.txt");
+        let second_source = source_root.join("second.txt");
+        std::fs::write(&first_source, &first).unwrap();
+        std::fs::write(&second_source, &second).unwrap();
+
+        let host_callback: Ra2bStatusCallback =
+            Arc::new(move |phase| host_seen.lock().unwrap().push(phase));
+        let host_task = tokio::spawn(async move {
+            run_ra4_receiver(
+                host,
+                Ra2bPathPreference::ForceDirect,
+                &host_cancel,
+                &host_callback,
+                &mut decision_rx,
+            )
+            .await
+        });
+        let invite = loop {
+            sleep(Duration::from_millis(20)).await;
+            let phases = host_phases.lock().unwrap().clone();
+            if let Some(Ra2bPhase::EndpointReady { invite, .. }) = phases
+                .into_iter()
+                .find(|phase| matches!(phase, Ra2bPhase::EndpointReady { .. }))
+            {
+                break invite;
+            }
+            assert!(!host_task.is_finished(), "RA4B host stopped before publishing invite");
+        };
+        let endpoint = crate::parse_invite(&invite).unwrap().endpoint;
+        let sender_callback: Ra2bStatusCallback =
+            Arc::new(move |phase| sender_seen.lock().unwrap().push(phase));
+        let sender_task = tokio::spawn(async move {
+            run_ra4_batch_sender(
+                endpoint,
+                sender,
+                Ra2bPathPreference::ForceDirect,
+                &Ra2bCancellation::new(),
+                &sender_callback,
+                Ra4BatchSpec {
+                    files: vec![
+                        Ra4FileSpec {
+                            id: "first".to_owned(),
+                            name: "photos/first.txt".to_owned(),
+                            size: first.len() as u64,
+                            file_type: "text/plain".to_owned(),
+                            sha256: Some(hex::encode(Sha256::digest(&first))),
+                            source: Ra4FileSource::Path(first_source),
+                        },
+                        Ra4FileSpec {
+                            id: "second".to_owned(),
+                            name: "photos/second.txt".to_owned(),
+                            size: second.len() as u64,
+                            file_type: "text/plain".to_owned(),
+                            sha256: Some(hex::encode(Sha256::digest(&second))),
+                            source: Ra4FileSource::Path(second_source),
+                        },
+                    ],
+                },
+            )
+            .await
+        });
+
+        loop {
+            sleep(Duration::from_millis(20)).await;
+            let phases = host_phases.lock().unwrap().clone();
+            if let Some(Ra2bPhase::IncomingBatch { files, .. }) = phases
+                .into_iter()
+                .find(|phase| matches!(phase, Ra2bPhase::IncomingBatch { .. }))
+            {
+                assert_eq!(files.len(), 2);
+                assert!(files.iter().any(|file| file.name == "photos/first.txt"));
+                assert!(files.iter().any(|file| file.name == "photos/second.txt"));
+                decision_tx
+                    .send(Ra4Decision {
+                        accept: true,
+                        targets: HashMap::from([
+                            ("first".to_owned(), destination_root.join("photos/first.txt")),
+                            ("second".to_owned(), destination_root.join("photos/second.txt")),
+                        ]),
+                    })
+                    .await
+                    .unwrap();
+                break;
+            }
+            assert!(!sender_task.is_finished(), "sender stopped before RA4B batch prompt");
+        }
+
+        let sender_result = timeout(Duration::from_secs(20), sender_task)
+            .await
+            .expect("sender timeout")
+            .expect("sender join")
+            .expect("sender transfer");
+        let host_result = timeout(Duration::from_secs(20), host_task)
+            .await
+            .expect("host timeout")
+            .expect("host join")
+            .expect("host transfer");
+        assert_eq!(sender_result.bytes, first_len + second_len);
+        assert_eq!(host_result.bytes, first_len + second_len);
+        assert_eq!(std::fs::read(destination_root.join("photos/first.txt")).unwrap(), first_expected);
+        assert_eq!(std::fs::read(destination_root.join("photos/second.txt")).unwrap(), second_expected);
+        assert!(sender_phases
+            .lock()
+            .unwrap()
+            .iter()
+            .any(|phase| matches!(phase, Ra2bPhase::Transferring { total, .. } if *total == (first_len + second_len) as u64)));
+        let _ = std::fs::remove_dir_all(source_root);
+        let _ = std::fs::remove_dir_all(destination_root);
     }
 }

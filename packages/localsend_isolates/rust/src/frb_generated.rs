@@ -3499,11 +3499,11 @@ fn wire__crate__api__ra2b__ra4_respond_impl(
             let mut deserializer =
                 flutter_rust_bridge::for_generated::SseDeserializer::new(message);
             let api_accept = <bool>::sse_decode(&mut deserializer);
-            let api_target_path = <Option<String>>::sse_decode(&mut deserializer);
+            let api_targets_json = <Option<String>>::sse_decode(&mut deserializer);
             deserializer.end();
             transform_result_sse::<_, flutter_rust_bridge::for_generated::anyhow::Error>(
                 (move || {
-                    crate::api::ra2b::ra4_respond(api_accept, api_target_path)?;
+                    crate::api::ra2b::ra4_respond(api_accept, api_targets_json)?;
                     Ok(())
                 })(),
             )

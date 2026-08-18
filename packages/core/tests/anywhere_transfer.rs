@@ -14,6 +14,11 @@ use localsend::model::transfer::{FileContent, FileDto};
 use localsend::relay::{AuthenticatedRelaySession, PathDescriptor, RelayAuthCoordinator};
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
+use std::sync::{
+    atomic::{AtomicU64, Ordering},
+    Arc,
+};
+use std::time::Duration;
 use tokio::sync::{mpsc, oneshot};
 use tokio_util::sync::CancellationToken;
 
@@ -253,6 +258,110 @@ async fn anywhere_http_cannot_start_with_a_non_mutual_lan_session() {
     let result = AnywhereHttpClient::handshake(client_stream, session).await;
     assert!(result.is_err());
     assert_eq!(expected.as_hex().len(), 64);
+}
+
+/// Exercises the real Anywhere Hyper request-body path with a source whose
+/// bounded channel fills at 128 KiB (16 x 8 KiB). This mirrors a SAF provider
+/// that yields small reads and guards against producer/consumer deadlocks.
+#[tokio::test]
+async fn anywhere_streams_small_source_chunks_past_the_128_kib_channel_window() {
+    for size in [256 * 1024, 1024 * 1024, 16 * 1024 * 1024] {
+        tokio::time::timeout(Duration::from_secs(20), transfer_generated_chunks(size))
+            .await
+            .unwrap_or_else(|_| panic!("Anywhere transfer timed out at {size} bytes"));
+    }
+}
+
+async fn transfer_generated_chunks(size: usize) {
+    const CHUNK_SIZE: usize = 8 * 1024;
+
+    let (event_tx, mut event_rx) = mpsc::channel(8);
+    let (server, stop_tx) = server(event_tx).await;
+    let (client_stream, server_stream) = tokio::io::duplex(64 * 1024);
+    let auth = session();
+    server
+        .serve_authenticated_stream(server_stream, auth.clone(), ConnectionOrigin::IrohRelay)
+        .await
+        .unwrap();
+    let client = AnywhereHttpClient::handshake(client_stream, auth).await.unwrap();
+    let file = FileDto {
+        id: "streamed".into(),
+        file_name: "streamed.bin".into(),
+        size: size as u64,
+        file_type: "file".into(),
+        sha256: None,
+        preview: None,
+        metadata: None,
+    };
+
+    let prepare = tokio::spawn(async move {
+        let mut client = client;
+        let result = client
+            .prepare_upload(payload(&file), None, CancellationToken::new())
+            .await;
+        (client, result)
+    });
+    let decision_tx = match event_rx.recv().await.expect("prepare event") {
+        ServerEventV2::PrepareUpload { decision_tx, .. } => decision_tx,
+        other => panic!("unexpected event: {other:?}"),
+    };
+    decision_tx
+        .send(PrepareUploadDecisionV2::Accept(HashSet::from(["streamed".to_owned()])))
+        .unwrap();
+    let (mut client, prepared) = prepare.await.unwrap();
+    let prepared = prepared.unwrap().response.unwrap();
+    let token = prepared.files["streamed"].clone();
+
+    // The producer cannot get more than sixteen chunks ahead of Hyper. If the
+    // request body stops being polled, it will stop exactly around 128 KiB.
+    let (source_tx, source_rx) = mpsc::channel(16);
+    let source_bytes = Arc::new(AtomicU64::new(0));
+    let source_counter = source_bytes.clone();
+    let producer = tokio::spawn(async move {
+        let mut remaining = size;
+        while remaining > 0 {
+            let chunk_len = remaining.min(CHUNK_SIZE);
+            source_tx.send(Bytes::from(vec![0x5a; chunk_len])).await.unwrap();
+            source_counter.fetch_add(chunk_len as u64, Ordering::Relaxed);
+            remaining -= chunk_len;
+        }
+    });
+    let body_bytes = Arc::new(AtomicU64::new(0));
+    let body_counter = body_bytes.clone();
+    let upload = tokio::spawn(async move {
+        client
+            .upload(
+                &prepared.session_id,
+                "streamed",
+                &token,
+                FileContent::Stream(source_rx),
+                size as u64,
+                move |bytes| body_counter.store(bytes, Ordering::Relaxed),
+                CancellationToken::new(),
+            )
+            .await
+    });
+    let path = temp_path("anywhere-small-chunks");
+    let (target_tx, target_rx) = oneshot::channel();
+    match event_rx.recv().await.expect("file upload event") {
+        ServerEventV2::FileUpload { target_tx: responder, .. } => responder
+            .send(FileUploadTarget::Path {
+                path: path.clone(),
+                result_tx: target_tx,
+                progress_tx: None,
+            })
+            .unwrap(),
+        other => panic!("unexpected event: {other:?}"),
+    }
+    producer.await.unwrap();
+    upload.await.unwrap().unwrap();
+    assert_eq!(source_bytes.load(Ordering::Relaxed), size as u64, "source bytes");
+    assert_eq!(body_bytes.load(Ordering::Relaxed), size as u64, "Hyper body bytes");
+    assert_eq!(target_rx.await.unwrap(), Ok(()));
+    assert_eq!(tokio::fs::metadata(&path).await.unwrap().len(), size as u64, "saved bytes");
+    let _ = tokio::fs::remove_file(&path).await;
+    let _ = stop_tx.send(());
+    server.wait_stopped().await;
 }
 
 fn temp_path(prefix: &str) -> PathBuf {

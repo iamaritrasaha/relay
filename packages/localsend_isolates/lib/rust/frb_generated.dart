@@ -312,7 +312,7 @@ abstract class RustLibApi extends BaseApi {
 
   void crateApiRa2BRa4Clear();
 
-  void crateApiRa2BRa4Respond({required bool accept, String? targetPath});
+  void crateApiRa2BRa4Respond({required bool accept, String? targetsJson});
 
   RsRa2bLocalIdentity crateApiRa2BRa2BLocalIdentity();
 
@@ -2227,18 +2227,18 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   );
 
   @override
-  void crateApiRa2BRa4Respond({required bool accept, String? targetPath}) {
+  void crateApiRa2BRa4Respond({required bool accept, String? targetsJson}) {
     return handler.executeSync(
       SyncTask(
         callFfi: () {
           final serializer = SseSerializer(generalizedFrbRustBinding);
           sse_encode_bool(accept, serializer);
-          sse_encode_opt_String(targetPath, serializer);
+          sse_encode_opt_String(targetsJson, serializer);
           return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 73)!;
         },
         codec: SseCodec(decodeSuccessData: sse_decode_unit, decodeErrorData: sse_decode_AnyhowException),
         constMeta: kCrateApiRa2BRa4RespondConstMeta,
-        argValues: [accept, targetPath],
+        argValues: [accept, targetsJson],
         apiImpl: this,
       ),
     );
@@ -2246,7 +2246,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
 
   TaskConstMeta get kCrateApiRa2BRa4RespondConstMeta => const TaskConstMeta(
     debugName: 'ra4_respond',
-    argNames: ['accept', 'targetPath'],
+    argNames: ['accept', 'targetsJson'],
   );
 
   @override

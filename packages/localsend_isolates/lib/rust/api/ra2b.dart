@@ -39,7 +39,7 @@ void ra4SetReceiver() => RustLib.instance.api.crateApiRa2BRa4SetReceiver();
 
 void ra4Clear() => RustLib.instance.api.crateApiRa2BRa4Clear();
 
-void ra4Respond({required bool accept, String? targetPath}) => RustLib.instance.api.crateApiRa2BRa4Respond(accept: accept, targetPath: targetPath);
+void ra4Respond({required bool accept, String? targetsJson}) => RustLib.instance.api.crateApiRa2BRa4Respond(accept: accept, targetsJson: targetsJson);
 
 /// Starts the in-process RA2B host (responder). Emits invite + progress events.
 Stream<RsRa2bEvent> ra2BStartHost({required RsRa2bPathPreference pathPreference, required bool wrongIdentity}) =>

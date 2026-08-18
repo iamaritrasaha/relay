@@ -7,25 +7,32 @@
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex, OnceLock};
 
+use anyhow::Context as _;
 use crate::frb_generated::StreamSink;
 use flutter_rust_bridge::frb;
 use relay_anywhere_ra2b::{
     ActiveSessionGuard, Ra2bPathPreference, Ra2bPeerMaterial, Ra2bPhase, Ra2bRole, Ra4Decision,
-    Ra4FileSource, Ra4FileSpec, cancel_active_session, fresh_unrelated_relay_id, parse_invite,
-    process_identity, process_relay_id, run_proof, run_ra4_receiver, run_ra4_sender,
+    Ra4BatchSpec, Ra4FileSource, Ra4FileSpec, cancel_active_session, fresh_unrelated_relay_id,
+    parse_invite, process_identity, process_relay_id, run_proof, run_ra4_batch_sender,
+    run_ra4_receiver,
     session_is_active,
 };
 
 enum Ra4RuntimeConfig {
     Sender {
-        path: Option<String>,
-        file_descriptor: Option<i32>,
-        name: String,
-        size: u64,
-        file_type: String,
-        sha256: Option<String>,
+        files: Vec<Ra4RuntimeFile>,
     },
     Receiver,
+}
+
+struct Ra4RuntimeFile {
+    path: Option<String>,
+    #[cfg_attr(not(target_os = "android"), allow(dead_code))]
+    file_descriptor: Option<i32>,
+    name: String,
+    size: u64,
+    file_type: String,
+    sha256: Option<String>,
 }
 
 fn ra4_config() -> &'static Mutex<Option<Ra4RuntimeConfig>> {
@@ -138,6 +145,24 @@ impl From<Ra2bPhase> for RsRa2bEvent {
                 .to_string(),
                 category: "prompt".to_owned(),
             },
+            Ra2bPhase::IncomingBatch {
+                files,
+                remote_relay_id,
+            } => Self::Failed {
+                message: serde_json::json!({
+                    "files": files
+                        .into_iter()
+                        .map(|file| serde_json::json!({
+                            "id": file.id,
+                            "name": file.name,
+                            "size": file.size,
+                        }))
+                        .collect::<Vec<_>>(),
+                    "remoteRelayId": remote_relay_id,
+                })
+                .to_string(),
+                category: "prompt".to_owned(),
+            },
             Ra2bPhase::Transferring { bytes, total } => Self::Transferring { bytes, total },
             Ra2bPhase::Complete {
                 path,
@@ -197,8 +222,9 @@ pub fn ra2b_cancel_session() {
     cancel_active_session();
 }
 
-/// Configures the one-file RA4A sender without copying the file into Dart.
-/// Android passes a SAF descriptor; desktop passes a regular path.
+/// Adds one real file to the RA4B sender batch without copying it into Dart.
+/// Android passes a SAF descriptor; desktop passes a regular path. Call
+/// [ra4_clear] before beginning a new batch.
 #[frb(sync)]
 pub fn ra4_set_sender(
     path: Option<String>,
@@ -215,20 +241,25 @@ pub fn ra4_set_sender(
     if file_descriptor.is_some() {
         anyhow::bail!("file descriptors are only supported on Android");
     }
-    *ra4_config().lock().unwrap_or_else(|poisoned| poisoned.into_inner()) =
-        Some(Ra4RuntimeConfig::Sender {
-            path,
-            file_descriptor,
-            name,
-            size,
-            file_type,
-            sha256,
-        });
+    let file = Ra4RuntimeFile {
+        path,
+        file_descriptor,
+        name,
+        size,
+        file_type,
+        sha256,
+    };
+    let mut config = ra4_config().lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+    match config.as_mut() {
+        Some(Ra4RuntimeConfig::Sender { files }) => files.push(file),
+        Some(Ra4RuntimeConfig::Receiver) => anyhow::bail!("RA4B receiver is configured; clear it before selecting files"),
+        None => *config = Some(Ra4RuntimeConfig::Sender { files: vec![file] }),
+    }
     Ok(())
 }
 
-/// Configures the one-file RA4A receiver. The actual save target is supplied
-/// per transfer by the approval UI and is never persisted as trust.
+/// Configures the RA4B receiver. Save targets are supplied per batch by the
+/// existing approval/save-target machinery and are never persisted as trust.
 #[frb(sync)]
 pub fn ra4_set_receiver() {
     *ra4_config().lock().unwrap_or_else(|poisoned| poisoned.into_inner()) =
@@ -243,20 +274,24 @@ pub fn ra4_clear() {
         .unwrap_or_else(|poisoned| poisoned.into_inner()) = None;
 }
 
-/// Answers the one session-scoped incoming-file prompt.
+/// Answers the session-scoped incoming batch prompt.
 #[frb(sync)]
-pub fn ra4_respond(accept: bool, target_path: Option<String>) -> anyhow::Result<()> {
+pub fn ra4_respond(accept: bool, targets_json: Option<String>) -> anyhow::Result<()> {
     let sender = ra4_decision_sender()
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner())
         .clone()
-        .ok_or_else(|| anyhow::anyhow!("no RA4A transfer is awaiting approval"))?;
+        .ok_or_else(|| anyhow::anyhow!("no RA4B transfer is awaiting approval"))?;
+    let targets = match targets_json {
+        Some(json) if accept => serde_json::from_str(&json).context("parse RA4B save targets")?,
+        _ => Default::default(),
+    };
     sender
         .try_send(Ra4Decision {
             accept,
-            target: target_path.map(PathBuf::from),
+            targets,
         })
-        .map_err(|_| anyhow::anyhow!("RA4A approval prompt is no longer active"))
+        .map_err(|_| anyhow::anyhow!("RA4B approval prompt is no longer active"))
 }
 
 /// Starts the in-process RA2B host (responder). Emits invite + progress events.
@@ -343,42 +378,41 @@ async fn run_session(
     });
     let result = match (config, role) {
         (
-            Some(Ra4RuntimeConfig::Sender {
-                path,
-                file_descriptor,
-                name,
-                size,
-                file_type,
-                sha256,
-            }),
+            Some(Ra4RuntimeConfig::Sender { files }),
             Ra2bRole::Initiator { remote_endpoint },
         ) => {
-            let source = if let Some(path) = path {
-                Ra4FileSource::Path(PathBuf::from(path))
-            } else {
-                #[cfg(target_os = "android")]
-                {
-                    Ra4FileSource::FileDescriptor(file_descriptor.expect("validated descriptor"))
-                }
-                #[cfg(not(target_os = "android"))]
-                {
-                    unreachable!("non-Android descriptor rejected above")
-                }
-            };
-            run_ra4_sender(
+            let specs = files
+                .into_iter()
+                .map(|file| {
+                    let source = if let Some(path) = file.path {
+                        Ra4FileSource::Path(PathBuf::from(path))
+                    } else {
+                        #[cfg(target_os = "android")]
+                        {
+                            Ra4FileSource::FileDescriptor(file.file_descriptor.expect("validated descriptor"))
+                        }
+                        #[cfg(not(target_os = "android"))]
+                        {
+                            unreachable!("non-Android descriptor rejected above")
+                        }
+                    };
+                    Ra4FileSpec {
+                        id: uuid::Uuid::new_v4().to_string(),
+                        name: file.name,
+                        size: file.size,
+                        file_type: file.file_type,
+                        sha256: file.sha256,
+                        source,
+                    }
+                })
+                .collect();
+            run_ra4_batch_sender(
                 remote_endpoint,
                 peer,
                 path_preference,
                 guard.cancellation(),
                 &callback,
-                Ra4FileSpec {
-                    id: uuid::Uuid::new_v4().to_string(),
-                    name,
-                    size,
-                    file_type,
-                    sha256,
-                    source,
-                },
+                Ra4BatchSpec { files: specs },
             )
             .await
         }
