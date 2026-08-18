@@ -1,35 +1,37 @@
 use std::{
     io::ErrorKind,
     sync::{
-        Arc,
         atomic::{AtomicBool, Ordering},
+        Arc,
     },
     time::{Duration, Instant},
 };
 
-use anyhow::{Context as _, Result, bail, ensure};
-use iroh::{
-    EndpointAddr, RelayMode,
-    endpoint::{Connection, Endpoint, presets},
+use anyhow::{bail, ensure, Context as _, Result};
+use iroh::EndpointAddr;
+use localsend::anywhere::{
+    authenticate_initiator, authenticate_server, authorize_unknown_authenticated, bind_endpoint,
+    empty_trust, selected_path, stream::client_peer_certificate_fingerprint,
+    stream::server_peer_certificate_fingerprint, stream::IrohBiStream, AnywhereEndpoint,
+    AnywhereError, InnerTlsPeer, PathPreference,
 };
-use localsend::{anywhere_dev::inner_tls::InnerTlsPeer, crypto::relay_identity::RelayIdentity};
+use localsend::crypto::relay_identity::RelayIdentity;
+use localsend::relay::{PathDescriptor, RelayId, TransferAuthorization};
 use rand::RngCore;
 use sha2::{Digest, Sha256};
 use tokio::{
     io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt},
     sync::Notify,
-    time::{sleep, timeout},
+    time::sleep,
 };
 
-use crate::{
-    invite::Ra2bInviteV1,
-    iroh_stream::{
-        IrohBiStream, client_peer_certificate_fingerprint, server_peer_certificate_fingerprint,
-    },
-    relay_auth::{IDENTITY_REJECTED, RelayAuthPeer, authenticate_client, authenticate_server},
-};
+#[cfg(test)]
+use tokio::time::timeout;
 
-pub const ALPN: &[u8] = b"relay-anywhere-ra2b/1";
+use crate::{invite::Ra2bInviteV1, relay_auth::IDENTITY_REJECTED};
+
+#[allow(dead_code)]
+pub const ALPN: &[u8] = localsend::anywhere::ALPN;
 pub const ONE_MIB: usize = 1024 * 1024;
 const CHUNK_SIZE: usize = 16 * 1024;
 const SESSION_TIMEOUT: Duration = Duration::from_secs(120);
@@ -77,9 +79,9 @@ pub enum Ra2bRole {
 
 #[derive(Clone)]
 pub struct Ra2bPeerMaterial {
+    pub identity: Arc<RelayIdentity>,
     pub relay_id: String,
     pub tls: InnerTlsPeer,
-    pub auth: RelayAuthPeer,
     pub expected_remote_relay_id: Option<String>,
 }
 
@@ -106,11 +108,11 @@ impl Ra2bPeerMaterial {
             crate::invite::validate_relay_id(expected)?;
         }
         let tls = InnerTlsPeer::generate()?;
-        let auth = RelayAuthPeer::from_arc(identity, tls.cert_fingerprint)?;
+        let relay_id = identity.relay_id()?;
         Ok(Self {
-            relay_id: auth.relay_id.clone(),
+            identity,
+            relay_id,
             tls,
-            auth,
             expected_remote_relay_id,
         })
     }
@@ -208,6 +210,45 @@ pub fn error_category(error: &anyhow::Error) -> &'static str {
         "payload"
     } else {
         "transport"
+    }
+}
+
+fn map_anywhere(error: AnywhereError) -> anyhow::Error {
+    match error {
+        AnywhereError::ExpectedIdentityMismatch { .. } | AnywhereError::RelayProof => {
+            anyhow::anyhow!("{IDENTITY_REJECTED}")
+        }
+        AnywhereError::Cancelled => anyhow::anyhow!("cancelled"),
+        AnywhereError::Timeout => anyhow::anyhow!("timed out"),
+        AnywhereError::ProtocolCompletion => anyhow::anyhow!("session result / completion frame"),
+        AnywhereError::AuthorizationDenied => anyhow::anyhow!("transfer denied"),
+        AnywhereError::Tls => anyhow::anyhow!("inner TLS failed"),
+        AnywhereError::Transport => anyhow::anyhow!("transport failed"),
+    }
+}
+
+fn to_path_preference(preference: Ra2bPathPreference) -> PathPreference {
+    match preference {
+        Ra2bPathPreference::Auto => PathPreference::Auto,
+        Ra2bPathPreference::ForceDirect => PathPreference::ForceDirect,
+        Ra2bPathPreference::ForceRelay => PathPreference::ForceRelay,
+    }
+}
+
+fn path_class(path: &PathDescriptor) -> Ra2bPathClass {
+    match path {
+        PathDescriptor::IrohRelay { .. } | PathDescriptor::Relayed { .. } => Ra2bPathClass::Relay,
+        _ => Ra2bPathClass::Direct,
+    }
+}
+
+fn approve_authenticated_session(
+    session: &localsend::relay::AuthenticatedRelaySession,
+) -> Result<()> {
+    let decision = authorize_unknown_authenticated(session, &empty_trust());
+    match decision.outcome {
+        TransferAuthorization::Denied => bail!("transfer denied"),
+        TransferAuthorization::PromptRequired | TransferAuthorization::AutoAccept => Ok(()),
     }
 }
 
@@ -327,7 +368,7 @@ pub async fn run_proof(
 }
 
 async fn run_responder(
-    endpoint: Endpoint,
+    endpoint: AnywhereEndpoint,
     peer: Ra2bPeerMaterial,
     path_preference: Ra2bPathPreference,
     cancellation: &Ra2bCancellation,
@@ -336,7 +377,7 @@ async fn run_responder(
     let incoming = tokio::select! {
         _ = cancellation.cancelled() => bail!("cancelled"),
         _ = sleep(SESSION_TIMEOUT) => bail!("timed out waiting for Iroh connection"),
-        incoming = endpoint.accept() => incoming.context("accept Iroh connection")?,
+        incoming = endpoint.accept() => incoming.map_err(map_anywhere)?,
     };
     let connection = tokio::select! {
         _ = cancellation.cancelled() => bail!("cancelled"),
@@ -349,12 +390,20 @@ async fn run_responder(
     ));
     on_status(Ra2bPhase::IrohConnected);
 
-    let path = selected_path(&connection, path_preference).await?;
-    diag(format!("PATH={}", path.as_str().to_ascii_lowercase()));
     let (send, recv) = connection
         .accept_bi()
         .await
         .context("accept Iroh bidirectional stream")?;
+    let path = selected_path(&connection, to_path_preference(path_preference))
+        .await
+        .unwrap_or(PathDescriptor::InternetDirect {
+            host: String::new(),
+            port: None,
+        });
+    diag(format!(
+        "PATH={}",
+        path_class(&path).as_str().to_ascii_lowercase()
+    ));
     diag("INNER_TLS_START");
     let mut tls = peer
         .tls
@@ -366,14 +415,23 @@ async fn run_responder(
     on_status(Ra2bPhase::TlsAuthenticated);
 
     let observed_client_cert = server_peer_certificate_fingerprint(&tls)?;
-    let remote_relay_id = authenticate_server(
+    let expected = peer
+        .expected_remote_relay_id
+        .as_deref()
+        .map(RelayId::from_expected_canonical_hex)
+        .transpose()?;
+    let session = authenticate_server(
         &mut tls,
-        &peer.auth,
-        peer.expected_remote_relay_id.as_deref(),
+        &peer.identity,
+        peer.tls.cert_fingerprint,
+        expected.as_ref(),
         observed_client_cert,
+        path.clone(),
     )
     .await
-    .context("mutual Relay authentication on responder")?;
+    .map_err(map_anywhere)?;
+    approve_authenticated_session(&session)?;
+    let remote_relay_id = session.remote_relay_id().as_hex();
     diag(format!(
         "AUTH_OK local={} remote={}",
         relay_id_prefix(&peer.relay_id),
@@ -385,7 +443,7 @@ async fn run_responder(
 
     let (bytes, hash) = receive_payload(&mut tls, cancellation, on_status).await?;
     Ok(Ra2bProofResult {
-        path,
+        path: path_class(&path),
         bytes,
         hash_hex: hex::encode(hash),
         local_relay_id: peer.relay_id,
@@ -395,7 +453,7 @@ async fn run_responder(
 }
 
 async fn run_initiator(
-    endpoint: Endpoint,
+    endpoint: AnywhereEndpoint,
     peer: Ra2bPeerMaterial,
     remote_endpoint: EndpointAddr,
     path_preference: Ra2bPathPreference,
@@ -406,12 +464,11 @@ async fn run_initiator(
         .expected_remote_relay_id
         .clone()
         .context("join requires expected host RelayId")?;
+    let expected = RelayId::from_expected_canonical_hex(&expected)?;
     let connection = tokio::select! {
         _ = cancellation.cancelled() => bail!("cancelled"),
         _ = sleep(SESSION_TIMEOUT) => bail!("timed out connecting to remote Iroh endpoint"),
-        connection = endpoint.connect(remote_endpoint, ALPN) => {
-            connection.context("connect Iroh endpoint")?
-        }
+        connection = endpoint.connect(remote_endpoint) => connection.map_err(map_anywhere)?,
     };
     diag(format!(
         "IROH_CONNECT local={}",
@@ -419,14 +476,22 @@ async fn run_initiator(
     ));
     on_status(Ra2bPhase::IrohConnected);
 
-    let path = selected_path(&connection, path_preference).await?;
-    diag(format!("PATH={}", path.as_str().to_ascii_lowercase()));
     let (send, recv) = connection
         .open_bi()
         .await
         .context("open Iroh bidirectional stream")?;
+    let path = selected_path(&connection, to_path_preference(path_preference))
+        .await
+        .unwrap_or(PathDescriptor::InternetDirect {
+            host: String::new(),
+            port: None,
+        });
     let server_name = rustls::pki_types::ServerName::try_from("localhost")
         .context("parse inner TLS server name")?;
+    diag(format!(
+        "PATH={}",
+        path_class(&path).as_str().to_ascii_lowercase()
+    ));
     diag("INNER_TLS_START");
     let mut tls = peer
         .tls
@@ -438,10 +503,18 @@ async fn run_initiator(
     on_status(Ra2bPhase::TlsAuthenticated);
 
     let observed_server_cert = client_peer_certificate_fingerprint(&tls)?;
-    let remote_relay_id =
-        authenticate_client(&mut tls, &peer.auth, &expected, observed_server_cert)
-            .await
-            .context("mutual Relay authentication on initiator")?;
+    let session = authenticate_initiator(
+        &mut tls,
+        &peer.identity,
+        peer.tls.cert_fingerprint,
+        &expected,
+        observed_server_cert,
+        path.clone(),
+    )
+    .await
+    .map_err(map_anywhere)?;
+    approve_authenticated_session(&session)?;
+    let remote_relay_id = session.remote_relay_id().as_hex();
     diag(format!(
         "AUTH_OK local={} remote={}",
         relay_id_prefix(&peer.relay_id),
@@ -453,7 +526,7 @@ async fn run_initiator(
 
     let (bytes, hash) = send_payload(&mut tls, cancellation, on_status).await?;
     Ok(Ra2bProofResult {
-        path,
+        path: path_class(&path),
         bytes,
         hash_hex: hex::encode(hash),
         local_relay_id: peer.relay_id,
@@ -464,111 +537,43 @@ async fn run_initiator(
 
 async fn build_endpoint(
     path_preference: Ra2bPathPreference,
-) -> Result<(Endpoint, Option<Box<dyn std::any::Any + Send>>)> {
+) -> Result<(AnywhereEndpoint, Option<Box<dyn std::any::Any + Send>>)> {
     match path_preference {
-        Ra2bPathPreference::Auto => {
-            let endpoint = Endpoint::builder(presets::N0)
-                .relay_mode(RelayMode::Default)
-                .alpns(vec![ALPN.to_vec()])
-                .bind()
-                .await?;
-            Ok((endpoint, None))
-        }
         Ra2bPathPreference::ForceRelay => {
             #[cfg(feature = "linux-harness")]
             {
                 let (relay_map, _relay_url, relay_guard) = iroh::test_utils::run_relay_server()
                     .await
                     .context("start stock self-hosted iroh-relay for forced relay proof")?;
-                let endpoint = Endpoint::builder(presets::N0)
-                    .relay_mode(RelayMode::Custom(relay_map))
+                let endpoint = iroh::endpoint::Endpoint::builder(iroh::endpoint::presets::N0)
+                    .relay_mode(iroh::RelayMode::Custom(relay_map))
                     .ca_tls_config(iroh::tls::CaTlsConfig::insecure_skip_verify())
                     .clear_ip_transports()
                     .alpns(vec![ALPN.to_vec()])
                     .bind()
                     .await?;
-                Ok((endpoint, Some(Box::new(relay_guard))))
+                Ok((
+                    localsend::anywhere::wrap_endpoint(endpoint),
+                    Some(Box::new(relay_guard)),
+                ))
             }
             #[cfg(not(feature = "linux-harness"))]
             {
-                let endpoint = Endpoint::builder(presets::N0)
-                    .relay_mode(RelayMode::Default)
-                    .clear_ip_transports()
-                    .alpns(vec![ALPN.to_vec()])
-                    .bind()
-                    .await?;
-                Ok((endpoint, None))
+                Ok((
+                    bind_endpoint(PathPreference::ForceRelay)
+                        .await
+                        .map_err(map_anywhere)?,
+                    None,
+                ))
             }
         }
-        Ra2bPathPreference::ForceDirect => {
-            let endpoint = Endpoint::builder(presets::Minimal)
-                .relay_mode(RelayMode::Disabled)
-                .alpns(vec![ALPN.to_vec()])
-                .bind()
-                .await?;
-            Ok((endpoint, None))
-        }
+        other => Ok((
+            bind_endpoint(to_path_preference(other))
+                .await
+                .map_err(map_anywhere)?,
+            None,
+        )),
     }
-}
-
-async fn selected_path(
-    connection: &Connection,
-    preference: Ra2bPathPreference,
-) -> Result<Ra2bPathClass> {
-    let expected = match preference {
-        Ra2bPathPreference::ForceDirect => Ra2bPathClass::Direct,
-        Ra2bPathPreference::ForceRelay => Ra2bPathClass::Relay,
-        Ra2bPathPreference::Auto => {
-            return timeout(Duration::from_secs(30), async {
-                loop {
-                    if let Some(path) = connection
-                        .paths()
-                        .iter()
-                        .find(|candidate| candidate.is_selected())
-                    {
-                        return Ok(if path.is_relay() {
-                            Ra2bPathClass::Relay
-                        } else if path.is_ip() {
-                            Ra2bPathClass::Direct
-                        } else {
-                            bail!("selected Iroh path was neither IP nor relay");
-                        });
-                    }
-                    sleep(Duration::from_millis(25)).await;
-                }
-            })
-            .await
-            .context("Iroh did not report a selected path")?;
-        }
-    };
-
-    timeout(Duration::from_secs(30), async {
-        loop {
-            if let Some(path) = connection
-                .paths()
-                .iter()
-                .find(|candidate| candidate.is_selected())
-            {
-                let actual = if path.is_relay() {
-                    Ra2bPathClass::Relay
-                } else if path.is_ip() {
-                    Ra2bPathClass::Direct
-                } else {
-                    bail!("selected Iroh path was neither IP nor relay");
-                };
-                ensure!(
-                    actual == expected,
-                    "selected {} path, expected {}",
-                    actual.as_str(),
-                    expected.as_str()
-                );
-                return Ok(actual);
-            }
-            sleep(Duration::from_millis(25)).await;
-        }
-    })
-    .await
-    .context("Iroh did not report the expected selected path")?
 }
 
 async fn send_payload<S>(
@@ -829,11 +834,9 @@ mod tests {
                 .any(|phase| matches!(phase, Ra2bPhase::Transferring { .. })),
             "payload must not start before identity verification"
         );
-        assert!(
-            !join_snapshot
-                .iter()
-                .any(|phase| matches!(phase, Ra2bPhase::RelayIdentityAuthenticated { .. }))
-        );
+        assert!(!join_snapshot
+            .iter()
+            .any(|phase| matches!(phase, Ra2bPhase::RelayIdentityAuthenticated { .. })));
 
         host_cancel.cancel();
         let _ = timeout(Duration::from_secs(8), host_task).await;

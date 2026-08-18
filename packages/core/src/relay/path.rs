@@ -18,6 +18,10 @@ pub enum PathDescriptor {
     Relayed {
         hint: Option<String>,
     },
+    /// Iroh relayed path. Routing metadata only; never a Relay trust anchor.
+    IrohRelay {
+        hint: Option<String>,
+    },
 }
 
 impl PathDescriptor {

@@ -6,6 +6,8 @@ use std::{
 use iroh::endpoint::{RecvStream, SendStream};
 use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
 
+use crate::crypto::cert::fingerprint_digest_from_cert_der;
+
 pub struct IrohBiStream {
     send: SendStream,
     recv: RecvStream,
@@ -14,13 +16,6 @@ pub struct IrohBiStream {
 impl IrohBiStream {
     pub fn new(send: SendStream, recv: RecvStream) -> Self {
         Self { send, recv }
-    }
-
-    #[allow(dead_code)]
-    pub fn reset_send(&mut self) -> anyhow::Result<()> {
-        self.send
-            .reset(0_u8.into())
-            .map_err(|error| anyhow::anyhow!("reset Iroh QUIC send stream: {error}"))
     }
 }
 
@@ -75,8 +70,6 @@ where
 fn peer_certificate_fingerprint(
     certificates: Option<&[rustls::pki_types::CertificateDer<'_>]>,
 ) -> anyhow::Result<[u8; 32]> {
-    use localsend::crypto::cert::fingerprint_digest_from_cert_der;
-
     let leaf = certificates
         .and_then(|certs| certs.first())
         .ok_or_else(|| anyhow::anyhow!("inner TLS peer did not present a certificate"))?;

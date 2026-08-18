@@ -24,9 +24,15 @@ impl RelayId {
 
     /// Parses a hex RelayId that has already been returned by proof verification.
     pub(crate) fn from_verified_hex(hex: &str) -> anyhow::Result<Self> {
-        parse_sha256_hex(hex)
-            .map(|digest| Self { digest })
-            .ok_or_else(|| anyhow::anyhow!("invalid verified RelayId encoding"))
+        parse_canonical_hex(hex).ok_or_else(|| anyhow::anyhow!("invalid verified RelayId encoding"))
+    }
+
+    /// Canonical uppercase hex of a RelayId the local user/app targeted
+    /// (invite or stored binding). This is **not** a proof that a peer is this
+    /// identity; [`super::coordinator::RelayAuthCoordinator`] still requires a
+    /// matching cryptographic proof.
+    pub fn from_expected_canonical_hex(hex: &str) -> anyhow::Result<Self> {
+        parse_canonical_hex(hex).ok_or_else(|| anyhow::anyhow!("invalid expected RelayId encoding"))
     }
 
     /// Uppercase hex encoding (64 characters), matching existing RelayId strings.
@@ -72,6 +78,12 @@ impl ClaimedRelayId {
     pub fn as_untrusted_text(&self) -> &str {
         &self.value
     }
+}
+
+fn parse_canonical_hex(hex: &str) -> Option<RelayId> {
+    parse_sha256_hex(hex)
+        .filter(|_| hex.bytes().all(|b| !b.is_ascii_lowercase()))
+        .map(|digest| RelayId { digest })
 }
 
 pub(crate) fn parse_sha256_hex(hex: &str) -> Option<[u8; 32]> {

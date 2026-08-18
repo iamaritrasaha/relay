@@ -2886,6 +2886,7 @@ dependencies = [
  "hyper",
  "hyper-util",
  "if-addrs",
+ "iroh",
  "libc",
  "lru",
  "pem 4.0.0",
