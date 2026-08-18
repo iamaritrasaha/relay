@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:file_selector/file_selector.dart';
 import 'package:flutter/foundation.dart';
@@ -13,17 +14,35 @@ import 'package:localsend_app/pages/ra2b_qr_scanner_page.dart';
 import 'package:localsend_app/util/native/channel/android_channel.dart' as app_android_channel;
 import 'package:localsend_app/util/native/cross_file_converters.dart';
 import 'package:localsend_app/util/native/directories.dart';
+import 'package:localsend_app/util/send_ignore.dart';
 import 'package:localsend_app/widget/relay_symbol.dart';
-import 'package:localsend_isolates/src/task/server/file_saver.dart';
 import 'package:localsend_isolates/rust/api/cancel.dart' as rust_cancel;
 import 'package:localsend_isolates/rust/api/crypto.dart' as rust_crypto;
 import 'package:localsend_isolates/rust/api/ra2b.dart' as rust_ra2b;
+import 'package:localsend_isolates/src/task/server/file_saver.dart';
 import 'package:localsend_isolates/util/android_channel.dart' as isolate_android_channel;
+import 'package:localsend_isolates/util/content_uri_helper.dart';
 import 'package:mime/mime.dart';
+import 'package:path/path.dart' as p;
 import 'package:permission_handler/permission_handler.dart';
 import 'package:pretty_qr_code/pretty_qr_code.dart';
 
 enum Ra2bScreen { home, host, join }
+
+class _Ra4SelectedFile {
+  const _Ra4SelectedFile({required this.file, required this.sha256});
+
+  final CrossFile file;
+  final String? sha256;
+}
+
+class _Ra4IncomingFile {
+  const _Ra4IncomingFile({required this.id, required this.name, required this.size});
+
+  final String id;
+  final String name;
+  final int size;
+}
 
 enum Ra2bUiStage {
   idle,
@@ -144,7 +163,7 @@ Ra2bSessionSnapshot snapshotFromEvent(rust_ra2b.RsRa2bEvent event, Ra2bSessionSn
     transferring: (value) => Ra2bSessionSnapshot(
       stage: Ra2bUiStage.transferring,
       headline: 'TRANSFERRING',
-      detail: '${(value.bytes.toInt() / 1024).floor()} KiB / 1024 KiB',
+      detail: '${value.bytes} / ${value.total} bytes',
       invite: previous.invite,
       localRelayId: previous.localRelayId,
       remoteRelayId: previous.remoteRelayId,
@@ -175,10 +194,12 @@ Ra2bSessionSnapshot snapshotFromEvent(rust_ra2b.RsRa2bEvent event, Ra2bSessionSn
       if (value.category == 'prompt') {
         try {
           final payload = jsonDecode(value.message) as Map<String, dynamic>;
+          final files = (payload['files'] as List<dynamic>?) ?? const <dynamic>[];
+          final total = files.fold<int>(0, (sum, value) => sum + ((value as Map<String, dynamic>)['size'] as num).toInt());
           return Ra2bSessionSnapshot(
             stage: Ra2bUiStage.incomingPrompt,
-            headline: 'INCOMING FILE',
-            detail: '${payload['name']} · ${payload['size']} bytes',
+            headline: files.length == 1 ? 'INCOMING FILE' : 'INCOMING BATCH',
+            detail: files.isEmpty ? '${payload['name']} · ${payload['size']} bytes' : '${files.length} files · $total bytes',
             invite: previous.invite,
             localRelayId: previous.localRelayId,
             remoteRelayId: payload['remoteRelayId'] as String?,
@@ -271,12 +292,10 @@ class _Ra2bProofPageState extends State<Ra2bProofPage> {
   String? _error;
   String? _cameraMessage;
   bool _busy = false;
-  CrossFile? _ra4File;
-  String? _ra4Sha256;
+  List<_Ra4SelectedFile> _ra4Files = const [];
   bool _ra4Receiver = false;
   bool _ra4Hashing = false;
-  String? _incomingName;
-  int? _incomingSize;
+  List<_Ra4IncomingFile> _incomingFiles = const [];
 
   String get _localRelayId => widget.localRelayId;
 
@@ -309,37 +328,24 @@ class _Ra2bProofPageState extends State<Ra2bProofPage> {
     rust_ra2b.ra4Clear();
   }
 
-  Future<void> _selectRa4File() async {
+  Future<void> _selectRa4Files() async {
     if (_busy || _ra4Hashing) {
       return;
     }
     try {
-      final CrossFile? file;
+      final List<CrossFile> files;
       if (defaultTargetPlatform == TargetPlatform.android) {
         final picked = await app_android_channel.pickFilesAndroid();
-        file = picked == null || picked.isEmpty ? null : await CrossFileConverters.convertFileInfo(picked.first);
+        if (picked == null || picked.isEmpty) {
+          return;
+        }
+        files = [for (final file in picked) await CrossFileConverters.convertFileInfo(file)];
       } else {
-        final picked = await openFile();
-        file = picked == null ? null : await CrossFileConverters.convertXFile(picked);
+        files = [for (final file in await openFiles()) await CrossFileConverters.convertXFile(file)];
       }
-      if (file == null) {
-        return;
-      }
-      setState(() {
-        _ra4Hashing = true;
-        _error = null;
-      });
-      final hash = await _hashRa4File(file);
-      if (!mounted) {
-        return;
-      }
-      setState(() {
-        _ra4File = file;
-        _ra4Sha256 = hash;
-        _ra4Hashing = false;
-      });
+      await _setRa4Files(files);
     } catch (error, stack) {
-      debugPrint('RA4A file selection failed: $error\n$stack');
+      debugPrint('RA4B file selection failed: $error\n$stack');
       if (mounted) {
         setState(() {
           _ra4Hashing = false;
@@ -347,6 +353,120 @@ class _Ra2bProofPageState extends State<Ra2bProofPage> {
         });
       }
     }
+  }
+
+  Future<void> _selectRa4Folder() async {
+    if (_busy || _ra4Hashing) {
+      return;
+    }
+    try {
+      final List<CrossFile> files;
+      if (defaultTargetPlatform == TargetPlatform.android) {
+        final picked = await app_android_channel.pickDirectoryAndroid();
+        if (picked == null) {
+          return;
+        }
+        final basePath = ContentUriHelper.getPathFromTreeUri(picked.directoryUri);
+        final folderName = basePath == null ? null : ContentUriHelper.getEntityNameFromPath(basePath);
+        if (basePath == null || folderName == null) {
+          throw StateError('Could not derive folder-relative paths from the selected SAF directory.');
+        }
+        files = [];
+        for (final info in picked.files) {
+          final relative = ContentUriHelper.guessRelativePathFromPickedFileContentUri(
+            folderContentUri: picked.directoryUri,
+            basePath: basePath,
+            folderName: folderName,
+            uri: info.uri,
+          );
+          if (relative == null) {
+            continue;
+          }
+          final converted = await CrossFileConverters.convertFileInfo(info);
+          files.add(
+            CrossFile(
+              name: relative,
+              fileType: converted.fileType,
+              size: converted.size,
+              thumbnail: null,
+              asset: null,
+              path: converted.path,
+              bytes: null,
+              lastModified: converted.lastModified,
+              lastAccessed: converted.lastAccessed,
+            ),
+          );
+        }
+      } else {
+        final directory = await getDirectoryPath();
+        if (directory == null) {
+          return;
+        }
+        final root = Directory(directory);
+        final rootName = p.basename(directory);
+        final sendIgnore = SendIgnore();
+        files = [];
+        await for (final entity in root.list(recursive: true)) {
+          if (entity is! File) {
+            continue;
+          }
+          final innerRelative = p.relative(entity.path, from: directory).replaceAll('\\', '/');
+          if (sendIgnore.isIgnoreFile(p.basename(entity.path))) {
+            sendIgnore.loadIgnoreContent(
+              parentPath: innerRelative.contains('/') ? p.dirname(innerRelative) : null,
+              ignoreContents: await entity.readAsLines(),
+            );
+            continue;
+          }
+          if (sendIgnore.isIgnored(innerRelative)) {
+            continue;
+          }
+          final converted = await CrossFileConverters.convertFile(entity);
+          final relative = '$rootName/$innerRelative';
+          files.add(
+            CrossFile(
+              name: relative,
+              fileType: converted.fileType,
+              size: converted.size,
+              thumbnail: null,
+              asset: null,
+              path: converted.path,
+              bytes: null,
+              lastModified: converted.lastModified,
+              lastAccessed: converted.lastAccessed,
+            ),
+          );
+        }
+      }
+      if (files.isEmpty) {
+        setState(() => _error = 'The selected folder has no transferable files. Empty directories follow existing Relay semantics.');
+        return;
+      }
+      await _setRa4Files(files);
+    } catch (error, stack) {
+      debugPrint('RA4B folder selection failed: $error\n$stack');
+      if (mounted) {
+        setState(() => _error = 'Could not select or prepare the folder.');
+      }
+    }
+  }
+
+  Future<void> _setRa4Files(List<CrossFile> files) async {
+    setState(() {
+      _ra4Hashing = true;
+      _error = null;
+    });
+    final selected = <_Ra4SelectedFile>[];
+    for (final file in files) {
+      selected.add(_Ra4SelectedFile(file: file, sha256: await _hashRa4File(file)));
+    }
+    if (!mounted) {
+      return;
+    }
+    setState(() {
+      _ra4Files = selected;
+      _ra4Hashing = false;
+    });
   }
 
   Future<String?> _hashRa4File(CrossFile file) async {
@@ -368,30 +488,30 @@ class _Ra2bProofPageState extends State<Ra2bProofPage> {
   }
 
   Future<void> _configureRa4Sender() async {
-    final file = _ra4File;
-    if (file == null) {
-      throw StateError('Select one file first');
+    if (_ra4Files.isEmpty) {
+      throw StateError('Select files or a folder first');
     }
-    String? path = file.path;
-    int? fileDescriptor;
-    if (path != null && path.startsWith('content://')) {
-      fileDescriptor = await isolate_android_channel.getFileDescriptorAndroid(uri: path);
-      path = null;
+    _clearRa4Native();
+    for (final selected in _ra4Files) {
+      final file = selected.file;
+      String? path = file.path;
+      int? fileDescriptor;
+      if (path != null && path.startsWith('content://')) {
+        fileDescriptor = await isolate_android_channel.getFileDescriptorAndroid(uri: path);
+        path = null;
+      }
+      rust_ra2b.ra4SetSender(
+        path: path,
+        fileDescriptor: fileDescriptor,
+        name: file.name,
+        size: BigInt.from(file.size),
+        fileType: lookupMimeType(file.name) ?? 'application/octet-stream',
+        sha256: selected.sha256,
+      );
     }
-    rust_ra2b.ra4SetSender(
-      path: path,
-      fileDescriptor: fileDescriptor,
-      name: file.name,
-      size: BigInt.from(file.size),
-      fileType: lookupMimeType(file.name) ?? 'application/octet-stream',
-      sha256: _ra4Sha256,
-    );
   }
 
   void _openRa4Host() {
-    if (widget.bindNative) {
-      rust_ra2b.ra4SetReceiver();
-    }
     setState(() {
       _ra4Receiver = true;
       _screen = Ra2bScreen.host;
@@ -417,30 +537,33 @@ class _Ra2bProofPageState extends State<Ra2bProofPage> {
       rust_ra2b.ra4Respond(accept: false);
       return;
     }
-    final name = _incomingName;
-    final size = _incomingSize;
-    if (name == null || size == null) {
+    if (_incomingFiles.isEmpty) {
       rust_ra2b.ra4Respond(accept: false);
       return;
     }
     try {
       final destination = await getDefaultDestinationDirectory();
       final cache = await getCacheDirectory();
-      final target = await prepareFileSaveTarget(
-        destinationDirectory: destination,
-        cacheDirectory: cache,
-        fileName: name,
-        saveToGallery: false,
-        isImage: false,
-        createdDirectories: <String>{},
-      );
-      if (target.path == null) {
-        rust_ra2b.ra4Respond(accept: false);
-        return;
+      final targets = <String, String>{};
+      final createdDirectories = <String>{};
+      for (final file in _incomingFiles) {
+        final target = await prepareFileSaveTarget(
+          destinationDirectory: destination,
+          cacheDirectory: cache,
+          fileName: file.name,
+          saveToGallery: false,
+          isImage: false,
+          createdDirectories: createdDirectories,
+        );
+        if (target.path == null) {
+          rust_ra2b.ra4Respond(accept: false);
+          return;
+        }
+        targets[file.id] = target.path!;
       }
-      rust_ra2b.ra4Respond(accept: true, targetPath: target.path);
+      rust_ra2b.ra4Respond(accept: true, targetsJson: jsonEncode(targets));
     } catch (error, stack) {
-      debugPrint('RA4A save target preparation failed: $error\n$stack');
+      debugPrint('RA4B save target preparation failed: $error\n$stack');
       rust_ra2b.ra4Respond(accept: false);
     }
   }
@@ -453,9 +576,6 @@ class _Ra2bProofPageState extends State<Ra2bProofPage> {
     if (!mounted) {
       return;
     }
-    if (_ra4Receiver) {
-      rust_ra2b.ra4SetReceiver();
-    }
     setState(() {
       _busy = false;
       if (popToHome) {
@@ -464,10 +584,45 @@ class _Ra2bProofPageState extends State<Ra2bProofPage> {
         _parsed = null;
         _parseError = null;
         _ra4Receiver = false;
-        _incomingName = null;
-        _incomingSize = null;
+        _incomingFiles = const [];
       }
     });
+  }
+
+  List<_Ra4IncomingFile> _incomingFilesFromEvent(rust_ra2b.RsRa2bEvent event) {
+    return event.maybeMap(
+      failed: (value) {
+        if (value.category != 'prompt') {
+          return const [];
+        }
+        try {
+          final payload = jsonDecode(value.message) as Map<String, dynamic>;
+          final rawFiles = payload['files'] as List<dynamic>?;
+          if (rawFiles != null) {
+            return rawFiles
+                .map((value) => value as Map<String, dynamic>)
+                .map(
+                  (file) => _Ra4IncomingFile(
+                    id: file['id'] as String,
+                    name: file['name'] as String,
+                    size: (file['size'] as num).toInt(),
+                  ),
+                )
+                .toList(growable: false);
+          }
+          return [
+            _Ra4IncomingFile(
+              id: '',
+              name: payload['name'] as String,
+              size: (payload['size'] as num).toInt(),
+            ),
+          ];
+        } catch (_) {
+          return const [];
+        }
+      },
+      orElse: () => const [],
+    );
   }
 
   Future<void> _listen(Stream<rust_ra2b.RsRa2bEvent> stream) async {
@@ -481,11 +636,7 @@ class _Ra2bProofPageState extends State<Ra2bProofPage> {
         setState(() {
           _session = snapshotFromEvent(event, _session);
           if (_session.stage == Ra2bUiStage.incomingPrompt) {
-            final separator = _session.detail.lastIndexOf(' · ');
-            if (separator > 0) {
-              _incomingName = _session.detail.substring(0, separator);
-              _incomingSize = int.tryParse(_session.detail.substring(separator + 3).replaceFirst(' bytes', ''));
-            }
+            _incomingFiles = _incomingFilesFromEvent(event);
           }
           if (_session.stage == Ra2bUiStage.complete ||
               _session.stage == Ra2bUiStage.rejected ||
@@ -536,9 +687,6 @@ class _Ra2bProofPageState extends State<Ra2bProofPage> {
       });
       return;
     }
-    if (_ra4Receiver) {
-      rust_ra2b.ra4SetReceiver();
-    }
     setState(() {
       _screen = Ra2bScreen.host;
       _busy = true;
@@ -554,6 +702,7 @@ class _Ra2bProofPageState extends State<Ra2bProofPage> {
         rust_ra2b.ra2BStartHost(
           pathPreference: _path,
           wrongIdentity: wrongIdentity,
+          ra4FileTransfer: _ra4Receiver,
         ),
       );
     } catch (error, stack) {
@@ -716,13 +865,13 @@ class _Ra2bProofPageState extends State<Ra2bProofPage> {
       });
       return;
     }
-    if (_ra4File != null) {
+    if (_ra4Files.isNotEmpty) {
       try {
         await _configureRa4Sender();
       } catch (error, stack) {
-        debugPrint('RA4A sender configuration failed: $error\n$stack');
+        debugPrint('RA4B sender configuration failed: $error\n$stack');
         if (mounted) {
-          setState(() => _error = 'Could not prepare the selected file.');
+          setState(() => _error = 'Could not prepare the selected files.');
         }
         return;
       }
@@ -743,6 +892,7 @@ class _Ra2bProofPageState extends State<Ra2bProofPage> {
           invite: invite,
           pathPreference: _path,
           wrongIdentity: wrongIdentity,
+          ra4FileTransfer: _ra4Files.isNotEmpty,
         ),
       );
     } catch (error, stack) {
@@ -842,7 +992,8 @@ class _Ra2bProofPageState extends State<Ra2bProofPage> {
   }
 
   Widget _ra4Panel(RelayPalette palette) {
-    final file = _ra4File;
+    final files = _ra4Files;
+    final total = files.fold<int>(0, (sum, file) => sum + file.file.size);
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -853,36 +1004,48 @@ class _Ra2bProofPageState extends State<Ra2bProofPage> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('RA4A · ONE FILE', style: RelayTypography.section(palette.accent)),
+          Text('RA4B · FILES AND FOLDERS', style: RelayTypography.section(palette.accent)),
           const SizedBox(height: 6),
           Text('Production HTTP transfer over the authenticated Anywhere stream.', style: RelayTypography.legal(palette.textTertiary)),
           const SizedBox(height: 12),
-          OutlinedButton.icon(
-            onPressed: _busy || _ra4Hashing ? null : () => unawaited(_selectRa4File()),
-            icon: _ra4Hashing
-                ? const SizedBox.square(dimension: 16, child: CircularProgressIndicator(strokeWidth: 2))
-                : const Icon(Icons.attach_file),
-            label: Text(_ra4Hashing ? 'Hashing…' : 'Select File'),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              OutlinedButton.icon(
+                onPressed: _busy || _ra4Hashing ? null : () => unawaited(_selectRa4Files()),
+                icon: _ra4Hashing
+                    ? const SizedBox.square(dimension: 16, child: CircularProgressIndicator(strokeWidth: 2))
+                    : const Icon(Icons.attach_file),
+                label: Text(_ra4Hashing ? 'Hashing…' : 'Select Files'),
+              ),
+              OutlinedButton.icon(
+                onPressed: _busy || _ra4Hashing ? null : () => unawaited(_selectRa4Folder()),
+                icon: const Icon(Icons.folder),
+                label: const Text('Select Folder'),
+              ),
+            ],
           ),
-          if (file != null) ...[
+          if (files.isNotEmpty) ...[
             const SizedBox(height: 10),
-            _kv(palette, 'Filename', file.name),
-            _kv(palette, 'Size', '${file.size} bytes'),
-            _kv(palette, 'SHA-256', _ra4Sha256 == null ? '…' : '${_ra4Sha256!.substring(0, 12)}…'),
+            _kv(palette, 'Selection', '${files.length} files'),
+            _kv(palette, 'Total', '$total bytes'),
+            _kv(palette, 'Current', files.first.file.name),
+            _kv(palette, 'SHA-256', files.every((file) => file.sha256 != null) ? 'Per-file ready' : '…'),
             const SizedBox(height: 8),
             Row(
               children: [
                 Expanded(
                   child: FilledButton(
                     onPressed: _busy ? null : _openRa4Join,
-                    child: const Text('Send File'),
+                    child: const Text('Send'),
                   ),
                 ),
                 const SizedBox(width: 8),
                 Expanded(
                   child: OutlinedButton(
                     onPressed: _busy ? null : _openRa4Host,
-                    child: const Text('Receive File'),
+                    child: const Text('Receive'),
                   ),
                 ),
               ],
@@ -1137,12 +1300,33 @@ class _Ra2bProofPageState extends State<Ra2bProofPage> {
             const SizedBox(height: 8),
             Text(_session.detail, style: RelayTypography.value(palette.textSecondary)),
           ],
+          if (_session.stage == Ra2bUiStage.transferring) ...[
+            const SizedBox(height: 8),
+            _kv(palette, 'Overall', '${_session.bytes} / ${_session.total} bytes'),
+            _kv(palette, 'Current file', _currentBatchProgressLabel()),
+          ],
           const SizedBox(height: 8),
           _kv(palette, 'Local RelayId', relayIdPrefix(_session.localRelayId ?? _localRelayId)),
           if (_session.remoteRelayId != null) _kv(palette, 'Remote RelayId', relayIdPrefix(_session.remoteRelayId)),
         ],
       ),
     );
+  }
+
+  String _currentBatchProgressLabel() {
+    final files = _ra4Receiver
+        ? _incomingFiles.map((file) => (file.name, file.size)).toList()
+        : _ra4Files.map((file) => (file.file.name, file.file.size)).toList();
+    files.sort((left, right) => left.$1.compareTo(right.$1));
+    var completed = 0;
+    for (final file in files) {
+      final end = completed + file.$2;
+      if (_session.bytes < end || file == files.last) {
+        return '${file.$1} · ${(_session.bytes - completed).clamp(0, file.$2)} / ${file.$2} bytes';
+      }
+      completed = end;
+    }
+    return '…';
   }
 
   Widget _inviteQr(RelayPalette palette, String invite) {
@@ -1217,11 +1401,11 @@ class _Ra2bProofPageState extends State<Ra2bProofPage> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text('PROOF COMPLETE', style: RelayTypography.section(palette.success)),
+        Text('TRANSFER COMPLETE', style: RelayTypography.section(palette.success)),
         _kv(palette, 'REMOTE RELAY ID', relayIdPrefix(_session.remoteRelayId)),
         _kv(palette, 'RELAY AUTHENTICATION', 'PASS'),
         _kv(palette, 'PATH', _session.path ?? '…'),
-        _kv(palette, 'RECEIVED', '1048576'),
+        _kv(palette, 'RECEIVED', '${_session.bytes} bytes'),
         _kv(palette, 'SHA-256', _session.shaPass == true ? 'PASS' : '…'),
         if (_session.durationMs != null) _kv(palette, 'DURATION', '${_session.durationMs} ms'),
       ],
@@ -1239,10 +1423,11 @@ class _Ra2bProofPageState extends State<Ra2bProofPage> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('Incoming file', style: RelayTypography.section(palette.warning)),
+          Text(_incomingFiles.length == 1 ? 'Incoming file' : 'Incoming batch', style: RelayTypography.section(palette.warning)),
           const SizedBox(height: 8),
-          _kv(palette, 'Filename', _incomingName ?? '…'),
-          _kv(palette, 'Size', '${_incomingSize ?? 0} bytes'),
+          _kv(palette, 'Files', '${_incomingFiles.length}'),
+          for (final file in _incomingFiles.take(4)) _kv(palette, 'File', '${file.name} · ${file.size} bytes'),
+          if (_incomingFiles.length > 4) _kv(palette, 'More', '${_incomingFiles.length - 4} additional files'),
           _kv(palette, 'RelayId', relayIdPrefix(_session.remoteRelayId)),
           const SizedBox(height: 10),
           Row(
@@ -1272,7 +1457,7 @@ class _Ra2bProofPageState extends State<Ra2bProofPage> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         _kv(palette, 'PATH', _session.path ?? '…'),
-        _kv(palette, 'SENT', '1048576'),
+        _kv(palette, 'SENT', '${_session.bytes} bytes'),
         _kv(palette, 'SHA-256', _session.shaPass == true ? 'PASS' : '…'),
         _kv(palette, 'REMOTE RESULT', _session.shaPass == true ? 'PASS' : '…'),
         _kv(palette, 'REMOTE RELAY ID', relayIdPrefix(_session.remoteRelayId)),

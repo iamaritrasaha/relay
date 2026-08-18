@@ -77,7 +77,7 @@ class RustLib extends BaseEntrypoint<RustLibApi, RustLibApiImpl, RustLibWire> {
   String get codegenVersion => '2.12.0';
 
   @override
-  int get rustContentHash => 989454499;
+  int get rustContentHash => -698623502;
 
   static const kDefaultExternalLibraryLoaderConfig = ExternalLibraryLoaderConfig(
     stem: 'rust_lib_localsend_app',
@@ -299,6 +299,29 @@ abstract class RustLibApi extends BaseApi {
 
   void crateApiRa2BRa2BCancelSession();
 
+  RsRa2bLocalIdentity crateApiRa2BRa2BLocalIdentity();
+
+  RsRa2bParsedInvite crateApiRa2BRa2BParseInvite({required String invite});
+
+  Stream<RsRa2bEvent> crateApiRa2BRa2BRunJoin({
+    required String invite,
+    required RsRa2bPathPreference pathPreference,
+    required bool wrongIdentity,
+    required bool ra4FileTransfer,
+  });
+
+  bool crateApiRa2BRa2BSessionIsActive();
+
+  Stream<RsRa2bEvent> crateApiRa2BRa2BStartHost({
+    required RsRa2bPathPreference pathPreference,
+    required bool wrongIdentity,
+    required bool ra4FileTransfer,
+  });
+
+  void crateApiRa2BRa4Clear();
+
+  void crateApiRa2BRa4Respond({required bool accept, String? targetsJson});
+
   void crateApiRa2BRa4SetSender({
     String? path,
     int? fileDescriptor,
@@ -307,22 +330,6 @@ abstract class RustLibApi extends BaseApi {
     required String fileType,
     String? sha256,
   });
-
-  void crateApiRa2BRa4SetReceiver();
-
-  void crateApiRa2BRa4Clear();
-
-  void crateApiRa2BRa4Respond({required bool accept, String? targetPath});
-
-  RsRa2bLocalIdentity crateApiRa2BRa2BLocalIdentity();
-
-  RsRa2bParsedInvite crateApiRa2BRa2BParseInvite({required String invite});
-
-  Stream<RsRa2bEvent> crateApiRa2BRa2BRunJoin({required String invite, required RsRa2bPathPreference pathPreference, required bool wrongIdentity});
-
-  bool crateApiRa2BRa2BSessionIsActive();
-
-  Stream<RsRa2bEvent> crateApiRa2BRa2BStartHost({required RsRa2bPathPreference pathPreference, required bool wrongIdentity});
 
   Future<FileMetadata?> crateApiMetadataReadFileMetadata({required String path});
 
@@ -2148,108 +2155,6 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   );
 
   @override
-  void crateApiRa2BRa4SetSender({
-    String? path,
-    int? fileDescriptor,
-    required String name,
-    required BigInt size,
-    required String fileType,
-    String? sha256,
-  }) {
-    return handler.executeSync(
-      SyncTask(
-        callFfi: () {
-          final serializer = SseSerializer(generalizedFrbRustBinding);
-          sse_encode_opt_String(path, serializer);
-          sse_encode_opt_box_autoadd_i_32(fileDescriptor, serializer);
-          sse_encode_String(name, serializer);
-          sse_encode_u_64(size, serializer);
-          sse_encode_String(fileType, serializer);
-          sse_encode_opt_String(sha256, serializer);
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 70)!;
-        },
-        codec: SseCodec(
-          decodeSuccessData: sse_decode_unit,
-          decodeErrorData: sse_decode_AnyhowException,
-        ),
-        constMeta: kCrateApiRa2BRa4SetSenderConstMeta,
-        argValues: [path, fileDescriptor, name, size, fileType, sha256],
-        apiImpl: this,
-      ),
-    );
-  }
-
-  TaskConstMeta get kCrateApiRa2BRa4SetSenderConstMeta => const TaskConstMeta(
-    debugName: 'ra4_set_sender',
-    argNames: ['path', 'fileDescriptor', 'name', 'size', 'fileType', 'sha256'],
-  );
-
-  @override
-  void crateApiRa2BRa4SetReceiver() {
-    return handler.executeSync(
-      SyncTask(
-        callFfi: () {
-          final serializer = SseSerializer(generalizedFrbRustBinding);
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 71)!;
-        },
-        codec: SseCodec(decodeSuccessData: sse_decode_unit, decodeErrorData: null),
-        constMeta: kCrateApiRa2BRa4SetReceiverConstMeta,
-        argValues: [],
-        apiImpl: this,
-      ),
-    );
-  }
-
-  TaskConstMeta get kCrateApiRa2BRa4SetReceiverConstMeta => const TaskConstMeta(
-    debugName: 'ra4_set_receiver',
-    argNames: [],
-  );
-
-  @override
-  void crateApiRa2BRa4Clear() {
-    return handler.executeSync(
-      SyncTask(
-        callFfi: () {
-          final serializer = SseSerializer(generalizedFrbRustBinding);
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 72)!;
-        },
-        codec: SseCodec(decodeSuccessData: sse_decode_unit, decodeErrorData: null),
-        constMeta: kCrateApiRa2BRa4ClearConstMeta,
-        argValues: [],
-        apiImpl: this,
-      ),
-    );
-  }
-
-  TaskConstMeta get kCrateApiRa2BRa4ClearConstMeta => const TaskConstMeta(
-    debugName: 'ra4_clear',
-    argNames: [],
-  );
-
-  @override
-  void crateApiRa2BRa4Respond({required bool accept, String? targetPath}) {
-    return handler.executeSync(
-      SyncTask(
-        callFfi: () {
-          final serializer = SseSerializer(generalizedFrbRustBinding);
-          sse_encode_bool(accept, serializer);
-          sse_encode_opt_String(targetPath, serializer);
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 73)!;
-        },
-        codec: SseCodec(decodeSuccessData: sse_decode_unit, decodeErrorData: sse_decode_AnyhowException),
-        constMeta: kCrateApiRa2BRa4RespondConstMeta,
-        argValues: [accept, targetPath],
-        apiImpl: this,
-      ),
-    );
-  }
-
-  TaskConstMeta get kCrateApiRa2BRa4RespondConstMeta => const TaskConstMeta(
-    debugName: 'ra4_respond',
-    argNames: ['accept', 'targetPath'],
-  );
-
-  @override
   RsRa2bLocalIdentity crateApiRa2BRa2BLocalIdentity() {
     return handler.executeSync(
       SyncTask(
@@ -2299,7 +2204,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   );
 
   @override
-  Stream<RsRa2bEvent> crateApiRa2BRa2BRunJoin({required String invite, required RsRa2bPathPreference pathPreference, required bool wrongIdentity}) {
+  Stream<RsRa2bEvent> crateApiRa2BRa2BRunJoin({
+    required String invite,
+    required RsRa2bPathPreference pathPreference,
+    required bool wrongIdentity,
+    required bool ra4FileTransfer,
+  }) {
     final eventSink = RustStreamSink<RsRa2bEvent>();
     unawaited(
       handler.executeNormal(
@@ -2309,6 +2219,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
             sse_encode_String(invite, serializer);
             sse_encode_rs_ra_2_b_path_preference(pathPreference, serializer);
             sse_encode_bool(wrongIdentity, serializer);
+            sse_encode_bool(ra4FileTransfer, serializer);
             sse_encode_StreamSink_rs_ra_2_b_event_Sse(eventSink, serializer);
             pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 61, port: port_);
           },
@@ -2317,7 +2228,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
             decodeErrorData: sse_decode_AnyhowException,
           ),
           constMeta: kCrateApiRa2BRa2BRunJoinConstMeta,
-          argValues: [invite, pathPreference, wrongIdentity, eventSink],
+          argValues: [invite, pathPreference, wrongIdentity, ra4FileTransfer, eventSink],
           apiImpl: this,
         ),
       ),
@@ -2327,7 +2238,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
 
   TaskConstMeta get kCrateApiRa2BRa2BRunJoinConstMeta => const TaskConstMeta(
     debugName: 'ra2b_run_join',
-    argNames: ['invite', 'pathPreference', 'wrongIdentity', 'eventSink'],
+    argNames: ['invite', 'pathPreference', 'wrongIdentity', 'ra4FileTransfer', 'eventSink'],
   );
 
   @override
@@ -2355,7 +2266,11 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   );
 
   @override
-  Stream<RsRa2bEvent> crateApiRa2BRa2BStartHost({required RsRa2bPathPreference pathPreference, required bool wrongIdentity}) {
+  Stream<RsRa2bEvent> crateApiRa2BRa2BStartHost({
+    required RsRa2bPathPreference pathPreference,
+    required bool wrongIdentity,
+    required bool ra4FileTransfer,
+  }) {
     final eventSink = RustStreamSink<RsRa2bEvent>();
     unawaited(
       handler.executeNormal(
@@ -2364,6 +2279,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
             final serializer = SseSerializer(generalizedFrbRustBinding);
             sse_encode_rs_ra_2_b_path_preference(pathPreference, serializer);
             sse_encode_bool(wrongIdentity, serializer);
+            sse_encode_bool(ra4FileTransfer, serializer);
             sse_encode_StreamSink_rs_ra_2_b_event_Sse(eventSink, serializer);
             pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 63, port: port_);
           },
@@ -2372,7 +2288,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
             decodeErrorData: sse_decode_AnyhowException,
           ),
           constMeta: kCrateApiRa2BRa2BStartHostConstMeta,
-          argValues: [pathPreference, wrongIdentity, eventSink],
+          argValues: [pathPreference, wrongIdentity, ra4FileTransfer, eventSink],
           apiImpl: this,
         ),
       ),
@@ -2382,7 +2298,94 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
 
   TaskConstMeta get kCrateApiRa2BRa2BStartHostConstMeta => const TaskConstMeta(
     debugName: 'ra2b_start_host',
-    argNames: ['pathPreference', 'wrongIdentity', 'eventSink'],
+    argNames: ['pathPreference', 'wrongIdentity', 'ra4FileTransfer', 'eventSink'],
+  );
+
+  @override
+  void crateApiRa2BRa4Clear() {
+    return handler.executeSync(
+      SyncTask(
+        callFfi: () {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 64)!;
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_unit,
+          decodeErrorData: null,
+        ),
+        constMeta: kCrateApiRa2BRa4ClearConstMeta,
+        argValues: [],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiRa2BRa4ClearConstMeta => const TaskConstMeta(
+    debugName: 'ra4_clear',
+    argNames: [],
+  );
+
+  @override
+  void crateApiRa2BRa4Respond({required bool accept, String? targetsJson}) {
+    return handler.executeSync(
+      SyncTask(
+        callFfi: () {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_bool(accept, serializer);
+          sse_encode_opt_String(targetsJson, serializer);
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 65)!;
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_unit,
+          decodeErrorData: sse_decode_AnyhowException,
+        ),
+        constMeta: kCrateApiRa2BRa4RespondConstMeta,
+        argValues: [accept, targetsJson],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiRa2BRa4RespondConstMeta => const TaskConstMeta(
+    debugName: 'ra4_respond',
+    argNames: ['accept', 'targetsJson'],
+  );
+
+  @override
+  void crateApiRa2BRa4SetSender({
+    String? path,
+    int? fileDescriptor,
+    required String name,
+    required BigInt size,
+    required String fileType,
+    String? sha256,
+  }) {
+    return handler.executeSync(
+      SyncTask(
+        callFfi: () {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_opt_String(path, serializer);
+          sse_encode_opt_box_autoadd_i_32(fileDescriptor, serializer);
+          sse_encode_String(name, serializer);
+          sse_encode_u_64(size, serializer);
+          sse_encode_String(fileType, serializer);
+          sse_encode_opt_String(sha256, serializer);
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 66)!;
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_unit,
+          decodeErrorData: sse_decode_AnyhowException,
+        ),
+        constMeta: kCrateApiRa2BRa4SetSenderConstMeta,
+        argValues: [path, fileDescriptor, name, size, fileType, sha256],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiRa2BRa4SetSenderConstMeta => const TaskConstMeta(
+    debugName: 'ra4_set_sender',
+    argNames: ['path', 'fileDescriptor', 'name', 'size', 'fileType', 'sha256'],
   );
 
   @override
@@ -2392,7 +2395,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         callFfi: (port_) {
           final serializer = SseSerializer(generalizedFrbRustBinding);
           sse_encode_String(path, serializer);
-          pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 64, port: port_);
+          pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 67, port: port_);
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_opt_box_autoadd_file_metadata,
@@ -2417,7 +2420,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         callFfi: (port_) {
           final serializer = SseSerializer(generalizedFrbRustBinding);
           sse_encode_list_prim_u_8_loose(privateKey, serializer);
-          pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 65, port: port_);
+          pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 68, port: port_);
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_relay_identity_material,
@@ -2442,7 +2445,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         callFfi: () {
           final serializer = SseSerializer(generalizedFrbRustBinding);
           sse_encode_String(name, serializer);
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 66)!;
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 69)!;
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_String,
@@ -2495,7 +2498,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           sse_encode_String(certPem, serializer);
           sse_encode_String(privateKeyPem, serializer);
           sse_encode_u_64(timeoutMs, serializer);
-          pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 67, port: port_);
+          pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 70, port: port_);
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerRsDiscovery,
@@ -2572,7 +2575,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           sse_encode_bool(verifyChecksums, serializer);
           sse_encode_opt_box_autoadd_web_params(web, serializer);
           sse_encode_opt_String(showToken, serializer);
-          pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 68, port: port_);
+          pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 71, port: port_);
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerRsHttpServer,
@@ -2598,7 +2601,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           final serializer = SseSerializer(generalizedFrbRustBinding);
           sse_encode_String(cert, serializer);
           sse_encode_String(publicKey, serializer);
-          pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 69, port: port_);
+          pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 72, port: port_);
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_unit,

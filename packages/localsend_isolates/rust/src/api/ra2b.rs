@@ -8,24 +8,36 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex, OnceLock};
 
 use crate::frb_generated::StreamSink;
+use anyhow::Context as _;
 use flutter_rust_bridge::frb;
 use relay_anywhere_ra2b::{
-    ActiveSessionGuard, Ra2bPathPreference, Ra2bPeerMaterial, Ra2bPhase, Ra2bRole, Ra4Decision,
-    Ra4FileSource, Ra4FileSpec, cancel_active_session, fresh_unrelated_relay_id, parse_invite,
-    process_identity, process_relay_id, run_proof, run_ra4_receiver, run_ra4_sender,
-    session_is_active,
+    ActiveSessionGuard, Ra2bPathPreference, Ra2bPeerMaterial, Ra2bPhase, Ra2bRole, Ra4BatchSpec,
+    Ra4Decision, Ra4FileSource, Ra4FileSpec, cancel_active_session, fresh_unrelated_relay_id,
+    parse_invite, process_identity, process_relay_id, run_proof, run_ra4_batch_sender,
+    run_ra4_receiver, session_is_active,
 };
 
 enum Ra4RuntimeConfig {
-    Sender {
-        path: Option<String>,
-        file_descriptor: Option<i32>,
-        name: String,
-        size: u64,
-        file_type: String,
-        sha256: Option<String>,
-    },
-    Receiver,
+    Sender { files: Vec<Ra4RuntimeFile> },
+}
+
+/// Chooses the post-authentication application protocol before either side
+/// reads from the authenticated stream. RA4 uses ordinary HTTP/1.1; the
+/// legacy proof framing is retained only when explicitly requested.
+enum Ra2bApplicationMode {
+    LegacyProof,
+    Ra4HttpReceiver,
+    Ra4HttpSender,
+}
+
+struct Ra4RuntimeFile {
+    path: Option<String>,
+    #[cfg_attr(not(target_os = "android"), allow(dead_code))]
+    file_descriptor: Option<i32>,
+    name: String,
+    size: u64,
+    file_type: String,
+    sha256: Option<String>,
 }
 
 fn ra4_config() -> &'static Mutex<Option<Ra4RuntimeConfig>> {
@@ -138,6 +150,24 @@ impl From<Ra2bPhase> for RsRa2bEvent {
                 .to_string(),
                 category: "prompt".to_owned(),
             },
+            Ra2bPhase::IncomingBatch {
+                files,
+                remote_relay_id,
+            } => Self::Failed {
+                message: serde_json::json!({
+                    "files": files
+                        .into_iter()
+                        .map(|file| serde_json::json!({
+                            "id": file.id,
+                            "name": file.name,
+                            "size": file.size,
+                        }))
+                        .collect::<Vec<_>>(),
+                    "remoteRelayId": remote_relay_id,
+                })
+                .to_string(),
+                category: "prompt".to_owned(),
+            },
             Ra2bPhase::Transferring { bytes, total } => Self::Transferring { bytes, total },
             Ra2bPhase::Complete {
                 path,
@@ -197,8 +227,9 @@ pub fn ra2b_cancel_session() {
     cancel_active_session();
 }
 
-/// Configures the one-file RA4A sender without copying the file into Dart.
-/// Android passes a SAF descriptor; desktop passes a regular path.
+/// Adds one real file to the RA4B sender batch without copying it into Dart.
+/// Android passes a SAF descriptor; desktop passes a regular path. Call
+/// [ra4_clear] before beginning a new batch.
 #[frb(sync)]
 pub fn ra4_set_sender(
     path: Option<String>,
@@ -215,54 +246,56 @@ pub fn ra4_set_sender(
     if file_descriptor.is_some() {
         anyhow::bail!("file descriptors are only supported on Android");
     }
-    *ra4_config().lock().unwrap_or_else(|poisoned| poisoned.into_inner()) =
-        Some(Ra4RuntimeConfig::Sender {
-            path,
-            file_descriptor,
-            name,
-            size,
-            file_type,
-            sha256,
-        });
+    let file = Ra4RuntimeFile {
+        path,
+        file_descriptor,
+        name,
+        size,
+        file_type,
+        sha256,
+    };
+    let mut config = ra4_config()
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    match config.as_mut() {
+        Some(Ra4RuntimeConfig::Sender { files }) => files.push(file),
+        None => *config = Some(Ra4RuntimeConfig::Sender { files: vec![file] }),
+    }
     Ok(())
-}
-
-/// Configures the one-file RA4A receiver. The actual save target is supplied
-/// per transfer by the approval UI and is never persisted as trust.
-#[frb(sync)]
-pub fn ra4_set_receiver() {
-    *ra4_config().lock().unwrap_or_else(|poisoned| poisoned.into_inner()) =
-        Some(Ra4RuntimeConfig::Receiver);
 }
 
 #[frb(sync)]
 pub fn ra4_clear() {
-    *ra4_config().lock().unwrap_or_else(|poisoned| poisoned.into_inner()) = None;
+    *ra4_config()
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner()) = None;
     *ra4_decision_sender()
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner()) = None;
 }
 
-/// Answers the one session-scoped incoming-file prompt.
+/// Answers the session-scoped incoming batch prompt.
 #[frb(sync)]
-pub fn ra4_respond(accept: bool, target_path: Option<String>) -> anyhow::Result<()> {
+pub fn ra4_respond(accept: bool, targets_json: Option<String>) -> anyhow::Result<()> {
     let sender = ra4_decision_sender()
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner())
         .clone()
-        .ok_or_else(|| anyhow::anyhow!("no RA4A transfer is awaiting approval"))?;
+        .ok_or_else(|| anyhow::anyhow!("no RA4B transfer is awaiting approval"))?;
+    let targets = match targets_json {
+        Some(json) if accept => serde_json::from_str(&json).context("parse RA4B save targets")?,
+        _ => Default::default(),
+    };
     sender
-        .try_send(Ra4Decision {
-            accept,
-            target: target_path.map(PathBuf::from),
-        })
-        .map_err(|_| anyhow::anyhow!("RA4A approval prompt is no longer active"))
+        .try_send(Ra4Decision { accept, targets })
+        .map_err(|_| anyhow::anyhow!("RA4B approval prompt is no longer active"))
 }
 
 /// Starts the in-process RA2B host (responder). Emits invite + progress events.
 pub async fn ra2b_start_host(
     path_preference: RsRa2bPathPreference,
     wrong_identity: bool,
+    ra4_file_transfer: bool,
     event_sink: StreamSink<RsRa2bEvent>,
 ) -> anyhow::Result<()> {
     let guard = ActiveSessionGuard::acquire()?;
@@ -272,20 +305,19 @@ pub async fn ra2b_start_host(
         None
     };
     let peer = Ra2bPeerMaterial::from_arc(process_identity(), expected)?;
-    let decision_rx = {
-        let config = ra4_config()
+    let application_mode = if ra4_file_transfer {
+        Ra2bApplicationMode::Ra4HttpReceiver
+    } else {
+        Ra2bApplicationMode::LegacyProof
+    };
+    let decision_rx = if ra4_file_transfer {
+        let (sender, receiver) = tokio::sync::mpsc::channel(1);
+        *ra4_decision_sender()
             .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner());
-        let is_receiver = matches!(config.as_ref(), Some(Ra4RuntimeConfig::Receiver));
-        if is_receiver {
-            let (sender, receiver) = tokio::sync::mpsc::channel(1);
-            *ra4_decision_sender()
-                .lock()
-                .unwrap_or_else(|poisoned| poisoned.into_inner()) = Some(sender);
-            Some(receiver)
-        } else {
-            None
-        }
+            .unwrap_or_else(|poisoned| poisoned.into_inner()) = Some(sender);
+        Some(receiver)
+    } else {
+        None
     };
     run_session(
         Ra2bRole::Responder,
@@ -293,6 +325,8 @@ pub async fn ra2b_start_host(
         path_preference.into(),
         guard,
         event_sink,
+        application_mode,
+        None,
         decision_rx,
     )
     .await
@@ -303,6 +337,7 @@ pub async fn ra2b_run_join(
     invite: String,
     path_preference: RsRa2bPathPreference,
     wrong_identity: bool,
+    ra4_file_transfer: bool,
     event_sink: StreamSink<RsRa2bEvent>,
 ) -> anyhow::Result<()> {
     let guard = ActiveSessionGuard::acquire()?;
@@ -313,6 +348,23 @@ pub async fn ra2b_run_join(
         parsed.host_relay_id.clone()
     };
     let peer = Ra2bPeerMaterial::from_arc(process_identity(), Some(expected))?;
+    let config = ra4_config()
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .take();
+    let application_mode = if ra4_file_transfer {
+        anyhow::ensure!(
+            matches!(&config, Some(Ra4RuntimeConfig::Sender { .. })),
+            "RA4 file-transfer mode requires a configured sender batch"
+        );
+        Ra2bApplicationMode::Ra4HttpSender
+    } else {
+        anyhow::ensure!(
+            config.is_none(),
+            "RA4 sender configuration requires file-transfer mode"
+        );
+        Ra2bApplicationMode::LegacyProof
+    };
     run_session(
         Ra2bRole::Initiator {
             remote_endpoint: parsed.endpoint,
@@ -321,6 +373,8 @@ pub async fn ra2b_run_join(
         path_preference.into(),
         guard,
         event_sink,
+        application_mode,
+        config,
         None,
     )
     .await
@@ -332,57 +386,57 @@ async fn run_session(
     path_preference: Ra2bPathPreference,
     guard: ActiveSessionGuard,
     event_sink: StreamSink<RsRa2bEvent>,
+    application_mode: Ra2bApplicationMode,
+    config: Option<Ra4RuntimeConfig>,
     mut decision_rx: Option<tokio::sync::mpsc::Receiver<Ra4Decision>>,
 ) -> anyhow::Result<()> {
-    let config = ra4_config()
-        .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner())
-        .take();
     let callback: Arc<dyn Fn(Ra2bPhase) + Send + Sync> = Arc::new(move |phase: Ra2bPhase| {
         let _ = event_sink.add(phase.into());
     });
-    let result = match (config, role) {
+    let result = match (application_mode, config, role) {
         (
-            Some(Ra4RuntimeConfig::Sender {
-                path,
-                file_descriptor,
-                name,
-                size,
-                file_type,
-                sha256,
-            }),
+            Ra2bApplicationMode::Ra4HttpSender,
+            Some(Ra4RuntimeConfig::Sender { files }),
             Ra2bRole::Initiator { remote_endpoint },
         ) => {
-            let source = if let Some(path) = path {
-                Ra4FileSource::Path(PathBuf::from(path))
-            } else {
-                #[cfg(target_os = "android")]
-                {
-                    Ra4FileSource::FileDescriptor(file_descriptor.expect("validated descriptor"))
-                }
-                #[cfg(not(target_os = "android"))]
-                {
-                    unreachable!("non-Android descriptor rejected above")
-                }
-            };
-            run_ra4_sender(
+            let specs = files
+                .into_iter()
+                .map(|file| {
+                    let source = if let Some(path) = file.path {
+                        Ra4FileSource::Path(PathBuf::from(path))
+                    } else {
+                        #[cfg(target_os = "android")]
+                        {
+                            Ra4FileSource::FileDescriptor(
+                                file.file_descriptor.expect("validated descriptor"),
+                            )
+                        }
+                        #[cfg(not(target_os = "android"))]
+                        {
+                            unreachable!("non-Android descriptor rejected above")
+                        }
+                    };
+                    Ra4FileSpec {
+                        id: uuid::Uuid::new_v4().to_string(),
+                        name: file.name,
+                        size: file.size,
+                        file_type: file.file_type,
+                        sha256: file.sha256,
+                        source,
+                    }
+                })
+                .collect();
+            run_ra4_batch_sender(
                 remote_endpoint,
                 peer,
                 path_preference,
                 guard.cancellation(),
                 &callback,
-                Ra4FileSpec {
-                    id: uuid::Uuid::new_v4().to_string(),
-                    name,
-                    size,
-                    file_type,
-                    sha256,
-                    source,
-                },
+                Ra4BatchSpec { files: specs },
             )
             .await
         }
-        (Some(Ra4RuntimeConfig::Receiver), Ra2bRole::Responder) => {
+        (Ra2bApplicationMode::Ra4HttpReceiver, None, Ra2bRole::Responder) => {
             let mut decision_rx = decision_rx
                 .take()
                 .ok_or_else(|| anyhow::anyhow!("RA4A receiver approval channel is unavailable"))?;
@@ -395,8 +449,10 @@ async fn run_session(
             )
             .await
         }
-        (None, role) => run_proof(role, peer, path_preference, guard.cancellation(), callback).await,
-        (Some(_), _) => anyhow::bail!("RA4A sender/receiver role mismatch"),
+        (Ra2bApplicationMode::LegacyProof, None, role) => {
+            run_proof(role, peer, path_preference, guard.cancellation(), callback).await
+        }
+        _ => anyhow::bail!("RA2B application mode/configuration role mismatch"),
     };
     *ra4_decision_sender()
         .lock()

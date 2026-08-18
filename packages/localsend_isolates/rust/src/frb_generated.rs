@@ -44,7 +44,7 @@ flutter_rust_bridge::frb_generated_boilerplate!(
     default_rust_auto_opaque = RustAutoOpaqueMoi,
 );
 pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_VERSION: &str = "2.12.0";
-pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = 989454499;
+pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = -698623502;
 
 // Section: executor
 
@@ -3375,141 +3375,6 @@ fn wire__crate__api__ra2b__ra2b_cancel_session_impl(
         },
     )
 }
-fn wire__crate__api__ra2b__ra4_set_sender_impl(
-    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
-    rust_vec_len_: i32,
-    data_len_: i32,
-) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
-    FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync::<flutter_rust_bridge::for_generated::SseCodec, _>(
-        flutter_rust_bridge::for_generated::TaskInfo {
-            debug_name: "ra4_set_sender",
-            port: None,
-            mode: flutter_rust_bridge::for_generated::FfiCallMode::Sync,
-        },
-        move || {
-            let message = unsafe {
-                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
-                    ptr_,
-                    rust_vec_len_,
-                    data_len_,
-                )
-            };
-            let mut deserializer =
-                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
-            let api_path = <Option<String>>::sse_decode(&mut deserializer);
-            let api_file_descriptor = <Option<i32>>::sse_decode(&mut deserializer);
-            let api_name = <String>::sse_decode(&mut deserializer);
-            let api_size = <u64>::sse_decode(&mut deserializer);
-            let api_file_type = <String>::sse_decode(&mut deserializer);
-            let api_sha256 = <Option<String>>::sse_decode(&mut deserializer);
-            deserializer.end();
-            transform_result_sse::<_, flutter_rust_bridge::for_generated::anyhow::Error>(
-                (move || {
-                    crate::api::ra2b::ra4_set_sender(
-                        api_path,
-                        api_file_descriptor,
-                        api_name,
-                        api_size,
-                        api_file_type,
-                        api_sha256,
-                    )?;
-                    Ok(())
-                })(),
-            )
-        },
-    )
-}
-fn wire__crate__api__ra2b__ra4_set_receiver_impl(
-    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
-    rust_vec_len_: i32,
-    data_len_: i32,
-) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
-    FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync::<flutter_rust_bridge::for_generated::SseCodec, _>(
-        flutter_rust_bridge::for_generated::TaskInfo {
-            debug_name: "ra4_set_receiver",
-            port: None,
-            mode: flutter_rust_bridge::for_generated::FfiCallMode::Sync,
-        },
-        move || {
-            let message = unsafe {
-                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
-                    ptr_,
-                    rust_vec_len_,
-                    data_len_,
-                )
-            };
-            let mut deserializer =
-                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
-            deserializer.end();
-            transform_result_sse::<_, ()>((move || {
-                crate::api::ra2b::ra4_set_receiver();
-                Ok(())
-            })())
-        },
-    )
-}
-fn wire__crate__api__ra2b__ra4_clear_impl(
-    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
-    rust_vec_len_: i32,
-    data_len_: i32,
-) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
-    FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync::<flutter_rust_bridge::for_generated::SseCodec, _>(
-        flutter_rust_bridge::for_generated::TaskInfo {
-            debug_name: "ra4_clear",
-            port: None,
-            mode: flutter_rust_bridge::for_generated::FfiCallMode::Sync,
-        },
-        move || {
-            let message = unsafe {
-                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
-                    ptr_,
-                    rust_vec_len_,
-                    data_len_,
-                )
-            };
-            let mut deserializer =
-                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
-            deserializer.end();
-            transform_result_sse::<_, ()>((move || {
-                crate::api::ra2b::ra4_clear();
-                Ok(())
-            })())
-        },
-    )
-}
-fn wire__crate__api__ra2b__ra4_respond_impl(
-    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
-    rust_vec_len_: i32,
-    data_len_: i32,
-) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
-    FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync::<flutter_rust_bridge::for_generated::SseCodec, _>(
-        flutter_rust_bridge::for_generated::TaskInfo {
-            debug_name: "ra4_respond",
-            port: None,
-            mode: flutter_rust_bridge::for_generated::FfiCallMode::Sync,
-        },
-        move || {
-            let message = unsafe {
-                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
-                    ptr_,
-                    rust_vec_len_,
-                    data_len_,
-                )
-            };
-            let mut deserializer =
-                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
-            let api_accept = <bool>::sse_decode(&mut deserializer);
-            let api_target_path = <Option<String>>::sse_decode(&mut deserializer);
-            deserializer.end();
-            transform_result_sse::<_, flutter_rust_bridge::for_generated::anyhow::Error>(
-                (move || {
-                    crate::api::ra2b::ra4_respond(api_accept, api_target_path)?;
-                    Ok(())
-                })(),
-            )
-        },
-    )
-}
 fn wire__crate__api__ra2b__ra2b_local_identity_impl(
     ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
     rust_vec_len_: i32,
@@ -3599,6 +3464,7 @@ fn wire__crate__api__ra2b__ra2b_run_join_impl(
             let api_path_preference =
                 <crate::api::ra2b::RsRa2bPathPreference>::sse_decode(&mut deserializer);
             let api_wrong_identity = <bool>::sse_decode(&mut deserializer);
+            let api_ra4_file_transfer = <bool>::sse_decode(&mut deserializer);
             let api_event_sink = <StreamSink<
                 crate::api::ra2b::RsRa2bEvent,
                 flutter_rust_bridge::for_generated::SseCodec,
@@ -3611,6 +3477,7 @@ fn wire__crate__api__ra2b__ra2b_run_join_impl(
                             api_invite,
                             api_path_preference,
                             api_wrong_identity,
+                            api_ra4_file_transfer,
                             api_event_sink,
                         )
                         .await?;
@@ -3676,6 +3543,7 @@ fn wire__crate__api__ra2b__ra2b_start_host_impl(
             let api_path_preference =
                 <crate::api::ra2b::RsRa2bPathPreference>::sse_decode(&mut deserializer);
             let api_wrong_identity = <bool>::sse_decode(&mut deserializer);
+            let api_ra4_file_transfer = <bool>::sse_decode(&mut deserializer);
             let api_event_sink = <StreamSink<
                 crate::api::ra2b::RsRa2bEvent,
                 flutter_rust_bridge::for_generated::SseCodec,
@@ -3687,6 +3555,7 @@ fn wire__crate__api__ra2b__ra2b_start_host_impl(
                         let output_ok = crate::api::ra2b::ra2b_start_host(
                             api_path_preference,
                             api_wrong_identity,
+                            api_ra4_file_transfer,
                             api_event_sink,
                         )
                         .await?;
@@ -3695,6 +3564,114 @@ fn wire__crate__api__ra2b__ra2b_start_host_impl(
                     .await,
                 )
             }
+        },
+    )
+}
+fn wire__crate__api__ra2b__ra4_clear_impl(
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync::<flutter_rust_bridge::for_generated::SseCodec, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "ra4_clear",
+            port: None,
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Sync,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            deserializer.end();
+            transform_result_sse::<_, ()>((move || {
+                let output_ok = Result::<_, ()>::Ok({
+                    crate::api::ra2b::ra4_clear();
+                })?;
+                Ok(output_ok)
+            })())
+        },
+    )
+}
+fn wire__crate__api__ra2b__ra4_respond_impl(
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync::<flutter_rust_bridge::for_generated::SseCodec, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "ra4_respond",
+            port: None,
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Sync,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_accept = <bool>::sse_decode(&mut deserializer);
+            let api_targets_json = <Option<String>>::sse_decode(&mut deserializer);
+            deserializer.end();
+            transform_result_sse::<_, flutter_rust_bridge::for_generated::anyhow::Error>(
+                (move || {
+                    let output_ok = crate::api::ra2b::ra4_respond(api_accept, api_targets_json)?;
+                    Ok(output_ok)
+                })(),
+            )
+        },
+    )
+}
+fn wire__crate__api__ra2b__ra4_set_sender_impl(
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync::<flutter_rust_bridge::for_generated::SseCodec, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "ra4_set_sender",
+            port: None,
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Sync,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_path = <Option<String>>::sse_decode(&mut deserializer);
+            let api_file_descriptor = <Option<i32>>::sse_decode(&mut deserializer);
+            let api_name = <String>::sse_decode(&mut deserializer);
+            let api_size = <u64>::sse_decode(&mut deserializer);
+            let api_file_type = <String>::sse_decode(&mut deserializer);
+            let api_sha256 = <Option<String>>::sse_decode(&mut deserializer);
+            deserializer.end();
+            transform_result_sse::<_, flutter_rust_bridge::for_generated::anyhow::Error>(
+                (move || {
+                    let output_ok = crate::api::ra2b::ra4_set_sender(
+                        api_path,
+                        api_file_descriptor,
+                        api_name,
+                        api_size,
+                        api_file_type,
+                        api_sha256,
+                    )?;
+                    Ok(output_ok)
+                })(),
+            )
         },
     )
 }
@@ -6155,15 +6132,15 @@ fn pde_ffi_dispatcher_primary_impl(
         56 => wire__crate__api__crypto__hash_file_impl(port, ptr, rust_vec_len, data_len),
         61 => wire__crate__api__ra2b__ra2b_run_join_impl(port, ptr, rust_vec_len, data_len),
         63 => wire__crate__api__ra2b__ra2b_start_host_impl(port, ptr, rust_vec_len, data_len),
-        64 => {
+        67 => {
             wire__crate__api__metadata__read_file_metadata_impl(port, ptr, rust_vec_len, data_len)
         }
-        65 => {
+        68 => {
             wire__crate__api__crypto__restore_relay_identity_impl(port, ptr, rust_vec_len, data_len)
         }
-        67 => wire__crate__api__discovery__start_discovery_impl(port, ptr, rust_vec_len, data_len),
-        68 => wire__crate__api__server__start_server_impl(port, ptr, rust_vec_len, data_len),
-        69 => wire__crate__api__crypto__verify_cert_impl(port, ptr, rust_vec_len, data_len),
+        70 => wire__crate__api__discovery__start_discovery_impl(port, ptr, rust_vec_len, data_len),
+        71 => wire__crate__api__server__start_server_impl(port, ptr, rust_vec_len, data_len),
+        72 => wire__crate__api__crypto__verify_cert_impl(port, ptr, rust_vec_len, data_len),
         _ => unreachable!(),
     }
 }
@@ -6185,11 +6162,10 @@ fn pde_ffi_dispatcher_sync_impl(
         59 => wire__crate__api__ra2b__ra2b_local_identity_impl(ptr, rust_vec_len, data_len),
         60 => wire__crate__api__ra2b__ra2b_parse_invite_impl(ptr, rust_vec_len, data_len),
         62 => wire__crate__api__ra2b__ra2b_session_is_active_impl(ptr, rust_vec_len, data_len),
-        70 => wire__crate__api__ra2b__ra4_set_sender_impl(ptr, rust_vec_len, data_len),
-        71 => wire__crate__api__ra2b__ra4_set_receiver_impl(ptr, rust_vec_len, data_len),
-        72 => wire__crate__api__ra2b__ra4_clear_impl(ptr, rust_vec_len, data_len),
-        73 => wire__crate__api__ra2b__ra4_respond_impl(ptr, rust_vec_len, data_len),
-        66 => wire__crate__api__filename__sanitize_file_name_impl(ptr, rust_vec_len, data_len),
+        64 => wire__crate__api__ra2b__ra4_clear_impl(ptr, rust_vec_len, data_len),
+        65 => wire__crate__api__ra2b__ra4_respond_impl(ptr, rust_vec_len, data_len),
+        66 => wire__crate__api__ra2b__ra4_set_sender_impl(ptr, rust_vec_len, data_len),
+        69 => wire__crate__api__filename__sanitize_file_name_impl(ptr, rust_vec_len, data_len),
         _ => unreachable!(),
     }
 }
