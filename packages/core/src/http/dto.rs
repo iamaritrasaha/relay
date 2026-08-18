@@ -63,6 +63,21 @@ impl From<RegisterDto> for RegisterDtoV2 {
     }
 }
 
+impl From<RegisterDtoV2> for RegisterDto {
+    fn from(v2: RegisterDtoV2) -> Self {
+        RegisterDto {
+            alias: v2.alias,
+            version: v2.version,
+            device_model: v2.device_model,
+            device_type: v2.device_type,
+            token: v2.fingerprint,
+            port: v2.port,
+            protocol: v2.protocol,
+            has_web_interface: v2.download,
+        }
+    }
+}
+
 /// Similar to `RegisterDto`, but without `port` and `protocol` (those are already known).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -102,6 +117,15 @@ impl From<PrepareUploadRequestDto> for PrepareUploadRequestDtoV2 {
         PrepareUploadRequestDtoV2 {
             info: v3.info.into(),
             files: v3.files,
+        }
+    }
+}
+
+impl From<PrepareUploadRequestDtoV2> for PrepareUploadRequestDto {
+    fn from(v2: PrepareUploadRequestDtoV2) -> Self {
+        PrepareUploadRequestDto {
+            info: v2.info.into(),
+            files: v2.files,
         }
     }
 }

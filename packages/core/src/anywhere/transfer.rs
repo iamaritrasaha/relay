@@ -27,15 +27,17 @@ use super::stream::{
 };
 use super::tls::InnerTlsPeer;
 use super::{RelayAddressV1, authorize_unknown_authenticated, empty_trust};
-use crate::http::client::AnywhereHttpClient;
-use crate::http::dto_v2::{PrepareUploadRequestDtoV2, RegisterDtoV2};
 use crate::http::server::common::save::FileUploadTarget;
 use crate::http::server::v2::{PrepareUploadDecisionV2, ServerEventV2, SessionEndReasonV2};
 use crate::http::server::{ConnectionOrigin, ServerConfigV2, start_v2_stream_only};
 use crate::http::state::ClientInfo;
 use crate::model::discovery::ProtocolType;
-use crate::model::transfer::{FileContent, FileDto};
-use crate::relay::{AuthenticatedRelaySession, PathDescriptor, RelayId, TransferAuthorization};
+use crate::model::transfer::FileDto;
+use crate::relay::{
+    AnywhereTransferTransport, AuthenticatedRelaySession, PathDescriptor, RelayId, RelaySendError,
+    RelayTransferEngine, RelayTransferEvent, RelayTransferFile, RelayTransferRequest,
+    TransferAuthorization, TransportOrigin,
+};
 
 const SESSION_TIMEOUT: Duration = Duration::from_secs(120);
 const ONLINE_TIMEOUT: Duration = Duration::from_secs(20);
@@ -266,13 +268,6 @@ pub async fn send_batch(
     batch
         .files
         .sort_by(|left, right| left.name.cmp(&right.name));
-    let mut ids = HashSet::new();
-    if !batch.files.iter().all(|file| ids.insert(file.id.as_str())) {
-        return Err(AnywhereError::transport_reason(
-            TransportStage::Stream,
-            "outbound batch contains duplicate file ids",
-        ));
-    }
     let total = batch.files.iter().map(|file| file.size).sum::<u64>();
 
     events(AnywhereEvent::Starting);
@@ -501,29 +496,13 @@ pub async fn send_files_over_authenticated_stream<S>(
 where
     S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send + 'static,
 {
-    let mut client = AnywhereHttpClient::handshake(stream, session)
+    let origin = TransportOrigin::from_path_descriptor(session.path());
+    let mut client = crate::http::client::AnywhereHttpClient::handshake(stream, session)
         .await
         .map_err(|error| AnywhereError::transport(TransportStage::Stream, error))?;
-    let files = batch
-        .files
-        .iter()
-        .map(|spec| {
-            (
-                spec.id.clone(),
-                FileDto {
-                    id: spec.id.clone(),
-                    file_name: spec.name.clone(),
-                    size: spec.size,
-                    file_type: spec.file_type.clone(),
-                    sha256: spec.sha256.clone(),
-                    preview: None,
-                    metadata: None,
-                },
-            )
-        })
-        .collect::<HashMap<_, _>>();
-    let payload = PrepareUploadRequestDtoV2 {
-        info: RegisterDtoV2 {
+    let request = RelayTransferRequest {
+        transfer_id: uuid::Uuid::new_v4().to_string(),
+        info: crate::http::dto_v2::RegisterDtoV2 {
             alias,
             version: PROTOCOL_VERSION.to_owned(),
             device_model: None,
@@ -533,58 +512,48 @@ where
             protocol: ProtocolType::Https,
             download: false,
         },
-        files,
+        files: batch
+            .files
+            .into_iter()
+            .map(|spec| RelayTransferFile {
+                dto: FileDto {
+                    id: spec.id.clone(),
+                    file_name: spec.name.clone(),
+                    size: spec.size,
+                    file_type: spec.file_type.clone(),
+                    sha256: spec.sha256.clone(),
+                    preview: None,
+                    metadata: None,
+                },
+                content: match spec.source {
+                    AnywhereFileSource::Path(path) => {
+                        crate::model::transfer::FileContent::Path(path)
+                    }
+                    #[cfg(target_os = "android")]
+                    AnywhereFileSource::FileDescriptor(fd) => {
+                        crate::model::transfer::FileContent::Fd(fd)
+                    }
+                },
+            })
+            .collect(),
+        pin: None,
     };
-    let prepared = client
-        .prepare_upload(payload, None, cancel.clone())
-        .await
-        .map_err(map_client_error)?
-        .response
-        .ok_or(AnywhereError::AuthorizationDenied)?;
-    if !batch
-        .files
-        .iter()
-        .all(|file| prepared.files.contains_key(&file.id))
-    {
-        return Err(AnywhereError::ProtocolCompletion);
-    }
-
     let progress = Arc::new(on_progress);
-    let mut completed = 0_u64;
-    for spec in batch.files {
-        if cancel.is_cancelled() {
-            let _ = client.cancel(&prepared.session_id).await;
-            return Err(AnywhereError::Cancelled);
+    let events = Arc::new(move |event| {
+        if let RelayTransferEvent::OverallProgress { bytes, .. } = event {
+            progress(bytes);
         }
-        let token = prepared.files[&spec.id].clone();
-        let size = spec.size;
-        let content = match spec.source {
-            AnywhereFileSource::Path(path) => FileContent::Path(path),
-            #[cfg(target_os = "android")]
-            AnywhereFileSource::FileDescriptor(fd) => FileContent::Fd(fd),
-        };
-        let base = completed;
-        let report_progress = progress.clone();
-        let result = client
-            .upload(
-                &prepared.session_id,
-                &spec.id,
-                &token,
-                content,
-                size,
-                move |bytes| report_progress(base.saturating_add(bytes)),
-                cancel.clone(),
-            )
-            .await;
-        if matches!(result, Err(crate::http::client::ClientError::Cancelled)) {
-            let _ = client.cancel(&prepared.session_id).await;
-            return Err(AnywhereError::Cancelled);
-        }
-        result.map_err(map_client_error)?;
-        completed = completed.saturating_add(size);
-        progress(completed);
-    }
-    Ok(completed)
+    });
+    RelayTransferEngine
+        .send(
+            &mut AnywhereTransferTransport::new(&mut client),
+            request,
+            origin,
+            cancel,
+            events,
+        )
+        .await
+        .map_err(map_relay_transfer_error)
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -858,9 +827,10 @@ fn path_class(path: &PathDescriptor) -> AnywherePathClass {
     }
 }
 
-fn map_client_error(error: crate::http::client::ClientError) -> AnywhereError {
+fn map_relay_transfer_error(error: RelaySendError) -> AnywhereError {
     match error {
-        crate::http::client::ClientError::Cancelled => AnywhereError::Cancelled,
+        RelaySendError::Cancelled => AnywhereError::Cancelled,
+        RelaySendError::AuthorizationDenied => AnywhereError::AuthorizationDenied,
         other => AnywhereError::transport(TransportStage::Stream, other),
     }
 }
