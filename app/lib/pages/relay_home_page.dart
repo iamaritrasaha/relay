@@ -9,6 +9,7 @@ import 'package:localsend_app/provider/selection/selected_sending_files_provider
 import 'package:localsend_app/util/native/file_picker.dart';
 import 'package:localsend_app/widget/dialogs/add_file_dialog.dart';
 import 'package:localsend_app/widget/dialogs/cancel_session_dialog.dart';
+import 'package:localsend_app/widget/dialogs/relay_pair_device_dialog.dart';
 import 'package:localsend_app/widget/relay/relay_shell.dart';
 import 'package:refena_flutter/refena_flutter.dart';
 import 'package:routerino/routerino.dart';
@@ -40,6 +41,7 @@ class RelayHomePage extends StatelessWidget {
           },
           onOpenHistory: onOpenHistory,
           onOpenSettings: onOpenSettings,
+          onPairDevice: () => showDialog<void>(context: context, builder: (_) => const RelayPairDeviceDialog()),
           onDeviceTap: (key) {
             final device = ref.read(nearbyDevicesProvider).allDevices[key];
             final files = ref.read(selectedSendingFilesProvider);
