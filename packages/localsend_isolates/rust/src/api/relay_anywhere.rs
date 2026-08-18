@@ -15,7 +15,8 @@ use crate::frb_generated::StreamSink;
 use flutter_rust_bridge::frb;
 use localsend::anywhere::{
     AnywhereBatch, AnywhereDecision, AnywhereError, AnywhereEvent, AnywhereFileSource,
-    AnywhereFileSpec, AnywhereIdentity, AnywhereReceiveRequest, AnywhereRuntime,
+    AnywhereFileSpec, AnywhereIdentity, AnywhereListener, AnywhereListenerConfig,
+    AnywhereListenerEvent, AnywhereReceiveRequest, AnywhereRoutingKey, AnywhereRuntime,
     AnywhereSendRequest, AnywhereSessionId, IncomingTransferId, PathPreference, RelayAddressV1,
     receive, send_batch,
 };
@@ -25,6 +26,11 @@ use localsend::anywhere::{
 pub(crate) fn anywhere_runtime() -> &'static Arc<AnywhereRuntime> {
     static RUNTIME: OnceLock<Arc<AnywhereRuntime>> = OnceLock::new();
     RUNTIME.get_or_init(|| Arc::new(AnywhereRuntime::new()))
+}
+
+fn anywhere_listener() -> &'static std::sync::Mutex<Option<AnywhereListener>> {
+    static LISTENER: OnceLock<std::sync::Mutex<Option<AnywhereListener>>> = OnceLock::new();
+    LISTENER.get_or_init(|| std::sync::Mutex::new(None))
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -111,6 +117,62 @@ pub enum RsRelayAnywhereEvent {
     Cancelled,
 }
 
+/// Events from the one persistent Anywhere listener. Every incoming transfer
+/// includes its runtime session id so approvals and cancellation stay scoped
+/// to that connection.
+#[derive(Clone, Debug)]
+pub enum RsRelayAnywhereListenerEvent {
+    AddressReady {
+        address: String,
+        local_relay_id: String,
+    },
+    SessionStarting {
+        session_id: u64,
+    },
+    SessionWaitingForPeer {
+        session_id: u64,
+    },
+    SessionPeerConnected {
+        session_id: u64,
+    },
+    SessionTlsEstablished {
+        session_id: u64,
+    },
+    SessionPeerAuthenticated {
+        session_id: u64,
+        remote_relay_id: String,
+    },
+    SessionIncomingBatch {
+        session_id: u64,
+        transfer_id: u64,
+        files: Vec<RsRelayIncomingFile>,
+        remote_relay_id: String,
+    },
+    SessionTransferring {
+        session_id: u64,
+        bytes: u64,
+        total: u64,
+    },
+    SessionCompleted {
+        session_id: u64,
+        path: String,
+        bytes: u64,
+        local_relay_id: String,
+        remote_relay_id: String,
+        duration_ms: u64,
+    },
+    SessionCancelled {
+        session_id: u64,
+    },
+    SessionFailed {
+        session_id: u64,
+        message: String,
+        category: String,
+        stage: Option<String>,
+    },
+    Stopped,
+}
+
 fn map_event(event: AnywhereEvent) -> RsRelayAnywhereEvent {
     match event {
         AnywhereEvent::Starting => RsRelayAnywhereEvent::Starting,
@@ -169,6 +231,98 @@ pub(crate) fn map_failure(error: &AnywhereError) -> RsRelayAnywhereEvent {
     }
 }
 
+fn map_listener_event(event: AnywhereListenerEvent) -> RsRelayAnywhereListenerEvent {
+    match event {
+        AnywhereListenerEvent::AddressReady {
+            address,
+            local_relay_id,
+        } => RsRelayAnywhereListenerEvent::AddressReady {
+            address,
+            local_relay_id,
+        },
+        AnywhereListenerEvent::Session { session_id, event } => match event {
+            AnywhereEvent::Starting => RsRelayAnywhereListenerEvent::SessionStarting {
+                session_id: session_id.as_u64(),
+            },
+            AnywhereEvent::WaitingForConnection => {
+                RsRelayAnywhereListenerEvent::SessionWaitingForPeer {
+                    session_id: session_id.as_u64(),
+                }
+            }
+            AnywhereEvent::PeerConnected => RsRelayAnywhereListenerEvent::SessionPeerConnected {
+                session_id: session_id.as_u64(),
+            },
+            AnywhereEvent::TlsEstablished => RsRelayAnywhereListenerEvent::SessionTlsEstablished {
+                session_id: session_id.as_u64(),
+            },
+            AnywhereEvent::PeerAuthenticated { remote_relay_id } => {
+                RsRelayAnywhereListenerEvent::SessionPeerAuthenticated {
+                    session_id: session_id.as_u64(),
+                    remote_relay_id,
+                }
+            }
+            AnywhereEvent::IncomingBatch {
+                transfer_id,
+                files,
+                remote_relay_id,
+            } => RsRelayAnywhereListenerEvent::SessionIncomingBatch {
+                session_id: session_id.as_u64(),
+                transfer_id: transfer_id.as_u64(),
+                files: files
+                    .into_iter()
+                    .map(|file| RsRelayIncomingFile {
+                        id: file.id,
+                        name: file.name,
+                        size: file.size,
+                    })
+                    .collect(),
+                remote_relay_id,
+            },
+            AnywhereEvent::Transferring { bytes, total } => {
+                RsRelayAnywhereListenerEvent::SessionTransferring {
+                    session_id: session_id.as_u64(),
+                    bytes,
+                    total,
+                }
+            }
+            AnywhereEvent::Completed { outcome } => {
+                RsRelayAnywhereListenerEvent::SessionCompleted {
+                    session_id: session_id.as_u64(),
+                    path: outcome.path.as_str().to_owned(),
+                    bytes: outcome.bytes,
+                    local_relay_id: outcome.local_relay_id,
+                    remote_relay_id: outcome.remote_relay_id,
+                    duration_ms: outcome.duration_ms,
+                }
+            }
+            AnywhereEvent::Cancelled => RsRelayAnywhereListenerEvent::SessionCancelled {
+                session_id: session_id.as_u64(),
+            },
+            // A listener itself publishes the address. A session never owns
+            // endpoint setup or a standalone outbound connection state.
+            AnywhereEvent::EndpointReady { .. } | AnywhereEvent::Connecting => {
+                RsRelayAnywhereListenerEvent::SessionFailed {
+                    session_id: session_id.as_u64(),
+                    message: "invalid listener session event".to_owned(),
+                    category: "protocol".to_owned(),
+                    stage: None,
+                }
+            }
+        },
+        AnywhereListenerEvent::SessionFailed {
+            session_id,
+            category,
+            stage,
+        } => RsRelayAnywhereListenerEvent::SessionFailed {
+            session_id: session_id.as_u64(),
+            message: "Anywhere listener session failed".to_owned(),
+            category,
+            stage,
+        },
+        AnywhereListenerEvent::Stopped => RsRelayAnywhereListenerEvent::Stopped,
+    }
+}
+
 /// Parses a Relay address bundle. Fail-closed; never panics on bad input.
 #[frb(sync)]
 pub fn relay_anywhere_parse_address(address: String) -> anyhow::Result<RsRelayAddress> {
@@ -178,6 +332,110 @@ pub fn relay_anywhere_parse_address(address: String) -> anyhow::Result<RsRelayAd
         claimed_relay_id: parsed.claimed_relay_id,
         routing_available: true,
     })
+}
+
+/// Creates an opaque private routing key for a persistent Anywhere endpoint.
+///
+/// The caller must immediately place this material in the platform secret
+/// store. It is intentionally unrelated to the Relay identity private key.
+#[frb(sync)]
+pub fn relay_anywhere_generate_routing_key() -> Vec<u8> {
+    AnywhereRoutingKey::generate().secret_bytes().to_vec()
+}
+
+/// Validates opaque routing-key material before it is used or retained.
+/// No endpoint is bound and no routing metadata is exposed by this operation.
+#[frb(sync)]
+pub fn relay_anywhere_validate_routing_key(mut routing_key: Vec<u8>) -> anyhow::Result<()> {
+    let result = AnywhereRoutingKey::from_bytes(&routing_key).map(|_| ());
+    routing_key.fill(0);
+    result.map_err(anyhow::Error::from)
+}
+
+/// Activates the single reusable Anywhere listener. This is the production
+/// capability boundary: importing the API or opening an outbound session does
+/// not bind Iroh. The caller supplies both unrelated secret materials from the
+/// platform stores, and they are wiped after being reconstructed in Rust.
+pub async fn relay_anywhere_start_listener(
+    mut private_key_pem: Vec<u8>,
+    relay_id: String,
+    mut routing_key: Vec<u8>,
+    alias: String,
+    event_sink: StreamSink<RsRelayAnywhereListenerEvent>,
+) -> anyhow::Result<()> {
+    if anywhere_listener()
+        .lock()
+        .map_err(|_| anyhow::anyhow!("Anywhere listener state is unavailable"))?
+        .is_some()
+    {
+        anyhow::bail!("Anywhere listener is already running");
+    }
+
+    let identity = AnywhereIdentity::load(&mut private_key_pem, &relay_id);
+    private_key_pem.fill(0);
+    let identity = identity?;
+    let routing_key_result = AnywhereRoutingKey::from_bytes(&routing_key);
+    routing_key.fill(0);
+    let routing_key = routing_key_result?;
+    let sink = event_sink.clone();
+    let events = Arc::new(move |event| {
+        let _ = sink.add(map_listener_event(event));
+    });
+    let listener = AnywhereListener::start(
+        anywhere_runtime().clone(),
+        AnywhereListenerConfig {
+            identity,
+            routing_key,
+            preference: PathPreference::Auto,
+            alias,
+        },
+        events,
+    )
+    .await?;
+
+    // A second caller can pass the initial check while this caller is binding
+    // Iroh. Never replace a live listener in that race: doing so would leave
+    // the losing listener reachable even though its start call failed.
+    let mut pending_listener = Some(listener);
+    let already_running = {
+        let mut slot = anywhere_listener()
+            .lock()
+            .map_err(|_| anyhow::anyhow!("Anywhere listener state is unavailable"))?;
+        if slot.is_some() {
+            true
+        } else {
+            *slot = pending_listener.take();
+            false
+        }
+    };
+    if already_running {
+        if let Some(listener) = pending_listener {
+            listener.shutdown().await;
+        }
+        anyhow::bail!("Anywhere listener was started concurrently");
+    }
+    Ok(())
+}
+
+/// Stops remote capability and cleanly closes the persistent endpoint. It is
+/// idempotent so normal application shutdown can call it unconditionally.
+pub async fn relay_anywhere_stop_listener() {
+    let listener = anywhere_listener()
+        .lock()
+        .ok()
+        .and_then(|mut slot| slot.take());
+    if let Some(listener) = listener {
+        listener.shutdown().await;
+    }
+}
+
+/// Returns the current public routing address without exposing its private key.
+#[frb(sync)]
+pub fn relay_anywhere_listener_address() -> Option<String> {
+    anywhere_listener()
+        .lock()
+        .ok()
+        .and_then(|slot| slot.as_ref().map(|listener| listener.address().to_owned()))
 }
 
 /// Opens a session handle. Any number may be open at once.

@@ -21,6 +21,7 @@ import 'package:localsend_app/provider/persistence_provider.dart';
 // [FOSS_REMOVE_START]
 import 'package:localsend_app/provider/purchase_provider.dart';
 // [FOSS_REMOVE_END]
+import 'package:localsend_app/provider/relay_anywhere_listener_provider.dart';
 import 'package:localsend_app/provider/selection/selected_sending_files_provider.dart';
 import 'package:localsend_app/provider/settings_provider.dart';
 import 'package:localsend_app/provider/tv_provider.dart';
@@ -190,6 +191,7 @@ class NetworkBootstrap {
   final Future<bool> Function()? _requestLocalNetworkPermission;
   final Future<void> Function() _startServer;
   final void Function() _startDiscoveryListener;
+  final Future<void> Function()? _startRemoteListener;
 
   Future<NetworkBootstrapResult>? _startFuture;
 
@@ -197,9 +199,11 @@ class NetworkBootstrap {
     Future<bool> Function()? requestLocalNetworkPermission,
     required Future<void> Function() startServer,
     required void Function() startDiscoveryListener,
+    Future<void> Function()? startRemoteListener,
   }) : _requestLocalNetworkPermission = requestLocalNetworkPermission,
        _startServer = startServer,
-       _startDiscoveryListener = startDiscoveryListener;
+       _startDiscoveryListener = startDiscoveryListener,
+       _startRemoteListener = startRemoteListener;
 
   Future<NetworkBootstrapResult> start() async {
     final existingStart = _startFuture;
@@ -228,6 +232,14 @@ class NetworkBootstrap {
     }
 
     if (!localNetworkGranted) {
+      // Remote Relay uses a separate user-enabled transport. Android's LAN
+      // permission must not silently disable an already configured remote
+      // listener, and this call remains a no-op unless the setting is on.
+      try {
+        await _startRemoteListener?.call();
+      } catch (e) {
+        _logger.warning('Starting remote Relay listener failed', e);
+      }
       return const NetworkBootstrapResult(
         localNetworkGranted: false,
         serverError: null,
@@ -246,6 +258,13 @@ class NetworkBootstrap {
       _startDiscoveryListener();
     } catch (e) {
       _logger.warning('Starting discovery listener failed', e);
+    }
+
+    try {
+      await _startRemoteListener?.call();
+    } catch (e) {
+      // Remote capability must never make the normal LAN bootstrap fail.
+      _logger.warning('Starting remote Relay listener failed', e);
     }
 
     return NetworkBootstrapResult(
@@ -273,6 +292,11 @@ NetworkBootstrap createNetworkBootstrap(RefenaContainer container) {
     },
     startDiscoveryListener: () {
       unawaited(container.redux(nearbyDevicesProvider).dispatchAsync(StartDiscoveryListener()));
+    },
+    startRemoteListener: () async {
+      await container
+          .read(relayAnywhereListenerServiceProvider)
+          .startIfEnabled(enabled: container.read(settingsProvider).remoteRelayEnabled, alias: container.read(settingsProvider).alias);
     },
   );
 }

@@ -9,6 +9,8 @@ mod device;
 mod id;
 mod path;
 mod policy;
+#[cfg(feature = "anywhere")]
+mod production;
 mod session;
 #[cfg(feature = "anywhere")]
 mod transport;
@@ -27,6 +29,8 @@ pub use policy::{
     DeviceBinding, MemoryTrustDirectory, TransferAuthorization, TransferRequestContext,
     TrustDirectory, TrustRecord,
 };
+#[cfg(feature = "anywhere")]
+pub use production::{LanRelaySessionFactory, ProductionLanConnection};
 pub use session::{AuthenticatedRelaySession, LegacyLanInboundSession, LocalSendPeer, SessionRole};
 #[cfg(feature = "anywhere")]
 pub use transport::{

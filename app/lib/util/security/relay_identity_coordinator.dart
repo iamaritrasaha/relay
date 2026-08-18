@@ -250,6 +250,32 @@ class RelayIdentityCoordinator {
     return _serializeSignerOperation(_activateSigner);
   }
 
+  /// Provides the authoritative identity private key to one short-lived native
+  /// operation, then wipes the Dart buffer. This is deliberately not a getter:
+  /// callers cannot cache or synchronize the secret into application state.
+  Future<T?> withPrivateKey<T>(Future<T> Function(Uint8List privateKey, RelayPublicIdentity identity) operation) async {
+    final initialized = await initialize();
+    if (initialized is! RelayIdentityReady) {
+      return null;
+    }
+    final load = await _loadSecret();
+    if (load is! RelaySecretFound) {
+      return null;
+    }
+    final secret = load.secret;
+    try {
+      final restored = await _identityApi.restore(secret);
+      if (restored.relayId != initialized.identity.relayId || restored.publicKey != initialized.identity.publicKey) {
+        return null;
+      }
+      return await operation(secret, initialized.identity);
+    } catch (_) {
+      return null;
+    } finally {
+      _wipe(secret);
+    }
+  }
+
   Future<RelaySignerActivationResult> _activateSigner() async {
     final ready = _ready;
     if (ready != null) {

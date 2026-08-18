@@ -180,6 +180,44 @@ void main() {
       expect(store.loadCalls, 1);
     });
 
+    test('private-key operations receive the authoritative identity once and wipe the buffer afterwards', () async {
+      final store = _FakeSecretStore(secret: Uint8List.fromList([1, 2, 3]));
+      Uint8List? operationBuffer;
+      RelayPublicIdentity? operationIdentity;
+
+      final result =
+          await coordinator(
+            store: store,
+            api: _FakeIdentityApi(restored: identity),
+          ).withPrivateKey((privateKey, publicIdentity) async {
+            operationBuffer = privateKey;
+            operationIdentity = publicIdentity;
+            return 'started';
+          });
+
+      expect(result, 'started');
+      expect(operationIdentity, const RelayPublicIdentity(relayId: 'derived-id', publicKey: 'derived-spki'));
+      expect(operationBuffer, orderedEquals([0, 0, 0]));
+    });
+
+    test('private-key operations reject a secret that no longer matches the authoritative public identity', () async {
+      var called = false;
+      final api = _FakeIdentityApi(restored: identity);
+      final subject = coordinator(
+        store: _FakeSecretStore(secret: Uint8List.fromList([1])),
+        api: api,
+      );
+      await subject.initialize();
+      api.restored = _material(secret: [1], relayId: 'other-id', publicKey: 'other-spki');
+
+      final result = await subject.withPrivateKey((_, __) async {
+        called = true;
+      });
+
+      expect(result, isNull);
+      expect(called, isFalse);
+    });
+
     test('successful reset deletes the secret then clears public metadata', () async {
       final store = _FakeSecretStore(secret: Uint8List.fromList([1]));
       final metadata = _FakeMetadataStore(
@@ -536,7 +574,7 @@ class _FakeSecretStore implements RelayIdentitySecretStore {
 
 class _FakeIdentityApi implements RelayIdentityApi {
   final RelayIdentityMaterial? generated;
-  final RelayIdentityMaterial? restored;
+  RelayIdentityMaterial? restored;
   final Object? restoreError;
   int generateCalls = 0;
 

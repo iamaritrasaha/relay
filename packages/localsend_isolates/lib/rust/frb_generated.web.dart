@@ -204,6 +204,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   RustStreamSink<RsRelayAnywhereEvent> dco_decode_StreamSink_rs_relay_anywhere_event_Sse(dynamic raw);
 
   @protected
+  RustStreamSink<RsRelayAnywhereListenerEvent> dco_decode_StreamSink_rs_relay_anywhere_listener_event_Sse(dynamic raw);
+
+  @protected
   RustStreamSink<RsServerEvent> dco_decode_StreamSink_rs_server_event_Sse(dynamic raw);
 
   @protected
@@ -480,6 +483,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   RsRelayAnywhereFile dco_decode_rs_relay_anywhere_file(dynamic raw);
 
   @protected
+  RsRelayAnywhereListenerEvent dco_decode_rs_relay_anywhere_listener_event(dynamic raw);
+
+  @protected
   RsRelayIncomingFile dco_decode_rs_relay_incoming_file(dynamic raw);
 
   @protected
@@ -702,6 +708,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   RustStreamSink<RsRelayAnywhereEvent> sse_decode_StreamSink_rs_relay_anywhere_event_Sse(SseDeserializer deserializer);
+
+  @protected
+  RustStreamSink<RsRelayAnywhereListenerEvent> sse_decode_StreamSink_rs_relay_anywhere_listener_event_Sse(SseDeserializer deserializer);
 
   @protected
   RustStreamSink<RsServerEvent> sse_decode_StreamSink_rs_server_event_Sse(SseDeserializer deserializer);
@@ -982,6 +991,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   RsRelayAnywhereFile sse_decode_rs_relay_anywhere_file(SseDeserializer deserializer);
 
   @protected
+  RsRelayAnywhereListenerEvent sse_decode_rs_relay_anywhere_listener_event(SseDeserializer deserializer);
+
+  @protected
   RsRelayIncomingFile sse_decode_rs_relay_incoming_file(SseDeserializer deserializer);
 
   @protected
@@ -1248,6 +1260,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   void sse_encode_StreamSink_rs_relay_anywhere_event_Sse(RustStreamSink<RsRelayAnywhereEvent> self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_StreamSink_rs_relay_anywhere_listener_event_Sse(RustStreamSink<RsRelayAnywhereListenerEvent> self, SseSerializer serializer);
 
   @protected
   void sse_encode_StreamSink_rs_server_event_Sse(RustStreamSink<RsServerEvent> self, SseSerializer serializer);
@@ -1528,6 +1543,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   void sse_encode_rs_relay_anywhere_file(RsRelayAnywhereFile self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_rs_relay_anywhere_listener_event(RsRelayAnywhereListenerEvent self, SseSerializer serializer);
 
   @protected
   void sse_encode_rs_relay_incoming_file(RsRelayIncomingFile self, SseSerializer serializer);

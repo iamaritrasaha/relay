@@ -7,7 +7,9 @@ pub mod address;
 pub mod endpoint;
 pub mod error;
 pub mod identity;
+pub mod listener;
 pub mod proof;
+pub mod routing_key;
 pub mod runtime;
 pub mod stream;
 pub mod tls;
@@ -18,13 +20,17 @@ pub use address::{
     RELAY_ADDRESS_PREFIX, RELAY_ADDRESS_VERSION,
 };
 pub use endpoint::{
-    bind_endpoint, iroh_endpoint_bind_count, selected_path, wrap_endpoint, AnywhereEndpoint,
-    PathPreference, ALPN,
+    bind_endpoint, bind_endpoint_with_key, iroh_endpoint_bind_count, selected_path, wrap_endpoint,
+    AnywhereEndpoint, PathPreference, ALPN,
 };
 pub use error::{AnywhereError, TlsStage, TransportStage};
 pub use identity::AnywhereIdentity;
 pub use iroh::EndpointAddr;
+pub use listener::{
+    AnywhereListener, AnywhereListenerConfig, AnywhereListenerEvent, AnywhereListenerEventSink,
+};
 pub use proof::{authenticate_initiator, authenticate_server};
+pub use routing_key::{AnywhereRoutingKey, RoutingKeyError};
 pub use runtime::{
     AnywhereDecision, AnywhereRespondError, AnywhereRuntime, AnywhereSessionId, IncomingTransferId,
 };

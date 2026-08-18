@@ -77,7 +77,7 @@ class RustLib extends BaseEntrypoint<RustLibApi, RustLibApiImpl, RustLibWire> {
   String get codegenVersion => '2.12.0';
 
   @override
-  int get rustContentHash => 1558555014;
+  int get rustContentHash => 1778742199;
 
   static const kDefaultExternalLibraryLoaderConfig = ExternalLibraryLoaderConfig(
     stem: 'rust_lib_localsend_app',
@@ -303,6 +303,10 @@ abstract class RustLibApi extends BaseApi {
 
   bool crateApiRelayAnywhereRelayAnywhereCloseSession({required BigInt sessionId});
 
+  Uint8List crateApiRelayAnywhereRelayAnywhereGenerateRoutingKey();
+
+  String? crateApiRelayAnywhereRelayAnywhereListenerAddress();
+
   BigInt crateApiRelayAnywhereRelayAnywhereOpenSession();
 
   int crateApiRelayAnywhereRelayAnywhereOpenSessionCount();
@@ -329,6 +333,17 @@ abstract class RustLibApi extends BaseApi {
     required RsRelayPathPreference pathPreference,
     required List<RsRelayAnywhereFile> files,
   });
+
+  Stream<RsRelayAnywhereListenerEvent> crateApiRelayAnywhereRelayAnywhereStartListener({
+    required List<int> privateKeyPem,
+    required String relayId,
+    required List<int> routingKey,
+    required String alias,
+  });
+
+  Future<void> crateApiRelayAnywhereRelayAnywhereStopListener();
+
+  void crateApiRelayAnywhereRelayAnywhereValidateRoutingKey({required List<int> routingKey});
 
   Future<RelayIdentityMaterial> crateApiCryptoRestoreRelayIdentity({required List<int> privateKey});
 
@@ -2203,12 +2218,60 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   );
 
   @override
-  BigInt crateApiRelayAnywhereRelayAnywhereOpenSession() {
+  Uint8List crateApiRelayAnywhereRelayAnywhereGenerateRoutingKey() {
     return handler.executeSync(
       SyncTask(
         callFfi: () {
           final serializer = SseSerializer(generalizedFrbRustBinding);
           return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 61)!;
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_list_prim_u_8_strict,
+          decodeErrorData: null,
+        ),
+        constMeta: kCrateApiRelayAnywhereRelayAnywhereGenerateRoutingKeyConstMeta,
+        argValues: [],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiRelayAnywhereRelayAnywhereGenerateRoutingKeyConstMeta => const TaskConstMeta(
+    debugName: 'relay_anywhere_generate_routing_key',
+    argNames: [],
+  );
+
+  @override
+  String? crateApiRelayAnywhereRelayAnywhereListenerAddress() {
+    return handler.executeSync(
+      SyncTask(
+        callFfi: () {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 62)!;
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_opt_String,
+          decodeErrorData: null,
+        ),
+        constMeta: kCrateApiRelayAnywhereRelayAnywhereListenerAddressConstMeta,
+        argValues: [],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiRelayAnywhereRelayAnywhereListenerAddressConstMeta => const TaskConstMeta(
+    debugName: 'relay_anywhere_listener_address',
+    argNames: [],
+  );
+
+  @override
+  BigInt crateApiRelayAnywhereRelayAnywhereOpenSession() {
+    return handler.executeSync(
+      SyncTask(
+        callFfi: () {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 63)!;
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_u_64,
@@ -2232,7 +2295,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       SyncTask(
         callFfi: () {
           final serializer = SseSerializer(generalizedFrbRustBinding);
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 62)!;
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 64)!;
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_u_32,
@@ -2257,7 +2320,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         callFfi: () {
           final serializer = SseSerializer(generalizedFrbRustBinding);
           sse_encode_String(address, serializer);
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 63)!;
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 65)!;
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_rs_relay_address,
@@ -2297,7 +2360,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
             sse_encode_rs_relay_path_preference(pathPreference, serializer);
             sse_encode_opt_String(expectedRemoteRelayId, serializer);
             sse_encode_StreamSink_rs_relay_anywhere_event_Sse(eventSink, serializer);
-            pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 64, port: port_);
+            pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 66, port: port_);
           },
           codec: SseCodec(
             decodeSuccessData: sse_decode_unit,
@@ -2327,7 +2390,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           sse_encode_u_64(transferId, serializer);
           sse_encode_bool(accept, serializer);
           sse_encode_opt_String(targetsJson, serializer);
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 65)!;
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 67)!;
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_unit,
@@ -2369,7 +2432,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
             sse_encode_rs_relay_path_preference(pathPreference, serializer);
             sse_encode_list_rs_relay_anywhere_file(files, serializer);
             sse_encode_StreamSink_rs_relay_anywhere_event_Sse(eventSink, serializer);
-            pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 66, port: port_);
+            pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 68, port: port_);
           },
           codec: SseCodec(
             decodeSuccessData: sse_decode_unit,
@@ -2390,13 +2453,100 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   );
 
   @override
+  Stream<RsRelayAnywhereListenerEvent> crateApiRelayAnywhereRelayAnywhereStartListener({
+    required List<int> privateKeyPem,
+    required String relayId,
+    required List<int> routingKey,
+    required String alias,
+  }) {
+    final eventSink = RustStreamSink<RsRelayAnywhereListenerEvent>();
+    unawaited(
+      handler.executeNormal(
+        NormalTask(
+          callFfi: (port_) {
+            final serializer = SseSerializer(generalizedFrbRustBinding);
+            sse_encode_list_prim_u_8_loose(privateKeyPem, serializer);
+            sse_encode_String(relayId, serializer);
+            sse_encode_list_prim_u_8_loose(routingKey, serializer);
+            sse_encode_String(alias, serializer);
+            sse_encode_StreamSink_rs_relay_anywhere_listener_event_Sse(eventSink, serializer);
+            pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 69, port: port_);
+          },
+          codec: SseCodec(
+            decodeSuccessData: sse_decode_unit,
+            decodeErrorData: sse_decode_AnyhowException,
+          ),
+          constMeta: kCrateApiRelayAnywhereRelayAnywhereStartListenerConstMeta,
+          argValues: [privateKeyPem, relayId, routingKey, alias, eventSink],
+          apiImpl: this,
+        ),
+      ),
+    );
+    return eventSink.stream;
+  }
+
+  TaskConstMeta get kCrateApiRelayAnywhereRelayAnywhereStartListenerConstMeta => const TaskConstMeta(
+    debugName: 'relay_anywhere_start_listener',
+    argNames: ['privateKeyPem', 'relayId', 'routingKey', 'alias', 'eventSink'],
+  );
+
+  @override
+  Future<void> crateApiRelayAnywhereRelayAnywhereStopListener() {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 70, port: port_);
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_unit,
+          decodeErrorData: null,
+        ),
+        constMeta: kCrateApiRelayAnywhereRelayAnywhereStopListenerConstMeta,
+        argValues: [],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiRelayAnywhereRelayAnywhereStopListenerConstMeta => const TaskConstMeta(
+    debugName: 'relay_anywhere_stop_listener',
+    argNames: [],
+  );
+
+  @override
+  void crateApiRelayAnywhereRelayAnywhereValidateRoutingKey({required List<int> routingKey}) {
+    return handler.executeSync(
+      SyncTask(
+        callFfi: () {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_list_prim_u_8_loose(routingKey, serializer);
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 71)!;
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_unit,
+          decodeErrorData: sse_decode_AnyhowException,
+        ),
+        constMeta: kCrateApiRelayAnywhereRelayAnywhereValidateRoutingKeyConstMeta,
+        argValues: [routingKey],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiRelayAnywhereRelayAnywhereValidateRoutingKeyConstMeta => const TaskConstMeta(
+    debugName: 'relay_anywhere_validate_routing_key',
+    argNames: ['routingKey'],
+  );
+
+  @override
   Future<RelayIdentityMaterial> crateApiCryptoRestoreRelayIdentity({required List<int> privateKey}) {
     return handler.executeNormal(
       NormalTask(
         callFfi: (port_) {
           final serializer = SseSerializer(generalizedFrbRustBinding);
           sse_encode_list_prim_u_8_loose(privateKey, serializer);
-          pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 67, port: port_);
+          pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 72, port: port_);
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_relay_identity_material,
@@ -2421,7 +2571,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         callFfi: () {
           final serializer = SseSerializer(generalizedFrbRustBinding);
           sse_encode_String(name, serializer);
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 68)!;
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 73)!;
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_String,
@@ -2474,7 +2624,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           sse_encode_String(certPem, serializer);
           sse_encode_String(privateKeyPem, serializer);
           sse_encode_u_64(timeoutMs, serializer);
-          pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 69, port: port_);
+          pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 74, port: port_);
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerRsDiscovery,
@@ -2551,7 +2701,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           sse_encode_bool(verifyChecksums, serializer);
           sse_encode_opt_box_autoadd_web_params(web, serializer);
           sse_encode_opt_String(showToken, serializer);
-          pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 70, port: port_);
+          pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 75, port: port_);
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerRsHttpServer,
@@ -2577,7 +2727,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           final serializer = SseSerializer(generalizedFrbRustBinding);
           sse_encode_String(cert, serializer);
           sse_encode_String(publicKey, serializer);
-          pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 71, port: port_);
+          pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 76, port: port_);
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_unit,
@@ -2956,6 +3106,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
 
   @protected
   RustStreamSink<RsRelayAnywhereEvent> dco_decode_StreamSink_rs_relay_anywhere_event_Sse(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    throw UnimplementedError();
+  }
+
+  @protected
+  RustStreamSink<RsRelayAnywhereListenerEvent> dco_decode_StreamSink_rs_relay_anywhere_listener_event_Sse(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     throw UnimplementedError();
   }
@@ -3764,6 +3920,76 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  RsRelayAnywhereListenerEvent dco_decode_rs_relay_anywhere_listener_event(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    switch (raw[0]) {
+      case 0:
+        return RsRelayAnywhereListenerEvent_AddressReady(
+          address: dco_decode_String(raw[1]),
+          localRelayId: dco_decode_String(raw[2]),
+        );
+      case 1:
+        return RsRelayAnywhereListenerEvent_SessionStarting(
+          sessionId: dco_decode_u_64(raw[1]),
+        );
+      case 2:
+        return RsRelayAnywhereListenerEvent_SessionWaitingForPeer(
+          sessionId: dco_decode_u_64(raw[1]),
+        );
+      case 3:
+        return RsRelayAnywhereListenerEvent_SessionPeerConnected(
+          sessionId: dco_decode_u_64(raw[1]),
+        );
+      case 4:
+        return RsRelayAnywhereListenerEvent_SessionTlsEstablished(
+          sessionId: dco_decode_u_64(raw[1]),
+        );
+      case 5:
+        return RsRelayAnywhereListenerEvent_SessionPeerAuthenticated(
+          sessionId: dco_decode_u_64(raw[1]),
+          remoteRelayId: dco_decode_String(raw[2]),
+        );
+      case 6:
+        return RsRelayAnywhereListenerEvent_SessionIncomingBatch(
+          sessionId: dco_decode_u_64(raw[1]),
+          transferId: dco_decode_u_64(raw[2]),
+          files: dco_decode_list_rs_relay_incoming_file(raw[3]),
+          remoteRelayId: dco_decode_String(raw[4]),
+        );
+      case 7:
+        return RsRelayAnywhereListenerEvent_SessionTransferring(
+          sessionId: dco_decode_u_64(raw[1]),
+          bytes: dco_decode_u_64(raw[2]),
+          total: dco_decode_u_64(raw[3]),
+        );
+      case 8:
+        return RsRelayAnywhereListenerEvent_SessionCompleted(
+          sessionId: dco_decode_u_64(raw[1]),
+          path: dco_decode_String(raw[2]),
+          bytes: dco_decode_u_64(raw[3]),
+          localRelayId: dco_decode_String(raw[4]),
+          remoteRelayId: dco_decode_String(raw[5]),
+          durationMs: dco_decode_u_64(raw[6]),
+        );
+      case 9:
+        return RsRelayAnywhereListenerEvent_SessionCancelled(
+          sessionId: dco_decode_u_64(raw[1]),
+        );
+      case 10:
+        return RsRelayAnywhereListenerEvent_SessionFailed(
+          sessionId: dco_decode_u_64(raw[1]),
+          message: dco_decode_String(raw[2]),
+          category: dco_decode_String(raw[3]),
+          stage: dco_decode_opt_String(raw[4]),
+        );
+      case 11:
+        return RsRelayAnywhereListenerEvent_Stopped();
+      default:
+        throw Exception('unreachable');
+    }
+  }
+
+  @protected
   RsRelayIncomingFile dco_decode_rs_relay_incoming_file(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
@@ -4396,6 +4622,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
 
   @protected
   RustStreamSink<RsRelayAnywhereEvent> sse_decode_StreamSink_rs_relay_anywhere_event_Sse(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    throw UnimplementedError('Unreachable ()');
+  }
+
+  @protected
+  RustStreamSink<RsRelayAnywhereListenerEvent> sse_decode_StreamSink_rs_relay_anywhere_listener_event_Sse(SseDeserializer deserializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     throw UnimplementedError('Unreachable ()');
   }
@@ -5307,6 +5539,79 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  RsRelayAnywhereListenerEvent sse_decode_rs_relay_anywhere_listener_event(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    var tag_ = sse_decode_i_32(deserializer);
+    switch (tag_) {
+      case 0:
+        var var_address = sse_decode_String(deserializer);
+        var var_localRelayId = sse_decode_String(deserializer);
+        return RsRelayAnywhereListenerEvent_AddressReady(address: var_address, localRelayId: var_localRelayId);
+      case 1:
+        var var_sessionId = sse_decode_u_64(deserializer);
+        return RsRelayAnywhereListenerEvent_SessionStarting(sessionId: var_sessionId);
+      case 2:
+        var var_sessionId = sse_decode_u_64(deserializer);
+        return RsRelayAnywhereListenerEvent_SessionWaitingForPeer(sessionId: var_sessionId);
+      case 3:
+        var var_sessionId = sse_decode_u_64(deserializer);
+        return RsRelayAnywhereListenerEvent_SessionPeerConnected(sessionId: var_sessionId);
+      case 4:
+        var var_sessionId = sse_decode_u_64(deserializer);
+        return RsRelayAnywhereListenerEvent_SessionTlsEstablished(sessionId: var_sessionId);
+      case 5:
+        var var_sessionId = sse_decode_u_64(deserializer);
+        var var_remoteRelayId = sse_decode_String(deserializer);
+        return RsRelayAnywhereListenerEvent_SessionPeerAuthenticated(sessionId: var_sessionId, remoteRelayId: var_remoteRelayId);
+      case 6:
+        var var_sessionId = sse_decode_u_64(deserializer);
+        var var_transferId = sse_decode_u_64(deserializer);
+        var var_files = sse_decode_list_rs_relay_incoming_file(deserializer);
+        var var_remoteRelayId = sse_decode_String(deserializer);
+        return RsRelayAnywhereListenerEvent_SessionIncomingBatch(
+          sessionId: var_sessionId,
+          transferId: var_transferId,
+          files: var_files,
+          remoteRelayId: var_remoteRelayId,
+        );
+      case 7:
+        var var_sessionId = sse_decode_u_64(deserializer);
+        var var_bytes = sse_decode_u_64(deserializer);
+        var var_total = sse_decode_u_64(deserializer);
+        return RsRelayAnywhereListenerEvent_SessionTransferring(sessionId: var_sessionId, bytes: var_bytes, total: var_total);
+      case 8:
+        var var_sessionId = sse_decode_u_64(deserializer);
+        var var_path = sse_decode_String(deserializer);
+        var var_bytes = sse_decode_u_64(deserializer);
+        var var_localRelayId = sse_decode_String(deserializer);
+        var var_remoteRelayId = sse_decode_String(deserializer);
+        var var_durationMs = sse_decode_u_64(deserializer);
+        return RsRelayAnywhereListenerEvent_SessionCompleted(
+          sessionId: var_sessionId,
+          path: var_path,
+          bytes: var_bytes,
+          localRelayId: var_localRelayId,
+          remoteRelayId: var_remoteRelayId,
+          durationMs: var_durationMs,
+        );
+      case 9:
+        var var_sessionId = sse_decode_u_64(deserializer);
+        return RsRelayAnywhereListenerEvent_SessionCancelled(sessionId: var_sessionId);
+      case 10:
+        var var_sessionId = sse_decode_u_64(deserializer);
+        var var_message = sse_decode_String(deserializer);
+        var var_category = sse_decode_String(deserializer);
+        var var_stage = sse_decode_opt_String(deserializer);
+        return RsRelayAnywhereListenerEvent_SessionFailed(sessionId: var_sessionId, message: var_message, category: var_category, stage: var_stage);
+      case 11:
+        return RsRelayAnywhereListenerEvent_Stopped();
+      default:
+        throw UnimplementedError('');
+    }
+  }
+
+  @protected
   RsRelayIncomingFile sse_decode_rs_relay_incoming_file(SseDeserializer deserializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     var var_id = sse_decode_String(deserializer);
@@ -6010,6 +6315,20 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       self.setupAndSerialize(
         codec: SseCodec(
           decodeSuccessData: sse_decode_rs_relay_anywhere_event,
+          decodeErrorData: sse_decode_AnyhowException,
+        ),
+      ),
+      serializer,
+    );
+  }
+
+  @protected
+  void sse_encode_StreamSink_rs_relay_anywhere_listener_event_Sse(RustStreamSink<RsRelayAnywhereListenerEvent> self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_String(
+      self.setupAndSerialize(
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_rs_relay_anywhere_listener_event,
           decodeErrorData: sse_decode_AnyhowException,
         ),
       ),
@@ -6838,6 +7157,80 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_u_64(self.size, serializer);
     sse_encode_String(self.fileType, serializer);
     sse_encode_opt_String(self.sha256, serializer);
+  }
+
+  @protected
+  void sse_encode_rs_relay_anywhere_listener_event(RsRelayAnywhereListenerEvent self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    switch (self) {
+      case RsRelayAnywhereListenerEvent_AddressReady(address: final address, localRelayId: final localRelayId):
+        sse_encode_i_32(0, serializer);
+        sse_encode_String(address, serializer);
+        sse_encode_String(localRelayId, serializer);
+      case RsRelayAnywhereListenerEvent_SessionStarting(sessionId: final sessionId):
+        sse_encode_i_32(1, serializer);
+        sse_encode_u_64(sessionId, serializer);
+      case RsRelayAnywhereListenerEvent_SessionWaitingForPeer(sessionId: final sessionId):
+        sse_encode_i_32(2, serializer);
+        sse_encode_u_64(sessionId, serializer);
+      case RsRelayAnywhereListenerEvent_SessionPeerConnected(sessionId: final sessionId):
+        sse_encode_i_32(3, serializer);
+        sse_encode_u_64(sessionId, serializer);
+      case RsRelayAnywhereListenerEvent_SessionTlsEstablished(sessionId: final sessionId):
+        sse_encode_i_32(4, serializer);
+        sse_encode_u_64(sessionId, serializer);
+      case RsRelayAnywhereListenerEvent_SessionPeerAuthenticated(sessionId: final sessionId, remoteRelayId: final remoteRelayId):
+        sse_encode_i_32(5, serializer);
+        sse_encode_u_64(sessionId, serializer);
+        sse_encode_String(remoteRelayId, serializer);
+      case RsRelayAnywhereListenerEvent_SessionIncomingBatch(
+        sessionId: final sessionId,
+        transferId: final transferId,
+        files: final files,
+        remoteRelayId: final remoteRelayId,
+      ):
+        sse_encode_i_32(6, serializer);
+        sse_encode_u_64(sessionId, serializer);
+        sse_encode_u_64(transferId, serializer);
+        sse_encode_list_rs_relay_incoming_file(files, serializer);
+        sse_encode_String(remoteRelayId, serializer);
+      case RsRelayAnywhereListenerEvent_SessionTransferring(sessionId: final sessionId, bytes: final bytes, total: final total):
+        sse_encode_i_32(7, serializer);
+        sse_encode_u_64(sessionId, serializer);
+        sse_encode_u_64(bytes, serializer);
+        sse_encode_u_64(total, serializer);
+      case RsRelayAnywhereListenerEvent_SessionCompleted(
+        sessionId: final sessionId,
+        path: final path,
+        bytes: final bytes,
+        localRelayId: final localRelayId,
+        remoteRelayId: final remoteRelayId,
+        durationMs: final durationMs,
+      ):
+        sse_encode_i_32(8, serializer);
+        sse_encode_u_64(sessionId, serializer);
+        sse_encode_String(path, serializer);
+        sse_encode_u_64(bytes, serializer);
+        sse_encode_String(localRelayId, serializer);
+        sse_encode_String(remoteRelayId, serializer);
+        sse_encode_u_64(durationMs, serializer);
+      case RsRelayAnywhereListenerEvent_SessionCancelled(sessionId: final sessionId):
+        sse_encode_i_32(9, serializer);
+        sse_encode_u_64(sessionId, serializer);
+      case RsRelayAnywhereListenerEvent_SessionFailed(
+        sessionId: final sessionId,
+        message: final message,
+        category: final category,
+        stage: final stage,
+      ):
+        sse_encode_i_32(10, serializer);
+        sse_encode_u_64(sessionId, serializer);
+        sse_encode_String(message, serializer);
+        sse_encode_String(category, serializer);
+        sse_encode_opt_String(stage, serializer);
+      case RsRelayAnywhereListenerEvent_Stopped():
+        sse_encode_i_32(11, serializer);
+    }
   }
 
   @protected

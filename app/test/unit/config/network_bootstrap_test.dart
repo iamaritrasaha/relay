@@ -60,6 +60,21 @@ void main() {
     expect(discoveryStarts, 0);
   });
 
+  test('still starts an explicitly configured remote listener when LAN permission is denied', () async {
+    var remoteStarts = 0;
+    final bootstrap = NetworkBootstrap(
+      requestLocalNetworkPermission: () async => false,
+      startServer: () async {},
+      startDiscoveryListener: () {},
+      startRemoteListener: () async {
+        remoteStarts++;
+      },
+    );
+
+    expect((await bootstrap.start()).localNetworkGranted, isFalse);
+    expect(remoteStarts, 1);
+  });
+
   test('retries networking after local network permission is later granted', () async {
     var granted = false;
     var serverStarts = 0;

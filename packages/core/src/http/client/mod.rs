@@ -7,9 +7,9 @@ mod url;
 pub mod v2;
 pub mod v3;
 
+pub use anywhere::AnywhereHttpClient;
 pub use v2::LsHttpClientV2;
 pub use v3::LsHttpClientV3;
-pub use anywhere::AnywhereHttpClient;
 
 use crate::http::StatusCodeError;
 use crate::relay::RelayPeerAuth;
@@ -29,6 +29,7 @@ pub enum LsHttpClient {
     V3(LsHttpClientV3),
 }
 
+#[derive(Clone, Copy, Debug)]
 pub enum LsHttpClientVersion {
     V2,
     V3,
@@ -63,7 +64,9 @@ pub(crate) enum PrepareUploadStatus {
     NoContent,
 }
 
-pub(crate) fn classify_prepare_upload_status(status: u16) -> Result<PrepareUploadStatus, ClientError> {
+pub(crate) fn classify_prepare_upload_status(
+    status: u16,
+) -> Result<PrepareUploadStatus, ClientError> {
     match status {
         200..=299 => Ok(if status == 204 {
             PrepareUploadStatus::NoContent
