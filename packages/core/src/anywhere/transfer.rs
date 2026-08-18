@@ -21,21 +21,23 @@ use super::endpoint::{AnywhereEndpoint, PathPreference, bind_endpoint, selected_
 use super::error::{AnywhereError, TlsStage, TransportStage};
 use super::identity::AnywhereIdentity;
 use super::proof::{authenticate_initiator, authenticate_server};
-use super::runtime::{AnywhereRuntime, AnywhereSessionId, IncomingTransferId};
+use super::runtime::{AnywhereRuntime, AnywhereSaveTarget, AnywhereSessionId, IncomingTransferId};
 use super::stream::{
     IrohBiStream, client_peer_certificate_fingerprint, server_peer_certificate_fingerprint,
 };
 use super::tls::InnerTlsPeer;
 use super::{RelayAddressV1, authorize_unknown_authenticated, empty_trust};
-use crate::http::client::AnywhereHttpClient;
-use crate::http::dto_v2::{PrepareUploadRequestDtoV2, RegisterDtoV2};
 use crate::http::server::common::save::FileUploadTarget;
 use crate::http::server::v2::{PrepareUploadDecisionV2, ServerEventV2, SessionEndReasonV2};
 use crate::http::server::{ConnectionOrigin, ServerConfigV2, start_v2_stream_only};
 use crate::http::state::ClientInfo;
 use crate::model::discovery::ProtocolType;
-use crate::model::transfer::{FileContent, FileDto};
-use crate::relay::{AuthenticatedRelaySession, PathDescriptor, RelayId, TransferAuthorization};
+use crate::model::transfer::{FileDto, FileMetadata};
+use crate::relay::{
+    AnywhereTransferTransport, AuthenticatedRelaySession, PathDescriptor, RelayId, RelaySendError,
+    RelayTransferEngine, RelayTransferEvent, RelayTransferFile, RelayTransferRequest,
+    TransferAuthorization, TransportOrigin,
+};
 
 const SESSION_TIMEOUT: Duration = Duration::from_secs(120);
 const ONLINE_TIMEOUT: Duration = Duration::from_secs(20);
@@ -61,6 +63,9 @@ impl AnywherePathClass {
 #[derive(Debug)]
 pub enum AnywhereFileSource {
     Path(PathBuf),
+    /// Bounded inline content for the existing text/share-sheet source.
+    /// Picker and folder files retain path/SAF streaming sources.
+    Bytes(Vec<u8>),
     #[cfg(target_os = "android")]
     FileDescriptor(std::os::fd::RawFd),
 }
@@ -73,6 +78,8 @@ pub struct AnywhereFileSpec {
     pub size: u64,
     pub file_type: String,
     pub sha256: Option<String>,
+    pub preview: Option<String>,
+    pub metadata: Option<FileMetadata>,
     pub source: AnywhereFileSource,
 }
 
@@ -89,6 +96,9 @@ pub struct AnywhereIncomingFile {
     pub id: String,
     pub name: String,
     pub size: u64,
+    /// Canonical v2 metadata required by normal receive save decisions.
+    pub file_type: String,
+    pub sha256: Option<String>,
 }
 
 /// Progress and lifecycle events for one session.
@@ -266,13 +276,6 @@ pub async fn send_batch(
     batch
         .files
         .sort_by(|left, right| left.name.cmp(&right.name));
-    let mut ids = HashSet::new();
-    if !batch.files.iter().all(|file| ids.insert(file.id.as_str())) {
-        return Err(AnywhereError::transport_reason(
-            TransportStage::Stream,
-            "outbound batch contains duplicate file ids",
-        ));
-    }
     let total = batch.files.iter().map(|file| file.size).sum::<u64>();
 
     events(AnywhereEvent::Starting);
@@ -501,29 +504,13 @@ pub async fn send_files_over_authenticated_stream<S>(
 where
     S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send + 'static,
 {
-    let mut client = AnywhereHttpClient::handshake(stream, session)
+    let origin = TransportOrigin::from_path_descriptor(session.path());
+    let mut client = crate::http::client::AnywhereHttpClient::handshake(stream, session)
         .await
         .map_err(|error| AnywhereError::transport(TransportStage::Stream, error))?;
-    let files = batch
-        .files
-        .iter()
-        .map(|spec| {
-            (
-                spec.id.clone(),
-                FileDto {
-                    id: spec.id.clone(),
-                    file_name: spec.name.clone(),
-                    size: spec.size,
-                    file_type: spec.file_type.clone(),
-                    sha256: spec.sha256.clone(),
-                    preview: None,
-                    metadata: None,
-                },
-            )
-        })
-        .collect::<HashMap<_, _>>();
-    let payload = PrepareUploadRequestDtoV2 {
-        info: RegisterDtoV2 {
+    let request = RelayTransferRequest {
+        transfer_id: uuid::Uuid::new_v4().to_string(),
+        info: crate::http::dto_v2::RegisterDtoV2 {
             alias,
             version: PROTOCOL_VERSION.to_owned(),
             device_model: None,
@@ -533,58 +520,56 @@ where
             protocol: ProtocolType::Https,
             download: false,
         },
-        files,
+        files: batch
+            .files
+            .into_iter()
+            .map(|spec| RelayTransferFile {
+                dto: FileDto {
+                    id: spec.id.clone(),
+                    file_name: spec.name.clone(),
+                    size: spec.size,
+                    file_type: spec.file_type.clone(),
+                    sha256: spec.sha256.clone(),
+                    preview: spec.preview.clone(),
+                    metadata: spec.metadata.clone(),
+                },
+                content: match spec.source {
+                    AnywhereFileSource::Path(path) => {
+                        crate::model::transfer::FileContent::Path(path)
+                    }
+                    AnywhereFileSource::Bytes(bytes) => {
+                        let (tx, rx) = tokio::sync::mpsc::channel(1);
+                        // The FRB boundary caps inline content.  This remains
+                        // a stream source and is never used for picker files.
+                        let _ = tx.try_send(bytes::Bytes::from(bytes));
+                        drop(tx);
+                        crate::model::transfer::FileContent::Stream(rx)
+                    }
+                    #[cfg(target_os = "android")]
+                    AnywhereFileSource::FileDescriptor(fd) => {
+                        crate::model::transfer::FileContent::Fd(fd)
+                    }
+                },
+            })
+            .collect(),
+        pin: None,
     };
-    let prepared = client
-        .prepare_upload(payload, None, cancel.clone())
-        .await
-        .map_err(map_client_error)?
-        .response
-        .ok_or(AnywhereError::AuthorizationDenied)?;
-    if !batch
-        .files
-        .iter()
-        .all(|file| prepared.files.contains_key(&file.id))
-    {
-        return Err(AnywhereError::ProtocolCompletion);
-    }
-
     let progress = Arc::new(on_progress);
-    let mut completed = 0_u64;
-    for spec in batch.files {
-        if cancel.is_cancelled() {
-            let _ = client.cancel(&prepared.session_id).await;
-            return Err(AnywhereError::Cancelled);
+    let events = Arc::new(move |event| {
+        if let RelayTransferEvent::OverallProgress { bytes, .. } = event {
+            progress(bytes);
         }
-        let token = prepared.files[&spec.id].clone();
-        let size = spec.size;
-        let content = match spec.source {
-            AnywhereFileSource::Path(path) => FileContent::Path(path),
-            #[cfg(target_os = "android")]
-            AnywhereFileSource::FileDescriptor(fd) => FileContent::Fd(fd),
-        };
-        let base = completed;
-        let report_progress = progress.clone();
-        let result = client
-            .upload(
-                &prepared.session_id,
-                &spec.id,
-                &token,
-                content,
-                size,
-                move |bytes| report_progress(base.saturating_add(bytes)),
-                cancel.clone(),
-            )
-            .await;
-        if matches!(result, Err(crate::http::client::ClientError::Cancelled)) {
-            let _ = client.cancel(&prepared.session_id).await;
-            return Err(AnywhereError::Cancelled);
-        }
-        result.map_err(map_client_error)?;
-        completed = completed.saturating_add(size);
-        progress(completed);
-    }
-    Ok(completed)
+    });
+    RelayTransferEngine
+        .send(
+            &mut AnywhereTransferTransport::new(&mut client),
+            request,
+            origin,
+            cancel,
+            events,
+        )
+        .await
+        .map_err(map_relay_transfer_error)
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -634,7 +619,7 @@ where
         .map_err(|error| AnywhereError::transport(TransportStage::Stream, error))?;
 
     let mut accepted_files: HashMap<String, FileDto> = HashMap::new();
-    let mut targets: HashMap<String, PathBuf> = HashMap::new();
+    let mut targets: HashMap<String, AnywhereSaveTarget> = HashMap::new();
     let mut started_files: Vec<String> = Vec::new();
     let mut saved_files: HashSet<String> = HashSet::new();
     let mut total_bytes = 0_u64;
@@ -661,6 +646,8 @@ where
                             id: file.id.clone(),
                             name: file.file_name.clone(),
                             size: file.size,
+                            file_type: file.file_type.clone(),
+                            sha256: file.sha256.clone(),
                         })
                         .collect::<Vec<_>>();
                     incoming.sort_by(|left, right| left.name.cmp(&right.name));
@@ -693,14 +680,15 @@ where
                         let _ = decision_tx.send(PrepareUploadDecisionV2::Decline);
                         stop_with!(AnywhereError::AuthorizationDenied);
                     }
-                    if decision.targets.len() != files.len()
-                        || !files.keys().all(|file_id| decision.targets.contains_key(file_id))
-                    {
+                    if !decision.targets.keys().all(|file_id| files.contains_key(file_id)) {
                         let _ = decision_tx.send(PrepareUploadDecisionV2::Decline);
                         stop_with!(AnywhereError::ProtocolCompletion);
                     }
                     targets = decision.targets;
-                    accepted_files = files;
+                    accepted_files = files
+                        .into_iter()
+                        .filter(|(file_id, _)| targets.contains_key(file_id))
+                        .collect();
                     if decision_tx
                         .send(PrepareUploadDecisionV2::Accept(
                             accepted_files.keys().cloned().collect(),
@@ -717,7 +705,7 @@ where
                     if !accepted_files.contains_key(&file_id) {
                         stop_with!(AnywhereError::ProtocolCompletion);
                     }
-                    let Some(path) = targets.remove(&file_id) else {
+                    let Some(target) = targets.remove(&file_id) else {
                         stop_with!(AnywhereError::ProtocolCompletion);
                     };
                     let completed = started_files
@@ -744,12 +732,21 @@ where
                             .unwrap_or_else(|_| Err("upload save result dropped".to_owned()));
                         let _ = save_tx.send((file_id.clone(), result)).await;
                     });
-                    if target_tx
-                        .send(FileUploadTarget::Path {
+                    let target = match target {
+                        AnywhereSaveTarget::Path(path) => FileUploadTarget::Path {
                             path,
                             result_tx,
                             progress_tx: Some(progress_tx),
-                        })
+                        },
+                        #[cfg(target_os = "android")]
+                        AnywhereSaveTarget::FileDescriptor(fd) => FileUploadTarget::Fd {
+                            fd,
+                            result_tx,
+                            progress_tx: Some(progress_tx),
+                        },
+                    };
+                    if target_tx
+                        .send(target)
                         .is_err()
                     {
                         stop_with!(AnywhereError::transport_reason(
@@ -858,9 +855,10 @@ fn path_class(path: &PathDescriptor) -> AnywherePathClass {
     }
 }
 
-fn map_client_error(error: crate::http::client::ClientError) -> AnywhereError {
+fn map_relay_transfer_error(error: RelaySendError) -> AnywhereError {
     match error {
-        crate::http::client::ClientError::Cancelled => AnywhereError::Cancelled,
+        RelaySendError::Cancelled => AnywhereError::Cancelled,
+        RelaySendError::AuthorizationDenied => AnywhereError::AuthorizationDenied,
         other => AnywhereError::transport(TransportStage::Stream, other),
     }
 }

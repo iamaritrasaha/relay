@@ -10,6 +10,7 @@ import 'package:localsend_isolates/rust/frb_generated.dart';
 part 'relay_anywhere.freezed.dart';
 
 // These functions are ignored because they are not marked as `pub`: `anywhere_listener`, `anywhere_runtime`, `file_spec`, `finish`, `map_event`, `map_failure`, `map_listener_event`, `session_cancellation`
+// These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `RsRelayAnywhereSaveTarget`
 // These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `from`
 
 /// Parses a Relay address bundle. Fail-closed; never panics on bad input.
@@ -198,22 +199,43 @@ sealed class RsRelayAnywhereEvent with _$RsRelayAnywhereEvent {
 class RsRelayAnywhereFile {
   final String? path;
   final int? fileDescriptor;
+
+  /// Bounded inline text/share content. Picker and folder selections retain
+  /// their path or Android SAF descriptor streaming source.
+  final Uint8List? bytes;
   final String name;
   final BigInt size;
   final String fileType;
   final String? sha256;
+  final String? preview;
+  final String? lastModified;
+  final String? lastAccessed;
 
   const RsRelayAnywhereFile({
     this.path,
     this.fileDescriptor,
+    this.bytes,
     required this.name,
     required this.size,
     required this.fileType,
     this.sha256,
+    this.preview,
+    this.lastModified,
+    this.lastAccessed,
   });
 
   @override
-  int get hashCode => path.hashCode ^ fileDescriptor.hashCode ^ name.hashCode ^ size.hashCode ^ fileType.hashCode ^ sha256.hashCode;
+  int get hashCode =>
+      path.hashCode ^
+      fileDescriptor.hashCode ^
+      bytes.hashCode ^
+      name.hashCode ^
+      size.hashCode ^
+      fileType.hashCode ^
+      sha256.hashCode ^
+      preview.hashCode ^
+      lastModified.hashCode ^
+      lastAccessed.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -222,10 +244,14 @@ class RsRelayAnywhereFile {
           runtimeType == other.runtimeType &&
           path == other.path &&
           fileDescriptor == other.fileDescriptor &&
+          bytes == other.bytes &&
           name == other.name &&
           size == other.size &&
           fileType == other.fileType &&
-          sha256 == other.sha256;
+          sha256 == other.sha256 &&
+          preview == other.preview &&
+          lastModified == other.lastModified &&
+          lastAccessed == other.lastAccessed;
 }
 
 @freezed
@@ -287,20 +313,30 @@ class RsRelayIncomingFile {
   final String id;
   final String name;
   final BigInt size;
+  final String fileType;
+  final String? sha256;
 
   const RsRelayIncomingFile({
     required this.id,
     required this.name,
     required this.size,
+    required this.fileType,
+    this.sha256,
   });
 
   @override
-  int get hashCode => id.hashCode ^ name.hashCode ^ size.hashCode;
+  int get hashCode => id.hashCode ^ name.hashCode ^ size.hashCode ^ fileType.hashCode ^ sha256.hashCode;
 
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
-      other is RsRelayIncomingFile && runtimeType == other.runtimeType && id == other.id && name == other.name && size == other.size;
+      other is RsRelayIncomingFile &&
+          runtimeType == other.runtimeType &&
+          id == other.id &&
+          name == other.name &&
+          size == other.size &&
+          fileType == other.fileType &&
+          sha256 == other.sha256;
 }
 
 enum RsRelayPathPreference {

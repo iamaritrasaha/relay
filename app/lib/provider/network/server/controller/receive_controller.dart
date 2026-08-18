@@ -28,9 +28,11 @@ import 'package:localsend_app/util/native/tray_helper.dart';
 import 'package:localsend_app/widget/dialogs/open_file_dialog.dart';
 import 'package:localsend_isolates/isolate.dart';
 import 'package:localsend_isolates/model/device.dart';
+import 'package:localsend_isolates/model/dto/file_dto.dart';
 import 'package:localsend_isolates/model/file_status.dart';
 import 'package:localsend_isolates/model/file_type.dart';
 import 'package:localsend_isolates/model/session_status.dart';
+import 'package:localsend_isolates/rust/api/relay_anywhere.dart' as rust_relay_anywhere;
 import 'package:localsend_isolates/rust/api/server.dart' show SessionEndReasonV2;
 import 'package:localsend_isolates/util/rust.dart';
 import 'package:localsend_isolates/util/transfer_notification.dart';
@@ -48,6 +50,7 @@ final _logger = Logger('ReceiveController');
 /// the events handled here.
 class ReceiveController {
   final ServerUtils server;
+  final Map<String, _AnywherePendingReceive> _anywherePending = {};
 
   ReceiveController(this.server);
 
@@ -181,6 +184,15 @@ class ReceiveController {
           );
     }
 
+    await _presentReceivePage(files);
+  }
+
+  /// Shows the one normal receive decision UI for any transport. The backing
+  /// response is chosen by [acceptFileRequest]/[declineFileRequest], never by
+  /// the page: LAN replies to its server isolate while Anywhere replies to its
+  /// exact authenticated session and transfer id.
+  Future<void> _presentReceivePage(Map<String, FileDto> files) async {
+    final message = server.getState().session?.message;
     final receiveProvider = ViewProvider((ref) {
       // No select: comparing the selected session runs the dart_mappable deep equality
       // over the whole files map on every state change.
@@ -232,6 +244,245 @@ class ReceiveController {
 
     // ignore: use_build_context_synchronously, unawaited_futures
     Routerino.context.push(() => ReceivePage(receiveProvider));
+  }
+
+  /// Delivers an authenticated Anywhere prepare-upload through the mature
+  /// normal receive UI. A remote RelayId is deliberately not written to the
+  /// trust directory; this is only the session-scoped receive identity.
+  Future<void> onAnywhereIncoming({
+    required BigInt sessionId,
+    required BigInt transferId,
+    required String remoteRelayId,
+    required List<rust_relay_anywhere.RsRelayIncomingFile> incomingFiles,
+  }) async {
+    if (server.getStateOrNull()?.session != null) {
+      final active = server.getStateOrNull()!.session!;
+      final activeAnywhere = _anywherePending[active.sessionId];
+      if (activeAnywhere != null) {
+        if (active.status == SessionStatus.waiting) {
+          _declineAnywhere(activeAnywhere);
+        } else {
+          _cancelAnywhere(active, activeAnywhere);
+        }
+      }
+      closeSession();
+    }
+
+    final settings = server.ref.read(settingsProvider);
+    final destinationDir = settings.destination ?? await getDefaultDestinationDirectory();
+    final cacheDir = await getCacheDirectory();
+    final localSessionId = 'relay-anywhere:$sessionId:$transferId';
+    final files = {
+      for (final incoming in incomingFiles)
+        incoming.id: FileDto(
+          id: incoming.id,
+          fileName: incoming.name,
+          size: incoming.size.toInt(),
+          fileType: decodeFromMime(incoming.fileType),
+          hash: incoming.sha256,
+          preview: null,
+          metadata: null,
+        ),
+    };
+    if (files.isEmpty) {
+      rust_relay_anywhere.relayAnywhereRespond(
+        sessionId: sessionId,
+        transferId: transferId,
+        accept: false,
+      );
+      return;
+    }
+
+    final sender = Device(
+      signalingId: null,
+      ip: null,
+      version: '2.2',
+      port: 0,
+      https: true,
+      fingerprint: remoteRelayId,
+      alias: 'Relay device',
+      deviceModel: null,
+      deviceType: DeviceType.desktop,
+      download: false,
+      channels: const [],
+    );
+    _anywherePending[localSessionId] = _AnywherePendingReceive(
+      sessionId: sessionId,
+      transferId: transferId,
+      remoteRelayId: remoteRelayId,
+    );
+    server.setState(
+      (oldState) => oldState?.copyWith(
+        session: ReceiveSessionState(
+          sessionId: localSessionId,
+          status: SessionStatus.waiting,
+          sender: sender,
+          senderAlias: 'Relay device',
+          files: {
+            for (final file in files.values)
+              file.id: ReceivingFile(
+                file: file,
+                token: null,
+                desiredName: null,
+                path: null,
+                savedToGallery: false,
+                errorMessage: null,
+              ),
+          },
+          startTime: null,
+          endTime: null,
+          destinationDirectory: destinationDir,
+          cacheDirectory: cacheDir,
+          saveToGallery: checkPlatformWithGallery() && settings.saveToGallery && files.values.every((file) => !file.fileName.contains('/')),
+          createdDirectories: {},
+        ),
+      ),
+    );
+    server.ref
+        .notifier(fileTransferProvider)
+        .setStatuses(
+          sessionId: localSessionId,
+          statuses: {for (final file in files.values) file.id: FileStatus.queue},
+        );
+    await _presentReceivePage(files);
+  }
+
+  /// Applies canonical authenticated-transfer progress to the same normal
+  /// progress and foreground-notification state used by LAN receive.
+  void onAnywhereProgress({required BigInt sessionId, required BigInt bytes, required BigInt total}) {
+    final entry = _anywherePending.entries.firstWhereOrNull((entry) => entry.value.sessionId == sessionId);
+    final session = server.getStateOrNull()?.session;
+    if (entry == null || session == null || session.sessionId != entry.key || session.status != SessionStatus.sending) {
+      return;
+    }
+
+    var remaining = bytes.toInt().clamp(0, total.toInt());
+    for (final file in session.files.values) {
+      if (file.desiredName == null) {
+        continue;
+      }
+      final transferred = remaining.clamp(0, file.file.size);
+      final progress = file.file.size == 0 ? 1.0 : transferred / file.file.size;
+      server.ref.notifier(fileTransferProvider).setProgress(sessionId: session.sessionId, fileId: file.file.id, progress: progress);
+      if (transferred > 0) {
+        server.ref.notifier(fileTransferProvider).setStatus(sessionId: session.sessionId, fileId: file.file.id, status: FileStatus.sending);
+      }
+      remaining -= transferred;
+    }
+    _updateForegroundServiceProgress(session);
+  }
+
+  /// Completes the normal receive/save/history flow after the core v2 writer
+  /// has verified every accepted file. Gallery post-processing is intentionally
+  /// kept in the existing platform layer, not in the transport adapter.
+  Future<void> onAnywhereCompleted({required BigInt sessionId}) async {
+    final match = _anywherePending.entries.firstWhereOrNull((entry) => entry.value.sessionId == sessionId);
+    final session = server.getStateOrNull()?.session;
+    if (match == null || session == null || session.sessionId != match.key) {
+      return;
+    }
+    final anywhere = match.value;
+    bool hasError = false;
+    for (final receiving in session.files.values) {
+      final prepared = anywhere.targets[receiving.file.id];
+      if (prepared == null || receiving.desiredName == null) {
+        continue;
+      }
+      String? path;
+      bool savedToGallery = false;
+      String? error;
+      try {
+        if (prepared.saveToGallery) {
+          (savedToGallery, path) = await saveCachedFileToGallery(
+            cachedPath: prepared.target.displayPath,
+            destinationDirectory: session.destinationDirectory,
+            fileName: prepared.desiredName,
+            isImage: prepared.fileType == FileType.image,
+            createdDirectories: session.createdDirectories,
+          );
+        } else {
+          path = prepared.target.displayPath;
+        }
+        await server.ref
+            .redux(receiveHistoryProvider)
+            .dispatchAsync(
+              AddHistoryEntryAction(
+                entryId: receiving.file.id,
+                fileName: prepared.desiredName,
+                fileType: prepared.fileType,
+                path: path,
+                savedToGallery: savedToGallery,
+                isMessage: false,
+                fileSize: receiving.file.size,
+                senderAlias: session.senderAlias,
+                timestamp: DateTime.now().toUtc(),
+              ),
+            );
+      } catch (exception, stackTrace) {
+        _logger.warning('Could not finish Relay receive save target', exception, stackTrace);
+        error = exception.humanErrorMessage;
+        hasError = true;
+      }
+      server.ref
+          .notifier(fileTransferProvider)
+          .setStatus(
+            sessionId: session.sessionId,
+            fileId: receiving.file.id,
+            status: error == null ? FileStatus.finished : FileStatus.failed,
+          );
+      server.ref.notifier(fileTransferProvider).setProgress(sessionId: session.sessionId, fileId: receiving.file.id, progress: 1);
+      server.setState(
+        (oldState) => oldState?.copyWith(
+          session: oldState.session?.fileFinished(
+            fileId: receiving.file.id,
+            path: path,
+            savedToGallery: savedToGallery,
+            errorMessage: error,
+          ),
+        ),
+      );
+    }
+    _anywherePending.remove(match.key);
+    TransferNotification.stop(session.sessionId);
+    server.setState(
+      (oldState) => oldState?.copyWith(
+        session: oldState.session?.copyWith(
+          status: hasError ? SessionStatus.finishedWithErrors : SessionStatus.finished,
+          endTime: DateTime.now().millisecondsSinceEpoch,
+        ),
+      ),
+    );
+  }
+
+  void onAnywhereTerminal({required BigInt sessionId, required bool cancelled}) {
+    final match = _anywherePending.entries.firstWhereOrNull((entry) => entry.value.sessionId == sessionId);
+    final session = server.getStateOrNull()?.session;
+    if (match == null || session == null || session.sessionId != match.key) {
+      return;
+    }
+    _anywherePending.remove(match.key);
+    TransferNotification.stop(session.sessionId);
+    if (cancelled) {
+      _cancelBySender(server);
+      return;
+    }
+    server.ref
+        .notifier(fileTransferProvider)
+        .setStatuses(
+          sessionId: session.sessionId,
+          statuses: {
+            for (final file in session.files.values)
+              if (file.desiredName != null) file.file.id: FileStatus.failed,
+          },
+        );
+    server.setState(
+      (oldState) => oldState?.copyWith(
+        session: oldState.session?.copyWith(
+          status: SessionStatus.finishedWithErrors,
+          endTime: DateTime.now().millisecondsSinceEpoch,
+        ),
+      ),
+    );
   }
 
   /// An accepted file started being uploaded.
@@ -529,6 +780,12 @@ class ReceiveController {
       return;
     }
 
+    final anywhere = _anywherePending[session.sessionId];
+    if (anywhere != null) {
+      await _acceptAnywhereFileRequest(session, anywhere, fileNameMap);
+      return;
+    }
+
     if (fileNameMap.isEmpty) {
       // nothing selected, the Rust server responds with 204 and creates no session
       // This usually happens for message transfers
@@ -615,9 +872,101 @@ class ReceiveController {
     );
   }
 
+  Future<void> _acceptAnywhereFileRequest(
+    ReceiveSessionState session,
+    _AnywherePendingReceive anywhere,
+    Map<String, String> fileNameMap,
+  ) async {
+    final targets = <String, Map<String, Object>>{};
+    try {
+      for (final file in session.files.values) {
+        final desiredName = fileNameMap[file.file.id];
+        if (desiredName == null) {
+          continue;
+        }
+        final saveToGallery = session.saveToGallery && (file.file.fileType == FileType.image || file.file.fileType == FileType.video);
+        final target = await prepareFileSaveTarget(
+          destinationDirectory: session.destinationDirectory,
+          cacheDirectory: session.cacheDirectory,
+          fileName: desiredName,
+          saveToGallery: saveToGallery,
+          isImage: file.file.fileType == FileType.image,
+          createdDirectories: session.createdDirectories,
+          androidSdkInt: server.ref.read(deviceInfoProvider).androidSdkInt,
+        );
+        anywhere.targets[file.file.id] = _AnywherePreparedTarget(
+          target: target,
+          desiredName: desiredName,
+          saveToGallery: saveToGallery,
+          fileType: file.file.fileType,
+        );
+        targets[file.file.id] = target.fileDescriptor != null
+            ? {'kind': 'fileDescriptor', 'fileDescriptor': target.fileDescriptor!}
+            : {'kind': 'path', 'path': target.path!};
+      }
+    } catch (error, stackTrace) {
+      _logger.warning('Could not prepare Relay receive destination', error, stackTrace);
+      _declineAnywhere(anywhere);
+      closeSession();
+      return;
+    }
+
+    server.setState(
+      (oldState) => oldState?.copyWith(
+        session: session.copyWith(
+          status: SessionStatus.sending,
+          startTime: DateTime.now().millisecondsSinceEpoch,
+          files: Map.fromEntries(
+            session.files.values.map((file) {
+              final desiredName = fileNameMap[file.file.id];
+              return MapEntry(
+                file.file.id,
+                ReceivingFile(
+                  file: file.file,
+                  token: null,
+                  desiredName: desiredName,
+                  path: null,
+                  savedToGallery: false,
+                  errorMessage: null,
+                ),
+              );
+            }),
+          ),
+        ),
+      ),
+    );
+    server.ref
+        .notifier(fileTransferProvider)
+        .setStatuses(
+          sessionId: session.sessionId,
+          statuses: {
+            for (final file in session.files.values) file.file.id: fileNameMap.containsKey(file.file.id) ? FileStatus.queue : FileStatus.skipped,
+          },
+        );
+    TransferNotification.start(sessionId: session.sessionId, receiving: true);
+    try {
+      rust_relay_anywhere.relayAnywhereRespond(
+        sessionId: anywhere.sessionId,
+        transferId: anywhere.transferId,
+        accept: true,
+        targetsJson: jsonEncode(targets),
+      );
+    } catch (error, stackTrace) {
+      _logger.warning('Could not accept authenticated Relay transfer', error, stackTrace);
+      _cancelAnywhere(session, anywhere);
+    }
+  }
+
   void declineFileRequest() {
     final session = server.getStateOrNull()?.session;
     if (session == null || session.status != SessionStatus.waiting) {
+      return;
+    }
+
+    final anywhere = _anywherePending[session.sessionId];
+    if (anywhere != null) {
+      _declineAnywhere(anywhere);
+      closeSession();
       return;
     }
 
@@ -657,6 +1006,12 @@ class ReceiveController {
       return;
     }
 
+    final anywhere = _anywherePending[session.sessionId];
+    if (anywhere != null) {
+      _cancelAnywhere(session, anywhere);
+      return;
+    }
+
     // fail further uploads
     server.ref.redux(parentIsolateProvider).dispatch(IsolateHttpServerCancelSessionAction(sessionId: session.sessionId));
 
@@ -688,6 +1043,8 @@ class ReceiveController {
 
     TransferNotification.stop(sessionId);
 
+    _anywherePending.remove(sessionId);
+
     server.setState(
       (oldState) => oldState?.copyWith(
         session: null,
@@ -695,6 +1052,58 @@ class ReceiveController {
     );
     server.ref.notifier(fileTransferProvider).removeSession(sessionId);
   }
+
+  void _declineAnywhere(_AnywherePendingReceive anywhere) {
+    try {
+      rust_relay_anywhere.relayAnywhereRespond(
+        sessionId: anywhere.sessionId,
+        transferId: anywhere.transferId,
+        accept: false,
+      );
+    } catch (error, stackTrace) {
+      _logger.warning('Could not decline authenticated Relay transfer', error, stackTrace);
+    }
+  }
+
+  void _cancelAnywhere(ReceiveSessionState session, _AnywherePendingReceive anywhere) {
+    rust_relay_anywhere.relayAnywhereCancel(sessionId: anywhere.sessionId);
+    server.setState(
+      (oldState) => oldState?.copyWith(
+        session: session.copyWith(
+          status: SessionStatus.canceledByReceiver,
+          endTime: DateTime.now().millisecondsSinceEpoch,
+        ),
+      ),
+    );
+    TransferNotification.stop(session.sessionId);
+  }
+}
+
+class _AnywherePendingReceive {
+  final BigInt sessionId;
+  final BigInt transferId;
+  final String remoteRelayId;
+  final Map<String, _AnywherePreparedTarget> targets = {};
+
+  _AnywherePendingReceive({
+    required this.sessionId,
+    required this.transferId,
+    required this.remoteRelayId,
+  });
+}
+
+class _AnywherePreparedTarget {
+  final FileSaveTarget target;
+  final String desiredName;
+  final bool saveToGallery;
+  final FileType fileType;
+
+  const _AnywherePreparedTarget({
+    required this.target,
+    required this.desiredName,
+    required this.saveToGallery,
+    required this.fileType,
+  });
 }
 
 void _cancelBySender(ServerUtils server) {

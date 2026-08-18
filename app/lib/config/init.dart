@@ -296,7 +296,10 @@ NetworkBootstrap createNetworkBootstrap(RefenaContainer container) {
     startRemoteListener: () async {
       await container
           .read(relayAnywhereListenerServiceProvider)
-          .startIfEnabled(enabled: container.read(settingsProvider).remoteRelayEnabled, alias: container.read(settingsProvider).alias);
+          .startIfEnabled(
+            enabled: container.read(settingsProvider).remoteRelayEnabled || container.read(persistenceProvider).getRelayPairedAddresses().isNotEmpty,
+            alias: container.read(settingsProvider).alias,
+          );
     },
   );
 }

@@ -9,7 +9,8 @@ use localsend::anywhere::AnywhereError;
 use localsend::anywhere::{
     AnywhereBatch, AnywhereDecision, AnywhereEvent, AnywhereFileSource, AnywhereFileSpec,
     AnywhereIdentity, AnywhereOutcome, AnywherePathClass, AnywhereReceiveRequest, AnywhereRuntime,
-    AnywhereSendRequest, PathPreference, RelayAddressV1, authenticate_address, receive, send_batch,
+    AnywhereSaveTarget, AnywhereSendRequest, PathPreference, RelayAddressV1, authenticate_address,
+    receive, send_batch,
 };
 use localsend::crypto::relay_identity::RelayIdentity;
 use tokio::sync::mpsc;
@@ -38,6 +39,8 @@ fn file_spec(path: &std::path::Path, size: u64) -> AnywhereFileSpec {
         size,
         file_type: "application/octet-stream".to_owned(),
         sha256: None,
+        preview: None,
+        metadata: None,
         source: AnywhereFileSource::Path(path.to_path_buf()),
     }
 }
@@ -175,7 +178,10 @@ async fn production_api_moves_a_real_file_without_the_development_harness() {
             transfer_id,
             AnywhereDecision {
                 accept: true,
-                targets: HashMap::from([("file-1".to_owned(), target.clone())]),
+                targets: HashMap::from([(
+                    "file-1".to_owned(),
+                    AnywhereSaveTarget::Path(target.clone()),
+                )]),
             },
         )
         .unwrap();
@@ -229,7 +235,10 @@ async fn two_inbound_sessions_are_approved_and_declined_independently() {
             accept_id,
             AnywhereDecision {
                 accept: true,
-                targets: HashMap::from([("file-1".to_owned(), target.clone())]),
+                targets: HashMap::from([(
+                    "file-1".to_owned(),
+                    AnywhereSaveTarget::Path(target.clone()),
+                )]),
             },
         )
         .unwrap();
@@ -270,7 +279,7 @@ async fn cancelling_one_session_leaves_a_second_receiver_waiting() {
     let _ = untouched.join.await;
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn wrong_expected_relay_id_fails_before_any_transfer() {
     let runtime = Arc::new(AnywhereRuntime::new());
     let receiver = start_receiver(runtime.clone()).await;

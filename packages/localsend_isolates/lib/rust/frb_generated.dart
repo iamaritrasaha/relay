@@ -16,6 +16,7 @@ import 'package:localsend_isolates/rust/api/logging.dart';
 import 'package:localsend_isolates/rust/api/metadata.dart';
 import 'package:localsend_isolates/rust/api/model.dart';
 import 'package:localsend_isolates/rust/api/relay_anywhere.dart';
+import 'package:localsend_isolates/rust/api/relay_transfer.dart';
 import 'package:localsend_isolates/rust/api/server.dart';
 import 'package:localsend_isolates/rust/api/stream.dart';
 import 'package:localsend_isolates/rust/api/webrtc.dart';
@@ -77,7 +78,7 @@ class RustLib extends BaseEntrypoint<RustLibApi, RustLibApiImpl, RustLibWire> {
   String get codegenVersion => '2.12.0';
 
   @override
-  int get rustContentHash => 213238274;
+  int get rustContentHash => 2122192996;
 
   static const kDefaultExternalLibraryLoaderConfig = ExternalLibraryLoaderConfig(
     stem: 'rust_lib_localsend_app',
@@ -352,6 +353,18 @@ abstract class RustLibApi extends BaseApi {
   Future<void> crateApiRelayAnywhereRelayAnywhereStopListener();
 
   void crateApiRelayAnywhereRelayAnywhereValidateRoutingKey({required List<int> routingKey});
+
+  Stream<RsRelayTransferEvent> crateApiRelayTransferRelayTransferSendLan({
+    required RsHttpClient client,
+    required ProtocolType protocol,
+    required String ip,
+    required int port,
+    required String transferId,
+    required RegisterDto info,
+    required List<RsRelayTransferFile> files,
+    String? pin,
+    required RsCancellationToken cancelToken,
+  });
 
   Future<RelayIdentityMaterial> crateApiCryptoRestoreRelayIdentity({required List<int> privateKey});
 
@@ -2588,13 +2601,61 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   );
 
   @override
+  Stream<RsRelayTransferEvent> crateApiRelayTransferRelayTransferSendLan({
+    required RsHttpClient client,
+    required ProtocolType protocol,
+    required String ip,
+    required int port,
+    required String transferId,
+    required RegisterDto info,
+    required List<RsRelayTransferFile> files,
+    String? pin,
+    required RsCancellationToken cancelToken,
+  }) {
+    final eventSink = RustStreamSink<RsRelayTransferEvent>();
+    unawaited(
+      handler.executeNormal(
+        NormalTask(
+          callFfi: (port_) {
+            final serializer = SseSerializer(generalizedFrbRustBinding);
+            sse_encode_Auto_Ref_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerRsHttpClient(client, serializer);
+            sse_encode_protocol_type(protocol, serializer);
+            sse_encode_String(ip, serializer);
+            sse_encode_u_16(port, serializer);
+            sse_encode_String(transferId, serializer);
+            sse_encode_box_autoadd_register_dto(info, serializer);
+            sse_encode_list_rs_relay_transfer_file(files, serializer);
+            sse_encode_opt_String(pin, serializer);
+            sse_encode_Auto_Ref_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerRsCancellationToken(cancelToken, serializer);
+            sse_encode_StreamSink_rs_relay_transfer_event_Sse(eventSink, serializer);
+            pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 73, port: port_);
+          },
+          codec: SseCodec(
+            decodeSuccessData: sse_decode_unit,
+            decodeErrorData: null,
+          ),
+          constMeta: kCrateApiRelayTransferRelayTransferSendLanConstMeta,
+          argValues: [client, protocol, ip, port, transferId, info, files, pin, cancelToken, eventSink],
+          apiImpl: this,
+        ),
+      ),
+    );
+    return eventSink.stream;
+  }
+
+  TaskConstMeta get kCrateApiRelayTransferRelayTransferSendLanConstMeta => const TaskConstMeta(
+    debugName: 'relay_transfer_send_lan',
+    argNames: ['client', 'protocol', 'ip', 'port', 'transferId', 'info', 'files', 'pin', 'cancelToken', 'eventSink'],
+  );
+
+  @override
   Future<RelayIdentityMaterial> crateApiCryptoRestoreRelayIdentity({required List<int> privateKey}) {
     return handler.executeNormal(
       NormalTask(
         callFfi: (port_) {
           final serializer = SseSerializer(generalizedFrbRustBinding);
           sse_encode_list_prim_u_8_loose(privateKey, serializer);
-          pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 73, port: port_);
+          pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 74, port: port_);
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_relay_identity_material,
@@ -2619,7 +2680,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         callFfi: () {
           final serializer = SseSerializer(generalizedFrbRustBinding);
           sse_encode_String(name, serializer);
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 74)!;
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 75)!;
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_String,
@@ -2672,7 +2733,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           sse_encode_String(certPem, serializer);
           sse_encode_String(privateKeyPem, serializer);
           sse_encode_u_64(timeoutMs, serializer);
-          pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 75, port: port_);
+          pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 76, port: port_);
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerRsDiscovery,
@@ -2749,7 +2810,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           sse_encode_bool(verifyChecksums, serializer);
           sse_encode_opt_box_autoadd_web_params(web, serializer);
           sse_encode_opt_String(showToken, serializer);
-          pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 76, port: port_);
+          pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 77, port: port_);
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerRsHttpServer,
@@ -2775,7 +2836,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           final serializer = SseSerializer(generalizedFrbRustBinding);
           sse_encode_String(cert, serializer);
           sse_encode_String(publicKey, serializer);
-          pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 77, port: port_);
+          pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 78, port: port_);
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_unit,
@@ -3165,6 +3226,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  RustStreamSink<RsRelayTransferEvent> dco_decode_StreamSink_rs_relay_transfer_event_Sse(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    throw UnimplementedError();
+  }
+
+  @protected
   RustStreamSink<RsServerEvent> dco_decode_StreamSink_rs_server_event_Sse(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     throw UnimplementedError();
@@ -3524,6 +3591,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   List<RsRelayIncomingFile> dco_decode_list_rs_relay_incoming_file(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return (raw as List<dynamic>).map(dco_decode_rs_relay_incoming_file).toList();
+  }
+
+  @protected
+  List<RsRelayTransferFile> dco_decode_list_rs_relay_transfer_file(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return (raw as List<dynamic>).map(dco_decode_rs_relay_transfer_file).toList();
   }
 
   @protected
@@ -3956,14 +4029,18 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   RsRelayAnywhereFile dco_decode_rs_relay_anywhere_file(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 6) throw Exception('unexpected arr length: expect 6 but see ${arr.length}');
+    if (arr.length != 10) throw Exception('unexpected arr length: expect 10 but see ${arr.length}');
     return RsRelayAnywhereFile(
       path: dco_decode_opt_String(arr[0]),
       fileDescriptor: dco_decode_opt_box_autoadd_i_32(arr[1]),
-      name: dco_decode_String(arr[2]),
-      size: dco_decode_u_64(arr[3]),
-      fileType: dco_decode_String(arr[4]),
-      sha256: dco_decode_opt_String(arr[5]),
+      bytes: dco_decode_opt_list_prim_u_8_strict(arr[2]),
+      name: dco_decode_String(arr[3]),
+      size: dco_decode_u_64(arr[4]),
+      fileType: dco_decode_String(arr[5]),
+      sha256: dco_decode_opt_String(arr[6]),
+      preview: dco_decode_opt_String(arr[7]),
+      lastModified: dco_decode_opt_String(arr[8]),
+      lastAccessed: dco_decode_opt_String(arr[9]),
     );
   }
 
@@ -4041,11 +4118,13 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   RsRelayIncomingFile dco_decode_rs_relay_incoming_file(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 3) throw Exception('unexpected arr length: expect 3 but see ${arr.length}');
+    if (arr.length != 5) throw Exception('unexpected arr length: expect 5 but see ${arr.length}');
     return RsRelayIncomingFile(
       id: dco_decode_String(arr[0]),
       name: dco_decode_String(arr[1]),
       size: dco_decode_u_64(arr[2]),
+      fileType: dco_decode_String(arr[3]),
+      sha256: dco_decode_opt_String(arr[4]),
     );
   }
 
@@ -4082,6 +4161,92 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       default:
         throw Exception('unreachable');
     }
+  }
+
+  @protected
+  RsRelayTransferEvent dco_decode_rs_relay_transfer_event(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    switch (raw[0]) {
+      case 0:
+        return RsRelayTransferEvent_OutgoingStarted(
+          transferId: dco_decode_String(raw[1]),
+          totalBytes: dco_decode_u_64(raw[2]),
+          origin: dco_decode_String(raw[3]),
+        );
+      case 1:
+        return RsRelayTransferEvent_Accepted(
+          transferId: dco_decode_String(raw[1]),
+          sessionId: dco_decode_String(raw[2]),
+          acceptedFileIds: dco_decode_list_String(raw[3]),
+          totalBytes: dco_decode_u_64(raw[4]),
+          origin: dco_decode_String(raw[5]),
+        );
+      case 2:
+        return RsRelayTransferEvent_Declined(
+          transferId: dco_decode_String(raw[1]),
+          fileId: dco_decode_opt_String(raw[2]),
+          origin: dco_decode_String(raw[3]),
+        );
+      case 3:
+        return RsRelayTransferEvent_FileStarted(
+          transferId: dco_decode_String(raw[1]),
+          sessionId: dco_decode_String(raw[2]),
+          fileId: dco_decode_String(raw[3]),
+          fileName: dco_decode_String(raw[4]),
+          fileIndex: dco_decode_u_32(raw[5]),
+          fileCount: dco_decode_u_32(raw[6]),
+          totalBytes: dco_decode_u_64(raw[7]),
+          origin: dco_decode_String(raw[8]),
+        );
+      case 4:
+        return RsRelayTransferEvent_FileProgress(
+          transferId: dco_decode_String(raw[1]),
+          sessionId: dco_decode_String(raw[2]),
+          fileId: dco_decode_String(raw[3]),
+          bytes: dco_decode_u_64(raw[4]),
+          totalBytes: dco_decode_u_64(raw[5]),
+          origin: dco_decode_String(raw[6]),
+        );
+      case 5:
+        return RsRelayTransferEvent_OverallProgress(
+          transferId: dco_decode_String(raw[1]),
+          sessionId: dco_decode_String(raw[2]),
+          bytes: dco_decode_u_64(raw[3]),
+          totalBytes: dco_decode_u_64(raw[4]),
+          origin: dco_decode_String(raw[5]),
+        );
+      case 6:
+        return RsRelayTransferEvent_Completed(
+          transferId: dco_decode_String(raw[1]),
+          sessionId: dco_decode_opt_String(raw[2]),
+          bytes: dco_decode_u_64(raw[3]),
+          origin: dco_decode_String(raw[4]),
+        );
+      case 7:
+        return RsRelayTransferEvent_Failed(
+          transferId: dco_decode_String(raw[1]),
+          category: dco_decode_String(raw[2]),
+        );
+      case 8:
+        return RsRelayTransferEvent_Cancelled(
+          transferId: dco_decode_String(raw[1]),
+        );
+      default:
+        throw Exception('unreachable');
+    }
+  }
+
+  @protected
+  RsRelayTransferFile dco_decode_rs_relay_transfer_file(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 4) throw Exception('unexpected arr length: expect 4 but see ${arr.length}');
+    return RsRelayTransferFile(
+      file: dco_decode_file_dto(arr[0]),
+      path: dco_decode_opt_String(arr[1]),
+      fileDescriptor: dco_decode_opt_box_autoadd_i_32(arr[2]),
+      bytes: dco_decode_opt_list_prim_u_8_strict(arr[3]),
+    );
   }
 
   @protected
@@ -4681,6 +4846,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  RustStreamSink<RsRelayTransferEvent> sse_decode_StreamSink_rs_relay_transfer_event_Sse(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    throw UnimplementedError('Unreachable ()');
+  }
+
+  @protected
   RustStreamSink<RsServerEvent> sse_decode_StreamSink_rs_server_event_Sse(SseDeserializer deserializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     throw UnimplementedError('Unreachable ()');
@@ -5088,6 +5259,18 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var ans_ = <RsRelayIncomingFile>[];
     for (var idx_ = 0; idx_ < len_; ++idx_) {
       ans_.add(sse_decode_rs_relay_incoming_file(deserializer));
+    }
+    return ans_;
+  }
+
+  @protected
+  List<RsRelayTransferFile> sse_decode_list_rs_relay_transfer_file(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    var len_ = sse_decode_i_32(deserializer);
+    var ans_ = <RsRelayTransferFile>[];
+    for (var idx_ = 0; idx_ < len_; ++idx_) {
+      ans_.add(sse_decode_rs_relay_transfer_file(deserializer));
     }
     return ans_;
   }
@@ -5572,17 +5755,25 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     // Codec=Sse (Serialization based), see doc to use other codecs
     var var_path = sse_decode_opt_String(deserializer);
     var var_fileDescriptor = sse_decode_opt_box_autoadd_i_32(deserializer);
+    var var_bytes = sse_decode_opt_list_prim_u_8_strict(deserializer);
     var var_name = sse_decode_String(deserializer);
     var var_size = sse_decode_u_64(deserializer);
     var var_fileType = sse_decode_String(deserializer);
     var var_sha256 = sse_decode_opt_String(deserializer);
+    var var_preview = sse_decode_opt_String(deserializer);
+    var var_lastModified = sse_decode_opt_String(deserializer);
+    var var_lastAccessed = sse_decode_opt_String(deserializer);
     return RsRelayAnywhereFile(
       path: var_path,
       fileDescriptor: var_fileDescriptor,
+      bytes: var_bytes,
       name: var_name,
       size: var_size,
       fileType: var_fileType,
       sha256: var_sha256,
+      preview: var_preview,
+      lastModified: var_lastModified,
+      lastAccessed: var_lastAccessed,
     );
   }
 
@@ -5665,7 +5856,9 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var var_id = sse_decode_String(deserializer);
     var var_name = sse_decode_String(deserializer);
     var var_size = sse_decode_u_64(deserializer);
-    return RsRelayIncomingFile(id: var_id, name: var_name, size: var_size);
+    var var_fileType = sse_decode_String(deserializer);
+    var var_sha256 = sse_decode_opt_String(deserializer);
+    return RsRelayIncomingFile(id: var_id, name: var_name, size: var_size, fileType: var_fileType, sha256: var_sha256);
   }
 
   @protected
@@ -5703,6 +5896,110 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       default:
         throw UnimplementedError('');
     }
+  }
+
+  @protected
+  RsRelayTransferEvent sse_decode_rs_relay_transfer_event(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    var tag_ = sse_decode_i_32(deserializer);
+    switch (tag_) {
+      case 0:
+        var var_transferId = sse_decode_String(deserializer);
+        var var_totalBytes = sse_decode_u_64(deserializer);
+        var var_origin = sse_decode_String(deserializer);
+        return RsRelayTransferEvent_OutgoingStarted(transferId: var_transferId, totalBytes: var_totalBytes, origin: var_origin);
+      case 1:
+        var var_transferId = sse_decode_String(deserializer);
+        var var_sessionId = sse_decode_String(deserializer);
+        var var_acceptedFileIds = sse_decode_list_String(deserializer);
+        var var_totalBytes = sse_decode_u_64(deserializer);
+        var var_origin = sse_decode_String(deserializer);
+        return RsRelayTransferEvent_Accepted(
+          transferId: var_transferId,
+          sessionId: var_sessionId,
+          acceptedFileIds: var_acceptedFileIds,
+          totalBytes: var_totalBytes,
+          origin: var_origin,
+        );
+      case 2:
+        var var_transferId = sse_decode_String(deserializer);
+        var var_fileId = sse_decode_opt_String(deserializer);
+        var var_origin = sse_decode_String(deserializer);
+        return RsRelayTransferEvent_Declined(transferId: var_transferId, fileId: var_fileId, origin: var_origin);
+      case 3:
+        var var_transferId = sse_decode_String(deserializer);
+        var var_sessionId = sse_decode_String(deserializer);
+        var var_fileId = sse_decode_String(deserializer);
+        var var_fileName = sse_decode_String(deserializer);
+        var var_fileIndex = sse_decode_u_32(deserializer);
+        var var_fileCount = sse_decode_u_32(deserializer);
+        var var_totalBytes = sse_decode_u_64(deserializer);
+        var var_origin = sse_decode_String(deserializer);
+        return RsRelayTransferEvent_FileStarted(
+          transferId: var_transferId,
+          sessionId: var_sessionId,
+          fileId: var_fileId,
+          fileName: var_fileName,
+          fileIndex: var_fileIndex,
+          fileCount: var_fileCount,
+          totalBytes: var_totalBytes,
+          origin: var_origin,
+        );
+      case 4:
+        var var_transferId = sse_decode_String(deserializer);
+        var var_sessionId = sse_decode_String(deserializer);
+        var var_fileId = sse_decode_String(deserializer);
+        var var_bytes = sse_decode_u_64(deserializer);
+        var var_totalBytes = sse_decode_u_64(deserializer);
+        var var_origin = sse_decode_String(deserializer);
+        return RsRelayTransferEvent_FileProgress(
+          transferId: var_transferId,
+          sessionId: var_sessionId,
+          fileId: var_fileId,
+          bytes: var_bytes,
+          totalBytes: var_totalBytes,
+          origin: var_origin,
+        );
+      case 5:
+        var var_transferId = sse_decode_String(deserializer);
+        var var_sessionId = sse_decode_String(deserializer);
+        var var_bytes = sse_decode_u_64(deserializer);
+        var var_totalBytes = sse_decode_u_64(deserializer);
+        var var_origin = sse_decode_String(deserializer);
+        return RsRelayTransferEvent_OverallProgress(
+          transferId: var_transferId,
+          sessionId: var_sessionId,
+          bytes: var_bytes,
+          totalBytes: var_totalBytes,
+          origin: var_origin,
+        );
+      case 6:
+        var var_transferId = sse_decode_String(deserializer);
+        var var_sessionId = sse_decode_opt_String(deserializer);
+        var var_bytes = sse_decode_u_64(deserializer);
+        var var_origin = sse_decode_String(deserializer);
+        return RsRelayTransferEvent_Completed(transferId: var_transferId, sessionId: var_sessionId, bytes: var_bytes, origin: var_origin);
+      case 7:
+        var var_transferId = sse_decode_String(deserializer);
+        var var_category = sse_decode_String(deserializer);
+        return RsRelayTransferEvent_Failed(transferId: var_transferId, category: var_category);
+      case 8:
+        var var_transferId = sse_decode_String(deserializer);
+        return RsRelayTransferEvent_Cancelled(transferId: var_transferId);
+      default:
+        throw UnimplementedError('');
+    }
+  }
+
+  @protected
+  RsRelayTransferFile sse_decode_rs_relay_transfer_file(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_file = sse_decode_file_dto(deserializer);
+    var var_path = sse_decode_opt_String(deserializer);
+    var var_fileDescriptor = sse_decode_opt_box_autoadd_i_32(deserializer);
+    var var_bytes = sse_decode_opt_list_prim_u_8_strict(deserializer);
+    return RsRelayTransferFile(file: var_file, path: var_path, fileDescriptor: var_fileDescriptor, bytes: var_bytes);
   }
 
   @protected
@@ -6385,6 +6682,20 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  void sse_encode_StreamSink_rs_relay_transfer_event_Sse(RustStreamSink<RsRelayTransferEvent> self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_String(
+      self.setupAndSerialize(
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_rs_relay_transfer_event,
+          decodeErrorData: sse_decode_AnyhowException,
+        ),
+      ),
+      serializer,
+    );
+  }
+
+  @protected
   void sse_encode_StreamSink_rs_server_event_Sse(RustStreamSink<RsServerEvent> self, SseSerializer serializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     sse_encode_String(
@@ -6801,6 +7112,15 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  void sse_encode_list_rs_relay_transfer_file(List<RsRelayTransferFile> self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_i_32(self.length, serializer);
+    for (final item in self) {
+      sse_encode_rs_relay_transfer_file(item, serializer);
+    }
+  }
+
+  @protected
   void sse_encode_ls_http_client_version(LsHttpClientVersion self, SseSerializer serializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     sse_encode_i_32(self.index, serializer);
@@ -7201,10 +7521,14 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     // Codec=Sse (Serialization based), see doc to use other codecs
     sse_encode_opt_String(self.path, serializer);
     sse_encode_opt_box_autoadd_i_32(self.fileDescriptor, serializer);
+    sse_encode_opt_list_prim_u_8_strict(self.bytes, serializer);
     sse_encode_String(self.name, serializer);
     sse_encode_u_64(self.size, serializer);
     sse_encode_String(self.fileType, serializer);
     sse_encode_opt_String(self.sha256, serializer);
+    sse_encode_opt_String(self.preview, serializer);
+    sse_encode_opt_String(self.lastModified, serializer);
+    sse_encode_opt_String(self.lastAccessed, serializer);
   }
 
   @protected
@@ -7287,6 +7611,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_String(self.id, serializer);
     sse_encode_String(self.name, serializer);
     sse_encode_u_64(self.size, serializer);
+    sse_encode_String(self.fileType, serializer);
+    sse_encode_opt_String(self.sha256, serializer);
   }
 
   @protected
@@ -7319,6 +7645,105 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         sse_encode_i_32(8, serializer);
         sse_encode_String(relayId, serializer);
     }
+  }
+
+  @protected
+  void sse_encode_rs_relay_transfer_event(RsRelayTransferEvent self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    switch (self) {
+      case RsRelayTransferEvent_OutgoingStarted(transferId: final transferId, totalBytes: final totalBytes, origin: final origin):
+        sse_encode_i_32(0, serializer);
+        sse_encode_String(transferId, serializer);
+        sse_encode_u_64(totalBytes, serializer);
+        sse_encode_String(origin, serializer);
+      case RsRelayTransferEvent_Accepted(
+        transferId: final transferId,
+        sessionId: final sessionId,
+        acceptedFileIds: final acceptedFileIds,
+        totalBytes: final totalBytes,
+        origin: final origin,
+      ):
+        sse_encode_i_32(1, serializer);
+        sse_encode_String(transferId, serializer);
+        sse_encode_String(sessionId, serializer);
+        sse_encode_list_String(acceptedFileIds, serializer);
+        sse_encode_u_64(totalBytes, serializer);
+        sse_encode_String(origin, serializer);
+      case RsRelayTransferEvent_Declined(transferId: final transferId, fileId: final fileId, origin: final origin):
+        sse_encode_i_32(2, serializer);
+        sse_encode_String(transferId, serializer);
+        sse_encode_opt_String(fileId, serializer);
+        sse_encode_String(origin, serializer);
+      case RsRelayTransferEvent_FileStarted(
+        transferId: final transferId,
+        sessionId: final sessionId,
+        fileId: final fileId,
+        fileName: final fileName,
+        fileIndex: final fileIndex,
+        fileCount: final fileCount,
+        totalBytes: final totalBytes,
+        origin: final origin,
+      ):
+        sse_encode_i_32(3, serializer);
+        sse_encode_String(transferId, serializer);
+        sse_encode_String(sessionId, serializer);
+        sse_encode_String(fileId, serializer);
+        sse_encode_String(fileName, serializer);
+        sse_encode_u_32(fileIndex, serializer);
+        sse_encode_u_32(fileCount, serializer);
+        sse_encode_u_64(totalBytes, serializer);
+        sse_encode_String(origin, serializer);
+      case RsRelayTransferEvent_FileProgress(
+        transferId: final transferId,
+        sessionId: final sessionId,
+        fileId: final fileId,
+        bytes: final bytes,
+        totalBytes: final totalBytes,
+        origin: final origin,
+      ):
+        sse_encode_i_32(4, serializer);
+        sse_encode_String(transferId, serializer);
+        sse_encode_String(sessionId, serializer);
+        sse_encode_String(fileId, serializer);
+        sse_encode_u_64(bytes, serializer);
+        sse_encode_u_64(totalBytes, serializer);
+        sse_encode_String(origin, serializer);
+      case RsRelayTransferEvent_OverallProgress(
+        transferId: final transferId,
+        sessionId: final sessionId,
+        bytes: final bytes,
+        totalBytes: final totalBytes,
+        origin: final origin,
+      ):
+        sse_encode_i_32(5, serializer);
+        sse_encode_String(transferId, serializer);
+        sse_encode_String(sessionId, serializer);
+        sse_encode_u_64(bytes, serializer);
+        sse_encode_u_64(totalBytes, serializer);
+        sse_encode_String(origin, serializer);
+      case RsRelayTransferEvent_Completed(transferId: final transferId, sessionId: final sessionId, bytes: final bytes, origin: final origin):
+        sse_encode_i_32(6, serializer);
+        sse_encode_String(transferId, serializer);
+        sse_encode_opt_String(sessionId, serializer);
+        sse_encode_u_64(bytes, serializer);
+        sse_encode_String(origin, serializer);
+      case RsRelayTransferEvent_Failed(transferId: final transferId, category: final category):
+        sse_encode_i_32(7, serializer);
+        sse_encode_String(transferId, serializer);
+        sse_encode_String(category, serializer);
+      case RsRelayTransferEvent_Cancelled(transferId: final transferId):
+        sse_encode_i_32(8, serializer);
+        sse_encode_String(transferId, serializer);
+    }
+  }
+
+  @protected
+  void sse_encode_rs_relay_transfer_file(RsRelayTransferFile self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_file_dto(self.file, serializer);
+    sse_encode_opt_String(self.path, serializer);
+    sse_encode_opt_box_autoadd_i_32(self.fileDescriptor, serializer);
+    sse_encode_opt_list_prim_u_8_strict(self.bytes, serializer);
   }
 
   @protected

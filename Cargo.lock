@@ -4629,6 +4629,7 @@ dependencies = [
  "flutter_rust_bridge",
  "localsend",
  "relay-anywhere-ra2b",
+ "serde",
  "serde_json",
  "tokio",
  "tokio-util",

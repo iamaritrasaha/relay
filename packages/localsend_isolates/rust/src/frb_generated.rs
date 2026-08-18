@@ -44,7 +44,7 @@ flutter_rust_bridge::frb_generated_boilerplate!(
     default_rust_auto_opaque = RustAutoOpaqueMoi,
 );
 pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_VERSION: &str = "2.12.0";
-pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = 213238274;
+pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = 2122192996;
 
 // Section: executor
 
@@ -3932,6 +3932,106 @@ fn wire__crate__api__relay_anywhere__relay_anywhere_validate_routing_key_impl(
         },
     )
 }
+fn wire__crate__api__relay_transfer__relay_transfer_send_lan_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_async::<flutter_rust_bridge::for_generated::SseCodec, _, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "relay_transfer_send_lan",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_client = <RustOpaqueMoi<
+                flutter_rust_bridge::for_generated::RustAutoOpaqueInner<RsHttpClient>,
+            >>::sse_decode(&mut deserializer);
+            let api_protocol = <crate::api::model::ProtocolType>::sse_decode(&mut deserializer);
+            let api_ip = <String>::sse_decode(&mut deserializer);
+            let api_port = <u16>::sse_decode(&mut deserializer);
+            let api_transfer_id = <String>::sse_decode(&mut deserializer);
+            let api_info = <crate::api::model::RegisterDto>::sse_decode(&mut deserializer);
+            let api_files = <Vec<crate::api::relay_transfer::RsRelayTransferFile>>::sse_decode(
+                &mut deserializer,
+            );
+            let api_pin = <Option<String>>::sse_decode(&mut deserializer);
+            let api_cancel_token = <RustOpaqueMoi<
+                flutter_rust_bridge::for_generated::RustAutoOpaqueInner<RsCancellationToken>,
+            >>::sse_decode(&mut deserializer);
+            let api_event_sink = <StreamSink<
+                crate::api::relay_transfer::RsRelayTransferEvent,
+                flutter_rust_bridge::for_generated::SseCodec,
+            >>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| async move {
+                transform_result_sse::<_, ()>(
+                    (move || async move {
+                        let mut api_client_guard = None;
+                        let mut api_cancel_token_guard = None;
+                        let decode_indices_ =
+                            flutter_rust_bridge::for_generated::lockable_compute_decode_order(
+                                vec![
+                                    flutter_rust_bridge::for_generated::LockableOrderInfo::new(
+                                        &api_client,
+                                        0,
+                                        false,
+                                    ),
+                                    flutter_rust_bridge::for_generated::LockableOrderInfo::new(
+                                        &api_cancel_token,
+                                        1,
+                                        false,
+                                    ),
+                                ],
+                            );
+                        for i in decode_indices_ {
+                            match i {
+                                0 => {
+                                    api_client_guard =
+                                        Some(api_client.lockable_decode_async_ref().await)
+                                }
+                                1 => {
+                                    api_cancel_token_guard =
+                                        Some(api_cancel_token.lockable_decode_async_ref().await)
+                                }
+                                _ => unreachable!(),
+                            }
+                        }
+                        let api_client_guard = api_client_guard.unwrap();
+                        let api_cancel_token_guard = api_cancel_token_guard.unwrap();
+                        let output_ok = Result::<_, ()>::Ok({
+                            crate::api::relay_transfer::relay_transfer_send_lan(
+                                &*api_client_guard,
+                                api_protocol,
+                                api_ip,
+                                api_port,
+                                api_transfer_id,
+                                api_info,
+                                api_files,
+                                api_pin,
+                                &*api_cancel_token_guard,
+                                api_event_sink,
+                            )
+                            .await;
+                        })?;
+                        Ok(output_ok)
+                    })()
+                    .await,
+                )
+            }
+        },
+    )
+}
 fn wire__crate__api__crypto__restore_relay_identity_impl(
     port_: flutter_rust_bridge::for_generated::MessagePort,
     ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
@@ -4721,6 +4821,19 @@ impl SseDecode
 }
 
 impl SseDecode
+    for StreamSink<
+        crate::api::relay_transfer::RsRelayTransferEvent,
+        flutter_rust_bridge::for_generated::SseCodec,
+    >
+{
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut inner = <String>::sse_decode(deserializer);
+        return StreamSink::deserialize(inner);
+    }
+}
+
+impl SseDecode
     for StreamSink<crate::api::server::RsServerEvent, flutter_rust_bridge::for_generated::SseCodec>
 {
     // Codec=Sse (Serialization based), see doc to use other codecs
@@ -5074,6 +5187,18 @@ impl SseDecode for Vec<crate::api::relay_anywhere::RsRelayIncomingFile> {
         let mut ans_ = Vec::with_capacity(len_ as usize);
         for idx_ in 0..len_ {
             ans_.push(<crate::api::relay_anywhere::RsRelayIncomingFile>::sse_decode(deserializer));
+        }
+        return ans_;
+    }
+}
+
+impl SseDecode for Vec<crate::api::relay_transfer::RsRelayTransferFile> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut len_ = <i32>::sse_decode(deserializer);
+        let mut ans_ = Vec::with_capacity(len_ as usize);
+        for idx_ in 0..len_ {
+            ans_.push(<crate::api::relay_transfer::RsRelayTransferFile>::sse_decode(deserializer));
         }
         return ans_;
     }
@@ -5670,17 +5795,25 @@ impl SseDecode for crate::api::relay_anywhere::RsRelayAnywhereFile {
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
         let mut var_path = <Option<String>>::sse_decode(deserializer);
         let mut var_fileDescriptor = <Option<i32>>::sse_decode(deserializer);
+        let mut var_bytes = <Option<Vec<u8>>>::sse_decode(deserializer);
         let mut var_name = <String>::sse_decode(deserializer);
         let mut var_size = <u64>::sse_decode(deserializer);
         let mut var_fileType = <String>::sse_decode(deserializer);
         let mut var_sha256 = <Option<String>>::sse_decode(deserializer);
+        let mut var_preview = <Option<String>>::sse_decode(deserializer);
+        let mut var_lastModified = <Option<String>>::sse_decode(deserializer);
+        let mut var_lastAccessed = <Option<String>>::sse_decode(deserializer);
         return crate::api::relay_anywhere::RsRelayAnywhereFile {
             path: var_path,
             file_descriptor: var_fileDescriptor,
+            bytes: var_bytes,
             name: var_name,
             size: var_size,
             file_type: var_fileType,
             sha256: var_sha256,
+            preview: var_preview,
+            last_modified: var_lastModified,
+            last_accessed: var_lastAccessed,
         };
     }
 }
@@ -5778,10 +5911,14 @@ impl SseDecode for crate::api::relay_anywhere::RsRelayIncomingFile {
         let mut var_id = <String>::sse_decode(deserializer);
         let mut var_name = <String>::sse_decode(deserializer);
         let mut var_size = <u64>::sse_decode(deserializer);
+        let mut var_fileType = <String>::sse_decode(deserializer);
+        let mut var_sha256 = <Option<String>>::sse_decode(deserializer);
         return crate::api::relay_anywhere::RsRelayIncomingFile {
             id: var_id,
             name: var_name,
             size: var_size,
+            file_type: var_fileType,
+            sha256: var_sha256,
         };
     }
 }
@@ -5838,6 +5975,144 @@ impl SseDecode for crate::api::http::RsRelayPeerAuth {
                 unimplemented!("");
             }
         }
+    }
+}
+
+impl SseDecode for crate::api::relay_transfer::RsRelayTransferEvent {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut tag_ = <i32>::sse_decode(deserializer);
+        match tag_ {
+            0 => {
+                let mut var_transferId = <String>::sse_decode(deserializer);
+                let mut var_totalBytes = <u64>::sse_decode(deserializer);
+                let mut var_origin = <String>::sse_decode(deserializer);
+                return crate::api::relay_transfer::RsRelayTransferEvent::OutgoingStarted {
+                    transfer_id: var_transferId,
+                    total_bytes: var_totalBytes,
+                    origin: var_origin,
+                };
+            }
+            1 => {
+                let mut var_transferId = <String>::sse_decode(deserializer);
+                let mut var_sessionId = <String>::sse_decode(deserializer);
+                let mut var_acceptedFileIds = <Vec<String>>::sse_decode(deserializer);
+                let mut var_totalBytes = <u64>::sse_decode(deserializer);
+                let mut var_origin = <String>::sse_decode(deserializer);
+                return crate::api::relay_transfer::RsRelayTransferEvent::Accepted {
+                    transfer_id: var_transferId,
+                    session_id: var_sessionId,
+                    accepted_file_ids: var_acceptedFileIds,
+                    total_bytes: var_totalBytes,
+                    origin: var_origin,
+                };
+            }
+            2 => {
+                let mut var_transferId = <String>::sse_decode(deserializer);
+                let mut var_fileId = <Option<String>>::sse_decode(deserializer);
+                let mut var_origin = <String>::sse_decode(deserializer);
+                return crate::api::relay_transfer::RsRelayTransferEvent::Declined {
+                    transfer_id: var_transferId,
+                    file_id: var_fileId,
+                    origin: var_origin,
+                };
+            }
+            3 => {
+                let mut var_transferId = <String>::sse_decode(deserializer);
+                let mut var_sessionId = <String>::sse_decode(deserializer);
+                let mut var_fileId = <String>::sse_decode(deserializer);
+                let mut var_fileName = <String>::sse_decode(deserializer);
+                let mut var_fileIndex = <u32>::sse_decode(deserializer);
+                let mut var_fileCount = <u32>::sse_decode(deserializer);
+                let mut var_totalBytes = <u64>::sse_decode(deserializer);
+                let mut var_origin = <String>::sse_decode(deserializer);
+                return crate::api::relay_transfer::RsRelayTransferEvent::FileStarted {
+                    transfer_id: var_transferId,
+                    session_id: var_sessionId,
+                    file_id: var_fileId,
+                    file_name: var_fileName,
+                    file_index: var_fileIndex,
+                    file_count: var_fileCount,
+                    total_bytes: var_totalBytes,
+                    origin: var_origin,
+                };
+            }
+            4 => {
+                let mut var_transferId = <String>::sse_decode(deserializer);
+                let mut var_sessionId = <String>::sse_decode(deserializer);
+                let mut var_fileId = <String>::sse_decode(deserializer);
+                let mut var_bytes = <u64>::sse_decode(deserializer);
+                let mut var_totalBytes = <u64>::sse_decode(deserializer);
+                let mut var_origin = <String>::sse_decode(deserializer);
+                return crate::api::relay_transfer::RsRelayTransferEvent::FileProgress {
+                    transfer_id: var_transferId,
+                    session_id: var_sessionId,
+                    file_id: var_fileId,
+                    bytes: var_bytes,
+                    total_bytes: var_totalBytes,
+                    origin: var_origin,
+                };
+            }
+            5 => {
+                let mut var_transferId = <String>::sse_decode(deserializer);
+                let mut var_sessionId = <String>::sse_decode(deserializer);
+                let mut var_bytes = <u64>::sse_decode(deserializer);
+                let mut var_totalBytes = <u64>::sse_decode(deserializer);
+                let mut var_origin = <String>::sse_decode(deserializer);
+                return crate::api::relay_transfer::RsRelayTransferEvent::OverallProgress {
+                    transfer_id: var_transferId,
+                    session_id: var_sessionId,
+                    bytes: var_bytes,
+                    total_bytes: var_totalBytes,
+                    origin: var_origin,
+                };
+            }
+            6 => {
+                let mut var_transferId = <String>::sse_decode(deserializer);
+                let mut var_sessionId = <Option<String>>::sse_decode(deserializer);
+                let mut var_bytes = <u64>::sse_decode(deserializer);
+                let mut var_origin = <String>::sse_decode(deserializer);
+                return crate::api::relay_transfer::RsRelayTransferEvent::Completed {
+                    transfer_id: var_transferId,
+                    session_id: var_sessionId,
+                    bytes: var_bytes,
+                    origin: var_origin,
+                };
+            }
+            7 => {
+                let mut var_transferId = <String>::sse_decode(deserializer);
+                let mut var_category = <String>::sse_decode(deserializer);
+                return crate::api::relay_transfer::RsRelayTransferEvent::Failed {
+                    transfer_id: var_transferId,
+                    category: var_category,
+                };
+            }
+            8 => {
+                let mut var_transferId = <String>::sse_decode(deserializer);
+                return crate::api::relay_transfer::RsRelayTransferEvent::Cancelled {
+                    transfer_id: var_transferId,
+                };
+            }
+            _ => {
+                unimplemented!("");
+            }
+        }
+    }
+}
+
+impl SseDecode for crate::api::relay_transfer::RsRelayTransferFile {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_file = <crate::api::model::FileDto>::sse_decode(deserializer);
+        let mut var_path = <Option<String>>::sse_decode(deserializer);
+        let mut var_fileDescriptor = <Option<i32>>::sse_decode(deserializer);
+        let mut var_bytes = <Option<Vec<u8>>>::sse_decode(deserializer);
+        return crate::api::relay_transfer::RsRelayTransferFile {
+            file: var_file,
+            path: var_path,
+            file_descriptor: var_fileDescriptor,
+            bytes: var_bytes,
+        };
     }
 }
 
@@ -6535,12 +6810,18 @@ fn pde_ffi_dispatcher_primary_impl(
             rust_vec_len,
             data_len,
         ),
-        73 => {
+        73 => wire__crate__api__relay_transfer__relay_transfer_send_lan_impl(
+            port,
+            ptr,
+            rust_vec_len,
+            data_len,
+        ),
+        74 => {
             wire__crate__api__crypto__restore_relay_identity_impl(port, ptr, rust_vec_len, data_len)
         }
-        75 => wire__crate__api__discovery__start_discovery_impl(port, ptr, rust_vec_len, data_len),
-        76 => wire__crate__api__server__start_server_impl(port, ptr, rust_vec_len, data_len),
-        77 => wire__crate__api__crypto__verify_cert_impl(port, ptr, rust_vec_len, data_len),
+        76 => wire__crate__api__discovery__start_discovery_impl(port, ptr, rust_vec_len, data_len),
+        77 => wire__crate__api__server__start_server_impl(port, ptr, rust_vec_len, data_len),
+        78 => wire__crate__api__crypto__verify_cert_impl(port, ptr, rust_vec_len, data_len),
         _ => unreachable!(),
     }
 }
@@ -6603,7 +6884,7 @@ fn pde_ffi_dispatcher_sync_impl(
             rust_vec_len,
             data_len,
         ),
-        74 => wire__crate__api__filename__sanitize_file_name_impl(ptr, rust_vec_len, data_len),
+        75 => wire__crate__api__filename__sanitize_file_name_impl(ptr, rust_vec_len, data_len),
         _ => unreachable!(),
     }
 }
@@ -7505,10 +7786,14 @@ impl flutter_rust_bridge::IntoDart for crate::api::relay_anywhere::RsRelayAnywhe
         [
             self.path.into_into_dart().into_dart(),
             self.file_descriptor.into_into_dart().into_dart(),
+            self.bytes.into_into_dart().into_dart(),
             self.name.into_into_dart().into_dart(),
             self.size.into_into_dart().into_dart(),
             self.file_type.into_into_dart().into_dart(),
             self.sha256.into_into_dart().into_dart(),
+            self.preview.into_into_dart().into_dart(),
+            self.last_modified.into_into_dart().into_dart(),
+            self.last_accessed.into_into_dart().into_dart(),
         ]
         .into_dart()
     }
@@ -7586,6 +7871,8 @@ impl flutter_rust_bridge::IntoDart for crate::api::relay_anywhere::RsRelayIncomi
             self.id.into_into_dart().into_dart(),
             self.name.into_into_dart().into_dart(),
             self.size.into_into_dart().into_dart(),
+            self.file_type.into_into_dart().into_dart(),
+            self.sha256.into_into_dart().into_dart(),
         ]
         .into_dart()
     }
@@ -7654,6 +7941,165 @@ impl flutter_rust_bridge::IntoIntoDart<crate::api::http::RsRelayPeerAuth>
     for crate::api::http::RsRelayPeerAuth
 {
     fn into_into_dart(self) -> crate::api::http::RsRelayPeerAuth {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::api::relay_transfer::RsRelayTransferEvent {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        match self {
+            crate::api::relay_transfer::RsRelayTransferEvent::OutgoingStarted {
+                transfer_id,
+                total_bytes,
+                origin,
+            } => [
+                0.into_dart(),
+                transfer_id.into_into_dart().into_dart(),
+                total_bytes.into_into_dart().into_dart(),
+                origin.into_into_dart().into_dart(),
+            ]
+            .into_dart(),
+            crate::api::relay_transfer::RsRelayTransferEvent::Accepted {
+                transfer_id,
+                session_id,
+                accepted_file_ids,
+                total_bytes,
+                origin,
+            } => [
+                1.into_dart(),
+                transfer_id.into_into_dart().into_dart(),
+                session_id.into_into_dart().into_dart(),
+                accepted_file_ids.into_into_dart().into_dart(),
+                total_bytes.into_into_dart().into_dart(),
+                origin.into_into_dart().into_dart(),
+            ]
+            .into_dart(),
+            crate::api::relay_transfer::RsRelayTransferEvent::Declined {
+                transfer_id,
+                file_id,
+                origin,
+            } => [
+                2.into_dart(),
+                transfer_id.into_into_dart().into_dart(),
+                file_id.into_into_dart().into_dart(),
+                origin.into_into_dart().into_dart(),
+            ]
+            .into_dart(),
+            crate::api::relay_transfer::RsRelayTransferEvent::FileStarted {
+                transfer_id,
+                session_id,
+                file_id,
+                file_name,
+                file_index,
+                file_count,
+                total_bytes,
+                origin,
+            } => [
+                3.into_dart(),
+                transfer_id.into_into_dart().into_dart(),
+                session_id.into_into_dart().into_dart(),
+                file_id.into_into_dart().into_dart(),
+                file_name.into_into_dart().into_dart(),
+                file_index.into_into_dart().into_dart(),
+                file_count.into_into_dart().into_dart(),
+                total_bytes.into_into_dart().into_dart(),
+                origin.into_into_dart().into_dart(),
+            ]
+            .into_dart(),
+            crate::api::relay_transfer::RsRelayTransferEvent::FileProgress {
+                transfer_id,
+                session_id,
+                file_id,
+                bytes,
+                total_bytes,
+                origin,
+            } => [
+                4.into_dart(),
+                transfer_id.into_into_dart().into_dart(),
+                session_id.into_into_dart().into_dart(),
+                file_id.into_into_dart().into_dart(),
+                bytes.into_into_dart().into_dart(),
+                total_bytes.into_into_dart().into_dart(),
+                origin.into_into_dart().into_dart(),
+            ]
+            .into_dart(),
+            crate::api::relay_transfer::RsRelayTransferEvent::OverallProgress {
+                transfer_id,
+                session_id,
+                bytes,
+                total_bytes,
+                origin,
+            } => [
+                5.into_dart(),
+                transfer_id.into_into_dart().into_dart(),
+                session_id.into_into_dart().into_dart(),
+                bytes.into_into_dart().into_dart(),
+                total_bytes.into_into_dart().into_dart(),
+                origin.into_into_dart().into_dart(),
+            ]
+            .into_dart(),
+            crate::api::relay_transfer::RsRelayTransferEvent::Completed {
+                transfer_id,
+                session_id,
+                bytes,
+                origin,
+            } => [
+                6.into_dart(),
+                transfer_id.into_into_dart().into_dart(),
+                session_id.into_into_dart().into_dart(),
+                bytes.into_into_dart().into_dart(),
+                origin.into_into_dart().into_dart(),
+            ]
+            .into_dart(),
+            crate::api::relay_transfer::RsRelayTransferEvent::Failed {
+                transfer_id,
+                category,
+            } => [
+                7.into_dart(),
+                transfer_id.into_into_dart().into_dart(),
+                category.into_into_dart().into_dart(),
+            ]
+            .into_dart(),
+            crate::api::relay_transfer::RsRelayTransferEvent::Cancelled { transfer_id } => {
+                [8.into_dart(), transfer_id.into_into_dart().into_dart()].into_dart()
+            }
+            _ => {
+                unimplemented!("");
+            }
+        }
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::api::relay_transfer::RsRelayTransferEvent
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::api::relay_transfer::RsRelayTransferEvent>
+    for crate::api::relay_transfer::RsRelayTransferEvent
+{
+    fn into_into_dart(self) -> crate::api::relay_transfer::RsRelayTransferEvent {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::api::relay_transfer::RsRelayTransferFile {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.file.into_into_dart().into_dart(),
+            self.path.into_into_dart().into_dart(),
+            self.file_descriptor.into_into_dart().into_dart(),
+            self.bytes.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::api::relay_transfer::RsRelayTransferFile
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::api::relay_transfer::RsRelayTransferFile>
+    for crate::api::relay_transfer::RsRelayTransferFile
+{
+    fn into_into_dart(self) -> crate::api::relay_transfer::RsRelayTransferFile {
         self
     }
 }
@@ -8392,6 +8838,18 @@ impl SseEncode
 }
 
 impl SseEncode
+    for StreamSink<
+        crate::api::relay_transfer::RsRelayTransferEvent,
+        flutter_rust_bridge::for_generated::SseCodec,
+    >
+{
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        unimplemented!("")
+    }
+}
+
+impl SseEncode
     for StreamSink<crate::api::server::RsServerEvent, flutter_rust_bridge::for_generated::SseCodec>
 {
     // Codec=Sse (Serialization based), see doc to use other codecs
@@ -8687,6 +9145,16 @@ impl SseEncode for Vec<crate::api::relay_anywhere::RsRelayIncomingFile> {
         <i32>::sse_encode(self.len() as _, serializer);
         for item in self {
             <crate::api::relay_anywhere::RsRelayIncomingFile>::sse_encode(item, serializer);
+        }
+    }
+}
+
+impl SseEncode for Vec<crate::api::relay_transfer::RsRelayTransferFile> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <i32>::sse_encode(self.len() as _, serializer);
+        for item in self {
+            <crate::api::relay_transfer::RsRelayTransferFile>::sse_encode(item, serializer);
         }
     }
 }
@@ -9173,10 +9641,14 @@ impl SseEncode for crate::api::relay_anywhere::RsRelayAnywhereFile {
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
         <Option<String>>::sse_encode(self.path, serializer);
         <Option<i32>>::sse_encode(self.file_descriptor, serializer);
+        <Option<Vec<u8>>>::sse_encode(self.bytes, serializer);
         <String>::sse_encode(self.name, serializer);
         <u64>::sse_encode(self.size, serializer);
         <String>::sse_encode(self.file_type, serializer);
         <Option<String>>::sse_encode(self.sha256, serializer);
+        <Option<String>>::sse_encode(self.preview, serializer);
+        <Option<String>>::sse_encode(self.last_modified, serializer);
+        <Option<String>>::sse_encode(self.last_accessed, serializer);
     }
 }
 
@@ -9231,6 +9703,8 @@ impl SseEncode for crate::api::relay_anywhere::RsRelayIncomingFile {
         <String>::sse_encode(self.id, serializer);
         <String>::sse_encode(self.name, serializer);
         <u64>::sse_encode(self.size, serializer);
+        <String>::sse_encode(self.file_type, serializer);
+        <Option<String>>::sse_encode(self.sha256, serializer);
     }
 }
 
@@ -9287,6 +9761,135 @@ impl SseEncode for crate::api::http::RsRelayPeerAuth {
                 unimplemented!("");
             }
         }
+    }
+}
+
+impl SseEncode for crate::api::relay_transfer::RsRelayTransferEvent {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        match self {
+            crate::api::relay_transfer::RsRelayTransferEvent::OutgoingStarted {
+                transfer_id,
+                total_bytes,
+                origin,
+            } => {
+                <i32>::sse_encode(0, serializer);
+                <String>::sse_encode(transfer_id, serializer);
+                <u64>::sse_encode(total_bytes, serializer);
+                <String>::sse_encode(origin, serializer);
+            }
+            crate::api::relay_transfer::RsRelayTransferEvent::Accepted {
+                transfer_id,
+                session_id,
+                accepted_file_ids,
+                total_bytes,
+                origin,
+            } => {
+                <i32>::sse_encode(1, serializer);
+                <String>::sse_encode(transfer_id, serializer);
+                <String>::sse_encode(session_id, serializer);
+                <Vec<String>>::sse_encode(accepted_file_ids, serializer);
+                <u64>::sse_encode(total_bytes, serializer);
+                <String>::sse_encode(origin, serializer);
+            }
+            crate::api::relay_transfer::RsRelayTransferEvent::Declined {
+                transfer_id,
+                file_id,
+                origin,
+            } => {
+                <i32>::sse_encode(2, serializer);
+                <String>::sse_encode(transfer_id, serializer);
+                <Option<String>>::sse_encode(file_id, serializer);
+                <String>::sse_encode(origin, serializer);
+            }
+            crate::api::relay_transfer::RsRelayTransferEvent::FileStarted {
+                transfer_id,
+                session_id,
+                file_id,
+                file_name,
+                file_index,
+                file_count,
+                total_bytes,
+                origin,
+            } => {
+                <i32>::sse_encode(3, serializer);
+                <String>::sse_encode(transfer_id, serializer);
+                <String>::sse_encode(session_id, serializer);
+                <String>::sse_encode(file_id, serializer);
+                <String>::sse_encode(file_name, serializer);
+                <u32>::sse_encode(file_index, serializer);
+                <u32>::sse_encode(file_count, serializer);
+                <u64>::sse_encode(total_bytes, serializer);
+                <String>::sse_encode(origin, serializer);
+            }
+            crate::api::relay_transfer::RsRelayTransferEvent::FileProgress {
+                transfer_id,
+                session_id,
+                file_id,
+                bytes,
+                total_bytes,
+                origin,
+            } => {
+                <i32>::sse_encode(4, serializer);
+                <String>::sse_encode(transfer_id, serializer);
+                <String>::sse_encode(session_id, serializer);
+                <String>::sse_encode(file_id, serializer);
+                <u64>::sse_encode(bytes, serializer);
+                <u64>::sse_encode(total_bytes, serializer);
+                <String>::sse_encode(origin, serializer);
+            }
+            crate::api::relay_transfer::RsRelayTransferEvent::OverallProgress {
+                transfer_id,
+                session_id,
+                bytes,
+                total_bytes,
+                origin,
+            } => {
+                <i32>::sse_encode(5, serializer);
+                <String>::sse_encode(transfer_id, serializer);
+                <String>::sse_encode(session_id, serializer);
+                <u64>::sse_encode(bytes, serializer);
+                <u64>::sse_encode(total_bytes, serializer);
+                <String>::sse_encode(origin, serializer);
+            }
+            crate::api::relay_transfer::RsRelayTransferEvent::Completed {
+                transfer_id,
+                session_id,
+                bytes,
+                origin,
+            } => {
+                <i32>::sse_encode(6, serializer);
+                <String>::sse_encode(transfer_id, serializer);
+                <Option<String>>::sse_encode(session_id, serializer);
+                <u64>::sse_encode(bytes, serializer);
+                <String>::sse_encode(origin, serializer);
+            }
+            crate::api::relay_transfer::RsRelayTransferEvent::Failed {
+                transfer_id,
+                category,
+            } => {
+                <i32>::sse_encode(7, serializer);
+                <String>::sse_encode(transfer_id, serializer);
+                <String>::sse_encode(category, serializer);
+            }
+            crate::api::relay_transfer::RsRelayTransferEvent::Cancelled { transfer_id } => {
+                <i32>::sse_encode(8, serializer);
+                <String>::sse_encode(transfer_id, serializer);
+            }
+            _ => {
+                unimplemented!("");
+            }
+        }
+    }
+}
+
+impl SseEncode for crate::api::relay_transfer::RsRelayTransferFile {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <crate::api::model::FileDto>::sse_encode(self.file, serializer);
+        <Option<String>>::sse_encode(self.path, serializer);
+        <Option<i32>>::sse_encode(self.file_descriptor, serializer);
+        <Option<Vec<u8>>>::sse_encode(self.bytes, serializer);
     }
 }
 

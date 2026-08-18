@@ -13,6 +13,8 @@ mod policy;
 mod production;
 mod session;
 #[cfg(feature = "anywhere")]
+mod transfer;
+#[cfg(feature = "anywhere")]
 mod transport;
 
 pub use coordinator::{RelayAuthCoordinator, RelayAuthError};
@@ -25,13 +27,20 @@ pub use device::{
 pub use id::{ClaimedRelayId, RelayId};
 pub use path::{ChannelBinding, PathDescriptor};
 pub use policy::{
-    authorize, authorize_with_memory_directory, AuthorizationAdvisory, AuthorizationDecision,
-    DeviceBinding, MemoryTrustDirectory, TransferAuthorization, TransferRequestContext,
-    TrustDirectory, TrustRecord,
+    AuthorizationAdvisory, AuthorizationDecision, DeviceBinding, MemoryTrustDirectory,
+    TransferAuthorization, TransferRequestContext, TrustDirectory, TrustRecord, authorize,
+    authorize_with_memory_directory,
 };
 #[cfg(feature = "anywhere")]
 pub use production::{LanRelaySessionFactory, ProductionLanConnection};
 pub use session::{AuthenticatedRelaySession, LegacyLanInboundSession, LocalSendPeer, SessionRole};
+#[cfg(feature = "anywhere")]
+pub use transfer::{
+    AnywhereTransferTransport, AuthenticatedTransferTransport, CanonicalLanTransferExecutor,
+    CanonicalPrepareUploadResult, LanTransferTransport, PinnedLanTransferTransport,
+    RelayTransferEngine, RelayTransferEvent, RelayTransferEventSink, RelayTransferFile,
+    RelayTransferProgressSink, RelayTransferRequest,
+};
 #[cfg(feature = "anywhere")]
 pub use transport::{
     ConnectionStage, EstablishedTransportSession, IdentityFailure, RelaySecurityRequirement,

@@ -328,7 +328,7 @@ pub trait RelayTransferExecutor<S, Payload> {
     fn send<'a>(
         &'a self,
         session: &'a mut EstablishedTransportSession<S>,
-        payload: &'a Payload,
+        payload: Payload,
     ) -> TransferFuture<'a>;
 }
 
@@ -356,7 +356,7 @@ impl RelaySendService {
     pub async fn send<S, P, F, E>(
         &self,
         target: &RelaySendTarget,
-        payload: &P,
+        payload: P,
         factory: &F,
         executor: &E,
     ) -> Result<RelaySendOutcome, RelaySendError>
@@ -372,6 +372,7 @@ impl RelaySendService {
         }
         let mut attempted_transports = Vec::with_capacity(attempts.len());
         let mut last_retryable = None;
+        let mut payload = Some(payload);
         for attempt in attempts {
             attempted_transports.push(attempt.candidate.kind());
             let mut session = match factory.open(&attempt).await {
@@ -384,12 +385,17 @@ impl RelaySendService {
             };
             session.satisfies(&attempt.requirement)?;
             let origin = session.origin();
+            // Content is taken only after the connection has satisfied the
+            // expected Relay identity. Retryable pre-auth failures can still
+            // try an equally secure route; a transfer is never replayed after
+            // the canonical executor has begun.
+            let payload = payload.take().expect("a transfer payload is consumed once");
             match executor.send(&mut session, payload).await {
                 Ok(()) => {
                     return Ok(RelaySendOutcome {
                         origin,
                         attempted_transports,
-                    })
+                    });
                 }
                 Err(error) => return Err(error),
             }
@@ -407,12 +413,12 @@ mod tests {
     use std::collections::VecDeque;
     use std::sync::Mutex;
 
-    use crate::anywhere::{iroh_endpoint_bind_count, RelayAddressV1, TlsStage, TransportStage};
+    use crate::anywhere::{RelayAddressV1, TlsStage, TransportStage, iroh_endpoint_bind_count};
     use crate::crypto::relay_identity::RelayIdentity;
     use crate::model::discovery::ProtocolType;
     use crate::relay::{
-        authorize, MemoryTrustDirectory, PathDescriptor, RelayAuthCoordinator,
-        RelayDeviceDirectory, RelayDeviceMetadata, TransferAuthorization, TransferRequestContext,
+        MemoryTrustDirectory, PathDescriptor, RelayAuthCoordinator, RelayDeviceDirectory,
+        RelayDeviceMetadata, TransferAuthorization, TransferRequestContext, authorize,
     };
     use iroh::{SecretKey, TransportAddr};
 
@@ -512,7 +518,7 @@ mod tests {
         fn send<'a>(
             &'a self,
             session: &'a mut EstablishedTransportSession<usize>,
-            _: &'a (),
+            _: (),
         ) -> TransferFuture<'a> {
             self.calls.lock().unwrap().push(session.origin());
             let result = self.result.lock().unwrap().clone();
@@ -562,9 +568,11 @@ mod tests {
         let id = relay_id();
         let mut device = device_with_anywhere(id);
         let unassociated = lan("nearby");
-        assert!(device
-            .add_authenticated_lan_candidate(unassociated)
-            .is_err());
+        assert!(
+            device
+                .add_authenticated_lan_candidate(unassociated)
+                .is_err()
+        );
         let attempts = TransportResolver.resolve(
             &RelaySendTarget::VerifiedDevice(device),
             TransportPolicy::default(),
@@ -784,25 +792,33 @@ mod tests {
 
     #[test]
     fn transport_error_policy_is_explicit() {
-        assert!(RelaySendError::ConnectionFailed {
-            stage: ConnectionStage::BeforeIdentityVerification,
-            detail: "refused".into()
-        }
-        .permits_fallback());
-        assert!(RelaySendError::Timeout {
-            stage: ConnectionStage::BeforeIdentityVerification
-        }
-        .permits_fallback());
-        assert!(!RelaySendError::ConnectionFailed {
-            stage: ConnectionStage::AfterIdentityVerification,
-            detail: "reset".into()
-        }
-        .permits_fallback());
+        assert!(
+            RelaySendError::ConnectionFailed {
+                stage: ConnectionStage::BeforeIdentityVerification,
+                detail: "refused".into()
+            }
+            .permits_fallback()
+        );
+        assert!(
+            RelaySendError::Timeout {
+                stage: ConnectionStage::BeforeIdentityVerification
+            }
+            .permits_fallback()
+        );
+        assert!(
+            !RelaySendError::ConnectionFailed {
+                stage: ConnectionStage::AfterIdentityVerification,
+                detail: "reset".into()
+            }
+            .permits_fallback()
+        );
         assert!(!RelaySendError::Cancelled.permits_fallback());
-        assert!(!RelaySendError::IdentityVerificationFailed {
-            reason: IdentityFailure::InvalidRelayProof
-        }
-        .permits_fallback());
+        assert!(
+            !RelaySendError::IdentityVerificationFailed {
+                reason: IdentityFailure::InvalidRelayProof
+            }
+            .permits_fallback()
+        );
     }
 
     #[test]
@@ -858,7 +874,7 @@ mod tests {
         let outcome = service()
             .send(
                 &RelaySendTarget::VerifiedDevice(device),
-                &(),
+                (),
                 &factory,
                 &executor,
             )
@@ -896,7 +912,7 @@ mod tests {
         let outcome = service()
             .send(
                 &RelaySendTarget::VerifiedDevice(device),
-                &(),
+                (),
                 &factory,
                 &executor,
             )
@@ -926,7 +942,7 @@ mod tests {
         let error = service()
             .send(
                 &RelaySendTarget::VerifiedDevice(device),
-                &(),
+                (),
                 &factory,
                 &executor,
             )
@@ -964,7 +980,7 @@ mod tests {
                 service()
                     .send(
                         &RelaySendTarget::VerifiedDevice(device),
-                        &(),
+                        (),
                         &factory,
                         &executor
                     )
@@ -997,7 +1013,7 @@ mod tests {
         let error = service()
             .send(
                 &RelaySendTarget::VerifiedDevice(device),
-                &(),
+                (),
                 &factory,
                 &executor,
             )

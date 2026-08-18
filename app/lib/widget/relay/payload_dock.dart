@@ -353,6 +353,17 @@ class _TransferReadout extends StatelessWidget {
                   style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600, color: palette.textPrimary),
                 ),
               ),
+              if (transfer.origin != null)
+                Padding(
+                  padding: const EdgeInsets.only(top: 2),
+                  child: Text(
+                    transfer.origin!,
+                    key: const ValueKey('relay-transfer-origin'),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(fontSize: 11, color: palette.textTertiary),
+                  ),
+                ),
               if (progress != null) ...[
                 const SizedBox(width: 8),
                 Text(

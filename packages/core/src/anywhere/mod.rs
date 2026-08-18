@@ -32,7 +32,7 @@ pub use listener::{
 pub use proof::{authenticate_initiator, authenticate_server};
 pub use routing_key::{AnywhereRoutingKey, RoutingKeyError};
 pub use runtime::{
-    AnywhereDecision, AnywhereRespondError, AnywhereRuntime, AnywhereSessionId, IncomingTransferId,
+    AnywhereDecision, AnywhereRespondError, AnywhereRuntime, AnywhereSaveTarget, AnywhereSessionId, IncomingTransferId,
 };
 pub use tls::InnerTlsPeer;
 pub use transfer::{

@@ -13,7 +13,7 @@ use localsend::reqwest;
 use localsend::util::error::ErrorChain;
 
 pub struct RsHttpClient {
-    inner: localsend::http::client::LsHttpClient,
+    pub(crate) inner: localsend::http::client::LsHttpClient,
 }
 
 /// Creates an HTTP client.

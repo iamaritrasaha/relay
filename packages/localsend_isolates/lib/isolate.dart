@@ -14,6 +14,8 @@ export 'package:localsend_isolates/src/isolate/child/server_isolate.dart'
         HttpServerStartedEvent,
         HttpServerWebFileDownloadEvent,
         HttpServerWebPrepareDownloadEvent;
+export 'package:localsend_isolates/src/task/server/file_saver.dart'
+    show FileSaveTarget, prepareFileSaveTarget, saveCachedFileToGallery;
 export 'package:localsend_isolates/src/isolate/child/sync_provider.dart';
 export 'package:localsend_isolates/src/isolate/child/upload_isolate.dart'
     show
