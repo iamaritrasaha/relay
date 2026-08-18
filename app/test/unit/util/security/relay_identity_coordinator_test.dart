@@ -210,7 +210,7 @@ void main() {
       await subject.initialize();
       api.restored = _material(secret: [1], relayId: 'other-id', publicKey: 'other-spki');
 
-      final result = await subject.withPrivateKey((_, __) async {
+      final result = await subject.withPrivateKey((_, _) async {
         called = true;
       });
 
