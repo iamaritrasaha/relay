@@ -4,7 +4,7 @@ use std::time::Duration;
 use anyhow::{bail, ensure, Context as _};
 use iroh::{
     endpoint::{presets, Connection, Endpoint},
-    EndpointAddr, RelayMode,
+    EndpointAddr, RelayMode, SecretKey,
 };
 use tokio::time::{sleep, timeout};
 
@@ -72,26 +72,59 @@ impl AnywhereEndpoint {
 
 /// Bind an Iroh endpoint. This is the only production entry that starts Iroh.
 pub async fn bind_endpoint(preference: PathPreference) -> Result<AnywhereEndpoint, AnywhereError> {
+    bind_endpoint_with_key(preference, None).await
+}
+
+/// Bind an Iroh endpoint with an optional persisted routing key.
+///
+/// The key selects the stable Iroh EndpointId used for routing. It is never a
+/// Relay identity, trust record, or authorization input. Supplying no key
+/// preserves the previous one-shot/session behaviour for diagnostics.
+pub async fn bind_endpoint_with_key(
+    preference: PathPreference,
+    routing_key: Option<SecretKey>,
+) -> Result<AnywhereEndpoint, AnywhereError> {
     let endpoint = match preference {
-        PathPreference::Auto => Endpoint::builder(presets::N0)
-            .relay_mode(RelayMode::Default)
-            .alpns(vec![ALPN.to_vec()])
-            .bind()
-            .await
-            .map_err(|error| AnywhereError::transport(TransportStage::Bind, error))?,
-        PathPreference::ForceRelay => Endpoint::builder(presets::N0)
-            .relay_mode(RelayMode::Default)
-            .clear_ip_transports()
-            .alpns(vec![ALPN.to_vec()])
-            .bind()
-            .await
-            .map_err(|error| AnywhereError::transport(TransportStage::Bind, error))?,
-        PathPreference::ForceDirect => Endpoint::builder(presets::Minimal)
-            .relay_mode(RelayMode::Disabled)
-            .alpns(vec![ALPN.to_vec()])
-            .bind()
-            .await
-            .map_err(|error| AnywhereError::transport(TransportStage::Bind, error))?,
+        PathPreference::Auto => {
+            let builder = Endpoint::builder(presets::N0)
+                .relay_mode(RelayMode::Default)
+                .alpns(vec![ALPN.to_vec()]);
+            let builder = match routing_key {
+                Some(key) => builder.secret_key(key),
+                None => builder,
+            };
+            builder
+                .bind()
+                .await
+                .map_err(|error| AnywhereError::transport(TransportStage::Bind, error))?
+        }
+        PathPreference::ForceRelay => {
+            let builder = Endpoint::builder(presets::N0)
+                .relay_mode(RelayMode::Default)
+                .clear_ip_transports()
+                .alpns(vec![ALPN.to_vec()]);
+            let builder = match routing_key {
+                Some(key) => builder.secret_key(key),
+                None => builder,
+            };
+            builder
+                .bind()
+                .await
+                .map_err(|error| AnywhereError::transport(TransportStage::Bind, error))?
+        }
+        PathPreference::ForceDirect => {
+            let builder = Endpoint::builder(presets::Minimal)
+                .relay_mode(RelayMode::Disabled)
+                .alpns(vec![ALPN.to_vec()]);
+            let builder = match routing_key {
+                Some(key) => builder.secret_key(key),
+                None => builder,
+            };
+            builder
+                .bind()
+                .await
+                .map_err(|error| AnywhereError::transport(TransportStage::Bind, error))?
+        }
     };
     mark_iroh_bound();
     Ok(AnywhereEndpoint { inner: endpoint })

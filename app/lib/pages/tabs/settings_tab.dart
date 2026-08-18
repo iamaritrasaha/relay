@@ -10,6 +10,7 @@ import 'package:localsend_app/pages/changelog_page.dart';
 import 'package:localsend_app/pages/settings/network_interfaces_page.dart';
 import 'package:localsend_app/pages/tabs/settings_tab_controller.dart';
 import 'package:localsend_app/provider/network/server/server_provider.dart';
+import 'package:localsend_app/provider/relay_anywhere_listener_provider.dart';
 import 'package:localsend_app/provider/settings_provider.dart';
 import 'package:localsend_app/provider/version_provider.dart';
 import 'package:localsend_app/util/alias_generator.dart';
@@ -354,6 +355,21 @@ class SettingsTab extends StatelessWidget {
                 ],
               ),
             ),
+            if (checkPlatform([TargetPlatform.android, TargetPlatform.linux]))
+              RelayBooleanEntry(
+                label: 'Remote Relay',
+                description: 'Receive through an authenticated Relay address. This does not advertise you on the local network.',
+                value: vm.settings.remoteRelayEnabled,
+                onChanged: (enabled) async {
+                  await ref.notifier(settingsProvider).setRemoteRelayEnabled(enabled);
+                  final listener = ref.read(relayAnywhereListenerServiceProvider);
+                  if (enabled) {
+                    await listener.startIfEnabled(enabled: true, alias: vm.settings.alias);
+                  } else {
+                    await listener.stop();
+                  }
+                },
+              ),
             if (vm.advanced) ...[
               RelaySettingsEntry(
                 label: t.settingsTab.network.deviceType,

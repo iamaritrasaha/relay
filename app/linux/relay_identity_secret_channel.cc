@@ -11,6 +11,9 @@ constexpr char kChannelName[] = "org.localsend.localsend_app/relay_identity_secr
 constexpr char kMethodLoad[] = "relayIdentitySecretLoad";
 constexpr char kMethodSave[] = "relayIdentitySecretSave";
 constexpr char kMethodDelete[] = "relayIdentitySecretDelete";
+constexpr char kMethodRoutingKeyLoad[] = "relayRoutingKeySecretLoad";
+constexpr char kMethodRoutingKeySave[] = "relayRoutingKeySecretSave";
+constexpr char kMethodRoutingKeyDelete[] = "relayRoutingKeySecretDelete";
 
 // Private SecretService subtype for Relay's background identity store. Its
 // prompt vfuncs fail closed so libsecret cannot automatically execute a
@@ -62,8 +65,8 @@ void relay_no_prompt_secret_service_class_init(RelayNoPromptSecretServiceClass* 
 
 void relay_no_prompt_secret_service_init(RelayNoPromptSecretService* /*service*/) {}
 
-// Fixed schema for the single local Relay device identity secret. Lookup is
-// always by this fixed attribute set only, never by alias/IP/RelayId.
+// Fixed schema for Relay's local secrets. Lookup is always by fixed
+// application/purpose/version attributes, never by alias/IP/RelayId.
 const SecretSchema kRelayIdentitySchema = {
     "org.localsend.relay.identity",
     SECRET_SCHEMA_NONE,
@@ -76,9 +79,11 @@ const SecretSchema kRelayIdentitySchema = {
 };
 
 enum class RelayOp { kLoad, kSave, kDelete };
+enum class RelaySecretKind { kIdentity, kRoutingKey };
 
 struct RelayTaskData {
   RelayOp op;
+  RelaySecretKind kind;
   FlMethodCall* method_call;  // owned (reffed on creation)
   guint8* secret;             // owned, only populated for kSave
   gsize secret_len;
@@ -210,6 +215,7 @@ void relay_perform_load(SecretService* service, GHashTable* attributes, GCancell
 void relay_perform_save(SecretService* service,
                         SecretCollection* collection,
                         GHashTable* attributes,
+                        const char* item_label,
                         const guint8* secret,
                         gsize secret_len,
                         GCancellable* cancellable,
@@ -247,7 +253,7 @@ void relay_perform_save(SecretService* service,
   // SecretService subtype rejects it immediately, so this operation fails
   // closed instead of showing or executing an interactive prompt.
   g_autoptr(SecretItem) created =
-      secret_item_create_sync(collection, &kRelayIdentitySchema, attributes, "Relay device identity", value, SECRET_ITEM_CREATE_NONE,
+      secret_item_create_sync(collection, &kRelayIdentitySchema, attributes, item_label, value, SECRET_ITEM_CREATE_NONE,
                               cancellable, &error);
   result->state = g_strdup(created != nullptr ? "success" : relay_map_service_error(error, "failed"));
   g_clear_error(&error);
@@ -323,15 +329,17 @@ void relay_task_worker(GTask* task, gpointer /*source_object*/, gpointer task_da
     return;
   }
 
-  g_autoptr(GHashTable) attributes = secret_attributes_build(&kRelayIdentitySchema, "application", "Relay", "purpose",
-                                                              "relay-device-identity", "version", "1", nullptr);
+  const char* purpose = data->kind == RelaySecretKind::kIdentity ? "relay-device-identity" : "relay-anywhere-routing-key";
+  const char* item_label = data->kind == RelaySecretKind::kIdentity ? "Relay device identity" : "Relay Anywhere routing key";
+  g_autoptr(GHashTable) attributes =
+      secret_attributes_build(&kRelayIdentitySchema, "application", "Relay", "purpose", purpose, "version", "1", nullptr);
 
   switch (data->op) {
     case RelayOp::kLoad:
       relay_perform_load(service, attributes, cancellable, result);
       break;
     case RelayOp::kSave:
-      relay_perform_save(service, collection, attributes, data->secret, data->secret_len, cancellable, result);
+      relay_perform_save(service, collection, attributes, item_label, data->secret, data->secret_len, cancellable, result);
       break;
     case RelayOp::kDelete:
       relay_perform_delete(service, attributes, cancellable, result);
@@ -369,9 +377,10 @@ void relay_task_complete(GObject* /*source_object*/, GAsyncResult* res, gpointer
   relay_task_data_free(data);
 }
 
-void relay_start_task(RelayOp op, FlMethodCall* method_call, guint8* secret, gsize secret_len) {
+void relay_start_task(RelayOp op, RelaySecretKind kind, FlMethodCall* method_call, guint8* secret, gsize secret_len) {
   RelayTaskData* data = g_new0(RelayTaskData, 1);
   data->op = op;
+  data->kind = kind;
   data->method_call = FL_METHOD_CALL(g_object_ref(method_call));
   data->secret = secret;
   data->secret_len = secret_len;
@@ -386,18 +395,27 @@ void relay_start_task(RelayOp op, FlMethodCall* method_call, guint8* secret, gsi
 
 void relay_identity_secret_method_call_handler(FlMethodChannel* /*channel*/, FlMethodCall* method_call, gpointer /*user_data*/) {
   const gchar* method = fl_method_call_get_name(method_call);
+  const bool is_identity = strcmp(method, kMethodLoad) == 0 || strcmp(method, kMethodSave) == 0 || strcmp(method, kMethodDelete) == 0;
+  const bool is_routing_key = strcmp(method, kMethodRoutingKeyLoad) == 0 || strcmp(method, kMethodRoutingKeySave) == 0 ||
+                              strcmp(method, kMethodRoutingKeyDelete) == 0;
+  if (!is_identity && !is_routing_key) {
+    g_autoptr(GError) error = nullptr;
+    fl_method_call_respond_not_implemented(method_call, &error);
+    return;
+  }
+  const RelaySecretKind kind = is_identity ? RelaySecretKind::kIdentity : RelaySecretKind::kRoutingKey;
 
-  if (strcmp(method, kMethodLoad) == 0) {
-    relay_start_task(RelayOp::kLoad, method_call, nullptr, 0);
+  if (strcmp(method, kMethodLoad) == 0 || strcmp(method, kMethodRoutingKeyLoad) == 0) {
+    relay_start_task(RelayOp::kLoad, kind, method_call, nullptr, 0);
     return;
   }
 
-  if (strcmp(method, kMethodDelete) == 0) {
-    relay_start_task(RelayOp::kDelete, method_call, nullptr, 0);
+  if (strcmp(method, kMethodDelete) == 0 || strcmp(method, kMethodRoutingKeyDelete) == 0) {
+    relay_start_task(RelayOp::kDelete, kind, method_call, nullptr, 0);
     return;
   }
 
-  if (strcmp(method, kMethodSave) == 0) {
+  if (strcmp(method, kMethodSave) == 0 || strcmp(method, kMethodRoutingKeySave) == 0) {
     FlValue* args = fl_method_call_get_args(method_call);
     FlValue* secret_value = args != nullptr ? fl_value_lookup_string(args, "secret") : nullptr;
     if (secret_value == nullptr || fl_value_get_type(secret_value) != FL_VALUE_TYPE_UINT8_LIST) {
@@ -408,12 +426,9 @@ void relay_identity_secret_method_call_handler(FlMethodChannel* /*channel*/, FlM
 
     gsize length = fl_value_get_length(secret_value);
     guint8* secret_copy = length > 0 ? static_cast<guint8*>(g_memdup2(fl_value_get_uint8_list(secret_value), length)) : nullptr;
-    relay_start_task(RelayOp::kSave, method_call, secret_copy, length);
+    relay_start_task(RelayOp::kSave, kind, method_call, secret_copy, length);
     return;
   }
-
-  g_autoptr(GError) error = nullptr;
-  fl_method_call_respond_not_implemented(method_call, &error);
 }
 
 }  // namespace

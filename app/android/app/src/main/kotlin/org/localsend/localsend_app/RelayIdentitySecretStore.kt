@@ -19,11 +19,17 @@ import javax.crypto.spec.GCMParameterSpec
 
 private const val RELAY_IDENTITY_KEY_ALIAS = "org.localsend.localsend_app.relay_identity_secret_v1"
 private const val RELAY_IDENTITY_SECRET_FILE = "relay_identity_secret_v1"
+private const val RELAY_ROUTING_KEY_ALIAS = "org.localsend.localsend_app.relay_anywhere_routing_key_v1"
+private const val RELAY_ROUTING_KEY_SECRET_FILE = "relay_anywhere_routing_key_v1"
 private const val AES_TRANSFORMATION = "AES/GCM/NoPadding"
 private const val GCM_TAG_LENGTH_BITS = 128
 
-/** Stores Relay's PKCS#8 private-key bytes encrypted with an Android Keystore key. */
-class RelayIdentitySecretStore(private val context: Context) {
+/** Stores an opaque Relay secret encrypted with an Android Keystore key. */
+private open class RelayEncryptedSecretStore(
+    private val context: Context,
+    private val keyAlias: String,
+    private val secretFileName: String,
+) {
     fun load(): RelayIdentitySecretLoadResult {
         val file = secretFile()
         if (!file.exists()) {
@@ -65,8 +71,8 @@ class RelayIdentitySecretStore(private val context: Context) {
                 return RelayIdentitySecretStoreResult.Failed
             }
             val keyStore = keyStore()
-            if (keyStore.containsAlias(RELAY_IDENTITY_KEY_ALIAS)) {
-                keyStore.deleteEntry(RELAY_IDENTITY_KEY_ALIAS)
+            if (keyStore.containsAlias(keyAlias)) {
+                keyStore.deleteEntry(keyAlias)
             }
             RelayIdentitySecretStoreResult.Success
         } catch (error: Exception) {
@@ -74,9 +80,9 @@ class RelayIdentitySecretStore(private val context: Context) {
         }
     }
 
-    private fun secretFile(): File = File(context.noBackupFilesDir, RELAY_IDENTITY_SECRET_FILE)
+    private fun secretFile(): File = File(context.noBackupFilesDir, secretFileName)
 
-    private fun getExistingKey(): SecretKey? = keyStore().getKey(RELAY_IDENTITY_KEY_ALIAS, null) as? SecretKey
+    private fun getExistingKey(): SecretKey? = keyStore().getKey(keyAlias, null) as? SecretKey
 
     private fun getOrCreateKey(): SecretKey {
         getExistingKey()?.let { return it }
@@ -84,7 +90,7 @@ class RelayIdentitySecretStore(private val context: Context) {
         val keyGenerator = KeyGenerator.getInstance(KeyProperties.KEY_ALGORITHM_AES, "AndroidKeyStore")
         keyGenerator.init(
             KeyGenParameterSpec.Builder(
-                RELAY_IDENTITY_KEY_ALIAS,
+                keyAlias,
                 KeyProperties.PURPOSE_ENCRYPT or KeyProperties.PURPOSE_DECRYPT,
             )
                 .setKeySize(256)
@@ -97,6 +103,20 @@ class RelayIdentitySecretStore(private val context: Context) {
 
     private fun keyStore(): KeyStore = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
 }
+
+/** Stores Relay's PKCS#8 identity private-key bytes. */
+class RelayIdentitySecretStore(context: Context) : RelayEncryptedSecretStore(
+    context,
+    RELAY_IDENTITY_KEY_ALIAS,
+    RELAY_IDENTITY_SECRET_FILE,
+)
+
+/** Stores the opaque Iroh routing key independently from the Relay identity. */
+class RelayRoutingKeySecretStore(context: Context) : RelayEncryptedSecretStore(
+    context,
+    RELAY_ROUTING_KEY_ALIAS,
+    RELAY_ROUTING_KEY_SECRET_FILE,
+)
 
 sealed interface RelayIdentitySecretLoadResult {
     data class Found(val secret: ByteArray) : RelayIdentitySecretLoadResult

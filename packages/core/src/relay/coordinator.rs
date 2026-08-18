@@ -62,6 +62,33 @@ impl RelayAuthCoordinator {
         )
     }
 
+    /// Constructs the LAN initiator session after the production HTTP proof
+    /// verifier has already validated a Server-role proof against this exact
+    /// TLS certificate. Kept crate-private so callers cannot substitute this
+    /// for proof verification.
+    pub(crate) fn complete_verified_lan_initiator(
+        &self,
+        proven_remote: RelayId,
+        observed_tls_fingerprint: [u8; 32],
+        expected_remote: &RelayId,
+        path: PathDescriptor,
+    ) -> Result<AuthenticatedRelaySession, RelayAuthError> {
+        if !expected_remote.eq_digest(&proven_remote) {
+            return Err(RelayAuthError::ExpectedIdentityMismatch {
+                expected: expected_remote.clone(),
+                proven: proven_remote,
+            });
+        }
+        Ok(AuthenticatedRelaySession::from_coordinator(
+            expected_remote.clone(),
+            self.local_relay_id.clone(),
+            SessionRole::Initiator,
+            false,
+            ChannelBinding::tls_cert_sha256(observed_tls_fingerprint),
+            path,
+        ))
+    }
+
     /// Anywhere initiator: Server-role proof of the responder, then a Client-role
     /// proof is sent by the caller. The resulting session is mutual.
     pub fn complete_anywhere_initiator(

@@ -9,6 +9,7 @@ import 'package:localsend_app/model/persistence/color_mode.dart';
 import 'package:localsend_app/model/persistence/favorite_device.dart';
 import 'package:localsend_app/model/persistence/quick_save_mode.dart';
 import 'package:localsend_app/model/persistence/receive_history_entry.dart';
+import 'package:localsend_app/model/persistence/relay_paired_address.dart';
 import 'package:localsend_app/model/persistence/relay_public_identity.dart';
 import 'package:localsend_app/model/send_mode.dart';
 import 'package:localsend_app/provider/window_dimensions_provider.dart';
@@ -95,6 +96,9 @@ const _receiveViaLinkAutoAccept = 'ls_receive_via_link_auto_accept';
 const _createChecksums = 'ls_create_checksums';
 const _verifyChecksums = 'ls_verify_checksums';
 const _advancedSettingsKey = 'ls_advanced_settings';
+// Remote Relay is an explicit capability. Keeping this flag off by default is
+// what keeps normal LAN-only startup from creating an Iroh endpoint.
+const _remoteRelayEnabledKey = 'ls_remote_relay_enabled';
 const _whatsNewKey = 'ls_whats_new';
 
 // Relay identity public metadata. The private PKCS#8 key is exclusively held
@@ -102,6 +106,9 @@ const _whatsNewKey = 'ls_whats_new';
 const _relayIdentityVersionKey = 'ls_relay_identity_version';
 const _relayIdentityIdKey = 'ls_relay_identity_id';
 const _relayIdentityPublicKeyKey = 'ls_relay_identity_public_key';
+// Non-secret, untrusted routing metadata for Relay Anywhere. The routing
+// private key remains exclusively in platform secure storage.
+const _relayPairedAddressesKey = 'ls_relay_paired_addresses_v1';
 
 final persistenceProvider = Provider<PersistenceService>((ref) {
   throw Exception('persistenceProvider not initialized');
@@ -253,6 +260,24 @@ class PersistenceService {
     await _prefs.remove(_relayIdentityVersionKey);
     await _prefs.remove(_relayIdentityIdKey);
     await _prefs.remove(_relayIdentityPublicKeyKey);
+  }
+
+  List<RelayPairedAddress> getRelayPairedAddresses() {
+    final raw = _prefs.getStringList(_relayPairedAddressesKey) ?? const [];
+    return raw
+        .map((entry) {
+          try {
+            return RelayPairedAddress.tryParse(jsonDecode(entry));
+          } catch (_) {
+            return null;
+          }
+        })
+        .whereType<RelayPairedAddress>()
+        .toList(growable: false);
+  }
+
+  Future<void> setRelayPairedAddresses(List<RelayPairedAddress> addresses) async {
+    await _prefs.setStringList(_relayPairedAddressesKey, addresses.map((entry) => jsonEncode(entry.toJson())).toList());
   }
 
   List<String>? getSignalingServers() {
@@ -480,6 +505,14 @@ class PersistenceService {
 
   Future<void> setAdvancedSettingsEnabled(bool isEnabled) async {
     await _prefs.setBool(_advancedSettingsKey, isEnabled);
+  }
+
+  bool getRemoteRelayEnabled() {
+    return _prefs.getBool(_remoteRelayEnabledKey) ?? false;
+  }
+
+  Future<void> setRemoteRelayEnabled(bool isEnabled) async {
+    await _prefs.setBool(_remoteRelayEnabledKey, isEnabled);
   }
 
   QuickSaveMode getQuickSave() {

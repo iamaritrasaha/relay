@@ -32,6 +32,7 @@ class MainActivity : FlutterActivity() {
     private var pendingResult: MethodChannel.Result? = null
     private var pendingPermissionResult: MethodChannel.Result? = null
     private lateinit var relayIdentitySecretStore: RelayIdentitySecretStore
+    private lateinit var relayRoutingKeySecretStore: RelayRoutingKeySecretStore
 
     /// share_handler drops share intents arriving via onNewIntent while the Dart side
     /// is not subscribed to its media stream yet, which happens when this singleTask
@@ -73,6 +74,7 @@ class MainActivity : FlutterActivity() {
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
         relayIdentitySecretStore = RelayIdentitySecretStore(applicationContext)
+        relayRoutingKeySecretStore = RelayRoutingKeySecretStore(applicationContext)
         MethodChannel(
             flutterEngine.dartExecutor.binaryMessenger,
             CHANNEL
@@ -147,6 +149,21 @@ class MainActivity : FlutterActivity() {
                 }
 
                 "relayIdentitySecretDelete" -> result.success(relayIdentitySecretStore.delete().toChannelMap())
+
+                "relayRoutingKeySecretLoad" -> result.success(relayRoutingKeySecretStore.load().toChannelMap())
+
+                "relayRoutingKeySecretSave" -> {
+                    val secret = call.argument<ByteArray>("secret")
+                    result.success(
+                        if (secret == null) {
+                            mapOf("state" to "failed")
+                        } else {
+                            relayRoutingKeySecretStore.save(secret).toChannelMap()
+                        },
+                    )
+                }
+
+                "relayRoutingKeySecretDelete" -> result.success(relayRoutingKeySecretStore.delete().toChannelMap())
 
                 else -> result.notImplemented()
             }

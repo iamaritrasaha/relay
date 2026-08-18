@@ -9,12 +9,46 @@ import 'package:localsend_isolates/rust/frb_generated.dart';
 
 part 'relay_anywhere.freezed.dart';
 
-// These functions are ignored because they are not marked as `pub`: `anywhere_runtime`, `file_spec`, `finish`, `map_event`, `map_failure`, `session_cancellation`
-// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `clone`, `clone`, `clone`, `clone`, `clone`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `from`
+// These functions are ignored because they are not marked as `pub`: `anywhere_listener`, `anywhere_runtime`, `file_spec`, `finish`, `map_event`, `map_failure`, `map_listener_event`, `session_cancellation`
+// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `from`
 
 /// Parses a Relay address bundle. Fail-closed; never panics on bad input.
 RsRelayAddress relayAnywhereParseAddress({required String address}) =>
     RustLib.instance.api.crateApiRelayAnywhereRelayAnywhereParseAddress(address: address);
+
+/// Creates an opaque private routing key for a persistent Anywhere endpoint.
+///
+/// The caller must immediately place this material in the platform secret
+/// store. It is intentionally unrelated to the Relay identity private key.
+Uint8List relayAnywhereGenerateRoutingKey() => RustLib.instance.api.crateApiRelayAnywhereRelayAnywhereGenerateRoutingKey();
+
+/// Validates opaque routing-key material before it is used or retained.
+/// No endpoint is bound and no routing metadata is exposed by this operation.
+void relayAnywhereValidateRoutingKey({required List<int> routingKey}) =>
+    RustLib.instance.api.crateApiRelayAnywhereRelayAnywhereValidateRoutingKey(routingKey: routingKey);
+
+/// Activates the single reusable Anywhere listener. This is the production
+/// capability boundary: importing the API or opening an outbound session does
+/// not bind Iroh. The caller supplies both unrelated secret materials from the
+/// platform stores, and they are wiped after being reconstructed in Rust.
+Stream<RsRelayAnywhereListenerEvent> relayAnywhereStartListener({
+  required List<int> privateKeyPem,
+  required String relayId,
+  required List<int> routingKey,
+  required String alias,
+}) => RustLib.instance.api.crateApiRelayAnywhereRelayAnywhereStartListener(
+  privateKeyPem: privateKeyPem,
+  relayId: relayId,
+  routingKey: routingKey,
+  alias: alias,
+);
+
+/// Stops remote capability and cleanly closes the persistent endpoint. It is
+/// idempotent so normal application shutdown can call it unconditionally.
+Future<void> relayAnywhereStopListener() => RustLib.instance.api.crateApiRelayAnywhereRelayAnywhereStopListener();
+
+/// Returns the current public routing address without exposing its private key.
+String? relayAnywhereListenerAddress() => RustLib.instance.api.crateApiRelayAnywhereRelayAnywhereListenerAddress();
 
 /// Opens a session handle. Any number may be open at once.
 BigInt relayAnywhereOpenSession() => RustLib.instance.api.crateApiRelayAnywhereRelayAnywhereOpenSession();
@@ -175,6 +209,61 @@ class RsRelayAnywhereFile {
           size == other.size &&
           fileType == other.fileType &&
           sha256 == other.sha256;
+}
+
+@freezed
+sealed class RsRelayAnywhereListenerEvent with _$RsRelayAnywhereListenerEvent {
+  const RsRelayAnywhereListenerEvent._();
+
+  const factory RsRelayAnywhereListenerEvent.addressReady({
+    required String address,
+    required String localRelayId,
+  }) = RsRelayAnywhereListenerEvent_AddressReady;
+  const factory RsRelayAnywhereListenerEvent.sessionStarting({
+    required BigInt sessionId,
+  }) = RsRelayAnywhereListenerEvent_SessionStarting;
+  const factory RsRelayAnywhereListenerEvent.sessionWaitingForPeer({
+    required BigInt sessionId,
+  }) = RsRelayAnywhereListenerEvent_SessionWaitingForPeer;
+  const factory RsRelayAnywhereListenerEvent.sessionPeerConnected({
+    required BigInt sessionId,
+  }) = RsRelayAnywhereListenerEvent_SessionPeerConnected;
+  const factory RsRelayAnywhereListenerEvent.sessionTlsEstablished({
+    required BigInt sessionId,
+  }) = RsRelayAnywhereListenerEvent_SessionTlsEstablished;
+  const factory RsRelayAnywhereListenerEvent.sessionPeerAuthenticated({
+    required BigInt sessionId,
+    required String remoteRelayId,
+  }) = RsRelayAnywhereListenerEvent_SessionPeerAuthenticated;
+  const factory RsRelayAnywhereListenerEvent.sessionIncomingBatch({
+    required BigInt sessionId,
+    required BigInt transferId,
+    required List<RsRelayIncomingFile> files,
+    required String remoteRelayId,
+  }) = RsRelayAnywhereListenerEvent_SessionIncomingBatch;
+  const factory RsRelayAnywhereListenerEvent.sessionTransferring({
+    required BigInt sessionId,
+    required BigInt bytes,
+    required BigInt total,
+  }) = RsRelayAnywhereListenerEvent_SessionTransferring;
+  const factory RsRelayAnywhereListenerEvent.sessionCompleted({
+    required BigInt sessionId,
+    required String path,
+    required BigInt bytes,
+    required String localRelayId,
+    required String remoteRelayId,
+    required BigInt durationMs,
+  }) = RsRelayAnywhereListenerEvent_SessionCompleted;
+  const factory RsRelayAnywhereListenerEvent.sessionCancelled({
+    required BigInt sessionId,
+  }) = RsRelayAnywhereListenerEvent_SessionCancelled;
+  const factory RsRelayAnywhereListenerEvent.sessionFailed({
+    required BigInt sessionId,
+    required String message,
+    required String category,
+    String? stage,
+  }) = RsRelayAnywhereListenerEvent_SessionFailed;
+  const factory RsRelayAnywhereListenerEvent.stopped() = RsRelayAnywhereListenerEvent_Stopped;
 }
 
 class RsRelayIncomingFile {

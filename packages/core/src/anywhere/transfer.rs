@@ -277,25 +277,20 @@ pub async fn receive(
     request: AnywhereReceiveRequest,
     events: AnywhereEventSink,
 ) -> Result<AnywhereOutcome, AnywhereError> {
-    let started = Instant::now();
-    let AnywhereReceiveRequest {
-        identity,
-        preference,
-        alias,
-        expected_remote_relay_id,
-    } = request;
-
     events(AnywhereEvent::Starting);
-    let endpoint = bind_endpoint(preference).await?;
+    let endpoint = bind_endpoint(request.preference).await?;
     let guard = EndpointGuard::new(endpoint);
-    wait_online(guard.endpoint(), preference, &cancel).await?;
+    wait_online(guard.endpoint(), request.preference, &cancel).await?;
 
-    let address = RelayAddressV1::new(identity.relay_id().to_owned(), guard.endpoint().addr())
-        .and_then(|address| address.encode())
-        .map_err(|error| AnywhereError::transport(TransportStage::Bind, error))?;
+    let address = RelayAddressV1::new(
+        request.identity.relay_id().to_owned(),
+        guard.endpoint().addr(),
+    )
+    .and_then(|address| address.encode())
+    .map_err(|error| AnywhereError::transport(TransportStage::Bind, error))?;
     events(AnywhereEvent::EndpointReady {
         address,
-        local_relay_id: identity.relay_id().to_owned(),
+        local_relay_id: request.identity.relay_id().to_owned(),
     });
     events(AnywhereEvent::WaitingForConnection);
 
@@ -315,6 +310,30 @@ pub async fn receive(
             connection.map_err(|error| AnywhereError::transport(TransportStage::Accept, error))?
         }
     };
+    let outcome =
+        receive_on_connection(runtime, session_id, cancel, request, connection, events).await?;
+    guard.close().await;
+    Ok(outcome)
+}
+
+/// Receives one authenticated v2 transfer over an already accepted Anywhere
+/// connection. A production listener calls this for every accepted connection;
+/// the one-shot compatibility entry above merely owns endpoint setup/teardown.
+pub(crate) async fn receive_on_connection(
+    runtime: Arc<AnywhereRuntime>,
+    session_id: AnywhereSessionId,
+    cancel: CancellationToken,
+    request: AnywhereReceiveRequest,
+    connection: iroh::endpoint::Connection,
+    events: AnywhereEventSink,
+) -> Result<AnywhereOutcome, AnywhereError> {
+    let started = Instant::now();
+    let AnywhereReceiveRequest {
+        identity,
+        preference,
+        alias,
+        expected_remote_relay_id,
+    } = request;
     events(AnywhereEvent::PeerConnected);
 
     let (send, recv) = connection
@@ -367,7 +386,6 @@ pub async fn receive(
     )
     .await?;
 
-    guard.close().await;
     let outcome = AnywhereOutcome {
         path: path_class(&path),
         bytes: total_bytes,
@@ -726,7 +744,7 @@ impl EndpointGuard {
     }
 }
 
-async fn wait_online(
+pub(crate) async fn wait_online(
     endpoint: &AnywhereEndpoint,
     preference: PathPreference,
     cancel: &CancellationToken,

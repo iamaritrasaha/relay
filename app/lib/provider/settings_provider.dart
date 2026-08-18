@@ -75,6 +75,7 @@ class SettingsService extends PureNotifier<SettingsState> {
     verifyChecksums: _persistence.getVerifyChecksums(),
     discoveryTimeout: _persistence.getDiscoveryTimeout(),
     advancedSettings: _persistence.getAdvancedSettingsEnabled(),
+    remoteRelayEnabled: _persistence.getRemoteRelayEnabled(),
   );
 
   Future<void> setAlias(String alias) async {
@@ -110,6 +111,11 @@ class SettingsService extends PureNotifier<SettingsState> {
     state = state.copyWith(
       advancedSettings: isEnabled,
     );
+  }
+
+  Future<void> setRemoteRelayEnabled(bool isEnabled) async {
+    await _persistence.setRemoteRelayEnabled(isEnabled);
+    state = state.copyWith(remoteRelayEnabled: isEnabled);
   }
 
   Future<void> setLocale(AppLocale? locale) async {
