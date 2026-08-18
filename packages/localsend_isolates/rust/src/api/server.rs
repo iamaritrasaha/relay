@@ -377,11 +377,12 @@ impl RsHttpServer {
                 cert_fingerprint,
                 files,
                 decision_tx,
+                ..
             } => {
                 *self.pending_decision.lock().await = Some((session_id.clone(), decision_tx));
                 sink.add(RsServerEvent::PrepareUpload {
                     session_id,
-                    ip: ip.to_string(),
+                    ip: ip.map_or_else(|| "anywhere".to_owned(), |ip| ip.to_string()),
                     info,
                     cert_fingerprint,
                     files,
@@ -427,9 +428,9 @@ impl RsHttpServer {
                 sink.add(RsServerEvent::PrepareUploadAborted { session_id })
                     .is_ok()
             }
-            ServerEventV2::CancelReceived { ip, session_id } => sink
+            ServerEventV2::CancelReceived { ip, session_id, .. } => sink
                 .add(RsServerEvent::CancelReceived {
-                    ip: ip.to_string(),
+                    ip: ip.map_or_else(|| "anywhere".to_owned(), |ip| ip.to_string()),
                     session_id,
                 })
                 .is_ok(),

@@ -37,7 +37,7 @@ pub(crate) async fn nonce_exchange(
 
     tracing::info!(
         "Nonce exchange successful for client: {} (ID: {})",
-        client_info.ip,
+        client_info.identifier(),
         remote_key
     );
 

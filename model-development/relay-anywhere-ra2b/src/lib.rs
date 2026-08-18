@@ -16,7 +16,8 @@ pub use invite::{
 pub use relay_auth::IDENTITY_REJECTED;
 pub use session::{
     error_category, run_proof, Ra2bCancellation, Ra2bPathClass, Ra2bPathPreference,
-    Ra2bPeerMaterial, Ra2bPhase, Ra2bProofResult, Ra2bRole,
+    send_one_file_over_authenticated_stream, Ra4Decision, Ra4FileSource, Ra4FileSpec,
+    Ra2bPeerMaterial, Ra2bPhase, Ra2bProofResult, Ra2bRole, run_ra4_receiver, run_ra4_sender,
 };
 pub use session_guard::{cancel_active_session, session_is_active, ActiveSessionGuard};
 

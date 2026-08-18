@@ -12,7 +12,7 @@ use crate::http::server::common::session::{
     FileStatusV2, PendingSessionV2, SessionFileV2, SessionStateV2, UploadSessionV2,
 };
 use crate::http::server::PeerIp;
-use crate::http::server::{common, AppState, RequestClientInfo, V2State};
+use crate::http::server::{common, AppState, ConnectionOrigin, RequestClientInfo, V2State};
 use crate::model::discovery::PROTOCOL_VERSION_V2;
 use crate::model::transfer::FileDto;
 use hyper::body::Incoming;
@@ -50,7 +50,13 @@ pub enum ServerEventV2 {
         session_id: String,
 
         /// The IP address of the sender.
-        ip: PeerIp,
+        ip: Option<PeerIp>,
+
+        /// Transport origin. Relay sessions never use a fabricated IP.
+        origin: ConnectionOrigin,
+
+        /// Proven Relay identity for Anywhere connections, if present.
+        authenticated_relay_id: Option<String>,
 
         /// The device information of the sender.
         info: RegisterDtoV2,
@@ -114,7 +120,10 @@ pub enum ServerEventV2 {
     /// send session before cancelling it.
     CancelReceived {
         /// The IP address of the remote device requesting the cancellation.
-        ip: PeerIp,
+        ip: Option<PeerIp>,
+
+        /// Transport origin used to bind cancellation to the same session.
+        origin: ConnectionOrigin,
 
         /// The session ID as known by the remote device.
         session_id: String,
@@ -167,16 +176,18 @@ pub(crate) async fn register(
             //
             // The event carries no responder, and peers repeat their
             // announcement, so a dropped registration is recoverable.
-            if let Err(err) = v2.event_tx.try_send(ServerEventV2::Register {
-                ip: client_info.ip,
-                info: payload,
-            }) {
-                tracing::debug!("Dropped a register event: {err}");
+            if let Some(ip) = client_info.peer_ip() {
+                if let Err(err) = v2.event_tx.try_send(ServerEventV2::Register {
+                    ip,
+                    info: payload,
+                }) {
+                    tracing::debug!("Dropped a register event: {err}");
+                }
             }
         } else {
             tracing::warn!(
                 "Ignoring register from {}: claimed fingerprint does not match the client certificate",
-                client_info.ip
+                client_info.peer_ip().map_or_else(|| "anywhere".to_owned(), |ip| ip.to_string())
             );
         }
     }
@@ -222,13 +233,11 @@ pub(crate) async fn prepare_upload(
     let v2 = require_v2(&state)?;
     let query = parse_query(req.uri().query());
 
-    check_pin(
-        v2.pin.as_deref(),
-        &v2.pin_attempts,
-        &query,
-        client_info.ip.ip,
-    )
-    .await?;
+    if let Some(ip) = client_info.peer_ip() {
+        check_pin(v2.pin.as_deref(), &v2.pin_attempts, &query, ip.ip).await?;
+    } else if v2.pin.is_some() {
+        return Err(AppError::Status(StatusCode::UNAUTHORIZED));
+    }
 
     let payload = req
         .into_body()
@@ -238,13 +247,6 @@ pub(crate) async fn prepare_upload(
     if payload.files.is_empty() {
         return Err(AppError::BadRequest("No files provided".to_string()));
     }
-
-    let inbound = crate::relay::LegacyLanInboundSession::from_production_lan(
-        payload.info.fingerprint.clone(),
-        payload.info.alias.clone(),
-        client_info.cert_fingerprint().as_deref(),
-        crate::relay::PathDescriptor::lan(client_info.ip.to_string(), None),
-    );
 
     let session_id = Uuid::new_v4().to_string();
     let cancelled = CancellationToken::new();
@@ -260,7 +262,8 @@ pub(crate) async fn prepare_upload(
         }
         *slot = Some(SessionStateV2::Pending(PendingSessionV2 {
             session_id: session_id.clone(),
-            sender_ip: client_info.ip,
+            sender_origin: client_info.origin.clone(),
+            sender_session: client_info.relay_session.clone(),
             cancel: cancelled.clone(),
         }));
     }
@@ -271,11 +274,14 @@ pub(crate) async fn prepare_upload(
     let (decision_tx, decision_rx) = oneshot::channel();
     let event = ServerEventV2::PrepareUpload {
         session_id: session_id.clone(),
-        ip: client_info.ip,
+        ip: client_info.peer_ip(),
+        origin: client_info.origin.clone(),
+        authenticated_relay_id: client_info
+            .relay_session
+            .as_ref()
+            .map(|session| session.remote_relay_id().as_hex()),
         info: payload.info,
-        cert_fingerprint: inbound
-            .observed_cert_fingerprint_hex()
-            .or_else(|| client_info.cert_fingerprint()),
+        cert_fingerprint: client_info.cert_fingerprint(),
         files: payload.files.clone(),
         decision_tx,
     };
@@ -341,7 +347,8 @@ pub(crate) async fn prepare_upload(
         let mut slot = v2.session.lock().await;
         *slot = Some(SessionStateV2::Active(UploadSessionV2 {
             session_id: session_id.clone(),
-            sender_ip: client_info.ip,
+            sender_origin: client_info.origin.clone(),
+            sender_session: client_info.relay_session.clone(),
             files,
         }));
     }
@@ -384,7 +391,10 @@ pub(crate) async fn upload(
         let Some(SessionStateV2::Active(session)) = slot.as_mut() else {
             return Err(invalid_token_error());
         };
-        if session.session_id != *session_id || session.sender_ip != client_info.ip {
+        if session.session_id != *session_id
+            || session.sender_origin != client_info.origin
+            || session.sender_session != client_info.relay_session
+        {
             return Err(invalid_token_error());
         }
         let Some(file) = session.files.get_mut(file_id) else {
@@ -467,8 +477,9 @@ pub(crate) async fn cancel(
     let pending_cancelled = {
         let slot = v2.session.lock().await;
         match slot.as_ref() {
-            Some(SessionStateV2::Pending(pending))
-                if pending.sender_ip == client_info.ip
+                Some(SessionStateV2::Pending(pending))
+                if pending.sender_origin == client_info.origin
+                    && pending.sender_session == client_info.relay_session
                     && session_id.is_none_or(|id| *id == pending.session_id) =>
             {
                 tracing::info!(
@@ -493,7 +504,9 @@ pub(crate) async fn cancel(
             let mut slot = v2.session.lock().await;
             match slot.as_ref() {
                 Some(SessionStateV2::Active(session))
-                    if session.session_id == *session_id && session.sender_ip == client_info.ip =>
+                    if session.session_id == *session_id
+                        && session.sender_origin == client_info.origin
+                        && session.sender_session == client_info.relay_session =>
                 {
                     *slot = None;
                     true
@@ -517,7 +530,8 @@ pub(crate) async fn cancel(
             let _ = v2
                 .event_tx
                 .send(ServerEventV2::CancelReceived {
-                    ip: client_info.ip,
+                    ip: client_info.peer_ip(),
+                    origin: client_info.origin.clone(),
                     session_id: session_id.clone(),
                 })
                 .await;

@@ -4479,6 +4479,7 @@ dependencies = [
  "sha2 0.10.9",
  "tokio",
  "tokio-rustls",
+ "tokio-util",
  "tracing",
  "tracing-subscriber",
 ]
@@ -4628,6 +4629,7 @@ dependencies = [
  "flutter_rust_bridge",
  "localsend",
  "relay-anywhere-ra2b",
+ "serde_json",
  "tokio",
  "tokio-util",
  "tracing",

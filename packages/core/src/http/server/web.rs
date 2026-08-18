@@ -219,6 +219,9 @@ pub(crate) async fn prepare_download(
     client_info: RequestClientInfo,
 ) -> Result<Response<BoxedBody>, AppError> {
     let web = require_web(&state)?;
+    let client_ip = client_info
+        .peer_ip()
+        .ok_or(AppError::Status(StatusCode::FORBIDDEN))?;
     let query = parse_query(req.uri().query());
 
     // An accepted client can re-fetch the file list (e.g. page reload).
@@ -226,7 +229,7 @@ pub(crate) async fn prepare_download(
         let sessions = web.sessions.lock().await;
         let valid = sessions
             .get(session_id)
-            .is_some_and(|session| session.accepted && session.ip == client_info.ip);
+            .is_some_and(|session| session.accepted && session.ip == client_ip);
         if valid {
             drop(sessions);
             return Ok(file_list_response(&state, &web, session_id.clone()).await);
@@ -237,7 +240,7 @@ pub(crate) async fn prepare_download(
         web.pin.as_deref(),
         &web.pin_attempts,
         &query,
-        client_info.ip.ip,
+        client_ip.ip,
     )
     .await?;
 
@@ -248,13 +251,13 @@ pub(crate) async fn prepare_download(
         .map(str::to_string);
 
     // One session per IP; a new request replaces any previous session of this client.
-    let session_id = client_info.ip.to_string();
+    let session_id = client_ip.to_string();
     {
         let mut sessions = web.sessions.lock().await;
         sessions.insert(
             session_id.clone(),
             WebSendSession {
-                ip: client_info.ip,
+                ip: client_ip,
                 accepted: false,
             },
         );
@@ -266,7 +269,7 @@ pub(crate) async fn prepare_download(
 
     let (decision_tx, decision_rx) = oneshot::channel();
     let event = WebSendEvent::PrepareDownload {
-        ip: client_info.ip,
+        ip: client_ip,
         session_id: session_id.clone(),
         user_agent,
         decision_tx,
@@ -306,6 +309,9 @@ pub(crate) async fn download(
     client_info: RequestClientInfo,
 ) -> Result<Response<BoxedBody>, AppError> {
     let web = require_web(&state)?;
+    let client_ip = client_info
+        .peer_ip()
+        .ok_or(AppError::Status(StatusCode::FORBIDDEN))?;
     let query = parse_query(req.uri().query());
 
     let Some(session_id) = query.get("sessionId") else {
@@ -316,7 +322,7 @@ pub(crate) async fn download(
         let sessions = web.sessions.lock().await;
         let valid = sessions
             .get(session_id)
-            .is_some_and(|session| session.accepted && session.ip == client_info.ip);
+            .is_some_and(|session| session.accepted && session.ip == client_ip);
         if !valid {
             return Err(AppError::Message(
                 StatusCode::FORBIDDEN,

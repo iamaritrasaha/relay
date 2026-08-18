@@ -1,4 +1,5 @@
-use crate::http::server::PeerIp;
+use crate::http::server::ConnectionOrigin;
+use crate::relay::AuthenticatedRelaySession;
 use crate::model::transfer::FileDto;
 use std::collections::HashMap;
 use tokio_util::sync::CancellationToken;
@@ -21,8 +22,10 @@ pub(crate) enum SessionStateV2 {
 pub(crate) struct PendingSessionV2 {
     pub(crate) session_id: String,
 
-    /// The IP address of the sender. Only this address may cancel the request.
-    pub(crate) sender_ip: PeerIp,
+    /// The transport origin of the sender. Relay sessions have no peer IP.
+    pub(crate) sender_origin: ConnectionOrigin,
+
+    pub(crate) sender_session: Option<AuthenticatedRelaySession>,
 
     pub(crate) cancel: CancellationToken,
 }
@@ -30,8 +33,11 @@ pub(crate) struct PendingSessionV2 {
 pub(crate) struct UploadSessionV2 {
     pub(crate) session_id: String,
 
-    /// The IP address of the sender. Uploads are only accepted from this address.
-    pub(crate) sender_ip: PeerIp,
+    /// The transport origin of the sender. Uploads are only accepted from
+    /// this authenticated connection origin.
+    pub(crate) sender_origin: ConnectionOrigin,
+
+    pub(crate) sender_session: Option<AuthenticatedRelaySession>,
 
     /// The accepted files, mapped by file ID.
     pub(crate) files: HashMap<String, SessionFileV2>,

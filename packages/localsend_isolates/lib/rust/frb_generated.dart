@@ -299,6 +299,21 @@ abstract class RustLibApi extends BaseApi {
 
   void crateApiRa2BRa2BCancelSession();
 
+  void crateApiRa2BRa4SetSender({
+    String? path,
+    int? fileDescriptor,
+    required String name,
+    required BigInt size,
+    required String fileType,
+    String? sha256,
+  });
+
+  void crateApiRa2BRa4SetReceiver();
+
+  void crateApiRa2BRa4Clear();
+
+  void crateApiRa2BRa4Respond({required bool accept, String? targetPath});
+
   RsRa2bLocalIdentity crateApiRa2BRa2BLocalIdentity();
 
   RsRa2bParsedInvite crateApiRa2BRa2BParseInvite({required String invite});
@@ -2130,6 +2145,108 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   TaskConstMeta get kCrateApiRa2BRa2BCancelSessionConstMeta => const TaskConstMeta(
     debugName: 'ra2b_cancel_session',
     argNames: [],
+  );
+
+  @override
+  void crateApiRa2BRa4SetSender({
+    String? path,
+    int? fileDescriptor,
+    required String name,
+    required BigInt size,
+    required String fileType,
+    String? sha256,
+  }) {
+    return handler.executeSync(
+      SyncTask(
+        callFfi: () {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_opt_String(path, serializer);
+          sse_encode_opt_box_autoadd_i_32(fileDescriptor, serializer);
+          sse_encode_String(name, serializer);
+          sse_encode_u_64(size, serializer);
+          sse_encode_String(fileType, serializer);
+          sse_encode_opt_String(sha256, serializer);
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 70)!;
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_unit,
+          decodeErrorData: sse_decode_AnyhowException,
+        ),
+        constMeta: kCrateApiRa2BRa4SetSenderConstMeta,
+        argValues: [path, fileDescriptor, name, size, fileType, sha256],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiRa2BRa4SetSenderConstMeta => const TaskConstMeta(
+    debugName: 'ra4_set_sender',
+    argNames: ['path', 'fileDescriptor', 'name', 'size', 'fileType', 'sha256'],
+  );
+
+  @override
+  void crateApiRa2BRa4SetReceiver() {
+    return handler.executeSync(
+      SyncTask(
+        callFfi: () {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 71)!;
+        },
+        codec: SseCodec(decodeSuccessData: sse_decode_unit, decodeErrorData: null),
+        constMeta: kCrateApiRa2BRa4SetReceiverConstMeta,
+        argValues: [],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiRa2BRa4SetReceiverConstMeta => const TaskConstMeta(
+    debugName: 'ra4_set_receiver',
+    argNames: [],
+  );
+
+  @override
+  void crateApiRa2BRa4Clear() {
+    return handler.executeSync(
+      SyncTask(
+        callFfi: () {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 72)!;
+        },
+        codec: SseCodec(decodeSuccessData: sse_decode_unit, decodeErrorData: null),
+        constMeta: kCrateApiRa2BRa4ClearConstMeta,
+        argValues: [],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiRa2BRa4ClearConstMeta => const TaskConstMeta(
+    debugName: 'ra4_clear',
+    argNames: [],
+  );
+
+  @override
+  void crateApiRa2BRa4Respond({required bool accept, String? targetPath}) {
+    return handler.executeSync(
+      SyncTask(
+        callFfi: () {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_bool(accept, serializer);
+          sse_encode_opt_String(targetPath, serializer);
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 73)!;
+        },
+        codec: SseCodec(decodeSuccessData: sse_decode_unit, decodeErrorData: sse_decode_AnyhowException),
+        constMeta: kCrateApiRa2BRa4RespondConstMeta,
+        argValues: [accept, targetPath],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiRa2BRa4RespondConstMeta => const TaskConstMeta(
+    debugName: 'ra4_respond',
+    argNames: ['accept', 'targetPath'],
   );
 
   @override

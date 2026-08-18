@@ -15,7 +15,8 @@ use crate::http::server::v2::ServerEventV2;
 use crate::http::server::web::{WebConfig, WebI18n};
 use crate::http::state::ClientInfo;
 use crate::relay::{
-    ProductionRelaySigner, RelayProofSigner, RelaySignerInstallError, RelayTlsContext,
+    AuthenticatedRelaySession, ProductionRelaySigner, RelayProofSigner, RelaySignerInstallError,
+    RelayTlsContext,
 };
 use common::client_cert_verifier::CustomClientCertVerifier;
 use common::error::AppError;
@@ -39,6 +40,29 @@ use tokio::sync::{mpsc, oneshot, Mutex, Semaphore};
 use tokio_util::sync::CancellationToken;
 use tokio_util::task::TaskTracker;
 use web::WebPageState;
+
+/// Transport origin of an HTTP connection. Relayed Anywhere connections do
+/// not have a synthetic peer IP; Relay identity is carried separately by the
+/// authenticated session.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum ConnectionOrigin {
+    Lan(PeerIp),
+    InternetDirect,
+    IrohRelay,
+}
+
+impl ConnectionOrigin {
+    pub fn peer_ip(&self) -> Option<PeerIp> {
+        match self {
+            Self::Lan(ip) => Some(*ip),
+            Self::InternetDirect | Self::IrohRelay => None,
+        }
+    }
+
+    pub fn is_anywhere(&self) -> bool {
+        matches!(self, Self::InternetDirect | Self::IrohRelay)
+    }
+}
 
 /// Configuration for the v2 (legacy) protocol endpoints.
 pub struct ServerConfigV2 {
@@ -293,6 +317,9 @@ pub struct ServerHandle {
     /// requested, the listeners have been dropped and all connections have
     /// been closed.
     task: Mutex<Option<tokio::task::JoinHandle<()>>>,
+    state: AppState,
+    cancel: CancellationToken,
+    connections: TaskTracker,
 }
 
 impl ServerHandle {
@@ -338,6 +365,30 @@ impl ServerHandle {
         if let Some(task) = self.task.lock().await.take() {
             let _ = task.await;
         }
+    }
+
+    /// Serves one already-authenticated Anywhere HTTP/1.1 connection through
+    /// the same v2 route handlers used by LAN.
+    pub async fn serve_authenticated_stream<S>(
+        &self,
+        stream: S,
+        session: AuthenticatedRelaySession,
+        origin: ConnectionOrigin,
+    ) -> anyhow::Result<()>
+    where
+        S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send + 'static,
+    {
+        anyhow::ensure!(origin.is_anywhere(), "Anywhere streams need an Anywhere origin");
+        anyhow::ensure!(session.mutual(), "Anywhere HTTP needs a mutual authenticated session");
+        let state = self.state.clone();
+        let cancel = self.cancel.clone();
+        self.connections.spawn(async move {
+            tokio::select! {
+                _ = serve_stream(stream, RequestClientInfo::authenticated(origin, session), state) => {}
+                _ = cancel.cancelled() => {}
+            }
+        });
+        Ok(())
     }
 
     /// Cancels the active v2 upload session if it matches `session_id`,
@@ -403,6 +454,48 @@ pub async fn start_with_port(
         stop_rx,
     )
     .await
+}
+
+/// Starts a v2 server with no listening sockets for a caller-owned stream.
+///
+/// Anywhere supplies the authenticated stream through
+/// [`ServerHandle::serve_authenticated_stream`]. Keeping the same `AppState`
+/// and event-driven v2 handlers here avoids opening an unrelated LAN listener
+/// just to receive one relayed transfer.
+pub async fn start_v2_stream_only(
+    info: ClientInfo,
+    v2_config: ServerConfigV2,
+    stop_rx: oneshot::Receiver<()>,
+) -> anyhow::Result<ServerHandle> {
+    let _ = rustls::crypto::ring::default_provider().install_default();
+    let info = Arc::new(Mutex::new(info));
+    let state = AppState::new(info, None, Some(v2_config), None, None);
+    let cancel = CancellationToken::new();
+    let connections = TaskTracker::new();
+    let task = tokio::spawn({
+        let state = state.clone();
+        let relay_proof = state.relay_proof.clone();
+        let cancel = cancel.clone();
+        let connections = connections.clone();
+        async move {
+            let _ = stop_rx.await;
+            relay_proof.mark_stopped_and_revoke();
+            cancel.cancel();
+            connections.close();
+            connections.wait().await;
+        }
+    });
+
+    Ok(ServerHandle {
+        v2: state.v2.clone(),
+        relay_proof: state.relay_proof.clone(),
+        port: 0,
+        ipv6_bound: false,
+        task: Mutex::new(Some(task)),
+        state,
+        cancel,
+        connections,
+    })
 }
 
 /// Starts the server with an optional synchronous Relay proof signer.
@@ -489,6 +582,9 @@ pub async fn start_with_port_with_relay_proof_signer(
         port: bound_port,
         ipv6_bound,
         task: Mutex::new(Some(task)),
+        state,
+        cancel,
+        connections,
     })
 }
 
@@ -626,7 +722,8 @@ async fn serve_connection(
                     .and_then(|certs| certs.first().map(|cert| cert.to_vec()));
                 (
                     RequestClientInfo {
-                        ip: PeerIp::from_remote_addr(&remote_addr),
+                        origin: ConnectionOrigin::Lan(PeerIp::from_remote_addr(&remote_addr)),
+                        relay_session: None,
                         // No certificate when client auth is optional (web pages served)
                         // and the client (e.g. a browser) did not present one.
                         cert: client_cert.clone(),
@@ -642,40 +739,64 @@ async fn serve_connection(
                 )
             };
 
-            Builder::new(TokioExecutor::new())
-                .serve_connection(
-                    TokioIo::new(tls_stream),
-                    hyper::service::service_fn(move |mut req: Request<Incoming>| {
-                        req.extensions_mut()
-                            .insert::<RequestClientInfo>(client_info.clone());
-                        req.extensions_mut()
-                            .insert::<ConnectionTlsCtx>(tls_context.clone());
-                        req.extensions_mut().insert::<AppState>(app_state.clone());
-                        handle_request(req)
-                    }),
-                )
-                .await
+            serve_stream_with_tls(tls_stream, client_info, tls_context, app_state).await
         }
         None => {
-            Builder::new(TokioExecutor::new())
-                .serve_connection(
-                    TokioIo::new(tcp_stream),
-                    hyper::service::service_fn(move |mut req: Request<Incoming>| {
-                        req.extensions_mut()
-                            .insert::<RequestClientInfo>(RequestClientInfo {
-                                ip: PeerIp::from_remote_addr(&remote_addr),
-                                cert: None,
-                            });
-                        req.extensions_mut().insert::<AppState>(app_state.clone());
-                        handle_request(req)
-                    }),
-                )
-                .await
+            serve_stream(
+                tcp_stream,
+                RequestClientInfo::lan(PeerIp::from_remote_addr(&remote_addr)),
+                app_state,
+            )
+            .await
         }
     };
 
-    if let Err(err) = res {
-        tracing::warn!("Failed to serve connection: {err:#}");
+    let _ = res;
+}
+
+async fn serve_stream<S>(
+    stream: S,
+    client_info: RequestClientInfo,
+    app_state: AppState,
+) where
+    S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send + 'static,
+{
+    if let Err(err) = Builder::new(TokioExecutor::new())
+        .serve_connection(
+            TokioIo::new(stream),
+            hyper::service::service_fn(move |mut req: Request<Incoming>| {
+                req.extensions_mut().insert::<RequestClientInfo>(client_info.clone());
+                req.extensions_mut().insert::<AppState>(app_state.clone());
+                handle_request(req)
+            }),
+        )
+        .await
+    {
+        tracing::warn!("Failed to serve generic stream: {err:#}");
+    }
+}
+
+async fn serve_stream_with_tls<S>(
+    stream: S,
+    client_info: RequestClientInfo,
+    tls_context: ConnectionTlsCtx,
+    app_state: AppState,
+) where
+    S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send + 'static,
+{
+    if let Err(err) = Builder::new(TokioExecutor::new())
+        .serve_connection(
+            TokioIo::new(stream),
+            hyper::service::service_fn(move |mut req: Request<Incoming>| {
+                req.extensions_mut().insert::<RequestClientInfo>(client_info.clone());
+                req.extensions_mut().insert::<ConnectionTlsCtx>(tls_context.clone());
+                req.extensions_mut().insert::<AppState>(app_state.clone());
+                handle_request(req)
+            }),
+        )
+        .await
+    {
+        tracing::warn!("Failed to serve generic TLS stream: {err:#}");
     }
 }
 
@@ -717,14 +838,43 @@ pub(crate) struct ConnectionTlsCtx {
 
 #[derive(Clone, Debug)]
 pub struct RequestClientInfo {
-    /// The IP address of the client, including the IPv6 scope when present.
-    ip: PeerIp,
+    /// The transport origin. Anywhere origins do not contain a fabricated IP.
+    pub(crate) origin: ConnectionOrigin,
+
+    /// The authenticated Anywhere session, when this connection passed the
+    /// inner TLS and mutual Relay proof boundary.
+    pub(crate) relay_session: Option<AuthenticatedRelaySession>,
 
     /// The client certificate in DER format.
     cert: Option<Vec<u8>>,
 }
 
 impl RequestClientInfo {
+    fn lan(ip: PeerIp) -> Self {
+        Self {
+            origin: ConnectionOrigin::Lan(ip),
+            relay_session: None,
+            cert: None,
+        }
+    }
+
+    fn authenticated(origin: ConnectionOrigin, session: AuthenticatedRelaySession) -> Self {
+        debug_assert!(origin.is_anywhere());
+        Self {
+            origin,
+            relay_session: Some(session),
+            cert: None,
+        }
+    }
+
+    pub(crate) fn peer_ip(&self) -> Option<PeerIp> {
+        self.origin.peer_ip()
+    }
+
+    pub(crate) fn is_authenticated_anywhere(&self) -> bool {
+        self.origin.is_anywhere() && self.relay_session.is_some()
+    }
+
     /// The SHA-256 fingerprint (uppercase hex) of the client certificate
     /// verified during the mTLS handshake.
     /// `None` when the server runs without TLS.
@@ -747,7 +897,10 @@ impl RequestClientInfo {
 
     fn identifier(&self) -> String {
         self.extract_public_key()
-            .unwrap_or_else(|| self.ip.to_string())
+            .unwrap_or_else(|| {
+                self.peer_ip()
+                    .map_or_else(|| "anywhere".to_owned(), |ip| ip.to_string())
+            })
     }
 }
 
@@ -766,6 +919,24 @@ async fn handle_request_inner(mut req: Request<Incoming>) -> Result<Response<Box
     let Some(client_info) = req.extensions_mut().remove::<RequestClientInfo>() else {
         return Err(AppError::Status(StatusCode::INTERNAL_SERVER_ERROR));
     };
+
+    // Anywhere HTTP is only reachable from the caller-owned stream after the
+    // mutual Relay proof. Its route surface is intentionally upload-only.
+    if client_info.origin.is_anywhere() {
+        if !client_info.is_authenticated_anywhere() {
+            return Err(AppError::Status(StatusCode::UNAUTHORIZED));
+        }
+        let allowed = req.method() == Method::POST
+            && matches!(
+                req.uri().path(),
+                "/api/localsend/v2/prepare-upload"
+                    | "/api/localsend/v2/upload"
+                    | "/api/localsend/v2/cancel"
+            );
+        if !allowed {
+            return Err(AppError::Status(StatusCode::NOT_FOUND));
+        }
+    }
 
     let v2_enabled = state.v2.is_some();
 
