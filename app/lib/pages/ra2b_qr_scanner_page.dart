@@ -34,17 +34,37 @@ String ra2bScannerVisibleError(String category) {
   };
 }
 
-/// Development-only camera scanner for RA2B Join on Android.
-class Ra2bQrScannerPage extends StatefulWidget {
-  const Ra2bQrScannerPage({super.key, this.requestCamera});
+/// Reusable camera scanner. Product callers provide a small payload validator;
+/// this page does not connect, pair, or create trust on its own.
+class RelayQrScannerPage extends StatefulWidget {
+  const RelayQrScannerPage({
+    super.key,
+    this.requestCamera,
+    required this.title,
+    required this.instruction,
+    this.validate,
+  });
 
   final Future<PermissionStatus> Function()? requestCamera;
+  final String title;
+  final String instruction;
+  final String? Function(String raw)? validate;
 
   @override
-  State<Ra2bQrScannerPage> createState() => _Ra2bQrScannerPageState();
+  State<RelayQrScannerPage> createState() => _RelayQrScannerPageState();
 }
 
-class _Ra2bQrScannerPageState extends State<Ra2bQrScannerPage> with WidgetsBindingObserver {
+/// Explicit harness wrapper retained for RA2B development routes.
+class Ra2bQrScannerPage extends RelayQrScannerPage {
+  const Ra2bQrScannerPage({super.key, super.requestCamera})
+    : super(
+        title: 'Scan Relay Anywhere Invite',
+        instruction: 'Scan the Linux Host QR. This does not connect or create trust.',
+        validate: ra2bInviteShapeError,
+      );
+}
+
+class _RelayQrScannerPageState extends State<RelayQrScannerPage> with WidgetsBindingObserver {
   late final MobileScannerController _controller;
   StreamSubscription<BarcodeCapture>? _barcodes;
   var _handled = false;
@@ -194,7 +214,7 @@ class _Ra2bQrScannerPageState extends State<Ra2bQrScannerPage> with WidgetsBindi
     }
     ra2bScannerLog('BARCODE_DETECTED');
     _lastRaw = raw;
-    final error = ra2bInviteShapeError(raw);
+    final error = widget.validate?.call(raw);
     if (error != null) {
       final category = error.contains('unrelated')
           ? 'unrelated'
@@ -227,7 +247,7 @@ class _Ra2bQrScannerPageState extends State<Ra2bQrScannerPage> with WidgetsBindi
       backgroundColor: palette.canvas,
       appBar: AppBar(
         backgroundColor: palette.canvas,
-        title: const Text('Scan Relay Anywhere Invite'),
+        title: Text(widget.title),
         automaticallyImplyLeading: false,
         actions: [
           TextButton(
@@ -277,7 +297,7 @@ class _Ra2bQrScannerPageState extends State<Ra2bQrScannerPage> with WidgetsBindi
             Padding(
               padding: const EdgeInsets.all(16),
               child: Text(
-                'Scan the Linux Host QR. This does not connect or create trust.',
+                widget.instruction,
                 style: RelayTypography.legal(palette.textSecondary),
                 textAlign: TextAlign.center,
               ),

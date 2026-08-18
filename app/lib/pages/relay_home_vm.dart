@@ -1,5 +1,6 @@
 import 'package:collection/collection.dart';
 import 'package:localsend_app/model/cross_file.dart';
+import 'package:localsend_app/model/persistence/relay_paired_address.dart';
 import 'package:localsend_app/model/state/nearby_devices_state.dart';
 import 'package:localsend_app/model/state/send/send_session_state.dart';
 import 'package:localsend_app/model/state/server/server_state.dart';
@@ -9,6 +10,8 @@ import 'package:localsend_app/provider/file_transfer_provider.dart';
 import 'package:localsend_app/provider/network/nearby_devices_provider.dart';
 import 'package:localsend_app/provider/network/send_provider.dart';
 import 'package:localsend_app/provider/network/server/server_provider.dart';
+import 'package:localsend_app/provider/relay_paired_routes_provider.dart';
+import 'package:localsend_app/provider/relay_remote_transfer_provider.dart';
 import 'package:localsend_app/provider/selection/selected_sending_files_provider.dart';
 import 'package:localsend_app/provider/settings_provider.dart';
 import 'package:localsend_isolates/model/device.dart';
@@ -35,8 +38,9 @@ class RelayTransferVm {
   final String sessionId;
   final String targetAlias;
   final double? progress;
+  final bool remote;
 
-  const RelayTransferVm({required this.sessionId, required this.targetAlias, required this.progress});
+  const RelayTransferVm({required this.sessionId, required this.targetAlias, required this.progress, this.remote = false});
 }
 
 class RelayIncomingVm {
@@ -84,6 +88,8 @@ class RelayHomeVm {
     required Map<String, SendSessionState> sendSessions,
     required FileTransferNotifier transfers,
     required List<CrossFile> selectedFiles,
+    List<RelayPairedAddress> pairedRoutes = const [],
+    Map<String, RelayRemoteTransfer> remoteTransfers = const {},
   }) {
     final selection = RelayPayloadVm(
       fileCount: selectedFiles.length,
@@ -99,6 +105,9 @@ class RelayHomeVm {
               ),
             )
             .toList()
+          ..addAll(
+            pairedRoutes.map((route) => _pairedDeviceVm(route, remoteTransfers.values.firstWhereOrNull((entry) => entry.relayId == route.relayId))),
+          )
           ..sort((a, b) {
             final aliasComparison = a.alias.toLowerCase().compareTo(b.alias.toLowerCase());
             return aliasComparison != 0 ? aliasComparison : a.key.compareTo(b.key);
@@ -116,13 +125,14 @@ class RelayHomeVm {
       devices: devices,
       incoming: RelayIncomingVm(hasActiveRequest: server?.session != null),
       intents: RelayHomeIntents(canSelectPayload: true, canChooseTarget: !selection.isEmpty),
-      activeTransfer: _activeTransfer(sendSessions: sendSessions, transfers: transfers),
+      activeTransfer: _activeTransfer(sendSessions: sendSessions, transfers: transfers, remoteTransfers: remoteTransfers),
     );
   }
 
   static RelayTransferVm? _activeTransfer({
     required Map<String, SendSessionState> sendSessions,
     required FileTransferNotifier transfers,
+    required Map<String, RelayRemoteTransfer> remoteTransfers,
   }) {
     for (final session in sendSessions.values) {
       final hasTransferFailure = transfers.getStatuses(session.sessionId).contains(FileStatus.failed);
@@ -132,6 +142,16 @@ class RelayHomeVm {
           sessionId: session.sessionId,
           targetAlias: session.target.alias,
           progress: phase == RelayDevicePhase.sending ? _progressFor(session, transfers) : null,
+        );
+      }
+    }
+    for (final transfer in remoteTransfers.values) {
+      if (transfer.phase == RelayRemoteTransferPhase.preparing || transfer.phase == RelayRemoteTransferPhase.sending) {
+        return RelayTransferVm(
+          sessionId: transfer.sessionId,
+          targetAlias: transfer.alias,
+          progress: transfer.totalBytes == 0 ? null : transfer.bytes / transfer.totalBytes,
+          remote: true,
         );
       }
     }
@@ -172,6 +192,37 @@ class RelayHomeVm {
     progress: null,
     detail: 'Nearby',
   );
+
+  static RelayDeviceVm _pairedDeviceVm(RelayPairedAddress route, RelayRemoteTransfer? transfer) => RelayDeviceVm(
+    key: 'relay:${route.relayId}',
+    alias: route.displayLabel ?? 'Relay device',
+    deviceType: DeviceType.desktop,
+    phase: _pairedPhase(transfer),
+    progress: transfer == null || transfer.totalBytes == 0 ? null : transfer.bytes / transfer.totalBytes,
+    detail: _pairedDetail(transfer),
+    targetKind: RelayDeviceTargetKind.pairedRelay,
+    relayId: route.relayId,
+  );
+
+  static RelayDevicePhase _pairedPhase(RelayRemoteTransfer? transfer) => switch (transfer?.phase) {
+    null => RelayDevicePhase.idle,
+    RelayRemoteTransferPhase.preparing => RelayDevicePhase.verifying,
+    RelayRemoteTransferPhase.sending => RelayDevicePhase.sending,
+    RelayRemoteTransferPhase.completed => RelayDevicePhase.success,
+    RelayRemoteTransferPhase.failed || RelayRemoteTransferPhase.cancelled => RelayDevicePhase.failed,
+  };
+
+  static String _pairedDetail(RelayRemoteTransfer? transfer) => switch (transfer?.phase) {
+    null || RelayRemoteTransferPhase.preparing => 'Ready',
+    RelayRemoteTransferPhase.sending => 'Sending',
+    RelayRemoteTransferPhase.completed => switch (transfer?.origin) {
+      'direct' => 'Direct',
+      'relay' => 'Relayed',
+      _ => 'Sent',
+    },
+    RelayRemoteTransferPhase.failed => 'Could not send',
+    RelayRemoteTransferPhase.cancelled => 'Cancelled',
+  };
 
   static RelayDevicePhase _phaseFor(SendSessionState session, bool hasTransferFailure) {
     if (session.hashedFileCount < session.files.length) {
@@ -230,5 +281,7 @@ final relayHomeVmProvider = ViewProvider<RelayHomeVm>((ref) {
     sendSessions: ref.watch(sendProvider),
     transfers: ref.watch(fileTransferProvider),
     selectedFiles: ref.watch(selectedSendingFilesProvider),
+    pairedRoutes: ref.watch(relayPairedRoutesProvider),
+    remoteTransfers: ref.watch(relayRemoteTransfersProvider),
   );
 }, debugLabel: 'relayHomeVmProvider');
