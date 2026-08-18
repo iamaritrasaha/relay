@@ -4,12 +4,22 @@
 //! derive it from the exact rustls configuration in use.
 
 mod coordinator;
+#[cfg(feature = "anywhere")]
+mod device;
 mod id;
 mod path;
 mod policy;
 mod session;
+#[cfg(feature = "anywhere")]
+mod transport;
 
 pub use coordinator::{RelayAuthCoordinator, RelayAuthError};
+#[cfg(feature = "anywhere")]
+pub use device::{
+    AnywhereTransportCandidate, CandidateFreshness, DeviceCandidateError, LanRouteIdentity,
+    LanTransportCandidate, RelayDevice, RelayDeviceDirectory, RelayDeviceMetadata,
+    UnresolvedLanCandidate,
+};
 pub use id::{ClaimedRelayId, RelayId};
 pub use path::{ChannelBinding, PathDescriptor};
 pub use policy::{
@@ -18,6 +28,13 @@ pub use policy::{
     TrustDirectory, TrustRecord,
 };
 pub use session::{AuthenticatedRelaySession, LegacyLanInboundSession, LocalSendPeer, SessionRole};
+#[cfg(feature = "anywhere")]
+pub use transport::{
+    ConnectionStage, EstablishedTransportSession, IdentityFailure, RelaySecurityRequirement,
+    RelaySendError, RelaySendOutcome, RelaySendService, RelaySendTarget, RelayTransferExecutor,
+    TransportAttempt, TransportCandidate, TransportKind, TransportOrigin, TransportPolicy,
+    TransportResolver, TransportSessionFactory,
+};
 
 use std::fmt;
 
