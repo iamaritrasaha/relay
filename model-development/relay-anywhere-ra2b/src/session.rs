@@ -1,5 +1,6 @@
 use std::{
     io::ErrorKind,
+    path::PathBuf,
     sync::{
         atomic::{AtomicBool, Ordering},
         Arc,
@@ -16,14 +17,23 @@ use localsend::anywhere::{
     AnywhereError, InnerTlsPeer, PathPreference,
 };
 use localsend::crypto::relay_identity::RelayIdentity;
+use localsend::http::client::AnywhereHttpClient;
+use localsend::http::dto_v2::{PrepareUploadRequestDtoV2, RegisterDtoV2};
+use localsend::http::server::common::save::FileUploadTarget;
+use localsend::http::server::v2::{PrepareUploadDecisionV2, ServerEventV2, SessionEndReasonV2};
+use localsend::http::server::{start_v2_stream_only, ConnectionOrigin, ServerConfigV2};
+use localsend::http::state::ClientInfo;
+use localsend::model::discovery::ProtocolType;
+use localsend::model::transfer::{FileContent, FileDto};
 use localsend::relay::{PathDescriptor, RelayId, TransferAuthorization};
 use rand::RngCore;
 use sha2::{Digest, Sha256};
 use tokio::{
     io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt},
-    sync::Notify,
+    sync::{mpsc, oneshot, Notify},
     time::sleep,
 };
+use tokio_util::sync::CancellationToken;
 
 #[cfg(test)]
 use tokio::time::timeout;
@@ -132,6 +142,11 @@ pub enum Ra2bPhase {
     RelayIdentityAuthenticated {
         remote_relay_id: String,
     },
+    IncomingFile {
+        name: String,
+        size: u64,
+        remote_relay_id: String,
+    },
     Transferring {
         bytes: u64,
         total: u64,
@@ -159,6 +174,389 @@ pub struct Ra2bProofResult {
     pub local_relay_id: String,
     pub remote_relay_id: String,
     pub duration_ms: u64,
+}
+
+/// One real file for the RA4A HTTP transfer path. The source is consumed as a
+/// bounded stream by the existing LocalSend file-content machinery.
+#[derive(Debug)]
+pub enum Ra4FileSource {
+    Path(std::path::PathBuf),
+    #[cfg(target_os = "android")]
+    FileDescriptor(std::os::fd::RawFd),
+}
+
+#[derive(Debug)]
+pub struct Ra4FileSpec {
+    pub id: String,
+    pub name: String,
+    pub size: u64,
+    pub file_type: String,
+    pub sha256: Option<String>,
+    pub source: Ra4FileSource,
+}
+
+/// Session-scoped receiver decision. The destination is prepared by the
+/// existing UI/save-target machinery and is never persisted as trust.
+#[derive(Debug)]
+pub struct Ra4Decision {
+    pub accept: bool,
+    pub target: Option<PathBuf>,
+}
+
+/// Runs the production RA4A sender after Iroh, inner TLS, mutual proof, and
+/// authorization have already completed. HTTP semantics are shared with LAN;
+/// this function only supplies the caller-owned authenticated stream.
+pub async fn send_one_file_over_authenticated_stream<S>(
+    stream: S,
+    session: localsend::relay::AuthenticatedRelaySession,
+    spec: Ra4FileSpec,
+    alias: String,
+    fingerprint: String,
+    cancellation: CancellationToken,
+    on_progress: impl Fn(u64) + Send + Sync + 'static,
+) -> Result<usize>
+where
+    S: AsyncRead + AsyncWrite + Unpin + Send + 'static,
+{
+    let mut client = AnywhereHttpClient::handshake(stream, session)
+        .await
+        .map_err(|error| anyhow::anyhow!(error))?;
+    let file = FileDto {
+        id: spec.id.clone(),
+        file_name: spec.name,
+        size: spec.size,
+        file_type: spec.file_type,
+        sha256: spec.sha256,
+        preview: None,
+        metadata: None,
+    };
+    let payload = PrepareUploadRequestDtoV2 {
+        info: RegisterDtoV2 {
+            alias,
+            version: "2.2".to_owned(),
+            device_model: None,
+            device_type: None,
+            fingerprint,
+            port: 0,
+            protocol: ProtocolType::Https,
+            download: false,
+        },
+        files: std::collections::HashMap::from([(file.id.clone(), file.clone())]),
+    };
+    let prepared = client
+        .prepare_upload(payload, None, cancellation.clone())
+        .await
+        .map_err(|error| anyhow::anyhow!(error))?
+        .response
+        .ok_or_else(|| anyhow::anyhow!("receiver accepted no file"))?;
+    let token = prepared
+        .files
+        .get(&file.id)
+        .cloned()
+        .ok_or_else(|| anyhow::anyhow!("receiver did not accept the selected file"))?;
+    let content = match spec.source {
+        Ra4FileSource::Path(path) => FileContent::Path(path),
+        #[cfg(target_os = "android")]
+        Ra4FileSource::FileDescriptor(fd) => FileContent::Fd(fd),
+    };
+    client
+        .upload(
+            &prepared.session_id,
+            &file.id,
+            &token,
+            content,
+            file.size,
+            on_progress,
+            cancellation,
+        )
+        .await
+        .map_err(|error| anyhow::anyhow!(error))?;
+    usize::try_from(file.size).context("file size exceeds usize")
+}
+
+/// Runs the RA4A sender after the Iroh, inner-TLS, and mutual Relay proof
+/// boundaries. The HTTP body is still the existing v2 upload body.
+pub async fn run_ra4_sender(
+    remote_endpoint: EndpointAddr,
+    peer: Ra2bPeerMaterial,
+    path_preference: Ra2bPathPreference,
+    cancellation: &Ra2bCancellation,
+    on_status: &Ra2bStatusCallback,
+    spec: Ra4FileSpec,
+) -> Result<Ra2bProofResult> {
+    let started = Instant::now();
+    let total = spec.size;
+    let hash_hex = spec.sha256.clone().unwrap_or_default();
+    let (endpoint, relay_guard) = build_endpoint(path_preference).await?;
+    if path_preference != Ra2bPathPreference::ForceDirect {
+        tokio::select! {
+            _ = cancellation.cancelled() => bail!("cancelled"),
+            _ = endpoint.online() => {},
+            _ = sleep(Duration::from_secs(20)) => {},
+        }
+    }
+    on_status(Ra2bPhase::Connecting);
+    let connection = tokio::select! {
+        _ = cancellation.cancelled() => bail!("cancelled"),
+        _ = sleep(SESSION_TIMEOUT) => bail!("timed out connecting to remote Iroh endpoint"),
+        connection = endpoint.connect(remote_endpoint) => connection.map_err(map_anywhere)?,
+    };
+    on_status(Ra2bPhase::IrohConnected);
+    let (send, recv) = connection.open_bi().await.context("open Iroh bidirectional stream")?;
+    let path = selected_path(&connection, to_path_preference(path_preference))
+        .await
+        .unwrap_or(PathDescriptor::InternetDirect {
+            host: String::new(),
+            port: None,
+        });
+    let server_name = rustls::pki_types::ServerName::try_from("localhost")
+        .context("parse inner TLS server name")?;
+    let mut tls = peer
+        .tls
+        .connector()
+        .connect(server_name, IrohBiStream::new(send, recv))
+        .await
+        .context("inner TLS client handshake")?;
+    on_status(Ra2bPhase::TlsAuthenticated);
+    let observed_server_cert = client_peer_certificate_fingerprint(&tls)?;
+    let expected = peer
+        .expected_remote_relay_id
+        .as_deref()
+        .map(RelayId::from_expected_canonical_hex)
+        .transpose()?;
+    let session = authenticate_initiator(
+        &mut tls,
+        &peer.identity,
+        peer.tls.cert_fingerprint,
+        expected.as_ref().context("join requires expected host RelayId")?,
+        observed_server_cert,
+        path.clone(),
+    )
+    .await
+    .map_err(map_anywhere)?;
+    approve_authenticated_session(&session)?;
+    let remote_relay_id = session.remote_relay_id().as_hex();
+    on_status(Ra2bPhase::RelayIdentityAuthenticated {
+        remote_relay_id: remote_relay_id.clone(),
+    });
+
+    let cancel_token = CancellationToken::new();
+    let cancel_watch = {
+        let cancel_token = cancel_token.clone();
+        let cancellation = cancellation.clone();
+        tokio::spawn(async move {
+            cancellation.cancelled().await;
+            cancel_token.cancel();
+        })
+    };
+    let bytes = send_one_file_over_authenticated_stream(
+        tls,
+        session,
+        spec,
+        "Relay Anywhere".to_owned(),
+        peer.relay_id.clone(),
+        cancel_token,
+        {
+            let on_status = on_status.clone();
+            move |bytes| {
+                on_status(Ra2bPhase::Transferring {
+                    bytes,
+                    total,
+                });
+            }
+        },
+    )
+    .await?;
+    cancel_watch.abort();
+    endpoint.close().await;
+    drop(relay_guard);
+    Ok(Ra2bProofResult {
+        path: path_class(&path),
+        bytes,
+        hash_hex,
+        local_relay_id: peer.relay_id,
+        remote_relay_id,
+        duration_ms: started.elapsed().as_millis() as u64,
+    })
+}
+
+/// Runs the RA4A receiver over one authenticated stream and routes the HTTP
+/// events through the same v2 prepare/save/session machinery used by LAN.
+pub async fn run_ra4_receiver(
+    peer: Ra2bPeerMaterial,
+    path_preference: Ra2bPathPreference,
+    cancellation: &Ra2bCancellation,
+    on_status: &Ra2bStatusCallback,
+    decision_rx: &mut mpsc::Receiver<Ra4Decision>,
+) -> Result<Ra2bProofResult> {
+    let started = Instant::now();
+    let (endpoint, relay_guard) = build_endpoint(path_preference).await?;
+    if path_preference != Ra2bPathPreference::ForceDirect {
+        tokio::select! {
+            _ = cancellation.cancelled() => bail!("cancelled"),
+            _ = endpoint.online() => {},
+            _ = sleep(Duration::from_secs(20)) => {},
+        }
+    }
+    let invite = Ra2bInviteV1::new(peer.relay_id.clone(), endpoint.addr())?.encode()?;
+    on_status(Ra2bPhase::EndpointReady {
+        invite,
+        local_relay_id: peer.relay_id.clone(),
+    });
+    on_status(Ra2bPhase::WaitingForConnection);
+    let incoming = tokio::select! {
+        _ = cancellation.cancelled() => bail!("cancelled"),
+        _ = sleep(SESSION_TIMEOUT) => bail!("timed out waiting for Iroh connection"),
+        incoming = endpoint.accept() => incoming.map_err(map_anywhere)?,
+    };
+    let connection = tokio::select! {
+        _ = cancellation.cancelled() => bail!("cancelled"),
+        _ = sleep(SESSION_TIMEOUT) => bail!("timed out completing Iroh handshake"),
+        connection = incoming => connection.context("complete Iroh server handshake")?,
+    };
+    on_status(Ra2bPhase::IrohConnected);
+    let (send, recv) = connection.accept_bi().await.context("accept Iroh bidirectional stream")?;
+    let path = selected_path(&connection, to_path_preference(path_preference))
+        .await
+        .unwrap_or(PathDescriptor::InternetDirect {
+            host: String::new(),
+            port: None,
+        });
+    let mut tls = peer
+        .tls
+        .acceptor()
+        .accept(IrohBiStream::new(send, recv))
+        .await
+        .context("inner TLS server handshake")?;
+    on_status(Ra2bPhase::TlsAuthenticated);
+    let observed_client_cert = server_peer_certificate_fingerprint(&tls)?;
+    let expected = peer
+        .expected_remote_relay_id
+        .as_deref()
+        .map(RelayId::from_expected_canonical_hex)
+        .transpose()?;
+    let session = authenticate_server(
+        &mut tls,
+        &peer.identity,
+        peer.tls.cert_fingerprint,
+        expected.as_ref(),
+        observed_client_cert,
+        path.clone(),
+    )
+    .await
+    .map_err(map_anywhere)?;
+    approve_authenticated_session(&session)?;
+    let remote_relay_id = session.remote_relay_id().as_hex();
+    on_status(Ra2bPhase::RelayIdentityAuthenticated {
+        remote_relay_id: remote_relay_id.clone(),
+    });
+
+    let (event_tx, mut event_rx) = mpsc::channel(8);
+    let (stop_tx, stop_rx) = oneshot::channel();
+    let server = start_v2_stream_only(
+        ClientInfo {
+            alias: "Relay Anywhere".to_owned(),
+            version: "2.2".to_owned(),
+            device_model: None,
+            device_type: None,
+            token: peer.relay_id.clone(),
+        },
+        ServerConfigV2 {
+            pin: None,
+            verify_checksums: true,
+            event_tx,
+        },
+        stop_rx,
+    )
+    .await?;
+    let origin = match path {
+        PathDescriptor::IrohRelay { .. } | PathDescriptor::Relayed { .. } => {
+            ConnectionOrigin::IrohRelay
+        }
+        _ => ConnectionOrigin::InternetDirect,
+    };
+    server
+        .serve_authenticated_stream(tls, session, origin)
+        .await?;
+
+    let mut target: Option<PathBuf> = None;
+    let mut accepted_file: Option<FileDto> = None;
+    loop {
+        tokio::select! {
+            _ = cancellation.cancelled() => {
+                let _ = stop_tx.send(());
+                server.wait_stopped().await;
+                bail!("cancelled");
+            }
+            event = event_rx.recv() => match event {
+                Some(ServerEventV2::PrepareUpload { files, decision_tx, authenticated_relay_id, .. }) => {
+                    let Some((file_id, file)) = (files.len() == 1).then(|| files.into_iter().next()).flatten() else {
+                        let _ = decision_tx.send(PrepareUploadDecisionV2::Decline);
+                        let _ = stop_tx.send(());
+                        server.wait_stopped().await;
+                        bail!("RA4A accepts exactly one file");
+                    };
+                    let remote = authenticated_relay_id.unwrap_or_else(|| remote_relay_id.clone());
+                    on_status(Ra2bPhase::IncomingFile {
+                        name: file.file_name.clone(),
+                        size: file.size,
+                        remote_relay_id: remote,
+                    });
+                    let decision = tokio::select! {
+                        _ = cancellation.cancelled() => {
+                            let _ = stop_tx.send(());
+                            server.wait_stopped().await;
+                            bail!("cancelled");
+                        }
+                        decision = decision_rx.recv() => decision.context("receiver decision channel closed")?,
+                    };
+                    if !decision.accept {
+                        let _ = decision_tx.send(PrepareUploadDecisionV2::Decline);
+                        let _ = stop_tx.send(());
+                        server.wait_stopped().await;
+                        bail!("transfer declined");
+                    }
+                    target = decision.target;
+                    accepted_file = Some(file.clone());
+                    decision_tx.send(PrepareUploadDecisionV2::Accept(std::collections::HashSet::from([file_id])))
+                        .map_err(|_| anyhow::anyhow!("sender disconnected during prepare-upload"))?;
+                }
+                Some(ServerEventV2::FileUpload { file_id, file, target_tx, .. }) => {
+                    ensure!(accepted_file.as_ref().map(|accepted| accepted.id.as_str()) == Some(file_id.as_str()), "unexpected RA4A file upload");
+                    let path = target.take().context("accepted transfer has no save target")?;
+                    let (result_tx, _result_rx) = oneshot::channel();
+                    let (progress_tx, mut progress_rx) = mpsc::channel(32);
+                    let on_status = on_status.clone();
+                    tokio::spawn(async move {
+                        while let Some(bytes) = progress_rx.recv().await {
+                            on_status(Ra2bPhase::Transferring { bytes, total: file.size });
+                        }
+                    });
+                    target_tx.send(FileUploadTarget::Path { path, result_tx, progress_tx: Some(progress_tx) })
+                        .map_err(|_| anyhow::anyhow!("sender disconnected before file save"))?;
+                }
+                Some(ServerEventV2::SessionEnd { reason: SessionEndReasonV2::Finished, .. }) => break,
+                Some(ServerEventV2::SessionEnd { reason: SessionEndReasonV2::Cancelled, .. }) => bail!("cancelled"),
+                Some(ServerEventV2::PrepareUploadAborted { .. }) => bail!("prepare-upload aborted"),
+                Some(ServerEventV2::CancelReceived { .. }) => bail!("cancelled by sender"),
+                Some(ServerEventV2::Register { .. }) => {}
+                None => bail!("Anywhere HTTP server stopped before completion"),
+            }
+        }
+    }
+    let _ = stop_tx.send(());
+    server.wait_stopped().await;
+    endpoint.close().await;
+    drop(relay_guard);
+    let file = accepted_file.context("RA4A receiver completed without a file")?;
+    Ok(Ra2bProofResult {
+        path: path_class(&path),
+        bytes: file.size as usize,
+        hash_hex: file.sha256.unwrap_or_default(),
+        local_relay_id: peer.relay_id,
+        remote_relay_id,
+        duration_ms: started.elapsed().as_millis() as u64,
+    })
 }
 
 #[derive(Clone, Default)]
@@ -955,5 +1353,115 @@ mod tests {
             "join error: {text}"
         );
         assert_eq!(error_category(&err), "completion");
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn ra4_http_roundtrip_uses_existing_server_save_path() {
+        let host = Ra2bPeerMaterial::generate(None).unwrap();
+        let host_id = host.relay_id.clone();
+        let sender = Ra2bPeerMaterial::generate(Some(host_id.clone())).unwrap();
+        let host_phases = Arc::new(Mutex::new(Vec::new()));
+        let sender_phases = Arc::new(Mutex::new(Vec::new()));
+        let host_seen = host_phases.clone();
+        let sender_seen = sender_phases.clone();
+        let host_cancel = Ra2bCancellation::new();
+        let (decision_tx, mut decision_rx) = mpsc::channel(1);
+        let suffix = format!(
+            "{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        );
+        let source = std::env::temp_dir().join(format!("relay-ra4a-src-{suffix}"));
+        let destination = std::env::temp_dir().join(format!("relay-ra4a-dst-{suffix}"));
+        let bytes = b"RA4A streamed body over authenticated HTTP".to_vec();
+        std::fs::write(&source, &bytes).unwrap();
+        let expected_hash = hex::encode(sha2::Sha256::digest(&bytes));
+
+        let host_callback: Ra2bStatusCallback =
+            Arc::new(move |phase| host_seen.lock().unwrap().push(phase));
+        let host_task = tokio::spawn(async move {
+            run_ra4_receiver(
+                host,
+                Ra2bPathPreference::ForceDirect,
+                &host_cancel,
+                &host_callback,
+                &mut decision_rx,
+            )
+            .await
+        });
+        let invite = loop {
+            sleep(Duration::from_millis(20)).await;
+            let snapshot = host_phases.lock().unwrap().clone();
+            if let Some(Ra2bPhase::EndpointReady { invite, .. }) = snapshot
+                .into_iter()
+                .find(|phase| matches!(phase, Ra2bPhase::EndpointReady { .. }))
+            {
+                break invite;
+            }
+            assert!(!host_task.is_finished(), "RA4A host stopped before publishing invite");
+        };
+        let parsed = crate::parse_invite(&invite).unwrap();
+        let sender_bytes = bytes.clone();
+        let sender_source = source.clone();
+        let sender_hash = expected_hash.clone();
+        let sender_callback: Ra2bStatusCallback =
+            Arc::new(move |phase| sender_seen.lock().unwrap().push(phase));
+        let sender_task = tokio::spawn(async move {
+            run_ra4_sender(
+                parsed.endpoint,
+                sender,
+                Ra2bPathPreference::ForceDirect,
+                &Ra2bCancellation::new(),
+                &sender_callback,
+                Ra4FileSpec {
+                    id: "ra4a-file".to_owned(),
+                    name: "ra4a.txt".to_owned(),
+                    size: sender_bytes.len() as u64,
+                    file_type: "text/plain".to_owned(),
+                    sha256: Some(sender_hash),
+                    source: Ra4FileSource::Path(sender_source),
+                },
+            )
+            .await
+        });
+
+        loop {
+            sleep(Duration::from_millis(20)).await;
+            let snapshot = host_phases.lock().unwrap().clone();
+            if let Some(Ra2bPhase::IncomingFile { .. }) = snapshot
+                .into_iter()
+                .find(|phase| matches!(phase, Ra2bPhase::IncomingFile { .. }))
+            {
+                decision_tx
+                    .send(Ra4Decision {
+                        accept: true,
+                        target: Some(destination.clone()),
+                    })
+                    .await
+                    .unwrap();
+                break;
+            }
+            assert!(!sender_task.is_finished(), "sender stopped before prepare-upload prompt");
+        }
+
+        let sender_result = timeout(Duration::from_secs(20), sender_task)
+            .await
+            .expect("sender timeout")
+            .expect("sender join")
+            .expect("sender transfer");
+        let host_result = timeout(Duration::from_secs(20), host_task)
+            .await
+            .expect("host timeout")
+            .expect("host join")
+            .expect("host transfer");
+        assert_eq!(sender_result.bytes, bytes.len());
+        assert_eq!(host_result.bytes, bytes.len());
+        assert_eq!(std::fs::read(&destination).unwrap(), bytes);
+        assert_eq!(sender_result.hash_hex, expected_hash);
+        let _ = std::fs::remove_file(source);
+        let _ = std::fs::remove_file(destination);
     }
 }

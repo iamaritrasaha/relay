@@ -1,3 +1,4 @@
+mod anywhere;
 mod relay;
 mod scoped_host;
 mod server_cert_verifier;
@@ -8,6 +9,7 @@ pub mod v3;
 
 pub use v2::LsHttpClientV2;
 pub use v3::LsHttpClientV3;
+pub use anywhere::AnywhereHttpClient;
 
 use crate::http::StatusCodeError;
 use crate::relay::RelayPeerAuth;
@@ -51,6 +53,39 @@ pub enum ClientError {
 
     #[error("Upload cancelled")]
     Cancelled,
+}
+
+/// Shared v2 semantic result mapping used by both reqwest (LAN) and the
+/// caller-owned Hyper (Anywhere) sender.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum PrepareUploadStatus {
+    Accepted,
+    NoContent,
+}
+
+pub(crate) fn classify_prepare_upload_status(status: u16) -> Result<PrepareUploadStatus, ClientError> {
+    match status {
+        200..=299 => Ok(if status == 204 {
+            PrepareUploadStatus::NoContent
+        } else {
+            PrepareUploadStatus::Accepted
+        }),
+        status => Err(ClientError::StatusCode(crate::http::StatusCodeError {
+            status,
+            message: None,
+        })),
+    }
+}
+
+pub(crate) fn classify_upload_status(status: u16) -> Result<(), ClientError> {
+    if status == 200 {
+        Ok(())
+    } else {
+        Err(ClientError::StatusCode(crate::http::StatusCodeError {
+            status,
+            message: None,
+        }))
+    }
 }
 
 impl LsHttpClient {
@@ -371,5 +406,35 @@ impl ResponseExt for Response {
                 Some(message)
             },
         }))
+    }
+}
+
+#[cfg(test)]
+mod transfer_semantics_tests {
+    use super::*;
+
+    #[test]
+    fn lan_and_anywhere_share_prepare_status_mapping() {
+        assert_eq!(
+            classify_prepare_upload_status(200).unwrap(),
+            PrepareUploadStatus::Accepted
+        );
+        assert_eq!(
+            classify_prepare_upload_status(204).unwrap(),
+            PrepareUploadStatus::NoContent
+        );
+        assert_eq!(
+            classify_prepare_upload_status(403).unwrap_err().to_string(),
+            "403;None"
+        );
+    }
+
+    #[test]
+    fn lan_and_anywhere_share_upload_status_mapping() {
+        assert!(classify_upload_status(200).is_ok());
+        assert_eq!(
+            classify_upload_status(422).unwrap_err().to_string(),
+            "422;None"
+        );
     }
 }

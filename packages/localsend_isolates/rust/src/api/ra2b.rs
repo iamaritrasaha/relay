@@ -4,15 +4,40 @@
 //! signature bytes. The invite string is a test addressing package, not
 //! production trust architecture.
 
-use std::sync::Arc;
+use std::path::PathBuf;
+use std::sync::{Arc, Mutex, OnceLock};
 
 use crate::frb_generated::StreamSink;
 use flutter_rust_bridge::frb;
 use relay_anywhere_ra2b::{
-    ActiveSessionGuard, Ra2bPathPreference, Ra2bPeerMaterial, Ra2bPhase, Ra2bRole,
-    cancel_active_session, fresh_unrelated_relay_id, parse_invite, process_identity,
-    process_relay_id, run_proof, session_is_active,
+    ActiveSessionGuard, Ra2bPathPreference, Ra2bPeerMaterial, Ra2bPhase, Ra2bRole, Ra4Decision,
+    Ra4FileSource, Ra4FileSpec, cancel_active_session, fresh_unrelated_relay_id, parse_invite,
+    process_identity, process_relay_id, run_proof, run_ra4_receiver, run_ra4_sender,
+    session_is_active,
 };
+
+enum Ra4RuntimeConfig {
+    Sender {
+        path: Option<String>,
+        file_descriptor: Option<i32>,
+        name: String,
+        size: u64,
+        file_type: String,
+        sha256: Option<String>,
+    },
+    Receiver,
+}
+
+fn ra4_config() -> &'static Mutex<Option<Ra4RuntimeConfig>> {
+    static CONFIG: OnceLock<Mutex<Option<Ra4RuntimeConfig>>> = OnceLock::new();
+    CONFIG.get_or_init(|| Mutex::new(None))
+}
+
+fn ra4_decision_sender() -> &'static Mutex<Option<tokio::sync::mpsc::Sender<Ra4Decision>>> {
+    static SENDER: OnceLock<Mutex<Option<tokio::sync::mpsc::Sender<Ra4Decision>>>> =
+        OnceLock::new();
+    SENDER.get_or_init(|| Mutex::new(None))
+}
 
 #[derive(Clone, Debug)]
 pub enum RsRa2bPathPreference {
@@ -100,6 +125,19 @@ impl From<Ra2bPhase> for RsRa2bEvent {
             Ra2bPhase::RelayIdentityAuthenticated { remote_relay_id } => {
                 Self::RelayIdentityVerified { remote_relay_id }
             }
+            Ra2bPhase::IncomingFile {
+                name,
+                size,
+                remote_relay_id,
+            } => Self::Failed {
+                message: serde_json::json!({
+                    "name": name,
+                    "size": size,
+                    "remoteRelayId": remote_relay_id,
+                })
+                .to_string(),
+                category: "prompt".to_owned(),
+            },
             Ra2bPhase::Transferring { bytes, total } => Self::Transferring { bytes, total },
             Ra2bPhase::Complete {
                 path,
@@ -159,6 +197,68 @@ pub fn ra2b_cancel_session() {
     cancel_active_session();
 }
 
+/// Configures the one-file RA4A sender without copying the file into Dart.
+/// Android passes a SAF descriptor; desktop passes a regular path.
+#[frb(sync)]
+pub fn ra4_set_sender(
+    path: Option<String>,
+    file_descriptor: Option<i32>,
+    name: String,
+    size: u64,
+    file_type: String,
+    sha256: Option<String>,
+) -> anyhow::Result<()> {
+    if path.is_none() && file_descriptor.is_none() {
+        anyhow::bail!("RA4A sender needs a path or file descriptor");
+    }
+    #[cfg(not(target_os = "android"))]
+    if file_descriptor.is_some() {
+        anyhow::bail!("file descriptors are only supported on Android");
+    }
+    *ra4_config().lock().unwrap_or_else(|poisoned| poisoned.into_inner()) =
+        Some(Ra4RuntimeConfig::Sender {
+            path,
+            file_descriptor,
+            name,
+            size,
+            file_type,
+            sha256,
+        });
+    Ok(())
+}
+
+/// Configures the one-file RA4A receiver. The actual save target is supplied
+/// per transfer by the approval UI and is never persisted as trust.
+#[frb(sync)]
+pub fn ra4_set_receiver() {
+    *ra4_config().lock().unwrap_or_else(|poisoned| poisoned.into_inner()) =
+        Some(Ra4RuntimeConfig::Receiver);
+}
+
+#[frb(sync)]
+pub fn ra4_clear() {
+    *ra4_config().lock().unwrap_or_else(|poisoned| poisoned.into_inner()) = None;
+    *ra4_decision_sender()
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner()) = None;
+}
+
+/// Answers the one session-scoped incoming-file prompt.
+#[frb(sync)]
+pub fn ra4_respond(accept: bool, target_path: Option<String>) -> anyhow::Result<()> {
+    let sender = ra4_decision_sender()
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .clone()
+        .ok_or_else(|| anyhow::anyhow!("no RA4A transfer is awaiting approval"))?;
+    sender
+        .try_send(Ra4Decision {
+            accept,
+            target: target_path.map(PathBuf::from),
+        })
+        .map_err(|_| anyhow::anyhow!("RA4A approval prompt is no longer active"))
+}
+
 /// Starts the in-process RA2B host (responder). Emits invite + progress events.
 pub async fn ra2b_start_host(
     path_preference: RsRa2bPathPreference,
@@ -172,12 +272,28 @@ pub async fn ra2b_start_host(
         None
     };
     let peer = Ra2bPeerMaterial::from_arc(process_identity(), expected)?;
+    let decision_rx = {
+        let config = ra4_config()
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let is_receiver = matches!(config.as_ref(), Some(Ra4RuntimeConfig::Receiver));
+        if is_receiver {
+            let (sender, receiver) = tokio::sync::mpsc::channel(1);
+            *ra4_decision_sender()
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner()) = Some(sender);
+            Some(receiver)
+        } else {
+            None
+        }
+    };
     run_session(
         Ra2bRole::Responder,
         peer,
         path_preference.into(),
         guard,
         event_sink,
+        decision_rx,
     )
     .await
 }
@@ -205,6 +321,7 @@ pub async fn ra2b_run_join(
         path_preference.into(),
         guard,
         event_sink,
+        None,
     )
     .await
 }
@@ -215,17 +332,75 @@ async fn run_session(
     path_preference: Ra2bPathPreference,
     guard: ActiveSessionGuard,
     event_sink: StreamSink<RsRa2bEvent>,
+    mut decision_rx: Option<tokio::sync::mpsc::Receiver<Ra4Decision>>,
 ) -> anyhow::Result<()> {
-    let result = run_proof(
-        role,
-        peer,
-        path_preference,
-        guard.cancellation(),
-        Arc::new(move |phase| {
-            let _ = event_sink.add(phase.into());
-        }),
-    )
-    .await;
+    let config = ra4_config()
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .take();
+    let callback: Arc<dyn Fn(Ra2bPhase) + Send + Sync> = Arc::new(move |phase: Ra2bPhase| {
+        let _ = event_sink.add(phase.into());
+    });
+    let result = match (config, role) {
+        (
+            Some(Ra4RuntimeConfig::Sender {
+                path,
+                file_descriptor,
+                name,
+                size,
+                file_type,
+                sha256,
+            }),
+            Ra2bRole::Initiator { remote_endpoint },
+        ) => {
+            let source = if let Some(path) = path {
+                Ra4FileSource::Path(PathBuf::from(path))
+            } else {
+                #[cfg(target_os = "android")]
+                {
+                    Ra4FileSource::FileDescriptor(file_descriptor.expect("validated descriptor"))
+                }
+                #[cfg(not(target_os = "android"))]
+                {
+                    unreachable!("non-Android descriptor rejected above")
+                }
+            };
+            run_ra4_sender(
+                remote_endpoint,
+                peer,
+                path_preference,
+                guard.cancellation(),
+                &callback,
+                Ra4FileSpec {
+                    id: uuid::Uuid::new_v4().to_string(),
+                    name,
+                    size,
+                    file_type,
+                    sha256,
+                    source,
+                },
+            )
+            .await
+        }
+        (Some(Ra4RuntimeConfig::Receiver), Ra2bRole::Responder) => {
+            let mut decision_rx = decision_rx
+                .take()
+                .ok_or_else(|| anyhow::anyhow!("RA4A receiver approval channel is unavailable"))?;
+            run_ra4_receiver(
+                peer,
+                path_preference,
+                guard.cancellation(),
+                &callback,
+                &mut decision_rx,
+            )
+            .await
+        }
+        (None, role) => run_proof(role, peer, path_preference, guard.cancellation(), callback).await,
+        (Some(_), _) => anyhow::bail!("RA4A sender/receiver role mismatch"),
+    };
+    *ra4_decision_sender()
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner()) = None;
     drop(guard);
     match result {
         Ok(_) => Ok(()),

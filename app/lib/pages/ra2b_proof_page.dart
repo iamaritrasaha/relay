@@ -1,14 +1,25 @@
 import 'dart:async';
+import 'dart:convert';
 
+import 'package:file_selector/file_selector.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:localsend_app/config/relay_brand.dart';
+import 'package:localsend_app/model/cross_file.dart';
 import 'package:localsend_app/pages/ra2b_build_info.dart';
 import 'package:localsend_app/pages/ra2b_invite_scan.dart';
 import 'package:localsend_app/pages/ra2b_qr_scanner_page.dart';
+import 'package:localsend_app/util/native/channel/android_channel.dart' as app_android_channel;
+import 'package:localsend_app/util/native/cross_file_converters.dart';
+import 'package:localsend_app/util/native/directories.dart';
 import 'package:localsend_app/widget/relay_symbol.dart';
+import 'package:localsend_isolates/src/task/server/file_saver.dart';
+import 'package:localsend_isolates/rust/api/cancel.dart' as rust_cancel;
+import 'package:localsend_isolates/rust/api/crypto.dart' as rust_crypto;
 import 'package:localsend_isolates/rust/api/ra2b.dart' as rust_ra2b;
+import 'package:localsend_isolates/util/android_channel.dart' as isolate_android_channel;
+import 'package:mime/mime.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:pretty_qr_code/pretty_qr_code.dart';
 
@@ -23,6 +34,7 @@ enum Ra2bUiStage {
   transportConnected,
   authenticating,
   authenticated,
+  incomingPrompt,
   transferring,
   complete,
   rejected,
@@ -66,7 +78,8 @@ class Ra2bSessionSnapshot {
       stage != Ra2bUiStage.cancelled &&
       stage != Ra2bUiStage.failed &&
       stage != Ra2bUiStage.waiting &&
-      stage != Ra2bUiStage.parsingInvite;
+      stage != Ra2bUiStage.parsingInvite &&
+      stage != Ra2bUiStage.incomingPrompt;
 
   bool get canStop =>
       stage == Ra2bUiStage.startingHost ||
@@ -75,6 +88,7 @@ class Ra2bSessionSnapshot {
       stage == Ra2bUiStage.transportConnected ||
       stage == Ra2bUiStage.authenticating ||
       stage == Ra2bUiStage.authenticated ||
+      stage == Ra2bUiStage.incomingPrompt ||
       stage == Ra2bUiStage.transferring;
 }
 
@@ -157,14 +171,31 @@ Ra2bSessionSnapshot snapshotFromEvent(rust_ra2b.RsRa2bEvent event, Ra2bSessionSn
       localRelayId: previous.localRelayId,
       remoteRelayId: previous.remoteRelayId,
     ),
-    failed: (value) => Ra2bSessionSnapshot(
-      stage: Ra2bUiStage.failed,
-      headline: value.category == 'completion' ? 'REMOTE COMPLETION FAILED' : 'FAILED',
-      detail: value.message,
-      invite: previous.invite,
-      localRelayId: previous.localRelayId,
-      remoteRelayId: previous.remoteRelayId,
-    ),
+    failed: (value) {
+      if (value.category == 'prompt') {
+        try {
+          final payload = jsonDecode(value.message) as Map<String, dynamic>;
+          return Ra2bSessionSnapshot(
+            stage: Ra2bUiStage.incomingPrompt,
+            headline: 'INCOMING FILE',
+            detail: '${payload['name']} · ${payload['size']} bytes',
+            invite: previous.invite,
+            localRelayId: previous.localRelayId,
+            remoteRelayId: payload['remoteRelayId'] as String?,
+          );
+        } catch (_) {
+          // A malformed prompt is terminal rather than an implicit accept.
+        }
+      }
+      return Ra2bSessionSnapshot(
+        stage: Ra2bUiStage.failed,
+        headline: value.category == 'completion' ? 'REMOTE COMPLETION FAILED' : 'FAILED',
+        detail: value.message,
+        invite: previous.invite,
+        localRelayId: previous.localRelayId,
+        remoteRelayId: previous.remoteRelayId,
+      );
+    },
     cancelled: (_) => Ra2bSessionSnapshot(
       stage: Ra2bUiStage.cancelled,
       headline: 'CANCELLED',
@@ -240,6 +271,12 @@ class _Ra2bProofPageState extends State<Ra2bProofPage> {
   String? _error;
   String? _cameraMessage;
   bool _busy = false;
+  CrossFile? _ra4File;
+  String? _ra4Sha256;
+  bool _ra4Receiver = false;
+  bool _ra4Hashing = false;
+  String? _incomingName;
+  int? _incomingSize;
 
   String get _localRelayId => widget.localRelayId;
 
@@ -265,12 +302,159 @@ class _Ra2bProofPageState extends State<Ra2bProofPage> {
     }
   }
 
+  void _clearRa4Native() {
+    if (!widget.bindNative) {
+      return;
+    }
+    rust_ra2b.ra4Clear();
+  }
+
+  Future<void> _selectRa4File() async {
+    if (_busy || _ra4Hashing) {
+      return;
+    }
+    try {
+      final CrossFile? file;
+      if (defaultTargetPlatform == TargetPlatform.android) {
+        final picked = await app_android_channel.pickFilesAndroid();
+        file = picked == null || picked.isEmpty ? null : await CrossFileConverters.convertFileInfo(picked.first);
+      } else {
+        final picked = await openFile();
+        file = picked == null ? null : await CrossFileConverters.convertXFile(picked);
+      }
+      if (file == null) {
+        return;
+      }
+      setState(() {
+        _ra4Hashing = true;
+        _error = null;
+      });
+      final hash = await _hashRa4File(file);
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _ra4File = file;
+        _ra4Sha256 = hash;
+        _ra4Hashing = false;
+      });
+    } catch (error, stack) {
+      debugPrint('RA4A file selection failed: $error\n$stack');
+      if (mounted) {
+        setState(() {
+          _ra4Hashing = false;
+          _error = 'Could not select or hash the file.';
+        });
+      }
+    }
+  }
+
+  Future<String?> _hashRa4File(CrossFile file) async {
+    String? path = file.path;
+    int? fileDescriptor;
+    if (path != null && path.startsWith('content://')) {
+      fileDescriptor = await isolate_android_channel.getFileDescriptorAndroid(uri: path);
+      path = null;
+    }
+    final cancelToken = rust_cancel.createCancellationToken();
+    String? hash;
+    await for (final event in rust_crypto.hashFile(path: path, fileDescriptor: fileDescriptor, cancelToken: cancelToken)) {
+      event.map(
+        progress: (_) {},
+        done: (value) => hash = value.hash,
+      );
+    }
+    return hash;
+  }
+
+  Future<void> _configureRa4Sender() async {
+    final file = _ra4File;
+    if (file == null) {
+      throw StateError('Select one file first');
+    }
+    String? path = file.path;
+    int? fileDescriptor;
+    if (path != null && path.startsWith('content://')) {
+      fileDescriptor = await isolate_android_channel.getFileDescriptorAndroid(uri: path);
+      path = null;
+    }
+    rust_ra2b.ra4SetSender(
+      path: path,
+      fileDescriptor: fileDescriptor,
+      name: file.name,
+      size: BigInt.from(file.size),
+      fileType: lookupMimeType(file.name) ?? 'application/octet-stream',
+      sha256: _ra4Sha256,
+    );
+  }
+
+  void _openRa4Host() {
+    if (widget.bindNative) {
+      rust_ra2b.ra4SetReceiver();
+    }
+    setState(() {
+      _ra4Receiver = true;
+      _screen = Ra2bScreen.host;
+      _parsed = null;
+      _error = null;
+      _session = Ra2bSessionSnapshot(stage: Ra2bUiStage.idle, headline: 'RECEIVE FILE', localRelayId: _localRelayId);
+    });
+  }
+
+  void _openRa4Join() {
+    setState(() {
+      _ra4Receiver = false;
+      _screen = Ra2bScreen.join;
+      _parsed = null;
+      _parseError = null;
+      _cameraMessage = null;
+      _session = const Ra2bSessionSnapshot(stage: Ra2bUiStage.idle, headline: 'SEND FILE');
+    });
+  }
+
+  Future<void> _respondIncoming({required bool accept}) async {
+    if (!accept) {
+      rust_ra2b.ra4Respond(accept: false);
+      return;
+    }
+    final name = _incomingName;
+    final size = _incomingSize;
+    if (name == null || size == null) {
+      rust_ra2b.ra4Respond(accept: false);
+      return;
+    }
+    try {
+      final destination = await getDefaultDestinationDirectory();
+      final cache = await getCacheDirectory();
+      final target = await prepareFileSaveTarget(
+        destinationDirectory: destination,
+        cacheDirectory: cache,
+        fileName: name,
+        saveToGallery: false,
+        isImage: false,
+        createdDirectories: <String>{},
+      );
+      if (target.path == null) {
+        rust_ra2b.ra4Respond(accept: false);
+        return;
+      }
+      rust_ra2b.ra4Respond(accept: true, targetPath: target.path);
+    } catch (error, stack) {
+      debugPrint('RA4A save target preparation failed: $error\n$stack');
+      rust_ra2b.ra4Respond(accept: false);
+    }
+  }
+
   Future<void> _stop({bool popToHome = false}) async {
     _cancelNativeSession();
+    _clearRa4Native();
     await _events?.cancel();
     _events = null;
     if (!mounted) {
       return;
+    }
+    if (_ra4Receiver) {
+      rust_ra2b.ra4SetReceiver();
     }
     setState(() {
       _busy = false;
@@ -279,6 +463,9 @@ class _Ra2bProofPageState extends State<Ra2bProofPage> {
         _session = const Ra2bSessionSnapshot(stage: Ra2bUiStage.idle);
         _parsed = null;
         _parseError = null;
+        _ra4Receiver = false;
+        _incomingName = null;
+        _incomingSize = null;
       }
     });
   }
@@ -293,6 +480,13 @@ class _Ra2bProofPageState extends State<Ra2bProofPage> {
         }
         setState(() {
           _session = snapshotFromEvent(event, _session);
+          if (_session.stage == Ra2bUiStage.incomingPrompt) {
+            final separator = _session.detail.lastIndexOf(' · ');
+            if (separator > 0) {
+              _incomingName = _session.detail.substring(0, separator);
+              _incomingSize = int.tryParse(_session.detail.substring(separator + 3).replaceFirst(' bytes', ''));
+            }
+          }
           if (_session.stage == Ra2bUiStage.complete ||
               _session.stage == Ra2bUiStage.rejected ||
               _session.stage == Ra2bUiStage.failed ||
@@ -342,6 +536,9 @@ class _Ra2bProofPageState extends State<Ra2bProofPage> {
       });
       return;
     }
+    if (_ra4Receiver) {
+      rust_ra2b.ra4SetReceiver();
+    }
     setState(() {
       _screen = Ra2bScreen.host;
       _busy = true;
@@ -375,6 +572,7 @@ class _Ra2bProofPageState extends State<Ra2bProofPage> {
   }
 
   void _openHost() {
+    _clearRa4Native();
     setState(() {
       _screen = Ra2bScreen.host;
       _parsed = null;
@@ -389,6 +587,7 @@ class _Ra2bProofPageState extends State<Ra2bProofPage> {
   }
 
   void _openJoin() {
+    _clearRa4Native();
     setState(() {
       _screen = Ra2bScreen.join;
       _parsed = null;
@@ -517,6 +716,17 @@ class _Ra2bProofPageState extends State<Ra2bProofPage> {
       });
       return;
     }
+    if (_ra4File != null) {
+      try {
+        await _configureRa4Sender();
+      } catch (error, stack) {
+        debugPrint('RA4A sender configuration failed: $error\n$stack');
+        if (mounted) {
+          setState(() => _error = 'Could not prepare the selected file.');
+        }
+        return;
+      }
+    }
     setState(() {
       _busy = true;
       _error = null;
@@ -573,6 +783,7 @@ class _Ra2bProofPageState extends State<Ra2bProofPage> {
   @override
   void dispose() {
     _cancelNativeSession();
+    _clearRa4Native();
     unawaited(_events?.cancel());
     _inviteController.dispose();
     super.dispose();
@@ -605,6 +816,8 @@ class _Ra2bProofPageState extends State<Ra2bProofPage> {
       children: [
         _header(palette, showBack: false),
         const SizedBox(height: 28),
+        _ra4Panel(palette),
+        const SizedBox(height: 24),
         FilledButton(
           onPressed: _busy ? null : _openHost,
           child: const Padding(
@@ -628,6 +841,58 @@ class _Ra2bProofPageState extends State<Ra2bProofPage> {
     );
   }
 
+  Widget _ra4Panel(RelayPalette palette) {
+    final file = _ra4File;
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: palette.elevated,
+        borderRadius: BorderRadius.circular(RelayComponentTokens.groupedRadius),
+        border: Border.all(color: palette.accent.withValues(alpha: 0.45)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('RA4A · ONE FILE', style: RelayTypography.section(palette.accent)),
+          const SizedBox(height: 6),
+          Text('Production HTTP transfer over the authenticated Anywhere stream.', style: RelayTypography.legal(palette.textTertiary)),
+          const SizedBox(height: 12),
+          OutlinedButton.icon(
+            onPressed: _busy || _ra4Hashing ? null : () => unawaited(_selectRa4File()),
+            icon: _ra4Hashing
+                ? const SizedBox.square(dimension: 16, child: CircularProgressIndicator(strokeWidth: 2))
+                : const Icon(Icons.attach_file),
+            label: Text(_ra4Hashing ? 'Hashing…' : 'Select File'),
+          ),
+          if (file != null) ...[
+            const SizedBox(height: 10),
+            _kv(palette, 'Filename', file.name),
+            _kv(palette, 'Size', '${file.size} bytes'),
+            _kv(palette, 'SHA-256', _ra4Sha256 == null ? '…' : '${_ra4Sha256!.substring(0, 12)}…'),
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                Expanded(
+                  child: FilledButton(
+                    onPressed: _busy ? null : _openRa4Join,
+                    child: const Text('Send File'),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: OutlinedButton(
+                    onPressed: _busy ? null : _openRa4Host,
+                    child: const Text('Receive File'),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
   Widget _host(RelayPalette palette) {
     final invite = _session.invite;
     return ListView(
@@ -635,6 +900,10 @@ class _Ra2bProofPageState extends State<Ra2bProofPage> {
         _header(palette, showBack: true),
         const SizedBox(height: 16),
         _statusCard(palette),
+        if (_session.stage == Ra2bUiStage.incomingPrompt) ...[
+          const SizedBox(height: 12),
+          _incomingPromptCard(palette),
+        ],
         if (invite != null) ...[
           const SizedBox(height: 16),
           _invitePanel(palette, invite),
@@ -643,9 +912,9 @@ class _Ra2bProofPageState extends State<Ra2bProofPage> {
         if (!_busy && !_session.canStop)
           FilledButton(
             onPressed: () => unawaited(_startHost(wrongIdentity: false)),
-            child: const Padding(
-              padding: EdgeInsets.symmetric(vertical: 12),
-              child: Text('Start Host'),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 12),
+              child: Text(_ra4Receiver ? 'Start Receive' : 'Start Host'),
             ),
           ),
         if (_session.canStop || _busy)
@@ -956,6 +1225,45 @@ class _Ra2bProofPageState extends State<Ra2bProofPage> {
         _kv(palette, 'SHA-256', _session.shaPass == true ? 'PASS' : '…'),
         if (_session.durationMs != null) _kv(palette, 'DURATION', '${_session.durationMs} ms'),
       ],
+    );
+  }
+
+  Widget _incomingPromptCard(RelayPalette palette) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: palette.elevated,
+        borderRadius: BorderRadius.circular(RelayComponentTokens.groupedRadius),
+        border: Border.all(color: palette.warning.withValues(alpha: 0.55)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('Incoming file', style: RelayTypography.section(palette.warning)),
+          const SizedBox(height: 8),
+          _kv(palette, 'Filename', _incomingName ?? '…'),
+          _kv(palette, 'Size', '${_incomingSize ?? 0} bytes'),
+          _kv(palette, 'RelayId', relayIdPrefix(_session.remoteRelayId)),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              Expanded(
+                child: FilledButton(
+                  onPressed: () => unawaited(_respondIncoming(accept: true)),
+                  child: const Text('Accept'),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: OutlinedButton(
+                  onPressed: () => unawaited(_respondIncoming(accept: false)),
+                  child: const Text('Decline'),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
     );
   }
 

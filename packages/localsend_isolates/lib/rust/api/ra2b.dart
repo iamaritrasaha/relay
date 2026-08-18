@@ -23,6 +23,24 @@ bool ra2BSessionIsActive() => RustLib.instance.api.crateApiRa2BRa2BSessionIsActi
 /// Cancels the single active host or join session, if any.
 void ra2BCancelSession() => RustLib.instance.api.crateApiRa2BRa2BCancelSession();
 
+/// Configures the one real file used by the RA4A sender test.
+void ra4SetSender({String? path, int? fileDescriptor, required String name, required BigInt size, required String fileType, String? sha256}) =>
+    RustLib.instance.api.crateApiRa2BRa4SetSender(
+      path: path,
+      fileDescriptor: fileDescriptor,
+      name: name,
+      size: size,
+      fileType: fileType,
+      sha256: sha256,
+    );
+
+/// Configures the RA4A receiver test; approval supplies the save target.
+void ra4SetReceiver() => RustLib.instance.api.crateApiRa2BRa4SetReceiver();
+
+void ra4Clear() => RustLib.instance.api.crateApiRa2BRa4Clear();
+
+void ra4Respond({required bool accept, String? targetPath}) => RustLib.instance.api.crateApiRa2BRa4Respond(accept: accept, targetPath: targetPath);
+
 /// Starts the in-process RA2B host (responder). Emits invite + progress events.
 Stream<RsRa2bEvent> ra2BStartHost({required RsRa2bPathPreference pathPreference, required bool wrongIdentity}) =>
     RustLib.instance.api.crateApiRa2BRa2BStartHost(pathPreference: pathPreference, wrongIdentity: wrongIdentity);

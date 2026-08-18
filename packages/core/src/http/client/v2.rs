@@ -1,4 +1,7 @@
-use super::{ClientError, ResponseExt, ResultWithPublicKey};
+use super::{
+    classify_prepare_upload_status, classify_upload_status, ClientError, PrepareUploadStatus,
+    ResponseExt, ResultWithPublicKey,
+};
 use crate::http::client::url::{ApiVersion, TargetUrl};
 use crate::http::dto_v2::{
     InfoResponseDtoV2, PrepareDownloadResponseDtoV2, PrepareUploadRequestDtoV2,
@@ -199,11 +202,12 @@ impl LsHttpClientV2 {
 
         let status = res.status();
 
-        if status.as_u16() >= 400 {
+        let semantic_status = classify_prepare_upload_status(status.as_u16());
+        if semantic_status.is_err() {
             return res.into_error().await;
         }
 
-        if status == StatusCode::NO_CONTENT {
+        if matches!(semantic_status, Ok(PrepareUploadStatus::NoContent)) {
             return Ok(PrepareUploadResultV2 {
                 status_code: status.as_u16(),
                 response: None,
@@ -276,7 +280,7 @@ impl LsHttpClientV2 {
             super::verify_cert_from_res(&res, public_key)?;
         }
 
-        if res.status() != StatusCode::OK {
+        if classify_upload_status(res.status().as_u16()).is_err() {
             return res.into_error().await;
         }
 
