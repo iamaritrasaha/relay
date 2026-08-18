@@ -13,6 +13,7 @@ analyzer:
   plugins:
     - custom_lint
   exclude:
+    - build/**
     - lib/**.g.dart
     - lib/**.freezed.dart
     - submodules/**
@@ -24,6 +25,7 @@ analyzer:
     - lib/pages/ra2b_proof_page.dart
     - lib/pages/ra2b_qr_scanner_page.dart
     - lib/pages/ra2b_build_info.dart
+    - test/unit/ra2b/**
 
 formatter:
   trailing_commas: preserve

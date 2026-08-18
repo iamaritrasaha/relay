@@ -17,21 +17,21 @@ use std::time::{Duration, Instant};
 use tokio::sync::{mpsc, oneshot};
 use tokio_util::sync::CancellationToken;
 
-use super::endpoint::{bind_endpoint, selected_path, AnywhereEndpoint, PathPreference};
+use super::endpoint::{AnywhereEndpoint, PathPreference, bind_endpoint, selected_path};
 use super::error::{AnywhereError, TlsStage, TransportStage};
 use super::identity::AnywhereIdentity;
 use super::proof::{authenticate_initiator, authenticate_server};
 use super::runtime::{AnywhereRuntime, AnywhereSessionId, IncomingTransferId};
 use super::stream::{
-    client_peer_certificate_fingerprint, server_peer_certificate_fingerprint, IrohBiStream,
+    IrohBiStream, client_peer_certificate_fingerprint, server_peer_certificate_fingerprint,
 };
 use super::tls::InnerTlsPeer;
-use super::{authorize_unknown_authenticated, empty_trust, RelayAddressV1};
+use super::{RelayAddressV1, authorize_unknown_authenticated, empty_trust};
 use crate::http::client::AnywhereHttpClient;
 use crate::http::dto_v2::{PrepareUploadRequestDtoV2, RegisterDtoV2};
 use crate::http::server::common::save::FileUploadTarget;
 use crate::http::server::v2::{PrepareUploadDecisionV2, ServerEventV2, SessionEndReasonV2};
-use crate::http::server::{start_v2_stream_only, ConnectionOrigin, ServerConfigV2};
+use crate::http::server::{ConnectionOrigin, ServerConfigV2, start_v2_stream_only};
 use crate::http::state::ClientInfo;
 use crate::model::discovery::ProtocolType;
 use crate::model::transfer::{FileContent, FileDto};
@@ -153,6 +153,92 @@ pub struct AnywhereReceiveRequest {
     /// Optional pinned peer identity. `None` accepts any authenticated peer,
     /// still subject to the per-request user decision.
     pub expected_remote_relay_id: Option<String>,
+}
+
+/// Authenticates a claimed Relay address without authorizing or transferring a
+/// payload.
+///
+/// Pairing uses this narrow operation before it persists any routing metadata:
+/// the address claim must prove the same RelayId over the authenticated inner
+/// TLS channel. The temporary endpoint is closed immediately afterwards.
+pub async fn authenticate_address(
+    session_id: AnywhereSessionId,
+    cancel: CancellationToken,
+    request: AnywhereSendRequest,
+    events: AnywhereEventSink,
+) -> Result<AnywhereOutcome, AnywhereError> {
+    let _ = session_id;
+    let started = Instant::now();
+    let AnywhereSendRequest {
+        identity,
+        remote,
+        preference,
+        alias: _,
+        batch: _,
+    } = request;
+
+    events(AnywhereEvent::Starting);
+    let endpoint = bind_endpoint(preference).await?;
+    let guard = EndpointGuard::new(endpoint);
+    wait_online(guard.endpoint(), preference, &cancel).await?;
+
+    events(AnywhereEvent::Connecting);
+    let connection = tokio::select! {
+        _ = cancel.cancelled() => return Err(AnywhereError::Cancelled),
+        _ = tokio::time::sleep(SESSION_TIMEOUT) => {
+            return Err(AnywhereError::Timeout { stage: TransportStage::Connect });
+        }
+        connection = guard.endpoint().connect(remote.endpoint.clone()) => connection?,
+    };
+    events(AnywhereEvent::PeerConnected);
+
+    let (send, recv) = connection
+        .open_bi()
+        .await
+        .map_err(|error| AnywhereError::transport(TransportStage::Stream, error))?;
+    let path = selected_path(&connection, preference).await?;
+
+    let tls_peer = inner_tls_peer()?;
+    let server_name = rustls::pki_types::ServerName::try_from("localhost")
+        .map_err(|error| AnywhereError::tls(TlsStage::ClientHandshake, error))?;
+    let mut tls = tls_peer
+        .connector()
+        .connect(server_name, IrohBiStream::new(send, recv))
+        .await
+        .map_err(|error| AnywhereError::tls(TlsStage::ClientHandshake, error))?;
+    events(AnywhereEvent::TlsEstablished);
+
+    let observed_server_cert = client_peer_certificate_fingerprint(&tls)
+        .map_err(|error| AnywhereError::tls(TlsStage::PeerCertificate, error))?;
+    let expected = RelayId::from_expected_canonical_hex(&remote.claimed_relay_id)
+        .map_err(|_| AnywhereError::RelayProof)?;
+    let session = authenticate_initiator(
+        &mut tls,
+        identity.inner(),
+        tls_peer.cert_fingerprint,
+        &expected,
+        observed_server_cert,
+        path.clone(),
+    )
+    .await?;
+    approve_authenticated_session(&session)?;
+    let remote_relay_id = session.remote_relay_id().as_hex();
+    events(AnywhereEvent::PeerAuthenticated {
+        remote_relay_id: remote_relay_id.clone(),
+    });
+
+    guard.close().await;
+    let outcome = AnywhereOutcome {
+        path: path_class(&path),
+        bytes: 0,
+        local_relay_id: identity.relay_id().to_owned(),
+        remote_relay_id,
+        duration_ms: started.elapsed().as_millis() as u64,
+    };
+    events(AnywhereEvent::Completed {
+        outcome: outcome.clone(),
+    });
+    Ok(outcome)
 }
 
 /// Runs one outbound Anywhere transfer.

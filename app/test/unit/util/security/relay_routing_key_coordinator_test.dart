@@ -114,8 +114,8 @@ class _FakeStore implements RelayRoutingKeySecretStore {
   _FakeStore({
     Uint8List? secret,
     this.loadOverride,
-    this.saveResult = const RelaySecretStoreSuccess(),
-  }) : secret = secret == null ? null : Uint8List.fromList(secret);
+  }) : saveResult = const RelaySecretStoreSuccess(),
+       secret = secret == null ? null : Uint8List.fromList(secret);
 
   @override
   Future<RelaySecretLoadResult> load() async =>

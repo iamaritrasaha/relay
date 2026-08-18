@@ -12,6 +12,7 @@ use localsend::http::state::ClientInfo as ServerInfo;
 use localsend::model::discovery::ProtocolType;
 use localsend::model::transfer::{FileContent, FileDto};
 use localsend::relay::{AuthenticatedRelaySession, PathDescriptor, RelayAuthCoordinator};
+use sha2::{Digest, Sha256};
 use std::collections::{HashMap, HashSet};
 use std::io;
 use std::path::PathBuf;
@@ -327,8 +328,13 @@ async fn anywhere_http_cannot_start_with_a_non_mutual_lan_session() {
 /// that yields small reads and guards against producer/consumer deadlocks.
 #[tokio::test]
 async fn anywhere_streams_small_source_chunks_past_the_128_kib_channel_window() {
-    for size in [256 * 1024, 1024 * 1024, 16 * 1024 * 1024] {
-        tokio::time::timeout(Duration::from_secs(20), transfer_generated_chunks(size))
+    for size in [256 * 1024, 1024 * 1024, 16 * 1024 * 1024, 64 * 1024 * 1024] {
+        let timeout = if size >= 64 * 1024 * 1024 {
+            Duration::from_secs(60)
+        } else {
+            Duration::from_secs(20)
+        };
+        tokio::time::timeout(timeout, transfer_generated_chunks(size))
             .await
             .unwrap_or_else(|_| panic!("Anywhere transfer timed out at {size} bytes"));
     }
@@ -336,6 +342,7 @@ async fn anywhere_streams_small_source_chunks_past_the_128_kib_channel_window() 
 
 async fn transfer_generated_chunks(size: usize) {
     const CHUNK_SIZE: usize = 8 * 1024;
+    let expected_sha256 = repeated_chunk_sha256(size, CHUNK_SIZE, 0x5a);
 
     let (event_tx, mut event_rx) = mpsc::channel(8);
     let (server, stop_tx) = server(event_tx).await;
@@ -353,7 +360,7 @@ async fn transfer_generated_chunks(size: usize) {
         file_name: "streamed.bin".into(),
         size: size as u64,
         file_type: "file".into(),
-        sha256: None,
+        sha256: Some(expected_sha256.clone()),
         preview: None,
         metadata: None,
     };
@@ -443,9 +450,37 @@ async fn transfer_generated_chunks(size: usize) {
         size as u64,
         "saved bytes"
     );
+    assert_eq!(
+        localsend::crypto::hash::sha256_file_content(
+            FileContent::Path(path.clone()),
+            &CancellationToken::new(),
+            |_| {}
+        )
+        .await
+        .unwrap(),
+        expected_sha256,
+        "saved SHA-256"
+    );
     let _ = tokio::fs::remove_file(&path).await;
     let _ = stop_tx.send(());
     server.wait_stopped().await;
+}
+
+/// Calculates the expected digest without allocating the generated payload.
+fn repeated_chunk_sha256(size: usize, chunk_size: usize, byte: u8) -> String {
+    let chunk = vec![byte; chunk_size];
+    let mut remaining = size;
+    let mut hasher = Sha256::new();
+    while remaining > 0 {
+        let length = remaining.min(chunk.len());
+        hasher.update(&chunk[..length]);
+        remaining -= length;
+    }
+    hasher
+        .finalize()
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect()
 }
 
 fn temp_path(prefix: &str) -> PathBuf {

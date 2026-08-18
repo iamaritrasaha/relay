@@ -25,7 +25,7 @@ private const val AES_TRANSFORMATION = "AES/GCM/NoPadding"
 private const val GCM_TAG_LENGTH_BITS = 128
 
 /** Stores an opaque Relay secret encrypted with an Android Keystore key. */
-private open class RelayEncryptedSecretStore(
+internal open class RelayEncryptedSecretStore(
     private val context: Context,
     private val keyAlias: String,
     private val secretFileName: String,
@@ -105,14 +105,14 @@ private open class RelayEncryptedSecretStore(
 }
 
 /** Stores Relay's PKCS#8 identity private-key bytes. */
-class RelayIdentitySecretStore(context: Context) : RelayEncryptedSecretStore(
+internal class RelayIdentitySecretStore(context: Context) : RelayEncryptedSecretStore(
     context,
     RELAY_IDENTITY_KEY_ALIAS,
     RELAY_IDENTITY_SECRET_FILE,
 )
 
 /** Stores the opaque Iroh routing key independently from the Relay identity. */
-class RelayRoutingKeySecretStore(context: Context) : RelayEncryptedSecretStore(
+internal class RelayRoutingKeySecretStore(context: Context) : RelayEncryptedSecretStore(
     context,
     RELAY_ROUTING_KEY_ALIAS,
     RELAY_ROUTING_KEY_SECRET_FILE,

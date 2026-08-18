@@ -24,6 +24,7 @@ class RelayShell extends StatelessWidget {
   final VoidCallback? onCancelTransfer;
   final VoidCallback? onOpenHistory;
   final VoidCallback? onOpenSettings;
+  final VoidCallback? onPairDevice;
 
   const RelayShell({
     required this.vm,
@@ -34,6 +35,7 @@ class RelayShell extends StatelessWidget {
     this.onDeviceTap,
     this.onOpenHistory,
     this.onOpenSettings,
+    this.onPairDevice,
     super.key,
   });
 
@@ -52,6 +54,12 @@ class RelayShell extends StatelessWidget {
                   wordmark: const _Wordmark(),
                   presence: SelfIdentityBlock(alias: vm.selfAlias, presence: vm.presence),
                   actions: [
+                    RelayTopBarAction(
+                      key: const ValueKey('relay-pair-device-button'),
+                      icon: Icons.add_link_rounded,
+                      tooltip: 'Add Relay device',
+                      onPressed: onPairDevice,
+                    ),
                     RelayTopBarAction(
                       key: const ValueKey('relay-history-button'),
                       icon: Icons.history_rounded,

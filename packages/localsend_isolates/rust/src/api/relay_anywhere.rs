@@ -18,7 +18,7 @@ use localsend::anywhere::{
     AnywhereFileSpec, AnywhereIdentity, AnywhereListener, AnywhereListenerConfig,
     AnywhereListenerEvent, AnywhereReceiveRequest, AnywhereRoutingKey, AnywhereRuntime,
     AnywhereSendRequest, AnywhereSessionId, IncomingTransferId, PathPreference, RelayAddressV1,
-    receive, send_batch,
+    authenticate_address, receive, send_batch,
 };
 
 /// Registry of live sessions. A map keyed by session id — never a single-slot
@@ -499,7 +499,9 @@ pub async fn relay_anywhere_receive(
     expected_remote_relay_id: Option<String>,
     event_sink: StreamSink<RsRelayAnywhereEvent>,
 ) -> anyhow::Result<()> {
-    let identity = AnywhereIdentity::load(&mut private_key_pem, &relay_id)?;
+    let identity_result = AnywhereIdentity::load(&mut private_key_pem, &relay_id);
+    private_key_pem.fill(0);
+    let identity = identity_result?;
     let session = AnywhereSessionId::from_u64(session_id);
     let runtime = anywhere_runtime().clone();
     let cancel = session_cancellation(&runtime, session)?;
@@ -536,7 +538,9 @@ pub async fn relay_anywhere_send(
     files: Vec<RsRelayAnywhereFile>,
     event_sink: StreamSink<RsRelayAnywhereEvent>,
 ) -> anyhow::Result<()> {
-    let identity = AnywhereIdentity::load(&mut private_key_pem, &relay_id)?;
+    let identity_result = AnywhereIdentity::load(&mut private_key_pem, &relay_id);
+    private_key_pem.fill(0);
+    let identity = identity_result?;
     let remote = RelayAddressV1::decode(&address)?;
     let batch = AnywhereBatch {
         files: files
@@ -561,6 +565,45 @@ pub async fn relay_anywhere_send(
             preference: path_preference.into(),
             alias,
             batch,
+        },
+        events,
+    )
+    .await;
+    finish(&runtime, session, &event_sink, result.map(|_| ()))
+}
+
+/// Authenticates an address claim before pairing it. This sends no payload and
+/// never persists routing metadata itself; Dart only records the route after a
+/// successful proof of the claimed RelayId.
+pub async fn relay_anywhere_authenticate_address(
+    session_id: u64,
+    mut private_key_pem: Vec<u8>,
+    relay_id: String,
+    address: String,
+    path_preference: RsRelayPathPreference,
+    event_sink: StreamSink<RsRelayAnywhereEvent>,
+) -> anyhow::Result<()> {
+    let identity_result = AnywhereIdentity::load(&mut private_key_pem, &relay_id);
+    private_key_pem.fill(0);
+    let identity = identity_result?;
+    let remote = RelayAddressV1::decode(&address)?;
+    let session = AnywhereSessionId::from_u64(session_id);
+    let runtime = anywhere_runtime().clone();
+    let cancel = session_cancellation(&runtime, session)?;
+    let sink = event_sink.clone();
+    let events = Arc::new(move |event: AnywhereEvent| {
+        let _ = sink.add(map_event(event));
+    });
+
+    let result = authenticate_address(
+        session,
+        cancel,
+        AnywhereSendRequest {
+            identity,
+            remote,
+            preference: path_preference.into(),
+            alias: String::new(),
+            batch: AnywhereBatch { files: Vec::new() },
         },
         events,
     )

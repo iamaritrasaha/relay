@@ -36,7 +36,7 @@ pub use runtime::{
 };
 pub use tls::InnerTlsPeer;
 pub use transfer::{
-    receive, send_batch, send_files_over_authenticated_stream, AnywhereBatch, AnywhereEvent,
+    authenticate_address, receive, send_batch, send_files_over_authenticated_stream, AnywhereBatch, AnywhereEvent,
     AnywhereEventSink, AnywhereFileSource, AnywhereFileSpec, AnywhereIncomingFile, AnywhereOutcome,
     AnywherePathClass, AnywhereReceiveRequest, AnywhereSendRequest,
 };

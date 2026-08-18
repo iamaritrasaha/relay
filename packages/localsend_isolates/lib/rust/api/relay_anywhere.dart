@@ -108,6 +108,23 @@ Stream<RsRelayAnywhereEvent> relayAnywhereSend({
   files: files,
 );
 
+/// Authenticates an address claim before pairing it. This sends no payload and
+/// never persists routing metadata itself; Dart only records the route after a
+/// successful proof of the claimed RelayId.
+Stream<RsRelayAnywhereEvent> relayAnywhereAuthenticateAddress({
+  required BigInt sessionId,
+  required List<int> privateKeyPem,
+  required String relayId,
+  required String address,
+  required RsRelayPathPreference pathPreference,
+}) => RustLib.instance.api.crateApiRelayAnywhereRelayAnywhereAuthenticateAddress(
+  sessionId: sessionId,
+  privateKeyPem: privateKeyPem,
+  relayId: relayId,
+  address: address,
+  pathPreference: pathPreference,
+);
+
 /// A parsed Relay address. `claimedRelayId` is a claim to be proven by the
 /// session, never evidence of identity or trust.
 class RsRelayAddress {

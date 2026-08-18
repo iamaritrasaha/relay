@@ -7,9 +7,9 @@ use std::sync::{Arc, Mutex};
 
 use localsend::anywhere::AnywhereError;
 use localsend::anywhere::{
-    receive, send_batch, AnywhereBatch, AnywhereDecision, AnywhereEvent, AnywhereFileSource,
-    AnywhereFileSpec, AnywhereIdentity, AnywhereOutcome, AnywherePathClass, AnywhereReceiveRequest,
-    AnywhereRuntime, AnywhereSendRequest, PathPreference, RelayAddressV1,
+    AnywhereBatch, AnywhereDecision, AnywhereEvent, AnywhereFileSource, AnywhereFileSpec,
+    AnywhereIdentity, AnywhereOutcome, AnywherePathClass, AnywhereReceiveRequest, AnywhereRuntime,
+    AnywhereSendRequest, PathPreference, RelayAddressV1, authenticate_address, receive, send_batch,
 };
 use localsend::crypto::relay_identity::RelayIdentity;
 use tokio::sync::mpsc;
@@ -309,4 +309,32 @@ async fn wrong_expected_relay_id_fails_before_any_transfer() {
     runtime.cancel(receiver.session);
     let _ = receiver.join.await;
     let _ = std::fs::remove_file(&source);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn pairing_authenticates_the_claimed_relay_id_without_transferring_a_payload() {
+    let runtime = Arc::new(AnywhereRuntime::new());
+    let receiver = start_receiver(runtime.clone()).await;
+    let pairing_runtime = AnywhereRuntime::new();
+    let (session, cancel) = pairing_runtime.open_session();
+
+    let outcome = authenticate_address(
+        session,
+        cancel,
+        AnywhereSendRequest {
+            identity: identity(),
+            remote: RelayAddressV1::decode(&receiver.address).unwrap(),
+            preference: PathPreference::ForceDirect,
+            alias: "Relay".to_owned(),
+            batch: AnywhereBatch { files: vec![] },
+        },
+        silent_sink(),
+    )
+    .await
+    .expect("pairing proof succeeds");
+
+    assert_eq!(outcome.remote_relay_id, receiver.relay_id);
+    assert_eq!(outcome.bytes, 0);
+    runtime.cancel(receiver.session);
+    let _ = receiver.join.await;
 }
