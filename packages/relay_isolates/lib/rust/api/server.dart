@@ -124,6 +124,14 @@ abstract class RsHttpServer implements RustOpaqueInterface {
   /// Passing `None` declines the request.
   Future<void> respondPrepareUpload({List<String>? acceptedFileIds});
 
+  /// Answers the pending [RsServerEvent::RelayPairRequest] event.
+  ///
+  /// [relay_id] must be the proven RelayId the event carried; an answer for
+  /// any other identity is refused rather than applied to whoever is waiting.
+  /// Accepting establishes the relationship only — it grants no continuity
+  /// capability and marks nothing as trusted.
+  Future<void> respondRelayPair({required String relayId, required bool accepted});
+
   /// Revokes the running server's Relay proof signer.
   ///
   /// Returns whether a signer was installed.
@@ -257,6 +265,28 @@ sealed class RsServerEvent with _$RsServerEvent {
     required String fileId,
     required FileDto file,
   }) = RsServerEvent_WebFileDownload;
+
+  /// A Relay device on the LAN proved its identity and is asking this
+  /// device's user to pair.
+  ///
+  /// Must be answered with [RsHttpServer::respond_relay_pair]. The
+  /// LocalSend-compatible endpoints never emit this: it is produced only by
+  /// `POST /api/relay/v1/pair/complete`, after a Client-role Relay identity
+  /// proof was verified against the client certificate of the live mTLS
+  /// connection.
+  ///
+  /// [relay_id] is **proven**, not claimed. [alias] is untrusted display
+  /// text. Accepting establishes a relationship and nothing else: no
+  /// continuity capability is granted by pairing.
+  const factory RsServerEvent.relayPairRequest({
+    required String relayId,
+    required String alias,
+    String? ip,
+
+    /// Six digits both devices display so the two users can confirm they
+    /// are looking at the same pairing.
+    required String verificationCode,
+  }) = RsServerEvent_RelayPairRequest;
 
   /// Another application instance requested the running application to show itself
   /// via `POST /api/localsend/v2/show`.

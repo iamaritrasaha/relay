@@ -28,6 +28,8 @@ pub enum RelayAuthError {
     RoleMismatch,
     #[error("the proven RelayId does not match the expected identity")]
     ExpectedIdentityMismatch { expected: RelayId, proven: RelayId },
+    #[error("the Relay identity proof answers a different challenge")]
+    ChallengeMismatch,
 }
 
 impl RelayAuthCoordinator {
@@ -42,8 +44,11 @@ impl RelayAuthCoordinator {
     /// LAN initiator: verify a Server-role proof and build an authenticated
     /// session with `mutual = false`.
     ///
-    /// There is deliberately no public method that authenticates a LAN
-    /// responder's remote client: production does not obtain a Client-role proof.
+    /// This is the one-directional LAN result: the transfer client learns who
+    /// the server is, and the server learns nothing about the client. The
+    /// mutual LAN result lives in [`Self::complete_lan_responder`], which is
+    /// reached only through the Relay pairing endpoints — never through the
+    /// LocalSend-compatible v2 routes.
     pub fn complete_lan_initiator(
         &self,
         proof: &RelayIdentityProofV1,
@@ -87,6 +92,39 @@ impl RelayAuthCoordinator {
             ChannelBinding::tls_cert_sha256(observed_tls_fingerprint),
             path,
         ))
+    }
+
+    /// LAN responder: a Client-role proof of the initiator, bound to the client
+    /// certificate this connection actually presented and to the nonce this
+    /// device issued.
+    ///
+    /// `observed_client_tls_fingerprint` must come from the rustls peer
+    /// certificate of the live connection, never from the request payload, and
+    /// `issued_nonce` must be a single-use challenge this device generated. The
+    /// resulting session is the LAN counterpart of
+    /// [`Self::complete_anywhere_responder`]: the initiator can only obtain
+    /// `issued_nonce` after it has fetched this device's Server-role proof, so
+    /// both directions are authenticated by the time this succeeds.
+    pub fn complete_lan_responder(
+        &self,
+        proof: &RelayIdentityProofV1,
+        observed_client_tls_fingerprint: [u8; 32],
+        issued_nonce: &[u8; 32],
+        expected_remote: Option<&RelayId>,
+        path: PathDescriptor,
+    ) -> Result<AuthenticatedRelaySession, RelayAuthError> {
+        if &proof.nonce != issued_nonce {
+            return Err(RelayAuthError::ChallengeMismatch);
+        }
+        self.complete(
+            proof,
+            RelayProofRole::Client,
+            observed_client_tls_fingerprint,
+            expected_remote,
+            SessionRole::Responder,
+            true,
+            path,
+        )
     }
 
     /// Anywhere initiator: Server-role proof of the responder, then a Client-role

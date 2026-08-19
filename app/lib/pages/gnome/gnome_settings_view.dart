@@ -111,10 +111,10 @@ class GnomeSettingsView extends StatelessWidget {
                                   const SizedBox(height: 3),
                                   Text(
                                     switch (deviceType) {
-                                      DeviceType.mobile => 'Mobile · Ready on Local Network',
-                                      DeviceType.desktop => 'Desktop · Ready on Local Network',
-                                      DeviceType.web => 'Web · Ready on Local Network',
-                                      DeviceType.headless || DeviceType.server => 'Server · Ready on Local Network',
+                                      DeviceType.mobile => 'Mobile · Relay Device',
+                                      DeviceType.desktop => 'Desktop · Relay Device',
+                                      DeviceType.web => 'Web · Relay Device',
+                                      DeviceType.headless || DeviceType.server => 'Server · Relay Device',
                                     },
                                     style: TextStyle(
                                       fontSize: 12.5,
@@ -189,8 +189,8 @@ class GnomeSettingsView extends StatelessWidget {
                       ),
                       AdwSwitchRow(
                         leading: const Icon(Icons.star_outline_rounded),
-                        title: 'Quick Save from Paired Only',
-                        subtitle: 'Auto-accept only from verified trusted peers',
+                        title: 'Quick Save from Favorites',
+                        subtitle: 'Automatically accept transfers from devices marked as favorites',
                         value: vm.settings.quickSaveFromFavorites,
                         onChanged: (b) async => ref.notifier(settingsProvider).setQuickSaveFromFavorites(b),
                       ),

@@ -66,6 +66,14 @@ class HttpServerService {
     return server.listen();
   }
 
+  /// Answers a pending Relay pairing request.
+  ///
+  /// [relayId] must be the proven RelayId the request carried, so an answer
+  /// can never be applied to a different device than the one being shown.
+  Future<void> respondRelayPair({required String relayId, required bool accepted}) async {
+    await _requireServer().respondRelayPair(relayId: relayId, accepted: accepted);
+  }
+
   /// Answers a pending prepare-upload request.
   /// [acceptedFileIds] is the subset of the offered files to accept; `null` declines the request.
   Future<void> respondPrepareUpload({required List<String>? acceptedFileIds}) async {

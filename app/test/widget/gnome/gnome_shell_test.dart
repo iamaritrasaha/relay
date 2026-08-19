@@ -88,6 +88,11 @@ void main() {
     when(mockPersistence.getCreateChecksums()).thenReturn(true);
     when(mockPersistence.getVerifyChecksums()).thenReturn(true);
     when(mockPersistence.getAdvancedSettingsEnabled()).thenReturn(false);
+    when(mockPersistence.setAlias(any)).thenAnswer((_) async {});
+    when(mockPersistence.setQuickSave(any)).thenAnswer((_) async {});
+    when(mockPersistence.setEnableAnimations(any)).thenAnswer((_) async {});
+    when(mockPersistence.setSaveToHistory(any)).thenAnswer((_) async {});
+    when(mockPersistence.setAutoFinish(any)).thenAnswer((_) async {});
   });
 
   const testDevice = RelayDeviceVm(
@@ -155,7 +160,7 @@ void main() {
     expect(find.text('Messages'), findsWidgets);
   });
 
-  testWidgets('GnomeSettingsView renders all 5 reconstructed semantic groups', (tester) async {
+  testWidgets('GnomeSettingsView renders all 5 reconstructed semantic groups with truthful labels', (tester) async {
     tester.view.physicalSize = const Size(1200, 1000);
     tester.view.devicePixelRatio = 1.0;
     addTearDown(() => tester.view.resetPhysicalSize());
@@ -182,16 +187,21 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 200));
 
-    // 1. THIS DEVICE Hero
+    // 1. THIS DEVICE Hero (truthful identity, no false live readiness)
     expect(find.text('THIS DEVICE'), findsOneWidget);
     expect(find.byType(RelayDeviceSilhouette), findsOneWidget);
     expect(find.text('Fedora Workstation'), findsOneWidget);
-    expect(find.text('Desktop · Ready on Local Network'), findsOneWidget);
+    expect(find.text('Desktop · Relay Device'), findsOneWidget);
+    expect(find.text('Ready on Local Network'), findsNothing);
 
-    // 2. RELAY EXPERIENCE
+    // 2. RELAY EXPERIENCE (truthful favorites semantics)
     expect(find.text('RELAY EXPERIENCE'), findsOneWidget);
     expect(find.text('Pair New Device'), findsOneWidget);
     expect(find.text('Quick Save'), findsOneWidget);
+    expect(find.text('Quick Save from Favorites'), findsOneWidget);
+    expect(find.text('Automatically accept transfers from devices marked as favorites'), findsOneWidget);
+    expect(find.text('Quick Save from Paired Only'), findsNothing);
+    expect(find.text('Auto-accept only from verified trusted peers'), findsNothing);
     expect(find.text('Spatial Animations'), findsOneWidget);
 
     // 3. TRANSFERS
@@ -210,5 +220,10 @@ void main() {
     expect(find.text('ABOUT RELAY'), findsOneWidget);
     expect(find.text('About'), findsOneWidget);
     expect(find.text('Changelog'), findsOneWidget);
+
+    // Interactivity: Randomize alias writes to settings
+    await tester.tap(find.byTooltip('Random Name'));
+    await tester.pump();
+    verify(mockPersistence.setAlias(any)).called(1);
   });
 }

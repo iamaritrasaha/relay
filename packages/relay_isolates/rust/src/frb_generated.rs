@@ -44,7 +44,7 @@ flutter_rust_bridge::frb_generated_boilerplate!(
     default_rust_auto_opaque = RustAutoOpaqueMoi,
 );
 pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_VERSION: &str = "2.12.0";
-pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = 1845144507;
+pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = -1641199299;
 
 // Section: executor
 
@@ -1892,6 +1892,68 @@ fn wire__crate__api__server__RsHttpServer_respond_prepare_upload_impl(
                         let output_ok = crate::api::server::RsHttpServer::respond_prepare_upload(
                             &*api_that_guard,
                             api_accepted_file_ids,
+                        )
+                        .await?;
+                        Ok(output_ok)
+                    })()
+                    .await,
+                )
+            }
+        },
+    )
+}
+fn wire__crate__api__server__RsHttpServer_respond_relay_pair_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_async::<flutter_rust_bridge::for_generated::SseCodec, _, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "RsHttpServer_respond_relay_pair",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_that = <RustOpaqueMoi<
+                flutter_rust_bridge::for_generated::RustAutoOpaqueInner<RsHttpServer>,
+            >>::sse_decode(&mut deserializer);
+            let api_relay_id = <String>::sse_decode(&mut deserializer);
+            let api_accepted = <bool>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| async move {
+                transform_result_sse::<_, flutter_rust_bridge::for_generated::anyhow::Error>(
+                    (move || async move {
+                        let mut api_that_guard = None;
+                        let decode_indices_ =
+                            flutter_rust_bridge::for_generated::lockable_compute_decode_order(
+                                vec![flutter_rust_bridge::for_generated::LockableOrderInfo::new(
+                                    &api_that, 0, false,
+                                )],
+                            );
+                        for i in decode_indices_ {
+                            match i {
+                                0 => {
+                                    api_that_guard =
+                                        Some(api_that.lockable_decode_async_ref().await)
+                                }
+                                _ => unreachable!(),
+                            }
+                        }
+                        let api_that_guard = api_that_guard.unwrap();
+                        let output_ok = crate::api::server::RsHttpServer::respond_relay_pair(
+                            &*api_that_guard,
+                            api_relay_id,
+                            api_accepted,
                         )
                         .await?;
                         Ok(output_ok)
@@ -5259,6 +5321,73 @@ fn wire__crate__api__relay_anywhere__relay_anywhere_validate_routing_key_impl(
         },
     )
 }
+fn wire__crate__api__http__relay_lan_pair_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_async::<flutter_rust_bridge::for_generated::SseCodec, _, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "relay_lan_pair",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_sink = <StreamSink<
+                crate::api::http::RsRelayLanPairingEvent,
+                flutter_rust_bridge::for_generated::SseCodec,
+            >>::sse_decode(&mut deserializer);
+            let api_private_key_pem = <Vec<u8>>::sse_decode(&mut deserializer);
+            let api_relay_id = <String>::sse_decode(&mut deserializer);
+            let api_client_private_key = <String>::sse_decode(&mut deserializer);
+            let api_client_certificate = <String>::sse_decode(&mut deserializer);
+            let api_version =
+                <crate::api::http::LsHttpClientVersion>::sse_decode(&mut deserializer);
+            let api_protocol = <crate::api::model::ProtocolType>::sse_decode(&mut deserializer);
+            let api_ip = <String>::sse_decode(&mut deserializer);
+            let api_port = <u16>::sse_decode(&mut deserializer);
+            let api_certificate_fingerprint = <String>::sse_decode(&mut deserializer);
+            let api_alias = <String>::sse_decode(&mut deserializer);
+            let api_expected_relay_id = <Option<String>>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| async move {
+                transform_result_sse::<_, ()>(
+                    (move || async move {
+                        let output_ok = Result::<_, ()>::Ok({
+                            crate::api::http::relay_lan_pair(
+                                api_sink,
+                                api_private_key_pem,
+                                api_relay_id,
+                                api_client_private_key,
+                                api_client_certificate,
+                                api_version,
+                                api_protocol,
+                                api_ip,
+                                api_port,
+                                api_certificate_fingerprint,
+                                api_alias,
+                                api_expected_relay_id,
+                            )
+                            .await;
+                        })?;
+                        Ok(output_ok)
+                    })()
+                    .await,
+                )
+            }
+        },
+    )
+}
 fn wire__crate__api__relay_transfer__relay_transfer_send_lan_impl(
     port_: flutter_rust_bridge::for_generated::MessagePort,
     ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
@@ -6163,6 +6292,19 @@ impl SseDecode
 impl SseDecode
     for StreamSink<
         crate::api::relay_anywhere::RsRelayAnywhereListenerEvent,
+        flutter_rust_bridge::for_generated::SseCodec,
+    >
+{
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut inner = <String>::sse_decode(deserializer);
+        return StreamSink::deserialize(inner);
+    }
+}
+
+impl SseDecode
+    for StreamSink<
+        crate::api::http::RsRelayLanPairingEvent,
         flutter_rust_bridge::for_generated::SseCodec,
     >
 {
@@ -7721,6 +7863,51 @@ impl SseDecode for crate::api::relay_anywhere::RsRelayIncomingFile {
     }
 }
 
+impl SseDecode for crate::api::http::RsRelayLanPairingEvent {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut tag_ = <i32>::sse_decode(deserializer);
+        match tag_ {
+            0 => {
+                let mut var_code = <String>::sse_decode(deserializer);
+                let mut var_remoteRelayId = <String>::sse_decode(deserializer);
+                return crate::api::http::RsRelayLanPairingEvent::VerificationCode {
+                    code: var_code,
+                    remote_relay_id: var_remoteRelayId,
+                };
+            }
+            1 => {
+                let mut var_remoteRelayId = <String>::sse_decode(deserializer);
+                let mut var_remoteAlias = <String>::sse_decode(deserializer);
+                let mut var_verificationCode = <String>::sse_decode(deserializer);
+                return crate::api::http::RsRelayLanPairingEvent::Paired {
+                    remote_relay_id: var_remoteRelayId,
+                    remote_alias: var_remoteAlias,
+                    verification_code: var_verificationCode,
+                };
+            }
+            2 => {
+                return crate::api::http::RsRelayLanPairingEvent::Declined;
+            }
+            3 => {
+                return crate::api::http::RsRelayLanPairingEvent::Unsupported;
+            }
+            4 => {
+                return crate::api::http::RsRelayLanPairingEvent::Busy;
+            }
+            5 => {
+                return crate::api::http::RsRelayLanPairingEvent::AuthenticationFailed;
+            }
+            6 => {
+                return crate::api::http::RsRelayLanPairingEvent::TransportFailed;
+            }
+            _ => {
+                unimplemented!("");
+            }
+        }
+    }
+}
+
 impl SseDecode for crate::api::relay_anywhere::RsRelayPathPreference {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
@@ -7998,6 +8185,18 @@ impl SseDecode for crate::api::server::RsServerEvent {
                 };
             }
             8 => {
+                let mut var_relayId = <String>::sse_decode(deserializer);
+                let mut var_alias = <String>::sse_decode(deserializer);
+                let mut var_ip = <Option<String>>::sse_decode(deserializer);
+                let mut var_verificationCode = <String>::sse_decode(deserializer);
+                return crate::api::server::RsServerEvent::RelayPairRequest {
+                    relay_id: var_relayId,
+                    alias: var_alias,
+                    ip: var_ip,
+                    verification_code: var_verificationCode,
+                };
+            }
+            9 => {
                 let mut var_args = <Vec<String>>::sse_decode(deserializer);
                 return crate::api::server::RsServerEvent::Show { args: var_args };
             }
@@ -8500,285 +8699,292 @@ fn pde_ffi_dispatcher_primary_impl(
             rust_vec_len,
             data_len,
         ),
-        30 => wire__crate__api__server__RsHttpServer_revoke_relay_signer_impl(
+        30 => wire__crate__api__server__RsHttpServer_respond_relay_pair_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        31 => wire__crate__api__server__RsHttpServer_stop_impl(port, ptr, rust_vec_len, data_len),
-        32 => wire__crate__api__webrtc__RtcFileReceiver_get_file_id_impl(
+        31 => wire__crate__api__server__RsHttpServer_revoke_relay_signer_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        33 => wire__crate__api__webrtc__RtcFileReceiver_receive_impl(
+        32 => wire__crate__api__server__RsHttpServer_stop_impl(port, ptr, rust_vec_len, data_len),
+        33 => wire__crate__api__webrtc__RtcFileReceiver_get_file_id_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        34 => wire__crate__api__webrtc__RtcFileSender_send_impl(port, ptr, rust_vec_len, data_len),
-        35 => wire__crate__api__webrtc__RtcReceiveController_decline_impl(
+        34 => wire__crate__api__webrtc__RtcFileReceiver_receive_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        36 => wire__crate__api__webrtc__RtcReceiveController_listen_error_impl(
+        35 => wire__crate__api__webrtc__RtcFileSender_send_impl(port, ptr, rust_vec_len, data_len),
+        36 => wire__crate__api__webrtc__RtcReceiveController_decline_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        37 => wire__crate__api__webrtc__RtcReceiveController_listen_files_impl(
+        37 => wire__crate__api__webrtc__RtcReceiveController_listen_error_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        38 => wire__crate__api__webrtc__RtcReceiveController_listen_receiving_impl(
+        38 => wire__crate__api__webrtc__RtcReceiveController_listen_files_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        39 => wire__crate__api__webrtc__RtcReceiveController_listen_status_impl(
+        39 => wire__crate__api__webrtc__RtcReceiveController_listen_receiving_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        40 => wire__crate__api__webrtc__RtcReceiveController_send_file_status_impl(
+        40 => wire__crate__api__webrtc__RtcReceiveController_listen_status_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        41 => wire__crate__api__webrtc__RtcReceiveController_send_pin_impl(
+        41 => wire__crate__api__webrtc__RtcReceiveController_send_file_status_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        42 => wire__crate__api__webrtc__RtcReceiveController_send_selection_impl(
+        42 => wire__crate__api__webrtc__RtcReceiveController_send_pin_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        43 => wire__crate__api__webrtc__RtcSendController_listen_error_impl(
+        43 => wire__crate__api__webrtc__RtcReceiveController_send_selection_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        44 => wire__crate__api__webrtc__RtcSendController_listen_selected_files_impl(
+        44 => wire__crate__api__webrtc__RtcSendController_listen_error_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        45 => wire__crate__api__webrtc__RtcSendController_listen_status_impl(
+        45 => wire__crate__api__webrtc__RtcSendController_listen_selected_files_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        46 => wire__crate__api__webrtc__RtcSendController_send_file_impl(
+        46 => wire__crate__api__webrtc__RtcSendController_listen_status_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        47 => wire__crate__api__webrtc__RtcSendController_send_pin_impl(
+        47 => wire__crate__api__webrtc__RtcSendController_send_file_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        48 => wire__crate__api__webrtc__connect_impl(port, ptr, rust_vec_len, data_len),
-        56 => wire__crate__api__continuity__continuity_any_capability_enabled_impl(
+        48 => wire__crate__api__webrtc__RtcSendController_send_pin_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        57 => wire__crate__api__continuity__continuity_call_action_impl(
+        49 => wire__crate__api__webrtc__connect_impl(port, ptr, rust_vec_len, data_len),
+        57 => wire__crate__api__continuity__continuity_any_capability_enabled_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        58 => wire__crate__api__continuity__continuity_connect_device_impl(
+        58 => wire__crate__api__continuity__continuity_call_action_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        60 => wire__crate__api__continuity__continuity_disable_capability_impl(
+        59 => wire__crate__api__continuity__continuity_connect_device_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        63 => wire__crate__api__continuity__continuity_dismiss_remote_notification_impl(
+        61 => wire__crate__api__continuity__continuity_disable_capability_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        64 => wire__crate__api__continuity__continuity_enable_capability_impl(
+        64 => wire__crate__api__continuity__continuity_dismiss_remote_notification_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        65 => {
+        65 => wire__crate__api__continuity__continuity_enable_capability_impl(
+            port,
+            ptr,
+            rust_vec_len,
+            data_len,
+        ),
+        66 => {
             wire__crate__api__continuity__continuity_events_impl(port, ptr, rust_vec_len, data_len)
         }
-        66 => wire__crate__api__continuity__continuity_export_permissions_impl(
+        67 => wire__crate__api__continuity__continuity_export_permissions_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        67 => wire__crate__api__continuity__continuity_host_requests_impl(
+        68 => wire__crate__api__continuity__continuity_host_requests_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        68 => wire__crate__api__continuity__continuity_import_permissions_impl(
+        69 => wire__crate__api__continuity__continuity_import_permissions_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        70 => wire__crate__api__continuity__continuity_publish_battery_impl(
+        71 => wire__crate__api__continuity__continuity_publish_battery_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        71 => wire__crate__api__continuity__continuity_publish_call_state_impl(
+        72 => wire__crate__api__continuity__continuity_publish_call_state_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        72 => wire__crate__api__continuity__continuity_publish_incoming_message_impl(
+        73 => wire__crate__api__continuity__continuity_publish_incoming_message_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        73 => wire__crate__api__continuity__continuity_publish_notification_impl(
+        74 => wire__crate__api__continuity__continuity_publish_notification_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        74 => wire__crate__api__continuity__continuity_publish_notification_removed_impl(
+        75 => wire__crate__api__continuity__continuity_publish_notification_removed_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        75 => wire__crate__api__continuity__continuity_request_conversations_impl(
+        76 => wire__crate__api__continuity__continuity_request_conversations_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        76 => wire__crate__api__continuity__continuity_request_messages_impl(
+        77 => wire__crate__api__continuity__continuity_request_messages_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        77 => wire__crate__api__continuity__continuity_send_sms_impl(
+        78 => wire__crate__api__continuity__continuity_send_sms_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        78 => wire__crate__api__continuity__continuity_set_clipboard_mode_impl(
+        79 => wire__crate__api__continuity__continuity_set_clipboard_mode_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        81 => wire__crate__api__continuity__continuity_share_clipboard_impl(
+        82 => wire__crate__api__continuity__continuity_share_clipboard_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        84 => wire__crate__api__stream__create_stream_impl(port, ptr, rust_vec_len, data_len),
-        85 => {
+        85 => wire__crate__api__stream__create_stream_impl(port, ptr, rust_vec_len, data_len),
+        86 => {
             wire__crate__api__logging__enable_debug_logging_impl(port, ptr, rust_vec_len, data_len)
         }
-        86 => wire__crate__api__crypto__generate_key_pair_impl(port, ptr, rust_vec_len, data_len),
-        87 => wire__crate__api__crypto__generate_relay_identity_impl(
+        87 => wire__crate__api__crypto__generate_key_pair_impl(port, ptr, rust_vec_len, data_len),
+        88 => wire__crate__api__crypto__generate_relay_identity_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        88 => wire__crate__api__crypto__generate_security_context_impl(
+        89 => wire__crate__api__crypto__generate_security_context_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        89 => wire__crate__api__crypto__hash_file_impl(port, ptr, rust_vec_len, data_len),
-        91 => {
+        90 => wire__crate__api__crypto__hash_file_impl(port, ptr, rust_vec_len, data_len),
+        92 => {
             wire__crate__api__metadata__read_file_metadata_impl(port, ptr, rust_vec_len, data_len)
         }
-        92 => wire__crate__api__relay_anywhere__relay_anywhere_authenticate_address_impl(
+        93 => wire__crate__api__relay_anywhere__relay_anywhere_authenticate_address_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        100 => wire__crate__api__relay_anywhere__relay_anywhere_receive_impl(
+        101 => wire__crate__api__relay_anywhere__relay_anywhere_receive_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        102 => wire__crate__api__relay_anywhere__relay_anywhere_send_impl(
+        103 => wire__crate__api__relay_anywhere__relay_anywhere_send_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        103 => wire__crate__api__relay_anywhere__relay_anywhere_start_listener_impl(
+        104 => wire__crate__api__relay_anywhere__relay_anywhere_start_listener_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        104 => wire__crate__api__relay_anywhere__relay_anywhere_stop_listener_impl(
+        105 => wire__crate__api__relay_anywhere__relay_anywhere_stop_listener_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        106 => wire__crate__api__relay_transfer__relay_transfer_send_lan_impl(
+        107 => wire__crate__api__http__relay_lan_pair_impl(port, ptr, rust_vec_len, data_len),
+        108 => wire__crate__api__relay_transfer__relay_transfer_send_lan_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        107 => {
+        109 => {
             wire__crate__api__crypto__restore_relay_identity_impl(port, ptr, rust_vec_len, data_len)
         }
-        109 => wire__crate__api__discovery__start_discovery_impl(port, ptr, rust_vec_len, data_len),
-        110 => wire__crate__api__server__start_server_impl(port, ptr, rust_vec_len, data_len),
-        111 => wire__crate__api__crypto__verify_cert_impl(port, ptr, rust_vec_len, data_len),
+        111 => wire__crate__api__discovery__start_discovery_impl(port, ptr, rust_vec_len, data_len),
+        112 => wire__crate__api__server__start_server_impl(port, ptr, rust_vec_len, data_len),
+        113 => wire__crate__api__crypto__verify_cert_impl(port, ptr, rust_vec_len, data_len),
         _ => unreachable!(),
     }
 }
@@ -8793,114 +8999,114 @@ fn pde_ffi_dispatcher_sync_impl(
     match func_id {
         2 => wire__crate__api__stream__Dart2RustStreamSink_close_impl(ptr, rust_vec_len, data_len),
         6 => wire__crate__api__cancel__RsCancellationToken_cancel_impl(ptr, rust_vec_len, data_len),
-        49 => wire__crate__api__continuity__continuity_answer_ack_impl(ptr, rust_vec_len, data_len),
-        50 => wire__crate__api__continuity__continuity_answer_call_action_impl(
+        50 => wire__crate__api__continuity__continuity_answer_ack_impl(ptr, rust_vec_len, data_len),
+        51 => wire__crate__api__continuity__continuity_answer_call_action_impl(
             ptr,
             rust_vec_len,
             data_len,
         ),
-        51 => wire__crate__api__continuity__continuity_answer_conversations_impl(
+        52 => wire__crate__api__continuity__continuity_answer_conversations_impl(
             ptr,
             rust_vec_len,
             data_len,
         ),
-        52 => wire__crate__api__continuity__continuity_answer_messages_impl(
+        53 => wire__crate__api__continuity__continuity_answer_messages_impl(
             ptr,
             rust_vec_len,
             data_len,
         ),
-        53 => wire__crate__api__continuity__continuity_answer_sms_failed_impl(
+        54 => wire__crate__api__continuity__continuity_answer_sms_failed_impl(
             ptr,
             rust_vec_len,
             data_len,
         ),
-        54 => wire__crate__api__continuity__continuity_answer_sms_sent_impl(
+        55 => wire__crate__api__continuity__continuity_answer_sms_sent_impl(
             ptr,
             rust_vec_len,
             data_len,
         ),
-        55 => wire__crate__api__continuity__continuity_answer_unavailable_impl(
+        56 => wire__crate__api__continuity__continuity_answer_unavailable_impl(
             ptr,
             rust_vec_len,
             data_len,
         ),
-        59 => wire__crate__api__continuity__continuity_connected_devices_impl(
+        60 => wire__crate__api__continuity__continuity_connected_devices_impl(
             ptr,
             rust_vec_len,
             data_len,
         ),
-        61 => wire__crate__api__continuity__continuity_disconnect_all_impl(
+        62 => wire__crate__api__continuity__continuity_disconnect_all_impl(
             ptr,
             rust_vec_len,
             data_len,
         ),
-        62 => wire__crate__api__continuity__continuity_disconnect_device_impl(
+        63 => wire__crate__api__continuity__continuity_disconnect_device_impl(
             ptr,
             rust_vec_len,
             data_len,
         ),
-        69 => {
+        70 => {
             wire__crate__api__continuity__continuity_is_connected_impl(ptr, rust_vec_len, data_len)
         }
-        79 => wire__crate__api__continuity__continuity_set_device_trust_impl(
+        80 => wire__crate__api__continuity__continuity_set_device_trust_impl(
             ptr,
             rust_vec_len,
             data_len,
         ),
-        80 => wire__crate__api__continuity__continuity_set_local_capabilities_impl(
+        81 => wire__crate__api__continuity__continuity_set_local_capabilities_impl(
             ptr,
             rust_vec_len,
             data_len,
         ),
-        82 => wire__crate__api__cancel__create_cancellation_token_impl(ptr, rust_vec_len, data_len),
-        83 => wire__crate__api__http__create_client_impl(ptr, rust_vec_len, data_len),
-        90 => wire__crate__api__filename__is_valid_file_name_impl(ptr, rust_vec_len, data_len),
-        93 => wire__crate__api__relay_anywhere__relay_anywhere_cancel_impl(
+        83 => wire__crate__api__cancel__create_cancellation_token_impl(ptr, rust_vec_len, data_len),
+        84 => wire__crate__api__http__create_client_impl(ptr, rust_vec_len, data_len),
+        91 => wire__crate__api__filename__is_valid_file_name_impl(ptr, rust_vec_len, data_len),
+        94 => wire__crate__api__relay_anywhere__relay_anywhere_cancel_impl(
             ptr,
             rust_vec_len,
             data_len,
         ),
-        94 => wire__crate__api__relay_anywhere__relay_anywhere_close_session_impl(
+        95 => wire__crate__api__relay_anywhere__relay_anywhere_close_session_impl(
             ptr,
             rust_vec_len,
             data_len,
         ),
-        95 => wire__crate__api__relay_anywhere__relay_anywhere_generate_routing_key_impl(
+        96 => wire__crate__api__relay_anywhere__relay_anywhere_generate_routing_key_impl(
             ptr,
             rust_vec_len,
             data_len,
         ),
-        96 => wire__crate__api__relay_anywhere__relay_anywhere_listener_address_impl(
+        97 => wire__crate__api__relay_anywhere__relay_anywhere_listener_address_impl(
             ptr,
             rust_vec_len,
             data_len,
         ),
-        97 => wire__crate__api__relay_anywhere__relay_anywhere_open_session_impl(
+        98 => wire__crate__api__relay_anywhere__relay_anywhere_open_session_impl(
             ptr,
             rust_vec_len,
             data_len,
         ),
-        98 => wire__crate__api__relay_anywhere__relay_anywhere_open_session_count_impl(
+        99 => wire__crate__api__relay_anywhere__relay_anywhere_open_session_count_impl(
             ptr,
             rust_vec_len,
             data_len,
         ),
-        99 => wire__crate__api__relay_anywhere__relay_anywhere_parse_address_impl(
+        100 => wire__crate__api__relay_anywhere__relay_anywhere_parse_address_impl(
             ptr,
             rust_vec_len,
             data_len,
         ),
-        101 => wire__crate__api__relay_anywhere__relay_anywhere_respond_impl(
+        102 => wire__crate__api__relay_anywhere__relay_anywhere_respond_impl(
             ptr,
             rust_vec_len,
             data_len,
         ),
-        105 => wire__crate__api__relay_anywhere__relay_anywhere_validate_routing_key_impl(
+        106 => wire__crate__api__relay_anywhere__relay_anywhere_validate_routing_key_impl(
             ptr,
             rust_vec_len,
             data_len,
         ),
-        108 => wire__crate__api__filename__sanitize_file_name_impl(ptr, rust_vec_len, data_len),
+        110 => wire__crate__api__filename__sanitize_file_name_impl(ptr, rust_vec_len, data_len),
         _ => unreachable!(),
     }
 }
@@ -10396,6 +10602,56 @@ impl flutter_rust_bridge::IntoIntoDart<crate::api::relay_anywhere::RsRelayIncomi
     }
 }
 // Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::api::http::RsRelayLanPairingEvent {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        match self {
+            crate::api::http::RsRelayLanPairingEvent::VerificationCode {
+                code,
+                remote_relay_id,
+            } => [
+                0.into_dart(),
+                code.into_into_dart().into_dart(),
+                remote_relay_id.into_into_dart().into_dart(),
+            ]
+            .into_dart(),
+            crate::api::http::RsRelayLanPairingEvent::Paired {
+                remote_relay_id,
+                remote_alias,
+                verification_code,
+            } => [
+                1.into_dart(),
+                remote_relay_id.into_into_dart().into_dart(),
+                remote_alias.into_into_dart().into_dart(),
+                verification_code.into_into_dart().into_dart(),
+            ]
+            .into_dart(),
+            crate::api::http::RsRelayLanPairingEvent::Declined => [2.into_dart()].into_dart(),
+            crate::api::http::RsRelayLanPairingEvent::Unsupported => [3.into_dart()].into_dart(),
+            crate::api::http::RsRelayLanPairingEvent::Busy => [4.into_dart()].into_dart(),
+            crate::api::http::RsRelayLanPairingEvent::AuthenticationFailed => {
+                [5.into_dart()].into_dart()
+            }
+            crate::api::http::RsRelayLanPairingEvent::TransportFailed => {
+                [6.into_dart()].into_dart()
+            }
+            _ => {
+                unimplemented!("");
+            }
+        }
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::api::http::RsRelayLanPairingEvent
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::api::http::RsRelayLanPairingEvent>
+    for crate::api::http::RsRelayLanPairingEvent
+{
+    fn into_into_dart(self) -> crate::api::http::RsRelayLanPairingEvent {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
 impl flutter_rust_bridge::IntoDart for crate::api::relay_anywhere::RsRelayPathPreference {
     fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
         match self {
@@ -10683,8 +10939,21 @@ impl flutter_rust_bridge::IntoDart for crate::api::server::RsServerEvent {
                 file.into_into_dart().into_dart(),
             ]
             .into_dart(),
+            crate::api::server::RsServerEvent::RelayPairRequest {
+                relay_id,
+                alias,
+                ip,
+                verification_code,
+            } => [
+                8.into_dart(),
+                relay_id.into_into_dart().into_dart(),
+                alias.into_into_dart().into_dart(),
+                ip.into_into_dart().into_dart(),
+                verification_code.into_into_dart().into_dart(),
+            ]
+            .into_dart(),
             crate::api::server::RsServerEvent::Show { args } => {
-                [8.into_dart(), args.into_into_dart().into_dart()].into_dart()
+                [9.into_dart(), args.into_into_dart().into_dart()].into_dart()
             }
             _ => {
                 unimplemented!("");
@@ -11410,6 +11679,18 @@ impl SseEncode
 impl SseEncode
     for StreamSink<
         crate::api::relay_anywhere::RsRelayAnywhereListenerEvent,
+        flutter_rust_bridge::for_generated::SseCodec,
+    >
+{
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        unimplemented!("")
+    }
+}
+
+impl SseEncode
+    for StreamSink<
+        crate::api::http::RsRelayLanPairingEvent,
         flutter_rust_bridge::for_generated::SseCodec,
     >
 {
@@ -12715,6 +12996,50 @@ impl SseEncode for crate::api::relay_anywhere::RsRelayIncomingFile {
     }
 }
 
+impl SseEncode for crate::api::http::RsRelayLanPairingEvent {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        match self {
+            crate::api::http::RsRelayLanPairingEvent::VerificationCode {
+                code,
+                remote_relay_id,
+            } => {
+                <i32>::sse_encode(0, serializer);
+                <String>::sse_encode(code, serializer);
+                <String>::sse_encode(remote_relay_id, serializer);
+            }
+            crate::api::http::RsRelayLanPairingEvent::Paired {
+                remote_relay_id,
+                remote_alias,
+                verification_code,
+            } => {
+                <i32>::sse_encode(1, serializer);
+                <String>::sse_encode(remote_relay_id, serializer);
+                <String>::sse_encode(remote_alias, serializer);
+                <String>::sse_encode(verification_code, serializer);
+            }
+            crate::api::http::RsRelayLanPairingEvent::Declined => {
+                <i32>::sse_encode(2, serializer);
+            }
+            crate::api::http::RsRelayLanPairingEvent::Unsupported => {
+                <i32>::sse_encode(3, serializer);
+            }
+            crate::api::http::RsRelayLanPairingEvent::Busy => {
+                <i32>::sse_encode(4, serializer);
+            }
+            crate::api::http::RsRelayLanPairingEvent::AuthenticationFailed => {
+                <i32>::sse_encode(5, serializer);
+            }
+            crate::api::http::RsRelayLanPairingEvent::TransportFailed => {
+                <i32>::sse_encode(6, serializer);
+            }
+            _ => {
+                unimplemented!("");
+            }
+        }
+    }
+}
+
 impl SseEncode for crate::api::relay_anywhere::RsRelayPathPreference {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
@@ -12969,8 +13294,20 @@ impl SseEncode for crate::api::server::RsServerEvent {
                 <String>::sse_encode(file_id, serializer);
                 <crate::api::model::FileDto>::sse_encode(file, serializer);
             }
-            crate::api::server::RsServerEvent::Show { args } => {
+            crate::api::server::RsServerEvent::RelayPairRequest {
+                relay_id,
+                alias,
+                ip,
+                verification_code,
+            } => {
                 <i32>::sse_encode(8, serializer);
+                <String>::sse_encode(relay_id, serializer);
+                <String>::sse_encode(alias, serializer);
+                <Option<String>>::sse_encode(ip, serializer);
+                <String>::sse_encode(verification_code, serializer);
+            }
+            crate::api::server::RsServerEvent::Show { args } => {
+                <i32>::sse_encode(9, serializer);
                 <Vec<String>>::sse_encode(args, serializer);
             }
             _ => {

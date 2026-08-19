@@ -8,6 +8,7 @@ import 'package:relay_app/provider/network/server/controller/receive_controller.
 import 'package:relay_app/provider/network/server/controller/send_controller.dart';
 import 'package:relay_app/provider/network/server/server_utils.dart';
 import 'package:relay_app/provider/relay_identity_provider.dart';
+import 'package:relay_app/provider/relay_pairing_provider.dart';
 import 'package:relay_app/provider/settings_provider.dart';
 import 'package:relay_app/util/alias_generator.dart';
 import 'package:relay_app/util/security/relay_server_signer_port.dart';
@@ -388,6 +389,10 @@ class ServerService extends Notifier<ServerState?> {
         _receiveController.onCancelReceived(event);
       case HttpServerShowEvent():
         _receiveController.onShow(event);
+      case HttpServerRelayPairRequestEvent():
+        // Surfaced for the user to answer. The proof already happened in Rust;
+        // what is missing is a person, and nothing is stored until they act.
+        ref.redux(relayPairingProvider).dispatch(RelayIncomingPairRequestAction(event));
       case HttpServerWebPrepareDownloadEvent():
         _sendController.onPrepareDownload(event);
       case HttpServerWebFileDownloadEvent():

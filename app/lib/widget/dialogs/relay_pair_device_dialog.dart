@@ -113,7 +113,9 @@ class _RelayPairDeviceDialogState extends State<RelayPairDeviceDialog> with Refe
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text('Paste a Relay address to verify and pair a device. Pairing does not change trust settings.'),
+          const Text(
+            'Paste a Relay address to verify and pair a device. Once it is paired you choose what it can access — pairing on its own shares nothing beyond files.',
+          ),
           const SizedBox(height: 16),
           TextField(
             controller: _addressController,

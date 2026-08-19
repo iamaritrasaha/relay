@@ -20,15 +20,20 @@ class PersistenceRelayPairedAddressPersistence implements RelayPairedAddressPers
   Future<void> setRelayPairedAddresses(List<RelayPairedAddress> addresses) => _persistence.setRelayPairedAddresses(addresses);
 }
 
-/// Stores route updates only after the caller's authenticated session has
-/// established [authenticatedRelayId]. This store does not create trust; a
-/// route claim alone is rejected even if it is well formed.
+/// Stores pairings only after the caller's authenticated session has
+/// established [authenticatedRelayId]. This store does not create trust and
+/// does not grant capabilities; a route claim alone is rejected even if it is
+/// well formed.
 class RelayPairedAddressStore {
   final RelayPairedAddressPersistence _persistence;
 
   RelayPairedAddressStore(this._persistence);
 
   List<RelayPairedAddress> load() => _persistence.getRelayPairedAddresses();
+
+  RelayPairedAddress? find(String relayId) => load().where((entry) => entry.relayId == relayId).firstOrNull;
+
+  bool isPaired(String relayId) => find(relayId) != null;
 
   Future<bool> refreshAfterAuthenticatedSession({
     required String authenticatedRelayId,
@@ -40,18 +45,83 @@ class RelayPairedAddressStore {
     if (authenticatedRelayId != claimedRelayId) {
       return false;
     }
-    final record = RelayPairedAddress(
+    return _store(
       relayId: authenticatedRelayId,
       displayLabel: displayLabel,
       relayAddress: relayAddress,
-      updatedAt: (now ?? DateTime.now()).toUtc(),
+      origin: RelayPairedAddress.originAnywhere,
+      now: now,
+    );
+  }
+
+  /// Records a pairing established over the local network.
+  ///
+  /// [authenticatedRelayId] is the RelayId the mutual proof exchange produced,
+  /// and [remoteApproved] is whether the *other* device's user accepted. Both
+  /// are required: a proof without approval, or approval without a proof, must
+  /// leave nothing behind.
+  ///
+  /// No route address is stored. A LAN peer is reached through live discovery
+  /// plus a fresh proof every time, so there is nothing here an attacker could
+  /// point at a different machine.
+  Future<bool> recordLanPairing({
+    required String authenticatedRelayId,
+    required bool remoteApproved,
+    String? displayLabel,
+    DateTime? now,
+  }) async {
+    if (!remoteApproved) {
+      return false;
+    }
+    return _store(
+      relayId: authenticatedRelayId,
+      displayLabel: displayLabel,
+      relayAddress: null,
+      origin: RelayPairedAddress.originLan,
+      now: now,
+    );
+  }
+
+  /// Removes a paired device.
+  ///
+  /// This only drops the routing record. Revoking trust, clearing capability
+  /// grants and disconnecting live sessions are separate steps that the unpair
+  /// action performs alongside this one, because they are separate facts.
+  Future<bool> forget(String relayId) async {
+    final current = load();
+    final next = current.where((entry) => entry.relayId != relayId).toList();
+    if (next.length == current.length) {
+      return false;
+    }
+    await _persistence.setRelayPairedAddresses(next);
+    return true;
+  }
+
+  Future<bool> _store({
+    required String relayId,
+    required String? displayLabel,
+    required String? relayAddress,
+    required String origin,
+    required DateTime? now,
+  }) async {
+    final timestamp = (now ?? DateTime.now()).toUtc();
+    final existing = find(relayId);
+    final record = RelayPairedAddress(
+      relayId: relayId,
+      displayLabel: displayLabel,
+      relayAddress: relayAddress,
+      // Re-pairing an already paired device keeps the original date; the
+      // relationship was not established twice.
+      pairedAt: existing?.pairedAt ?? timestamp,
+      updatedAt: timestamp,
+      origin: origin,
     );
     if (RelayPairedAddress.tryParse(record.toJson()) == null) {
       return false;
     }
 
     final next = [...load()];
-    final existingIndex = next.indexWhere((entry) => entry.relayId == authenticatedRelayId);
+    final existingIndex = next.indexWhere((entry) => entry.relayId == relayId);
     if (existingIndex < 0) {
       next.add(record);
     } else {

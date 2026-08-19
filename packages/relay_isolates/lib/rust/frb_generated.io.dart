@@ -213,6 +213,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   RustStreamSink<RsRelayAnywhereListenerEvent> dco_decode_StreamSink_rs_relay_anywhere_listener_event_Sse(dynamic raw);
 
   @protected
+  RustStreamSink<RsRelayLanPairingEvent> dco_decode_StreamSink_rs_relay_lan_pairing_event_Sse(dynamic raw);
+
+  @protected
   RustStreamSink<RsRelayTransferEvent> dco_decode_StreamSink_rs_relay_transfer_event_Sse(dynamic raw);
 
   @protected
@@ -558,6 +561,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   RsRelayIncomingFile dco_decode_rs_relay_incoming_file(dynamic raw);
 
   @protected
+  RsRelayLanPairingEvent dco_decode_rs_relay_lan_pairing_event(dynamic raw);
+
+  @protected
   RsRelayPathPreference dco_decode_rs_relay_path_preference(dynamic raw);
 
   @protected
@@ -798,6 +804,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   RustStreamSink<RsRelayAnywhereListenerEvent> sse_decode_StreamSink_rs_relay_anywhere_listener_event_Sse(SseDeserializer deserializer);
+
+  @protected
+  RustStreamSink<RsRelayLanPairingEvent> sse_decode_StreamSink_rs_relay_lan_pairing_event_Sse(SseDeserializer deserializer);
 
   @protected
   RustStreamSink<RsRelayTransferEvent> sse_decode_StreamSink_rs_relay_transfer_event_Sse(SseDeserializer deserializer);
@@ -1147,6 +1156,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   RsRelayIncomingFile sse_decode_rs_relay_incoming_file(SseDeserializer deserializer);
 
   @protected
+  RsRelayLanPairingEvent sse_decode_rs_relay_lan_pairing_event(SseDeserializer deserializer);
+
+  @protected
   RsRelayPathPreference sse_decode_rs_relay_path_preference(SseDeserializer deserializer);
 
   @protected
@@ -1431,6 +1443,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   void sse_encode_StreamSink_rs_relay_anywhere_listener_event_Sse(RustStreamSink<RsRelayAnywhereListenerEvent> self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_StreamSink_rs_relay_lan_pairing_event_Sse(RustStreamSink<RsRelayLanPairingEvent> self, SseSerializer serializer);
 
   @protected
   void sse_encode_StreamSink_rs_relay_transfer_event_Sse(RustStreamSink<RsRelayTransferEvent> self, SseSerializer serializer);
@@ -1780,6 +1795,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   void sse_encode_rs_relay_incoming_file(RsRelayIncomingFile self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_rs_relay_lan_pairing_event(RsRelayLanPairingEvent self, SseSerializer serializer);
 
   @protected
   void sse_encode_rs_relay_path_preference(RsRelayPathPreference self, SseSerializer serializer);

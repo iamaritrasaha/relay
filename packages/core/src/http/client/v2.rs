@@ -73,6 +73,19 @@ impl LsHttpClientV2 {
         super::relay::authenticate_relay_server(&self.client, protocol, ip, port).await
     }
 
+    /// Runs the mutual Relay LAN pairing handshake against another Relay device.
+    pub async fn pair_with_relay_server(
+        &self,
+        protocol: ProtocolType,
+        ip: &str,
+        port: u16,
+        request: super::relay::RelayLanPairingRequest<'_>,
+        events: &tokio::sync::mpsc::Sender<super::relay::RelayLanPairingEvent>,
+    ) -> crate::relay::RelayLanPairingOutcome {
+        super::relay::pair_with_relay_server(&self.client, protocol, ip, port, request, events)
+            .await
+    }
+
     /// Registers with another device for discovery.
     ///
     /// POST /api/localsend/v2/register

@@ -127,6 +127,20 @@ class HttpServerPrepareUploadDecisionTask implements BaseHttpServerTask {
   });
 }
 
+/// Answers a pending [HttpServerRelayPairRequestEvent].
+///
+/// [relayId] must be the proven RelayId that event carried. Accepting records
+/// the relationship only; it grants no continuity capability.
+class HttpServerRelayPairDecisionTask implements BaseHttpServerTask {
+  final String relayId;
+  final bool accepted;
+
+  HttpServerRelayPairDecisionTask({
+    required this.relayId,
+    required this.accepted,
+  });
+}
+
 /// Cancels the active upload session, e.g. because the user aborted the
 /// transfer on the receiving side. Uploads that are already in progress still
 /// run to completion, but new upload requests are rejected and a new session
@@ -190,6 +204,31 @@ sealed class HttpServerEvent {}
 /// The server has been started and is listening.
 /// Always the first event emitted by a [HttpServerStartTask].
 class HttpServerStartedEvent extends HttpServerEvent {}
+
+/// A Relay device on the LAN proved its identity and asks this device to pair.
+///
+/// Must be answered with a [HttpServerRelayPairDecisionTask]. This event is
+/// only ever produced by the Relay pairing endpoints, after a mutual
+/// `RelayIdentityProofV1` exchange — never by discovery, registration or the
+/// LocalSend-compatible transfer routes.
+///
+/// [relayId] is proven. [alias] is untrusted display text.
+class HttpServerRelayPairRequestEvent extends HttpServerEvent {
+  final String relayId;
+  final String alias;
+  final String? ip;
+
+  /// Six digits both devices show so the two users can confirm they are
+  /// looking at the same pairing.
+  final String verificationCode;
+
+  HttpServerRelayPairRequestEvent({
+    required this.relayId,
+    required this.alias,
+    required this.ip,
+    required this.verificationCode,
+  });
+}
 
 /// The Relay proof signer was installed on the running HTTP server.
 class HttpServerRelaySignerInstalledEvent extends HttpServerEvent {
@@ -583,6 +622,15 @@ Future<void> setupHttpServerIsolate(
                       file: file,
                     ),
                   );
+                case RsServerEvent_RelayPairRequest(:final relayId, :final alias, :final ip, :final verificationCode):
+                  emit(
+                    HttpServerRelayPairRequestEvent(
+                      relayId: relayId,
+                      alias: alias,
+                      ip: ip,
+                      verificationCode: verificationCode,
+                    ),
+                  );
                 case RsServerEvent_Show(:final args):
                   emit(HttpServerShowEvent(args: args));
               }
@@ -663,6 +711,14 @@ Future<void> setupHttpServerIsolate(
           // with 204 and creates no session.
           ref.read(_receiveSessionProvider).session = config == null || config.fileNameMap.isEmpty ? null : _ReceiveSession(config);
           await ref.read(httpServerProvider).respondPrepareUpload(acceptedFileIds: config?.fileNameMap.keys.toList());
+          return;
+        case HttpServerRelayPairDecisionTask decisionTask:
+          await ref
+              .read(httpServerProvider)
+              .respondRelayPair(
+                relayId: decisionTask.relayId,
+                accepted: decisionTask.accepted,
+              );
           return;
         case HttpServerCancelSessionTask cancelTask:
           final holder = ref.read(_receiveSessionProvider);

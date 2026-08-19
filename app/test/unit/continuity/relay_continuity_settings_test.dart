@@ -106,5 +106,49 @@ void main() {
       expect(untrusted.hasAnyCapability, isFalse);
       expect(untrusted.granted, isEmpty);
     });
+
+    test('forgetting a device drops its record entirely, so re-pairing starts from nothing', () {
+      final settings = <String, RelayContinuitySettings>{
+        _relayId: const RelayContinuitySettings(
+          relayId: _relayId,
+          trusted: true,
+        ).withCapability(ContinuityCapabilityKind.messages, true),
+        _otherRelayId: const RelayContinuitySettings(
+          relayId: _otherRelayId,
+          trusted: true,
+        ).withCapability(ContinuityCapabilityKind.battery, true),
+      };
+
+      // Mirrors what ContinuityForgetDeviceAction persists.
+      final remaining = Map<String, RelayContinuitySettings>.from(settings)..remove(_relayId);
+
+      // The forgotten device is unknown again: it reads back as the all-denied
+      // default rather than as its old, still-granted record.
+      final reread = remaining[_relayId] ?? const RelayContinuitySettings(relayId: _relayId);
+      expect(reread.trusted, isFalse);
+      expect(reread.granted, isEmpty);
+      expect(reread.hasAnyCapability, isFalse);
+      expect(reread.clipboardMode, ClipboardSharingMode.off);
+
+      // Every other paired device is untouched.
+      expect(remaining[_otherRelayId]!.trusted, isTrue);
+      expect(remaining[_otherRelayId]!.isEnabled(ContinuityCapabilityKind.battery), isTrue);
+    });
+  });
+
+  group('a freshly paired device', () {
+    test('has no trust and no capability at all', () {
+      // What the app holds the moment a pairing is accepted: nothing.
+      const justPaired = RelayContinuitySettings(relayId: _relayId);
+
+      expect(justPaired.trusted, isFalse);
+      expect(justPaired.granted, isEmpty);
+      expect(justPaired.clipboardMode, ClipboardSharingMode.off);
+      for (final capability in ContinuityCapabilityKind.values) {
+        expect(justPaired.isEnabled(capability), isFalse, reason: '${capability.name} must start off');
+      }
+    });
   });
 }
+
+const _otherRelayId = 'CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC';

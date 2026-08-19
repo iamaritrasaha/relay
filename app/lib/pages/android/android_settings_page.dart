@@ -102,13 +102,13 @@ class AndroidSettingsPage extends StatelessWidget {
                                   letterSpacing: -0.3,
                                 ),
                               ),
-                              const SizedBox(height: 4),
+                              const SizedBox(height: 3),
                               Text(
                                 switch (deviceType) {
-                                  DeviceType.mobile => 'Mobile · Local Network',
-                                  DeviceType.desktop => 'Desktop · Local Network',
-                                  DeviceType.web => 'Web · Local Network',
-                                  DeviceType.headless || DeviceType.server => 'Server · Local Network',
+                                  DeviceType.mobile => 'Mobile',
+                                  DeviceType.desktop => 'Desktop',
+                                  DeviceType.web => 'Web',
+                                  DeviceType.headless || DeviceType.server => 'Server',
                                 },
                                 style: TextStyle(
                                   fontSize: 13,
@@ -117,33 +117,19 @@ class AndroidSettingsPage extends StatelessWidget {
                               ),
                               const SizedBox(height: 8),
                               Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 3),
                                 decoration: BoxDecoration(
-                                  color: palette.accent.withValues(alpha: 0.12),
+                                  color: palette.canvas,
                                   borderRadius: BorderRadius.circular(8),
-                                  border: Border.all(color: palette.accent.withValues(alpha: 0.3)),
+                                  border: Border.all(color: palette.hairline),
                                 ),
-                                child: Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    Container(
-                                      width: 6,
-                                      height: 6,
-                                      decoration: BoxDecoration(
-                                        color: palette.accent,
-                                        shape: BoxShape.circle,
-                                      ),
-                                    ),
-                                    const SizedBox(width: 6),
-                                    Text(
-                                      'Ready on Relay',
-                                      style: TextStyle(
-                                        fontSize: 11,
-                                        fontWeight: FontWeight.w600,
-                                        color: palette.accentSoft,
-                                      ),
-                                    ),
-                                  ],
+                                child: Text(
+                                  'Relay Device',
+                                  style: TextStyle(
+                                    fontSize: 11.5,
+                                    fontWeight: FontWeight.w500,
+                                    color: palette.textSecondary,
+                                  ),
                                 ),
                               ),
                             ],
@@ -152,7 +138,7 @@ class AndroidSettingsPage extends StatelessWidget {
                       ],
                     ),
                     const SizedBox(height: 16),
-                    const Divider(height: 1),
+                    Divider(height: 1, color: palette.hairline),
                     const SizedBox(height: 12),
                     Row(
                       mainAxisAlignment: MainAxisAlignment.end,
@@ -215,12 +201,11 @@ class AndroidSettingsPage extends StatelessWidget {
                   style: RelayTypography.sectionHeader(palette.textSecondary),
                 ),
               ),
-              Card(
-                elevation: 0,
-                color: palette.softSurface,
-                shape: RoundedRectangleBorder(
+              Container(
+                decoration: BoxDecoration(
+                  color: palette.softSurface,
                   borderRadius: BorderRadius.circular(16),
-                  side: BorderSide(color: palette.hairline),
+                  border: Border.all(color: palette.hairline),
                 ),
                 child: Column(
                   children: [
@@ -238,24 +223,24 @@ class AndroidSettingsPage extends StatelessWidget {
                         );
                       },
                     ),
-                    const Divider(height: 1),
-                    SwitchListTile(
+                    Divider(height: 1, color: palette.hairline),
+                    SwitchListTile.adaptive(
                       secondary: const Icon(Icons.flash_on_rounded),
                       title: const Text('Quick Save'),
-                      subtitle: const Text('Automatically accept transfer requests'),
+                      subtitle: const Text('Automatically accept incoming transfer requests'),
                       value: vm.settings.quickSave,
                       onChanged: (b) async => ref.notifier(settingsProvider).setQuickSave(b),
                     ),
-                    const Divider(height: 1),
-                    SwitchListTile(
+                    Divider(height: 1, color: palette.hairline),
+                    SwitchListTile.adaptive(
                       secondary: const Icon(Icons.star_outline_rounded),
-                      title: const Text('Quick Save from Paired Only'),
-                      subtitle: const Text('Only auto-accept transfers from verified peers'),
+                      title: const Text('Quick Save from Favorites'),
+                      subtitle: const Text('Automatically accept transfers from devices marked as favorites'),
                       value: vm.settings.quickSaveFromFavorites,
                       onChanged: (b) async => ref.notifier(settingsProvider).setQuickSaveFromFavorites(b),
                     ),
-                    const Divider(height: 1),
-                    SwitchListTile(
+                    Divider(height: 1, color: palette.hairline),
+                    SwitchListTile.adaptive(
                       secondary: const Icon(Icons.motion_photos_on_rounded),
                       title: const Text('Spatial Animations'),
                       subtitle: const Text('Living orbital revolution and transfer streams'),
@@ -278,19 +263,22 @@ class AndroidSettingsPage extends StatelessWidget {
                   style: RelayTypography.sectionHeader(palette.textSecondary),
                 ),
               ),
-              Card(
-                elevation: 0,
-                color: palette.softSurface,
-                shape: RoundedRectangleBorder(
+              Container(
+                decoration: BoxDecoration(
+                  color: palette.softSurface,
                   borderRadius: BorderRadius.circular(16),
-                  side: BorderSide(color: palette.hairline),
+                  border: Border.all(color: palette.hairline),
                 ),
                 child: Column(
                   children: [
                     ListTile(
                       leading: const Icon(Icons.folder_open_rounded),
                       title: const Text('Destination Directory'),
-                      subtitle: Text(vm.settings.destination ?? 'Default (Downloads)'),
+                      subtitle: Text(
+                        vm.settings.destination ?? 'Default (Downloads)',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
                       trailing: const Icon(Icons.chevron_right_rounded),
                       onTap: () async {
                         if (vm.settings.destination != null) {
@@ -310,8 +298,8 @@ class AndroidSettingsPage extends StatelessWidget {
                       },
                     ),
                     if (defaultTargetPlatform == TargetPlatform.android || defaultTargetPlatform == TargetPlatform.iOS) ...[
-                      const Divider(height: 1),
-                      SwitchListTile(
+                      Divider(height: 1, color: palette.hairline),
+                      SwitchListTile.adaptive(
                         secondary: const Icon(Icons.photo_library_outlined),
                         title: const Text('Save to Gallery'),
                         subtitle: const Text('Save photos and videos directly into device gallery'),
@@ -319,16 +307,16 @@ class AndroidSettingsPage extends StatelessWidget {
                         onChanged: (b) async => ref.notifier(settingsProvider).setSaveToGallery(b),
                       ),
                     ],
-                    const Divider(height: 1),
-                    SwitchListTile(
+                    Divider(height: 1, color: palette.hairline),
+                    SwitchListTile.adaptive(
                       secondary: const Icon(Icons.history_rounded),
                       title: const Text('Save to History'),
                       subtitle: const Text('Record completed transfers in activity'),
                       value: vm.settings.saveToHistory,
                       onChanged: (b) async => ref.notifier(settingsProvider).setSaveToHistory(b),
                     ),
-                    const Divider(height: 1),
-                    SwitchListTile(
+                    Divider(height: 1, color: palette.hairline),
+                    SwitchListTile.adaptive(
                       secondary: const Icon(Icons.check_circle_outline_rounded),
                       title: const Text('Auto-Finish'),
                       subtitle: const Text('Close finished transfer sessions automatically'),
@@ -351,12 +339,11 @@ class AndroidSettingsPage extends StatelessWidget {
                   style: RelayTypography.sectionHeader(palette.textSecondary),
                 ),
               ),
-              Card(
-                elevation: 0,
-                color: palette.softSurface,
-                shape: RoundedRectangleBorder(
+              Container(
+                decoration: BoxDecoration(
+                  color: palette.softSurface,
                   borderRadius: BorderRadius.circular(16),
-                  side: BorderSide(color: palette.hairline),
+                  border: Border.all(color: palette.hairline),
                 ),
                 child: Column(
                   children: [
@@ -372,7 +359,7 @@ class AndroidSettingsPage extends StatelessWidget {
                         onChanged: (theme) => vm.onChangeTheme(context, theme),
                       ),
                     ),
-                    const Divider(height: 1),
+                    Divider(height: 1, color: palette.hairline),
                     ListTile(
                       leading: const Icon(Icons.palette_outlined),
                       title: const Text('Color Theme'),
@@ -388,7 +375,7 @@ class AndroidSettingsPage extends StatelessWidget {
                         onChanged: (colorMode) => vm.onChangeColorMode(context, colorMode),
                       ),
                     ),
-                    const Divider(height: 1),
+                    Divider(height: 1, color: palette.hairline),
                     ListTile(
                       leading: const Icon(Icons.language_rounded),
                       title: const Text('Language'),
@@ -412,12 +399,11 @@ class AndroidSettingsPage extends StatelessWidget {
                   style: RelayTypography.sectionHeader(palette.textSecondary),
                 ),
               ),
-              Card(
-                elevation: 0,
-                color: palette.softSurface,
-                shape: RoundedRectangleBorder(
+              Container(
+                decoration: BoxDecoration(
+                  color: palette.softSurface,
                   borderRadius: BorderRadius.circular(16),
-                  side: BorderSide(color: palette.hairline),
+                  border: Border.all(color: palette.hairline),
                 ),
                 child: Column(
                   children: [
@@ -428,7 +414,7 @@ class AndroidSettingsPage extends StatelessWidget {
                       trailing: const Icon(Icons.chevron_right_rounded),
                       onTap: () => context.push(() => const AboutPage()),
                     ),
-                    const Divider(height: 1),
+                    Divider(height: 1, color: palette.hairline),
                     ListTile(
                       leading: const Icon(Icons.update_rounded),
                       title: const Text('Changelog'),

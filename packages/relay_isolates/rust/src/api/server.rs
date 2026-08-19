@@ -13,6 +13,7 @@ use relay_core::http::state::ClientInfo;
 use relay_core::model::discovery::DeviceType;
 use relay_core::model::discovery::ProtocolType;
 use relay_core::model::transfer::{FileContent, FileDto};
+use relay_core::relay::RelayPairingDecision;
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::{Mutex, mpsc, oneshot};
@@ -90,6 +91,27 @@ pub enum RsServerEvent {
         file: FileDto,
     },
 
+    /// A Relay device on the LAN proved its identity and is asking this
+    /// device's user to pair.
+    ///
+    /// Must be answered with [RsHttpServer::respond_relay_pair]. The
+    /// LocalSend-compatible endpoints never emit this: it is produced only by
+    /// `POST /api/relay/v1/pair/complete`, after a Client-role Relay identity
+    /// proof was verified against the client certificate of the live mTLS
+    /// connection.
+    ///
+    /// [relay_id] is **proven**, not claimed. [alias] is untrusted display
+    /// text. Accepting establishes a relationship and nothing else: no
+    /// continuity capability is granted by pairing.
+    RelayPairRequest {
+        relay_id: String,
+        alias: String,
+        ip: Option<String>,
+        /// Six digits both devices display so the two users can confirm they
+        /// are looking at the same pairing.
+        verification_code: String,
+    },
+
     /// Another application instance requested the running application to show itself
     /// via `POST /api/localsend/v2/show`.
     Show {
@@ -102,6 +124,9 @@ pub struct RsHttpServer {
     instance: Arc<ServerInstance>,
     event_rx: Mutex<Option<mpsc::Receiver<ServerEventV2>>>,
     pending_decision: Mutex<Option<(String, oneshot::Sender<PrepareUploadDecisionV2>)>>,
+    /// The outstanding pairing prompt, keyed by the proven RelayId that asked.
+    /// At most one exists, matching the server's own single-prompt rule.
+    pending_pair_decision: Mutex<Option<(String, oneshot::Sender<RelayPairingDecision>)>>,
     pending_uploads: Mutex<HashMap<(String, String), oneshot::Sender<FileUploadTarget>>>,
     web_event_rx: Mutex<Option<mpsc::Receiver<WebSendEvent>>>,
     pending_download_decisions: Mutex<HashMap<String, oneshot::Sender<bool>>>,
@@ -264,6 +289,7 @@ pub async fn start_server(
         instance,
         event_rx: Mutex::new(Some(event_rx)),
         pending_decision: Mutex::new(None),
+        pending_pair_decision: Mutex::new(None),
         pending_uploads: Mutex::new(HashMap::new()),
         web_event_rx: Mutex::new(web_event_rx),
         pending_download_decisions: Mutex::new(HashMap::new()),
@@ -428,6 +454,25 @@ impl RsHttpServer {
                 sink.add(RsServerEvent::PrepareUploadAborted { session_id })
                     .is_ok()
             }
+            ServerEventV2::RelayPairRequest {
+                relay_id,
+                alias,
+                ip,
+                verification_code,
+                decision_tx,
+            } => {
+                // A newly arrived request replaces any stale responder: the
+                // dropped one answers "declined" on the wire, so an abandoned
+                // prompt can never later be turned into a pairing.
+                *self.pending_pair_decision.lock().await = Some((relay_id.clone(), decision_tx));
+                sink.add(RsServerEvent::RelayPairRequest {
+                    relay_id,
+                    alias,
+                    ip: ip.map(|ip| ip.to_string()),
+                    verification_code,
+                })
+                .is_ok()
+            }
             ServerEventV2::CancelReceived { ip, session_id, .. } => sink
                 .add(RsServerEvent::CancelReceived {
                     ip: ip.map_or_else(|| "anywhere".to_owned(), |ip| ip.to_string()),
@@ -479,6 +524,35 @@ impl RsHttpServer {
                 .is_ok()
             }
         }
+    }
+
+    /// Answers the pending [RsServerEvent::RelayPairRequest] event.
+    ///
+    /// [relay_id] must be the proven RelayId the event carried; an answer for
+    /// any other identity is refused rather than applied to whoever is waiting.
+    /// Accepting establishes the relationship only — it grants no continuity
+    /// capability and marks nothing as trusted.
+    pub async fn respond_relay_pair(&self, relay_id: String, accepted: bool) -> anyhow::Result<()> {
+        let mut pending = self.pending_pair_decision.lock().await;
+        let Some((pending_relay_id, _)) = pending.as_ref() else {
+            return Err(anyhow::anyhow!("No pending Relay pairing request"));
+        };
+        if pending_relay_id != &relay_id {
+            return Err(anyhow::anyhow!(
+                "The pending Relay pairing request is for another device"
+            ));
+        }
+        let (_, decision_tx) = pending.take().expect("checked above");
+        drop(pending);
+
+        decision_tx
+            .send(match accepted {
+                true => RelayPairingDecision::Accepted,
+                false => RelayPairingDecision::Declined,
+            })
+            .map_err(|_| anyhow::anyhow!("Relay pairing request already ended"))?;
+
+        Ok(())
     }
 
     /// Answers the pending [RsServerEvent::PrepareUpload] event.

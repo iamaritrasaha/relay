@@ -4,6 +4,7 @@ import 'package:relay_app/pages/gnome/gnome_shell.dart';
 import 'package:relay_app/pages/relay_home_vm.dart';
 import 'package:relay_app/provider/animation_provider.dart';
 import 'package:relay_app/util/native/platform_check.dart';
+import 'package:relay_app/widget/dialogs/relay_incoming_pair_request_dialog.dart';
 import 'package:relay_app/widget/dialogs/relay_pair_device_dialog.dart';
 import 'package:refena_flutter/refena_flutter.dart';
 
@@ -26,20 +27,26 @@ class RelayHomePage extends StatelessWidget {
         final ref = context.ref;
         final animationsEnabled = ref.watch(animationProvider);
 
+        // A pairing request must reach the user wherever they are, so the
+        // prompt is hosted above the shell rather than inside one screen.
         if (checkPlatformIsDesktop()) {
-          return GnomeShell(
-            vm: vm,
-            animationsEnabled: animationsEnabled,
-            onOpenHistory: onOpenHistory,
-            onOpenSettings: onOpenSettings,
-            onPairDevice: () => showDialog<void>(context: context, builder: (_) => const RelayPairDeviceDialog()),
+          return RelayIncomingPairRequestHost(
+            child: GnomeShell(
+              vm: vm,
+              animationsEnabled: animationsEnabled,
+              onOpenHistory: onOpenHistory,
+              onOpenSettings: onOpenSettings,
+              onPairDevice: () => showDialog<void>(context: context, builder: (_) => const RelayPairDeviceDialog()),
+            ),
           );
         }
 
-        return AndroidShell(
-          vm: vm,
-          animationsEnabled: animationsEnabled,
-          onPairDevice: () => showDialog<void>(context: context, builder: (_) => const RelayPairDeviceDialog()),
+        return RelayIncomingPairRequestHost(
+          child: AndroidShell(
+            vm: vm,
+            animationsEnabled: animationsEnabled,
+            onPairDevice: () => showDialog<void>(context: context, builder: (_) => const RelayPairDeviceDialog()),
+          ),
         );
       },
     );

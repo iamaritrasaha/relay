@@ -96,6 +96,26 @@ pub(crate) struct V2State {
     pub(crate) pin_attempts: Mutex<LruCache<IpAddr, u32>>,
 }
 
+/// A single-use pairing challenge, bound to the exact client certificate the
+/// connection presented.
+///
+/// Keying by client certificate — not by IP, alias or claimed identity — is
+/// what stops one device from consuming a nonce issued to another.
+pub(crate) struct PendingPairChallenge {
+    pub(crate) server_nonce: [u8; 32],
+    pub(crate) client_nonce: [u8; 32],
+    pub(crate) issued_at: std::time::Instant,
+}
+
+/// Server-side state for the Relay LAN pairing endpoints.
+pub(crate) struct RelayPairState {
+    pub(crate) challenges: Mutex<LruCache<[u8; 32], PendingPairChallenge>>,
+
+    /// At most one pairing prompt may be outstanding, so a peer cannot bury the
+    /// user under prompts or race two requests into one decision.
+    pub(crate) prompt: Mutex<()>,
+}
+
 pub(crate) struct RelayProofState {
     /// The currently installed server proof signer. Requests clone this Arc
     /// under the lock, then release the lock before signing.
@@ -249,6 +269,9 @@ pub struct AppState {
 
     /// State for the TLS-only Relay proof endpoint.
     pub(crate) relay_proof: Arc<RelayProofState>,
+
+    /// State for the TLS-only Relay LAN pairing endpoints.
+    pub(crate) relay_pair: Arc<RelayPairState>,
 }
 
 impl AppState {
@@ -296,6 +319,10 @@ impl AppState {
                 signer: RwLock::new(relay_proof_signer),
                 semaphore: Arc::new(Semaphore::new(4)),
                 stopped: AtomicBool::new(false),
+            }),
+            relay_pair: Arc::new(RelayPairState {
+                challenges: Mutex::new(LruCache::new(NonZeroUsize::new(32).unwrap())),
+                prompt: Mutex::new(()),
             }),
         }
     }
@@ -832,7 +859,10 @@ fn create_tls_config(
 #[derive(Clone)]
 pub(crate) struct ConnectionTlsCtx {
     pub(crate) relay: RelayTlsContext,
-    #[allow(dead_code)] // Retained for later client-proof authentication.
+
+    /// SHA-256 of the client certificate rustls verified for this connection.
+    /// A Client-role Relay proof is only ever checked against this value, never
+    /// against anything the request payload claims.
     pub(crate) peer_cert_fingerprint: Option<[u8; 32]>,
 }
 
@@ -999,6 +1029,12 @@ async fn handle_request_inner(mut req: Request<Incoming>) -> Result<Response<Box
                 .into_response())
         }
         (&Method::POST, "/api/relay/v1/proof") => relay::proof(req, state).await,
+        (&Method::POST, "/api/relay/v1/pair/challenge") => {
+            relay::pair_challenge(req, state).await
+        }
+        (&Method::POST, "/api/relay/v1/pair/complete") => {
+            relay::pair_complete(req, state, client_info).await
+        }
         _ => {
             let mut res = Response::new(response::empty_body());
             *res.status_mut() = StatusCode::NOT_FOUND;

@@ -203,7 +203,9 @@ fn verified_lan_session_from_proof_result(
                     reason: IdentityFailure::ExpectedRelayIdMismatch,
                 }
             }
-            super::RelayAuthError::CryptoInvalid | super::RelayAuthError::RoleMismatch => {
+            super::RelayAuthError::CryptoInvalid
+            | super::RelayAuthError::RoleMismatch
+            | super::RelayAuthError::ChallengeMismatch => {
                 RelaySendError::IdentityVerificationFailed {
                     reason: IdentityFailure::InvalidRelayProof,
                 }
