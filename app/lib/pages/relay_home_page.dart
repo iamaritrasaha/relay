@@ -1,23 +1,17 @@
-import 'dart:async';
-
-import 'package:collection/collection.dart';
 import 'package:flutter/material.dart';
+import 'package:localsend_app/pages/android/android_shell.dart';
+import 'package:localsend_app/pages/gnome/gnome_shell.dart';
 import 'package:localsend_app/pages/relay_home_vm.dart';
 import 'package:localsend_app/provider/animation_provider.dart';
-import 'package:localsend_app/provider/network/nearby_devices_provider.dart';
-import 'package:localsend_app/provider/network/relay_send_service.dart';
-import 'package:localsend_app/provider/relay_paired_routes_provider.dart';
-import 'package:localsend_app/provider/relay_verified_lan_devices_provider.dart';
-import 'package:localsend_app/provider/selection/selected_sending_files_provider.dart';
-import 'package:localsend_app/util/native/file_picker.dart';
-import 'package:localsend_app/widget/dialogs/add_file_dialog.dart';
-import 'package:localsend_app/widget/dialogs/cancel_session_dialog.dart';
+import 'package:localsend_app/util/native/platform_check.dart';
 import 'package:localsend_app/widget/dialogs/relay_pair_device_dialog.dart';
-import 'package:localsend_app/widget/relay/relay_shell.dart';
 import 'package:refena_flutter/refena_flutter.dart';
-import 'package:routerino/routerino.dart';
 
-/// Relay's Home surface, mounted as the first page of [HomePage]'s page view.
+/// Relay's Root Home surface, mounted as the primary page of [HomePage].
+///
+/// Deliberately selects the GNOME Libadwaita presentation shell on Linux / Desktop
+/// and the Material 3 presentation shell on Android / Mobile, ensuring native
+/// hierarchy, navigation, and interaction patterns on each target platform.
 class RelayHomePage extends StatelessWidget {
   final VoidCallback? onOpenHistory;
   final VoidCallback? onOpenSettings;
@@ -31,56 +25,21 @@ class RelayHomePage extends StatelessWidget {
       builder: (context, vm) {
         final ref = context.ref;
         final animationsEnabled = ref.watch(animationProvider);
-        return RelayShell(
+
+        if (checkPlatformIsDesktop()) {
+          return GnomeShell(
+            vm: vm,
+            animationsEnabled: animationsEnabled,
+            onOpenHistory: onOpenHistory,
+            onOpenSettings: onOpenSettings,
+            onPairDevice: () => showDialog<void>(context: context, builder: (_) => const RelayPairDeviceDialog()),
+          );
+        }
+
+        return AndroidShell(
           vm: vm,
           animationsEnabled: animationsEnabled,
-          onSelectPayload: () => unawaited(AddFileDialog.open(context: context, options: FilePickerOption.getOptionsForPlatform())),
-          onClearPayload: () => ref.redux(selectedSendingFilesProvider).dispatch(ClearSelectionAction()),
-          onCancelTransfer: () async {
-            final sessionId = vm.activeTransfer?.sessionId;
-            if (sessionId != null && await context.pushBottomSheet(() => const CancelSessionDialog()) == true) {
-              ref.read(relaySendServiceProvider).cancel(sessionId);
-            }
-          },
-          onOpenHistory: onOpenHistory,
-          onOpenSettings: onOpenSettings,
           onPairDevice: () => showDialog<void>(context: context, builder: (_) => const RelayPairDeviceDialog()),
-          onDeviceTap: (key) {
-            final files = ref.read(selectedSendingFilesProvider);
-            if (files.isEmpty) {
-              return;
-            }
-            final device = ref.read(nearbyDevicesProvider).allDevices[key];
-            if (device != null) {
-              unawaited(ref.read(relaySendServiceProvider).send(target: device, files: files, background: true));
-              return;
-            }
-            final relayId = key.startsWith('relay:') ? key.substring('relay:'.length) : null;
-            final route = relayId == null ? null : ref.read(relayPairedRoutesProvider).firstWhereOrNull((entry) => entry.relayId == relayId);
-            final verifiedLan = relayId == null ? null : ref.read(relayVerifiedLanDevicesProvider)[relayId];
-            if (relayId != null && (route != null || verifiedLan != null)) {
-              unawaited(
-                ref
-                    .read(relaySendServiceProvider)
-                    .sendRelayDevice(
-                      relayId: relayId,
-                      verifiedLanTarget: verifiedLan == null ? null : ref.read(nearbyDevicesProvider).allDevices[verifiedLan.device.fingerprint],
-                      pairedRoute: route,
-                      files: files,
-                      background: true,
-                    )
-                    .onError((error, _) {
-                      if (!context.mounted) {
-                        return;
-                      }
-                      final message = error is RelaySendFailure && error.category == 'identity'
-                          ? 'Device identity could not be verified.'
-                          : 'Transfer failed.';
-                      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
-                    }),
-              );
-            }
-          },
         );
       },
     );

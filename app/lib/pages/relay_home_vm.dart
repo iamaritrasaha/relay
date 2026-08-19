@@ -4,6 +4,7 @@ import 'package:localsend_app/model/persistence/relay_paired_address.dart';
 import 'package:localsend_app/model/state/nearby_devices_state.dart';
 import 'package:localsend_app/model/state/send/send_session_state.dart';
 import 'package:localsend_app/model/state/server/server_state.dart';
+import 'package:localsend_app/model/ui/relay_capability_vm.dart';
 import 'package:localsend_app/model/ui/relay_device_vm.dart';
 import 'package:localsend_app/provider/device_info_provider.dart';
 import 'package:localsend_app/provider/file_transfer_provider.dart';
@@ -207,6 +208,11 @@ class RelayHomeVm {
           ? 1
           : null,
       detail: _detailFor(phase),
+      connectionType: RelayConnectionType.local,
+      securityState: RelaySecurityState.localSendCompatible,
+      ip: device.ip,
+      port: device.port,
+      deviceModel: device.deviceModel,
     );
   }
 
@@ -217,6 +223,11 @@ class RelayHomeVm {
     phase: RelayDevicePhase.idle,
     progress: null,
     detail: 'Nearby',
+    connectionType: RelayConnectionType.local,
+    securityState: RelaySecurityState.localSendCompatible,
+    ip: device.ip,
+    port: device.port,
+    deviceModel: device.deviceModel,
   );
 
   static RelayDeviceVm _pairedDeviceVm(RelayPairedAddress route, RelayRemoteTransfer? transfer) => RelayDeviceVm(
@@ -228,6 +239,12 @@ class RelayHomeVm {
     detail: _pairedDetail(transfer),
     targetKind: RelayDeviceTargetKind.pairedRelay,
     relayId: route.relayId,
+    connectionType: switch (transfer?.origin) {
+      'direct' => RelayConnectionType.direct,
+      'relay' => RelayConnectionType.relayed,
+      _ => RelayConnectionType.relayed,
+    },
+    securityState: RelaySecurityState.verifiedRelay,
   );
 
   static RelayDeviceVm _verifiedDeviceVm({
@@ -253,6 +270,11 @@ class RelayHomeVm {
       targetKind: RelayDeviceTargetKind.verifiedRelay,
       relayId: verified.relayId,
       lanFingerprint: verified.device.fingerprint,
+      connectionType: RelayConnectionType.local,
+      securityState: RelaySecurityState.verifiedRelay,
+      ip: verified.device.ip,
+      port: verified.device.port,
+      deviceModel: verified.device.deviceModel,
     );
   }
 

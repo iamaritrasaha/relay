@@ -19,6 +19,7 @@ import 'package:localsend_app/util/i18n.dart';
 import 'package:localsend_app/util/native/macos_channel.dart';
 import 'package:localsend_app/util/native/pick_directory_path.dart';
 import 'package:localsend_app/util/native/platform_check.dart';
+import 'package:localsend_app/util/ui/theme_mode_ext.dart';
 import 'package:localsend_app/widget/custom_dropdown_button.dart';
 import 'package:localsend_app/widget/dialogs/encryption_disabled_notice.dart';
 import 'package:localsend_app/widget/dialogs/pin_dialog.dart';
@@ -511,30 +512,5 @@ class SettingsTab extends StatelessWidget {
         );
       },
     );
-  }
-}
-
-extension on ThemeMode {
-  String get humanName {
-    switch (this) {
-      case ThemeMode.system:
-        return t.settingsTab.general.brightnessOptions.system;
-      case ThemeMode.light:
-        return t.settingsTab.general.brightnessOptions.light;
-      case ThemeMode.dark:
-        return t.settingsTab.general.brightnessOptions.dark;
-    }
-  }
-}
-
-extension on ColorMode {
-  String get humanName {
-    return switch (this) {
-      ColorMode.system => t.settingsTab.general.colorOptions.system,
-      ColorMode.localsend => 'Relay',
-      ColorMode.oled => t.settingsTab.general.colorOptions.oled,
-      ColorMode.yaru => 'Yaru',
-      ColorMode.custom => t.settingsTab.general.colorOptions.custom,
-    };
   }
 }
