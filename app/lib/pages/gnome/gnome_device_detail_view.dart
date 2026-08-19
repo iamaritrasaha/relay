@@ -21,6 +21,7 @@ class GnomeDeviceDetailView extends StatelessWidget {
   final VoidCallback onSendFolder;
   final VoidCallback onOpenClipboard;
   final VoidCallback onOpenMessages;
+  final VoidCallback onOpenPhone;
   final VoidCallback onOpenDiagnostics;
   final VoidCallback? onCancelTransfer;
 
@@ -32,6 +33,7 @@ class GnomeDeviceDetailView extends StatelessWidget {
     required this.onSendFolder,
     required this.onOpenClipboard,
     required this.onOpenMessages,
+    required this.onOpenPhone,
     required this.onOpenDiagnostics,
     this.onCancelTransfer,
   });
@@ -186,6 +188,14 @@ class GnomeDeviceDetailView extends StatelessWidget {
                     label: 'Messages',
                     onPressed: onOpenMessages,
                   ),
+                  // Phone only makes sense for a device that could have one.
+                  if (!device.isLocalSend)
+                    AdwButton.flat(
+                      key: const ValueKey('gnome-phone-button'),
+                      icon: Icons.call_outlined,
+                      label: 'Phone',
+                      onPressed: onOpenPhone,
+                    ),
                 ],
               ),
 
@@ -216,7 +226,15 @@ class GnomeDeviceDetailView extends StatelessWidget {
                   AdwActionRow(
                     leading: const Icon(Icons.battery_std_rounded),
                     title: 'Battery',
-                    subtitle: device.battery.hasInfo ? (device.battery.isCharging ? 'Charging' : 'Discharging') : 'Not reported by peer',
+                    subtitle: switch (device.battery) {
+                      // A stale reading is labelled as such rather than shown as live.
+                      final battery when !battery.hasInfo =>
+                        device.isLocalSend ? 'LocalSend devices do not share battery status' : 'Not shared by this device',
+                      final battery when battery.isStale => 'Last known before disconnecting',
+                      final battery when battery.isFull => 'Charged',
+                      final battery when battery.isCharging => 'Charging',
+                      _ => 'On battery',
+                    },
                     trailing: Text(
                       device.battery.displayString,
                       style: RelayTypography.body(palette.textSecondary, isGnome: true),

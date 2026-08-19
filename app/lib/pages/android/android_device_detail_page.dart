@@ -6,6 +6,7 @@ import 'package:localsend_app/config/relay_brand.dart';
 import 'package:localsend_app/model/cross_file.dart';
 import 'package:localsend_app/model/ui/relay_device_vm.dart';
 import 'package:localsend_app/pages/android/android_clipboard_sheet.dart';
+import 'package:localsend_app/pages/android/android_continuity_section.dart';
 import 'package:localsend_app/pages/android/android_messages_page.dart';
 import 'package:localsend_app/pages/gnome/gnome_diagnostics_dialog.dart';
 import 'package:localsend_app/pages/relay_home_vm.dart';
@@ -252,7 +253,7 @@ class AndroidDeviceDetailPage extends StatelessWidget {
               TextButton.icon(
                 onPressed: () => unawaited(context.push(() => AndroidMessagesPage(device: device))),
                 icon: const Icon(Icons.chat_bubble_outline_rounded),
-                label: const Text('Messages — coming soon'),
+                label: const Text('Messages'),
               ),
               TextButton.icon(
                 onPressed: () => unawaited(
@@ -262,10 +263,14 @@ class AndroidDeviceDetailPage extends StatelessWidget {
                   ),
                 ),
                 icon: const Icon(Icons.content_paste_outlined),
-                label: const Text('Clipboard — coming soon'),
+                label: const Text('Clipboard'),
               ),
             ],
           ),
+
+          // Per-device continuity consent. Absent for LocalSend peers, which
+          // never receive continuity capabilities.
+          AndroidContinuitySection(device: device),
 
           const SizedBox(height: 24),
 

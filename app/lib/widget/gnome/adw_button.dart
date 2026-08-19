@@ -99,7 +99,8 @@ class AdwButton extends StatelessWidget {
 
     final radius = isPill ? BorderRadius.circular(20) : BorderRadius.circular(8);
 
-    Widget content = child ??
+    Widget content =
+        child ??
         Row(
           mainAxisSize: MainAxisSize.min,
           mainAxisAlignment: MainAxisAlignment.center,

@@ -38,6 +38,7 @@ android {
 
     sourceSets {
         main.java.srcDirs += 'src/main/kotlin'
+        test.java.srcDirs += 'src/test/kotlin'
     }
 
     defaultConfig {
@@ -96,6 +97,13 @@ android {
 
 flutter {
     source '../..'
+}
+
+// Continuity's Android integrations sit behind narrow interfaces so their
+// behaviour can be exercised with fakes on a plain JVM, without a device.
+// Test-only configuration: nothing here reaches a release artifact.
+dependencies {
+    testImplementation 'junit:junit:4.13.2'
 }
 
 // To comply with F-Droid version code schema

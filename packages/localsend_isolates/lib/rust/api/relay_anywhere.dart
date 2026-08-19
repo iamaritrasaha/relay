@@ -9,7 +9,7 @@ import 'package:localsend_isolates/rust/frb_generated.dart';
 
 part 'relay_anywhere.freezed.dart';
 
-// These functions are ignored because they are not marked as `pub`: `anywhere_listener`, `anywhere_runtime`, `file_spec`, `finish`, `map_event`, `map_failure`, `map_listener_event`, `session_cancellation`
+// These functions are ignored because they are not marked as `pub`: `anywhere_listener_endpoint`, `anywhere_listener`, `anywhere_runtime`, `file_spec`, `finish`, `map_event`, `map_failure`, `map_listener_event`, `session_cancellation`
 // These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `RsRelayAnywhereSaveTarget`
 // These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `from`
 

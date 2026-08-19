@@ -61,6 +61,21 @@ pub trait TrustDirectory {
     fn lookup(&self, relay_id: &RelayId) -> TrustRecord;
 }
 
+/// Lets a shared or borrowed directory satisfy the `impl TrustDirectory` bounds
+/// used by the authorization entry points. Purely a forwarding impl: it adds no
+/// way to construct trust.
+impl<T: TrustDirectory + ?Sized> TrustDirectory for &T {
+    fn lookup(&self, relay_id: &RelayId) -> TrustRecord {
+        (**self).lookup(relay_id)
+    }
+}
+
+impl<T: TrustDirectory + ?Sized> TrustDirectory for std::sync::Arc<T> {
+    fn lookup(&self, relay_id: &RelayId) -> TrustRecord {
+        (**self).lookup(relay_id)
+    }
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum TrustRecord {
     Unknown,

@@ -11,6 +11,7 @@ import 'package:localsend_app/pages/gnome/gnome_device_detail_view.dart';
 import 'package:localsend_app/pages/gnome/gnome_device_sidebar.dart';
 import 'package:localsend_app/pages/gnome/gnome_diagnostics_dialog.dart';
 import 'package:localsend_app/pages/gnome/gnome_messages_view.dart';
+import 'package:localsend_app/pages/gnome/gnome_phone_view.dart';
 import 'package:localsend_app/pages/gnome/gnome_settings_view.dart';
 import 'package:localsend_app/pages/relay_home_vm.dart';
 import 'package:localsend_app/provider/network/nearby_devices_provider.dart';
@@ -31,6 +32,7 @@ enum GnomeSubView {
   overview,
   clipboard,
   messages,
+  phone,
   activity,
   settings,
 }
@@ -201,6 +203,7 @@ class _GnomeShellState extends State<GnomeShell> with Refena {
       GnomeSubView.activity => 'Activity',
       GnomeSubView.clipboard => 'Clipboard',
       GnomeSubView.messages => 'Messages',
+      GnomeSubView.phone => 'Phone',
       GnomeSubView.overview => selectedDevice?.alias ?? 'Relay',
     };
   }
@@ -246,6 +249,13 @@ class _GnomeShellState extends State<GnomeShell> with Refena {
       );
     }
 
+    if (_subView == GnomeSubView.phone) {
+      return GnomePhoneView(
+        device: selectedDevice,
+        onBack: () => setState(() => _subView = GnomeSubView.overview),
+      );
+    }
+
     return GnomeDeviceDetailView(
       device: selectedDevice,
       activeTransfer: widget.vm.activeTransfer,
@@ -253,6 +263,7 @@ class _GnomeShellState extends State<GnomeShell> with Refena {
       onSendFolder: () => _pickAndSendFolder(selectedDevice),
       onOpenClipboard: () => setState(() => _subView = GnomeSubView.clipboard),
       onOpenMessages: () => setState(() => _subView = GnomeSubView.messages),
+      onOpenPhone: () => setState(() => _subView = GnomeSubView.phone),
       onOpenDiagnostics: () => _openDiagnostics(selectedDevice),
       onCancelTransfer: () => _cancelTransfer(),
     );

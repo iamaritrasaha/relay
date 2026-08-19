@@ -8,6 +8,7 @@ import 'dart:convert';
 
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 import 'package:localsend_isolates/rust/api/cancel.dart';
+import 'package:localsend_isolates/rust/api/continuity.dart';
 import 'package:localsend_isolates/rust/api/crypto.dart';
 import 'package:localsend_isolates/rust/api/discovery.dart';
 import 'package:localsend_isolates/rust/api/filename.dart';
@@ -78,7 +79,7 @@ class RustLib extends BaseEntrypoint<RustLibApi, RustLibApiImpl, RustLibWire> {
   String get codegenVersion => '2.12.0';
 
   @override
-  int get rustContentHash => 2122192996;
+  int get rustContentHash => 1845144507;
 
   static const kDefaultExternalLibraryLoaderConfig = ExternalLibraryLoaderConfig(
     stem: 'rust_lib_localsend_app',
@@ -273,6 +274,119 @@ abstract class RustLibApi extends BaseApi {
     required String privateKey,
     required FutureOr<void> Function(LsSignalingConnection) onConnection,
   });
+
+  void crateApiContinuityContinuityAnswerAck({required BigInt requestId});
+
+  void crateApiContinuityContinuityAnswerCallAction({required BigInt requestId, required bool accepted, required String reason});
+
+  void crateApiContinuityContinuityAnswerConversations({
+    required BigInt requestId,
+    required List<RsSmsConversation> conversations,
+    required bool hasMore,
+  });
+
+  void crateApiContinuityContinuityAnswerMessages({
+    required BigInt requestId,
+    required String conversationId,
+    required List<RsSmsMessage> messages,
+    required bool hasMore,
+  });
+
+  void crateApiContinuityContinuityAnswerSmsFailed({required BigInt requestId, required String reason});
+
+  void crateApiContinuityContinuityAnswerSmsSent({required BigInt requestId, String? messageId});
+
+  void crateApiContinuityContinuityAnswerUnavailable({required BigInt requestId, required bool permissionRequired, required String detail});
+
+  Future<bool> crateApiContinuityContinuityAnyCapabilityEnabled();
+
+  Future<bool> crateApiContinuityContinuityCallAction({
+    required String relayId,
+    required String requestId,
+    required RsCallAction action,
+    String? address,
+  });
+
+  Future<void> crateApiContinuityContinuityConnectDevice({required List<int> privateKeyPem, required String relayId, required String remoteAddress});
+
+  List<String> crateApiContinuityContinuityConnectedDevices();
+
+  Future<void> crateApiContinuityContinuityDisableCapability({required String relayId, required RsContinuityCapability capability});
+
+  void crateApiContinuityContinuityDisconnectAll();
+
+  void crateApiContinuityContinuityDisconnectDevice({required String relayId});
+
+  Future<bool> crateApiContinuityContinuityDismissRemoteNotification({required String relayId, required String key});
+
+  Future<void> crateApiContinuityContinuityEnableCapability({required String relayId, required RsContinuityCapability capability});
+
+  Stream<RsContinuityEvent> crateApiContinuityContinuityEvents();
+
+  Future<String> crateApiContinuityContinuityExportPermissions();
+
+  Stream<RsContinuityHostRequest> crateApiContinuityContinuityHostRequests();
+
+  Future<bool> crateApiContinuityContinuityImportPermissions({required String json});
+
+  bool crateApiContinuityContinuityIsConnected({required String relayId});
+
+  Future<void> crateApiContinuityContinuityPublishBattery({int? percentage, required RsChargingState charging});
+
+  Future<void> crateApiContinuityContinuityPublishCallState({
+    required RsCallPhase phase,
+    String? address,
+    String? displayName,
+    BigInt? activeDurationMs,
+  });
+
+  Future<void> crateApiContinuityContinuityPublishIncomingMessage({
+    required String conversationId,
+    required String messageId,
+    String? address,
+    required String body,
+    required BigInt sentAtMs,
+  });
+
+  Future<void> crateApiContinuityContinuityPublishNotification({
+    required String key,
+    required String appLabel,
+    String? title,
+    String? body,
+    required BigInt postedAtMs,
+    required bool clearable,
+  });
+
+  Future<void> crateApiContinuityContinuityPublishNotificationRemoved({required String key});
+
+  Future<bool> crateApiContinuityContinuityRequestConversations({required String relayId, required int limit, BigInt? beforeMs});
+
+  Future<bool> crateApiContinuityContinuityRequestMessages({
+    required String relayId,
+    required String conversationId,
+    required int limit,
+    BigInt? beforeMs,
+  });
+
+  Future<bool> crateApiContinuityContinuitySendSms({
+    required String relayId,
+    required String requestId,
+    String? conversationId,
+    required List<String> recipients,
+    required String body,
+  });
+
+  Future<void> crateApiContinuityContinuitySetClipboardMode({required String relayId, required RsClipboardMode mode});
+
+  void crateApiContinuityContinuitySetDeviceTrust({required List<String> trusted, required List<String> blocked});
+
+  void crateApiContinuityContinuitySetLocalCapabilities({
+    required String deviceLabel,
+    required String platform,
+    required List<RsCapabilityEntry> entries,
+  });
+
+  Future<void> crateApiContinuityContinuityShareClipboard({required String text, required bool explicit, required String originRelayId});
 
   RsCancellationToken crateApiCancelCreateCancellationToken();
 
@@ -1926,12 +2040,935 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   );
 
   @override
+  void crateApiContinuityContinuityAnswerAck({required BigInt requestId}) {
+    return handler.executeSync(
+      SyncTask(
+        callFfi: () {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_u_64(requestId, serializer);
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 49)!;
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_unit,
+          decodeErrorData: null,
+        ),
+        constMeta: kCrateApiContinuityContinuityAnswerAckConstMeta,
+        argValues: [requestId],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiContinuityContinuityAnswerAckConstMeta => const TaskConstMeta(
+    debugName: 'continuity_answer_ack',
+    argNames: ['requestId'],
+  );
+
+  @override
+  void crateApiContinuityContinuityAnswerCallAction({required BigInt requestId, required bool accepted, required String reason}) {
+    return handler.executeSync(
+      SyncTask(
+        callFfi: () {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_u_64(requestId, serializer);
+          sse_encode_bool(accepted, serializer);
+          sse_encode_String(reason, serializer);
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 50)!;
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_unit,
+          decodeErrorData: null,
+        ),
+        constMeta: kCrateApiContinuityContinuityAnswerCallActionConstMeta,
+        argValues: [requestId, accepted, reason],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiContinuityContinuityAnswerCallActionConstMeta => const TaskConstMeta(
+    debugName: 'continuity_answer_call_action',
+    argNames: ['requestId', 'accepted', 'reason'],
+  );
+
+  @override
+  void crateApiContinuityContinuityAnswerConversations({
+    required BigInt requestId,
+    required List<RsSmsConversation> conversations,
+    required bool hasMore,
+  }) {
+    return handler.executeSync(
+      SyncTask(
+        callFfi: () {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_u_64(requestId, serializer);
+          sse_encode_list_rs_sms_conversation(conversations, serializer);
+          sse_encode_bool(hasMore, serializer);
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 51)!;
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_unit,
+          decodeErrorData: null,
+        ),
+        constMeta: kCrateApiContinuityContinuityAnswerConversationsConstMeta,
+        argValues: [requestId, conversations, hasMore],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiContinuityContinuityAnswerConversationsConstMeta => const TaskConstMeta(
+    debugName: 'continuity_answer_conversations',
+    argNames: ['requestId', 'conversations', 'hasMore'],
+  );
+
+  @override
+  void crateApiContinuityContinuityAnswerMessages({
+    required BigInt requestId,
+    required String conversationId,
+    required List<RsSmsMessage> messages,
+    required bool hasMore,
+  }) {
+    return handler.executeSync(
+      SyncTask(
+        callFfi: () {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_u_64(requestId, serializer);
+          sse_encode_String(conversationId, serializer);
+          sse_encode_list_rs_sms_message(messages, serializer);
+          sse_encode_bool(hasMore, serializer);
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 52)!;
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_unit,
+          decodeErrorData: null,
+        ),
+        constMeta: kCrateApiContinuityContinuityAnswerMessagesConstMeta,
+        argValues: [requestId, conversationId, messages, hasMore],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiContinuityContinuityAnswerMessagesConstMeta => const TaskConstMeta(
+    debugName: 'continuity_answer_messages',
+    argNames: ['requestId', 'conversationId', 'messages', 'hasMore'],
+  );
+
+  @override
+  void crateApiContinuityContinuityAnswerSmsFailed({required BigInt requestId, required String reason}) {
+    return handler.executeSync(
+      SyncTask(
+        callFfi: () {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_u_64(requestId, serializer);
+          sse_encode_String(reason, serializer);
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 53)!;
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_unit,
+          decodeErrorData: null,
+        ),
+        constMeta: kCrateApiContinuityContinuityAnswerSmsFailedConstMeta,
+        argValues: [requestId, reason],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiContinuityContinuityAnswerSmsFailedConstMeta => const TaskConstMeta(
+    debugName: 'continuity_answer_sms_failed',
+    argNames: ['requestId', 'reason'],
+  );
+
+  @override
+  void crateApiContinuityContinuityAnswerSmsSent({required BigInt requestId, String? messageId}) {
+    return handler.executeSync(
+      SyncTask(
+        callFfi: () {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_u_64(requestId, serializer);
+          sse_encode_opt_String(messageId, serializer);
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 54)!;
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_unit,
+          decodeErrorData: null,
+        ),
+        constMeta: kCrateApiContinuityContinuityAnswerSmsSentConstMeta,
+        argValues: [requestId, messageId],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiContinuityContinuityAnswerSmsSentConstMeta => const TaskConstMeta(
+    debugName: 'continuity_answer_sms_sent',
+    argNames: ['requestId', 'messageId'],
+  );
+
+  @override
+  void crateApiContinuityContinuityAnswerUnavailable({required BigInt requestId, required bool permissionRequired, required String detail}) {
+    return handler.executeSync(
+      SyncTask(
+        callFfi: () {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_u_64(requestId, serializer);
+          sse_encode_bool(permissionRequired, serializer);
+          sse_encode_String(detail, serializer);
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 55)!;
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_unit,
+          decodeErrorData: null,
+        ),
+        constMeta: kCrateApiContinuityContinuityAnswerUnavailableConstMeta,
+        argValues: [requestId, permissionRequired, detail],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiContinuityContinuityAnswerUnavailableConstMeta => const TaskConstMeta(
+    debugName: 'continuity_answer_unavailable',
+    argNames: ['requestId', 'permissionRequired', 'detail'],
+  );
+
+  @override
+  Future<bool> crateApiContinuityContinuityAnyCapabilityEnabled() {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 56, port: port_);
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_bool,
+          decodeErrorData: null,
+        ),
+        constMeta: kCrateApiContinuityContinuityAnyCapabilityEnabledConstMeta,
+        argValues: [],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiContinuityContinuityAnyCapabilityEnabledConstMeta => const TaskConstMeta(
+    debugName: 'continuity_any_capability_enabled',
+    argNames: [],
+  );
+
+  @override
+  Future<bool> crateApiContinuityContinuityCallAction({
+    required String relayId,
+    required String requestId,
+    required RsCallAction action,
+    String? address,
+  }) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_String(relayId, serializer);
+          sse_encode_String(requestId, serializer);
+          sse_encode_rs_call_action(action, serializer);
+          sse_encode_opt_String(address, serializer);
+          pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 57, port: port_);
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_bool,
+          decodeErrorData: null,
+        ),
+        constMeta: kCrateApiContinuityContinuityCallActionConstMeta,
+        argValues: [relayId, requestId, action, address],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiContinuityContinuityCallActionConstMeta => const TaskConstMeta(
+    debugName: 'continuity_call_action',
+    argNames: ['relayId', 'requestId', 'action', 'address'],
+  );
+
+  @override
+  Future<void> crateApiContinuityContinuityConnectDevice({required List<int> privateKeyPem, required String relayId, required String remoteAddress}) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_list_prim_u_8_loose(privateKeyPem, serializer);
+          sse_encode_String(relayId, serializer);
+          sse_encode_String(remoteAddress, serializer);
+          pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 58, port: port_);
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_unit,
+          decodeErrorData: sse_decode_AnyhowException,
+        ),
+        constMeta: kCrateApiContinuityContinuityConnectDeviceConstMeta,
+        argValues: [privateKeyPem, relayId, remoteAddress],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiContinuityContinuityConnectDeviceConstMeta => const TaskConstMeta(
+    debugName: 'continuity_connect_device',
+    argNames: ['privateKeyPem', 'relayId', 'remoteAddress'],
+  );
+
+  @override
+  List<String> crateApiContinuityContinuityConnectedDevices() {
+    return handler.executeSync(
+      SyncTask(
+        callFfi: () {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 59)!;
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_list_String,
+          decodeErrorData: null,
+        ),
+        constMeta: kCrateApiContinuityContinuityConnectedDevicesConstMeta,
+        argValues: [],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiContinuityContinuityConnectedDevicesConstMeta => const TaskConstMeta(
+    debugName: 'continuity_connected_devices',
+    argNames: [],
+  );
+
+  @override
+  Future<void> crateApiContinuityContinuityDisableCapability({required String relayId, required RsContinuityCapability capability}) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_String(relayId, serializer);
+          sse_encode_rs_continuity_capability(capability, serializer);
+          pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 60, port: port_);
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_unit,
+          decodeErrorData: null,
+        ),
+        constMeta: kCrateApiContinuityContinuityDisableCapabilityConstMeta,
+        argValues: [relayId, capability],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiContinuityContinuityDisableCapabilityConstMeta => const TaskConstMeta(
+    debugName: 'continuity_disable_capability',
+    argNames: ['relayId', 'capability'],
+  );
+
+  @override
+  void crateApiContinuityContinuityDisconnectAll() {
+    return handler.executeSync(
+      SyncTask(
+        callFfi: () {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 61)!;
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_unit,
+          decodeErrorData: null,
+        ),
+        constMeta: kCrateApiContinuityContinuityDisconnectAllConstMeta,
+        argValues: [],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiContinuityContinuityDisconnectAllConstMeta => const TaskConstMeta(
+    debugName: 'continuity_disconnect_all',
+    argNames: [],
+  );
+
+  @override
+  void crateApiContinuityContinuityDisconnectDevice({required String relayId}) {
+    return handler.executeSync(
+      SyncTask(
+        callFfi: () {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_String(relayId, serializer);
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 62)!;
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_unit,
+          decodeErrorData: null,
+        ),
+        constMeta: kCrateApiContinuityContinuityDisconnectDeviceConstMeta,
+        argValues: [relayId],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiContinuityContinuityDisconnectDeviceConstMeta => const TaskConstMeta(
+    debugName: 'continuity_disconnect_device',
+    argNames: ['relayId'],
+  );
+
+  @override
+  Future<bool> crateApiContinuityContinuityDismissRemoteNotification({required String relayId, required String key}) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_String(relayId, serializer);
+          sse_encode_String(key, serializer);
+          pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 63, port: port_);
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_bool,
+          decodeErrorData: null,
+        ),
+        constMeta: kCrateApiContinuityContinuityDismissRemoteNotificationConstMeta,
+        argValues: [relayId, key],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiContinuityContinuityDismissRemoteNotificationConstMeta => const TaskConstMeta(
+    debugName: 'continuity_dismiss_remote_notification',
+    argNames: ['relayId', 'key'],
+  );
+
+  @override
+  Future<void> crateApiContinuityContinuityEnableCapability({required String relayId, required RsContinuityCapability capability}) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_String(relayId, serializer);
+          sse_encode_rs_continuity_capability(capability, serializer);
+          pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 64, port: port_);
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_unit,
+          decodeErrorData: null,
+        ),
+        constMeta: kCrateApiContinuityContinuityEnableCapabilityConstMeta,
+        argValues: [relayId, capability],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiContinuityContinuityEnableCapabilityConstMeta => const TaskConstMeta(
+    debugName: 'continuity_enable_capability',
+    argNames: ['relayId', 'capability'],
+  );
+
+  @override
+  Stream<RsContinuityEvent> crateApiContinuityContinuityEvents() {
+    final sink = RustStreamSink<RsContinuityEvent>();
+    unawaited(
+      handler.executeNormal(
+        NormalTask(
+          callFfi: (port_) {
+            final serializer = SseSerializer(generalizedFrbRustBinding);
+            sse_encode_StreamSink_rs_continuity_event_Sse(sink, serializer);
+            pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 65, port: port_);
+          },
+          codec: SseCodec(
+            decodeSuccessData: sse_decode_unit,
+            decodeErrorData: null,
+          ),
+          constMeta: kCrateApiContinuityContinuityEventsConstMeta,
+          argValues: [sink],
+          apiImpl: this,
+        ),
+      ),
+    );
+    return sink.stream;
+  }
+
+  TaskConstMeta get kCrateApiContinuityContinuityEventsConstMeta => const TaskConstMeta(
+    debugName: 'continuity_events',
+    argNames: ['sink'],
+  );
+
+  @override
+  Future<String> crateApiContinuityContinuityExportPermissions() {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 66, port: port_);
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_String,
+          decodeErrorData: null,
+        ),
+        constMeta: kCrateApiContinuityContinuityExportPermissionsConstMeta,
+        argValues: [],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiContinuityContinuityExportPermissionsConstMeta => const TaskConstMeta(
+    debugName: 'continuity_export_permissions',
+    argNames: [],
+  );
+
+  @override
+  Stream<RsContinuityHostRequest> crateApiContinuityContinuityHostRequests() {
+    final sink = RustStreamSink<RsContinuityHostRequest>();
+    unawaited(
+      handler.executeNormal(
+        NormalTask(
+          callFfi: (port_) {
+            final serializer = SseSerializer(generalizedFrbRustBinding);
+            sse_encode_StreamSink_rs_continuity_host_request_Sse(sink, serializer);
+            pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 67, port: port_);
+          },
+          codec: SseCodec(
+            decodeSuccessData: sse_decode_unit,
+            decodeErrorData: null,
+          ),
+          constMeta: kCrateApiContinuityContinuityHostRequestsConstMeta,
+          argValues: [sink],
+          apiImpl: this,
+        ),
+      ),
+    );
+    return sink.stream;
+  }
+
+  TaskConstMeta get kCrateApiContinuityContinuityHostRequestsConstMeta => const TaskConstMeta(
+    debugName: 'continuity_host_requests',
+    argNames: ['sink'],
+  );
+
+  @override
+  Future<bool> crateApiContinuityContinuityImportPermissions({required String json}) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_String(json, serializer);
+          pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 68, port: port_);
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_bool,
+          decodeErrorData: null,
+        ),
+        constMeta: kCrateApiContinuityContinuityImportPermissionsConstMeta,
+        argValues: [json],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiContinuityContinuityImportPermissionsConstMeta => const TaskConstMeta(
+    debugName: 'continuity_import_permissions',
+    argNames: ['json'],
+  );
+
+  @override
+  bool crateApiContinuityContinuityIsConnected({required String relayId}) {
+    return handler.executeSync(
+      SyncTask(
+        callFfi: () {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_String(relayId, serializer);
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 69)!;
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_bool,
+          decodeErrorData: null,
+        ),
+        constMeta: kCrateApiContinuityContinuityIsConnectedConstMeta,
+        argValues: [relayId],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiContinuityContinuityIsConnectedConstMeta => const TaskConstMeta(
+    debugName: 'continuity_is_connected',
+    argNames: ['relayId'],
+  );
+
+  @override
+  Future<void> crateApiContinuityContinuityPublishBattery({int? percentage, required RsChargingState charging}) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_opt_box_autoadd_u_32(percentage, serializer);
+          sse_encode_rs_charging_state(charging, serializer);
+          pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 70, port: port_);
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_unit,
+          decodeErrorData: null,
+        ),
+        constMeta: kCrateApiContinuityContinuityPublishBatteryConstMeta,
+        argValues: [percentage, charging],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiContinuityContinuityPublishBatteryConstMeta => const TaskConstMeta(
+    debugName: 'continuity_publish_battery',
+    argNames: ['percentage', 'charging'],
+  );
+
+  @override
+  Future<void> crateApiContinuityContinuityPublishCallState({
+    required RsCallPhase phase,
+    String? address,
+    String? displayName,
+    BigInt? activeDurationMs,
+  }) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_rs_call_phase(phase, serializer);
+          sse_encode_opt_String(address, serializer);
+          sse_encode_opt_String(displayName, serializer);
+          sse_encode_opt_box_autoadd_u_64(activeDurationMs, serializer);
+          pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 71, port: port_);
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_unit,
+          decodeErrorData: null,
+        ),
+        constMeta: kCrateApiContinuityContinuityPublishCallStateConstMeta,
+        argValues: [phase, address, displayName, activeDurationMs],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiContinuityContinuityPublishCallStateConstMeta => const TaskConstMeta(
+    debugName: 'continuity_publish_call_state',
+    argNames: ['phase', 'address', 'displayName', 'activeDurationMs'],
+  );
+
+  @override
+  Future<void> crateApiContinuityContinuityPublishIncomingMessage({
+    required String conversationId,
+    required String messageId,
+    String? address,
+    required String body,
+    required BigInt sentAtMs,
+  }) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_String(conversationId, serializer);
+          sse_encode_String(messageId, serializer);
+          sse_encode_opt_String(address, serializer);
+          sse_encode_String(body, serializer);
+          sse_encode_u_64(sentAtMs, serializer);
+          pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 72, port: port_);
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_unit,
+          decodeErrorData: null,
+        ),
+        constMeta: kCrateApiContinuityContinuityPublishIncomingMessageConstMeta,
+        argValues: [conversationId, messageId, address, body, sentAtMs],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiContinuityContinuityPublishIncomingMessageConstMeta => const TaskConstMeta(
+    debugName: 'continuity_publish_incoming_message',
+    argNames: ['conversationId', 'messageId', 'address', 'body', 'sentAtMs'],
+  );
+
+  @override
+  Future<void> crateApiContinuityContinuityPublishNotification({
+    required String key,
+    required String appLabel,
+    String? title,
+    String? body,
+    required BigInt postedAtMs,
+    required bool clearable,
+  }) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_String(key, serializer);
+          sse_encode_String(appLabel, serializer);
+          sse_encode_opt_String(title, serializer);
+          sse_encode_opt_String(body, serializer);
+          sse_encode_u_64(postedAtMs, serializer);
+          sse_encode_bool(clearable, serializer);
+          pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 73, port: port_);
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_unit,
+          decodeErrorData: null,
+        ),
+        constMeta: kCrateApiContinuityContinuityPublishNotificationConstMeta,
+        argValues: [key, appLabel, title, body, postedAtMs, clearable],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiContinuityContinuityPublishNotificationConstMeta => const TaskConstMeta(
+    debugName: 'continuity_publish_notification',
+    argNames: ['key', 'appLabel', 'title', 'body', 'postedAtMs', 'clearable'],
+  );
+
+  @override
+  Future<void> crateApiContinuityContinuityPublishNotificationRemoved({required String key}) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_String(key, serializer);
+          pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 74, port: port_);
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_unit,
+          decodeErrorData: null,
+        ),
+        constMeta: kCrateApiContinuityContinuityPublishNotificationRemovedConstMeta,
+        argValues: [key],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiContinuityContinuityPublishNotificationRemovedConstMeta => const TaskConstMeta(
+    debugName: 'continuity_publish_notification_removed',
+    argNames: ['key'],
+  );
+
+  @override
+  Future<bool> crateApiContinuityContinuityRequestConversations({required String relayId, required int limit, BigInt? beforeMs}) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_String(relayId, serializer);
+          sse_encode_u_32(limit, serializer);
+          sse_encode_opt_box_autoadd_u_64(beforeMs, serializer);
+          pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 75, port: port_);
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_bool,
+          decodeErrorData: null,
+        ),
+        constMeta: kCrateApiContinuityContinuityRequestConversationsConstMeta,
+        argValues: [relayId, limit, beforeMs],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiContinuityContinuityRequestConversationsConstMeta => const TaskConstMeta(
+    debugName: 'continuity_request_conversations',
+    argNames: ['relayId', 'limit', 'beforeMs'],
+  );
+
+  @override
+  Future<bool> crateApiContinuityContinuityRequestMessages({
+    required String relayId,
+    required String conversationId,
+    required int limit,
+    BigInt? beforeMs,
+  }) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_String(relayId, serializer);
+          sse_encode_String(conversationId, serializer);
+          sse_encode_u_32(limit, serializer);
+          sse_encode_opt_box_autoadd_u_64(beforeMs, serializer);
+          pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 76, port: port_);
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_bool,
+          decodeErrorData: null,
+        ),
+        constMeta: kCrateApiContinuityContinuityRequestMessagesConstMeta,
+        argValues: [relayId, conversationId, limit, beforeMs],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiContinuityContinuityRequestMessagesConstMeta => const TaskConstMeta(
+    debugName: 'continuity_request_messages',
+    argNames: ['relayId', 'conversationId', 'limit', 'beforeMs'],
+  );
+
+  @override
+  Future<bool> crateApiContinuityContinuitySendSms({
+    required String relayId,
+    required String requestId,
+    String? conversationId,
+    required List<String> recipients,
+    required String body,
+  }) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_String(relayId, serializer);
+          sse_encode_String(requestId, serializer);
+          sse_encode_opt_String(conversationId, serializer);
+          sse_encode_list_String(recipients, serializer);
+          sse_encode_String(body, serializer);
+          pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 77, port: port_);
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_bool,
+          decodeErrorData: null,
+        ),
+        constMeta: kCrateApiContinuityContinuitySendSmsConstMeta,
+        argValues: [relayId, requestId, conversationId, recipients, body],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiContinuityContinuitySendSmsConstMeta => const TaskConstMeta(
+    debugName: 'continuity_send_sms',
+    argNames: ['relayId', 'requestId', 'conversationId', 'recipients', 'body'],
+  );
+
+  @override
+  Future<void> crateApiContinuityContinuitySetClipboardMode({required String relayId, required RsClipboardMode mode}) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_String(relayId, serializer);
+          sse_encode_rs_clipboard_mode(mode, serializer);
+          pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 78, port: port_);
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_unit,
+          decodeErrorData: null,
+        ),
+        constMeta: kCrateApiContinuityContinuitySetClipboardModeConstMeta,
+        argValues: [relayId, mode],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiContinuityContinuitySetClipboardModeConstMeta => const TaskConstMeta(
+    debugName: 'continuity_set_clipboard_mode',
+    argNames: ['relayId', 'mode'],
+  );
+
+  @override
+  void crateApiContinuityContinuitySetDeviceTrust({required List<String> trusted, required List<String> blocked}) {
+    return handler.executeSync(
+      SyncTask(
+        callFfi: () {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_list_String(trusted, serializer);
+          sse_encode_list_String(blocked, serializer);
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 79)!;
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_unit,
+          decodeErrorData: null,
+        ),
+        constMeta: kCrateApiContinuityContinuitySetDeviceTrustConstMeta,
+        argValues: [trusted, blocked],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiContinuityContinuitySetDeviceTrustConstMeta => const TaskConstMeta(
+    debugName: 'continuity_set_device_trust',
+    argNames: ['trusted', 'blocked'],
+  );
+
+  @override
+  void crateApiContinuityContinuitySetLocalCapabilities({
+    required String deviceLabel,
+    required String platform,
+    required List<RsCapabilityEntry> entries,
+  }) {
+    return handler.executeSync(
+      SyncTask(
+        callFfi: () {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_String(deviceLabel, serializer);
+          sse_encode_String(platform, serializer);
+          sse_encode_list_rs_capability_entry(entries, serializer);
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 80)!;
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_unit,
+          decodeErrorData: null,
+        ),
+        constMeta: kCrateApiContinuityContinuitySetLocalCapabilitiesConstMeta,
+        argValues: [deviceLabel, platform, entries],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiContinuityContinuitySetLocalCapabilitiesConstMeta => const TaskConstMeta(
+    debugName: 'continuity_set_local_capabilities',
+    argNames: ['deviceLabel', 'platform', 'entries'],
+  );
+
+  @override
+  Future<void> crateApiContinuityContinuityShareClipboard({required String text, required bool explicit, required String originRelayId}) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_String(text, serializer);
+          sse_encode_bool(explicit, serializer);
+          sse_encode_String(originRelayId, serializer);
+          pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 81, port: port_);
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_unit,
+          decodeErrorData: null,
+        ),
+        constMeta: kCrateApiContinuityContinuityShareClipboardConstMeta,
+        argValues: [text, explicit, originRelayId],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiContinuityContinuityShareClipboardConstMeta => const TaskConstMeta(
+    debugName: 'continuity_share_clipboard',
+    argNames: ['text', 'explicit', 'originRelayId'],
+  );
+
+  @override
   RsCancellationToken crateApiCancelCreateCancellationToken() {
     return handler.executeSync(
       SyncTask(
         callFfi: () {
           final serializer = SseSerializer(generalizedFrbRustBinding);
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 49)!;
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 82)!;
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerRsCancellationToken,
@@ -1966,7 +3003,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           sse_encode_ls_http_client_version(version, serializer);
           sse_encode_opt_String(expectedFingerprint, serializer);
           sse_encode_opt_box_autoadd_u_32(timeoutMs, serializer);
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 50)!;
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 83)!;
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerRsHttpClient,
@@ -1990,7 +3027,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       NormalTask(
         callFfi: (port_) {
           final serializer = SseSerializer(generalizedFrbRustBinding);
-          pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 51, port: port_);
+          pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 84, port: port_);
         },
         codec: SseCodec(
           decodeSuccessData:
@@ -2015,7 +3052,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       NormalTask(
         callFfi: (port_) {
           final serializer = SseSerializer(generalizedFrbRustBinding);
-          pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 52, port: port_);
+          pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 85, port: port_);
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_unit,
@@ -2039,7 +3076,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       NormalTask(
         callFfi: (port_) {
           final serializer = SseSerializer(generalizedFrbRustBinding);
-          pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 53, port: port_);
+          pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 86, port: port_);
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_key_pair,
@@ -2063,7 +3100,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       NormalTask(
         callFfi: (port_) {
           final serializer = SseSerializer(generalizedFrbRustBinding);
-          pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 54, port: port_);
+          pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 87, port: port_);
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_relay_identity_material,
@@ -2087,7 +3124,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       NormalTask(
         callFfi: (port_) {
           final serializer = SseSerializer(generalizedFrbRustBinding);
-          pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 55, port: port_);
+          pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 88, port: port_);
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_security_context,
@@ -2118,7 +3155,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
             sse_encode_opt_box_autoadd_i_32(fileDescriptor, serializer);
             sse_encode_opt_list_prim_u_8_strict(bytes, serializer);
             sse_encode_Auto_Ref_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerRsCancellationToken(cancelToken, serializer);
-            pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 56, port: port_);
+            pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 89, port: port_);
           },
           codec: SseCodec(
             decodeSuccessData: sse_decode_unit,
@@ -2145,7 +3182,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         callFfi: () {
           final serializer = SseSerializer(generalizedFrbRustBinding);
           sse_encode_String(name, serializer);
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 57)!;
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 90)!;
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_bool,
@@ -2170,7 +3207,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         callFfi: (port_) {
           final serializer = SseSerializer(generalizedFrbRustBinding);
           sse_encode_String(path, serializer);
-          pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 58, port: port_);
+          pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 91, port: port_);
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_opt_box_autoadd_file_metadata,
@@ -2208,7 +3245,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
             sse_encode_String(address, serializer);
             sse_encode_rs_relay_path_preference(pathPreference, serializer);
             sse_encode_StreamSink_rs_relay_anywhere_event_Sse(eventSink, serializer);
-            pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 59, port: port_);
+            pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 92, port: port_);
           },
           codec: SseCodec(
             decodeSuccessData: sse_decode_unit,
@@ -2235,7 +3272,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         callFfi: () {
           final serializer = SseSerializer(generalizedFrbRustBinding);
           sse_encode_u_64(sessionId, serializer);
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 60)!;
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 93)!;
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_bool,
@@ -2260,7 +3297,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         callFfi: () {
           final serializer = SseSerializer(generalizedFrbRustBinding);
           sse_encode_u_64(sessionId, serializer);
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 61)!;
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 94)!;
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_bool,
@@ -2284,7 +3321,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       SyncTask(
         callFfi: () {
           final serializer = SseSerializer(generalizedFrbRustBinding);
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 62)!;
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 95)!;
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_list_prim_u_8_strict,
@@ -2308,7 +3345,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       SyncTask(
         callFfi: () {
           final serializer = SseSerializer(generalizedFrbRustBinding);
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 63)!;
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 96)!;
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_opt_String,
@@ -2332,7 +3369,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       SyncTask(
         callFfi: () {
           final serializer = SseSerializer(generalizedFrbRustBinding);
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 64)!;
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 97)!;
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_u_64,
@@ -2356,7 +3393,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       SyncTask(
         callFfi: () {
           final serializer = SseSerializer(generalizedFrbRustBinding);
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 65)!;
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 98)!;
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_u_32,
@@ -2381,7 +3418,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         callFfi: () {
           final serializer = SseSerializer(generalizedFrbRustBinding);
           sse_encode_String(address, serializer);
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 66)!;
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 99)!;
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_rs_relay_address,
@@ -2421,7 +3458,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
             sse_encode_rs_relay_path_preference(pathPreference, serializer);
             sse_encode_opt_String(expectedRemoteRelayId, serializer);
             sse_encode_StreamSink_rs_relay_anywhere_event_Sse(eventSink, serializer);
-            pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 67, port: port_);
+            pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 100, port: port_);
           },
           codec: SseCodec(
             decodeSuccessData: sse_decode_unit,
@@ -2451,7 +3488,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           sse_encode_u_64(transferId, serializer);
           sse_encode_bool(accept, serializer);
           sse_encode_opt_String(targetsJson, serializer);
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 68)!;
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 101)!;
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_unit,
@@ -2493,7 +3530,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
             sse_encode_rs_relay_path_preference(pathPreference, serializer);
             sse_encode_list_rs_relay_anywhere_file(files, serializer);
             sse_encode_StreamSink_rs_relay_anywhere_event_Sse(eventSink, serializer);
-            pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 69, port: port_);
+            pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 102, port: port_);
           },
           codec: SseCodec(
             decodeSuccessData: sse_decode_unit,
@@ -2531,7 +3568,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
             sse_encode_list_prim_u_8_loose(routingKey, serializer);
             sse_encode_String(alias, serializer);
             sse_encode_StreamSink_rs_relay_anywhere_listener_event_Sse(eventSink, serializer);
-            pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 70, port: port_);
+            pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 103, port: port_);
           },
           codec: SseCodec(
             decodeSuccessData: sse_decode_unit,
@@ -2557,7 +3594,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       NormalTask(
         callFfi: (port_) {
           final serializer = SseSerializer(generalizedFrbRustBinding);
-          pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 71, port: port_);
+          pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 104, port: port_);
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_unit,
@@ -2582,7 +3619,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         callFfi: () {
           final serializer = SseSerializer(generalizedFrbRustBinding);
           sse_encode_list_prim_u_8_loose(routingKey, serializer);
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 72)!;
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 105)!;
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_unit,
@@ -2628,7 +3665,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
             sse_encode_opt_String(pin, serializer);
             sse_encode_Auto_Ref_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerRsCancellationToken(cancelToken, serializer);
             sse_encode_StreamSink_rs_relay_transfer_event_Sse(eventSink, serializer);
-            pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 73, port: port_);
+            pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 106, port: port_);
           },
           codec: SseCodec(
             decodeSuccessData: sse_decode_unit,
@@ -2655,7 +3692,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         callFfi: (port_) {
           final serializer = SseSerializer(generalizedFrbRustBinding);
           sse_encode_list_prim_u_8_loose(privateKey, serializer);
-          pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 74, port: port_);
+          pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 107, port: port_);
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_relay_identity_material,
@@ -2680,7 +3717,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         callFfi: () {
           final serializer = SseSerializer(generalizedFrbRustBinding);
           sse_encode_String(name, serializer);
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 75)!;
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 108)!;
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_String,
@@ -2733,7 +3770,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           sse_encode_String(certPem, serializer);
           sse_encode_String(privateKeyPem, serializer);
           sse_encode_u_64(timeoutMs, serializer);
-          pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 76, port: port_);
+          pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 109, port: port_);
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerRsDiscovery,
@@ -2810,7 +3847,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           sse_encode_bool(verifyChecksums, serializer);
           sse_encode_opt_box_autoadd_web_params(web, serializer);
           sse_encode_opt_String(showToken, serializer);
-          pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 77, port: port_);
+          pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 110, port: port_);
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerRsHttpServer,
@@ -2836,7 +3873,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           final serializer = SseSerializer(generalizedFrbRustBinding);
           sse_encode_String(cert, serializer);
           sse_encode_String(publicKey, serializer);
-          pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 78, port: port_);
+          pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 111, port: port_);
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_unit,
@@ -3208,6 +4245,18 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  RustStreamSink<RsContinuityEvent> dco_decode_StreamSink_rs_continuity_event_Sse(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    throw UnimplementedError();
+  }
+
+  @protected
+  RustStreamSink<RsContinuityHostRequest> dco_decode_StreamSink_rs_continuity_host_request_Sse(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    throw UnimplementedError();
+  }
+
+  @protected
   RustStreamSink<RsHashFileEvent> dco_decode_StreamSink_rs_hash_file_event_Sse(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     throw UnimplementedError();
@@ -3372,6 +4421,18 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  RsCallState dco_decode_box_autoadd_rs_call_state(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return dco_decode_rs_call_state(raw);
+  }
+
+  @protected
+  RsCapabilityManifest dco_decode_box_autoadd_rs_capability_manifest(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return dco_decode_rs_capability_manifest(raw);
+  }
+
+  @protected
   RsDiscoveredDevice dco_decode_box_autoadd_rs_discovered_device(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return dco_decode_rs_discovered_device(raw);
@@ -3381,6 +4442,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   RsHttpClientError dco_decode_box_autoadd_rs_http_client_error(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return dco_decode_rs_http_client_error(raw);
+  }
+
+  @protected
+  RsSmsMessage dco_decode_box_autoadd_rs_sms_message(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return dco_decode_rs_sms_message(raw);
   }
 
   @protected
@@ -3399,6 +4466,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   int dco_decode_box_autoadd_u_32(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return raw as int;
+  }
+
+  @protected
+  BigInt dco_decode_box_autoadd_u_64(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return dco_decode_u_64(raw);
   }
 
   @protected
@@ -3570,6 +4643,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  List<RsCapabilityEntry> dco_decode_list_rs_capability_entry(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return (raw as List<dynamic>).map(dco_decode_rs_capability_entry).toList();
+  }
+
+  @protected
   List<RsDeviceChannel> dco_decode_list_rs_device_channel(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return (raw as List<dynamic>).map(dco_decode_rs_device_channel).toList();
@@ -3597,6 +4676,18 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   List<RsRelayTransferFile> dco_decode_list_rs_relay_transfer_file(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return (raw as List<dynamic>).map(dco_decode_rs_relay_transfer_file).toList();
+  }
+
+  @protected
+  List<RsSmsConversation> dco_decode_list_rs_sms_conversation(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return (raw as List<dynamic>).map(dco_decode_rs_sms_conversation).toList();
+  }
+
+  @protected
+  List<RsSmsMessage> dco_decode_list_rs_sms_message(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return (raw as List<dynamic>).map(dco_decode_rs_sms_message).toList();
   }
 
   @protected
@@ -3666,6 +4757,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   int? dco_decode_opt_box_autoadd_u_32(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return raw == null ? null : dco_decode_box_autoadd_u_32(raw);
+  }
+
+  @protected
+  BigInt? dco_decode_opt_box_autoadd_u_64(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return raw == null ? null : dco_decode_box_autoadd_u_64(raw);
   }
 
   @protected
@@ -3867,6 +4964,240 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       publicKey: dco_decode_opt_String(arr[0]),
       body: dco_decode_register_response_dto(arr[1]),
     );
+  }
+
+  @protected
+  RsCallAction dco_decode_rs_call_action(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return RsCallAction.values[raw as int];
+  }
+
+  @protected
+  RsCallPhase dco_decode_rs_call_phase(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return RsCallPhase.values[raw as int];
+  }
+
+  @protected
+  RsCallState dco_decode_rs_call_state(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 4) throw Exception('unexpected arr length: expect 4 but see ${arr.length}');
+    return RsCallState(
+      phase: dco_decode_rs_call_phase(arr[0]),
+      address: dco_decode_opt_String(arr[1]),
+      displayName: dco_decode_opt_String(arr[2]),
+      activeDurationMs: dco_decode_opt_box_autoadd_u_64(arr[3]),
+    );
+  }
+
+  @protected
+  RsCapabilityEntry dco_decode_rs_capability_entry(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 2) throw Exception('unexpected arr length: expect 2 but see ${arr.length}');
+    return RsCapabilityEntry(
+      capability: dco_decode_rs_continuity_capability(arr[0]),
+      state: dco_decode_rs_capability_state(arr[1]),
+    );
+  }
+
+  @protected
+  RsCapabilityManifest dco_decode_rs_capability_manifest(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 3) throw Exception('unexpected arr length: expect 3 but see ${arr.length}');
+    return RsCapabilityManifest(
+      deviceLabel: dco_decode_String(arr[0]),
+      platform: dco_decode_String(arr[1]),
+      entries: dco_decode_list_rs_capability_entry(arr[2]),
+    );
+  }
+
+  @protected
+  RsCapabilityState dco_decode_rs_capability_state(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    switch (raw[0]) {
+      case 0:
+        return RsCapabilityState_Available();
+      case 1:
+        return RsCapabilityState_PermissionRequired(
+          reason: dco_decode_String(raw[1]),
+        );
+      case 2:
+        return RsCapabilityState_Limited(
+          reason: dco_decode_String(raw[1]),
+        );
+      case 3:
+        return RsCapabilityState_Unavailable(
+          reason: dco_decode_String(raw[1]),
+        );
+      default:
+        throw Exception('unreachable');
+    }
+  }
+
+  @protected
+  RsChargingState dco_decode_rs_charging_state(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return RsChargingState.values[raw as int];
+  }
+
+  @protected
+  RsClipboardMode dco_decode_rs_clipboard_mode(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return RsClipboardMode.values[raw as int];
+  }
+
+  @protected
+  RsContinuityCapability dco_decode_rs_continuity_capability(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return RsContinuityCapability.values[raw as int];
+  }
+
+  @protected
+  RsContinuityEvent dco_decode_rs_continuity_event(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    switch (raw[0]) {
+      case 0:
+        return RsContinuityEvent_SessionEstablished(
+          remoteRelayId: dco_decode_String(raw[1]),
+          directPath: dco_decode_bool(raw[2]),
+        );
+      case 1:
+        return RsContinuityEvent_SessionEnded(
+          remoteRelayId: dco_decode_String(raw[1]),
+          reason: dco_decode_String(raw[2]),
+        );
+      case 2:
+        return RsContinuityEvent_ManifestReceived(
+          remoteRelayId: dco_decode_String(raw[1]),
+          manifest: dco_decode_box_autoadd_rs_capability_manifest(raw[2]),
+        );
+      case 3:
+        return RsContinuityEvent_BatteryChanged(
+          remoteRelayId: dco_decode_String(raw[1]),
+          percentage: dco_decode_opt_box_autoadd_u_32(raw[2]),
+          charging: dco_decode_rs_charging_state(raw[3]),
+        );
+      case 4:
+        return RsContinuityEvent_ClipboardOffered(
+          remoteRelayId: dco_decode_String(raw[1]),
+          text: dco_decode_String(raw[2]),
+          explicit: dco_decode_bool(raw[3]),
+        );
+      case 5:
+        return RsContinuityEvent_NotificationPosted(
+          remoteRelayId: dco_decode_String(raw[1]),
+          key: dco_decode_String(raw[2]),
+          appLabel: dco_decode_String(raw[3]),
+          title: dco_decode_opt_String(raw[4]),
+          body: dco_decode_opt_String(raw[5]),
+          postedAtMs: dco_decode_u_64(raw[6]),
+          clearable: dco_decode_bool(raw[7]),
+        );
+      case 6:
+        return RsContinuityEvent_NotificationRemoved(
+          remoteRelayId: dco_decode_String(raw[1]),
+          key: dco_decode_String(raw[2]),
+        );
+      case 7:
+        return RsContinuityEvent_ConversationsPage(
+          remoteRelayId: dco_decode_String(raw[1]),
+          conversations: dco_decode_list_rs_sms_conversation(raw[2]),
+          hasMore: dco_decode_bool(raw[3]),
+        );
+      case 8:
+        return RsContinuityEvent_MessagesPage(
+          remoteRelayId: dco_decode_String(raw[1]),
+          conversationId: dco_decode_String(raw[2]),
+          messages: dco_decode_list_rs_sms_message(raw[3]),
+          hasMore: dco_decode_bool(raw[4]),
+        );
+      case 9:
+        return RsContinuityEvent_MessageReceived(
+          remoteRelayId: dco_decode_String(raw[1]),
+          message: dco_decode_box_autoadd_rs_sms_message(raw[2]),
+        );
+      case 10:
+        return RsContinuityEvent_SmsSendCompleted(
+          remoteRelayId: dco_decode_String(raw[1]),
+          requestId: dco_decode_String(raw[2]),
+          sent: dco_decode_bool(raw[3]),
+          detail: dco_decode_opt_String(raw[4]),
+        );
+      case 11:
+        return RsContinuityEvent_CallStateChanged(
+          remoteRelayId: dco_decode_String(raw[1]),
+          state: dco_decode_box_autoadd_rs_call_state(raw[2]),
+        );
+      case 12:
+        return RsContinuityEvent_CallActionCompleted(
+          remoteRelayId: dco_decode_String(raw[1]),
+          requestId: dco_decode_String(raw[2]),
+          accepted: dco_decode_bool(raw[3]),
+          detail: dco_decode_opt_String(raw[4]),
+        );
+      case 13:
+        return RsContinuityEvent_PeerError(
+          remoteRelayId: dco_decode_String(raw[1]),
+          code: dco_decode_String(raw[2]),
+          detail: dco_decode_String(raw[3]),
+        );
+      default:
+        throw Exception('unreachable');
+    }
+  }
+
+  @protected
+  RsContinuityHostRequest dco_decode_rs_continuity_host_request(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    switch (raw[0]) {
+      case 0:
+        return RsContinuityHostRequest_ApplyClipboard(
+          requestId: dco_decode_u_64(raw[1]),
+          remoteRelayId: dco_decode_String(raw[2]),
+          text: dco_decode_String(raw[3]),
+        );
+      case 1:
+        return RsContinuityHostRequest_DismissNotification(
+          requestId: dco_decode_u_64(raw[1]),
+          remoteRelayId: dco_decode_String(raw[2]),
+          key: dco_decode_String(raw[3]),
+        );
+      case 2:
+        return RsContinuityHostRequest_ListConversations(
+          requestId: dco_decode_u_64(raw[1]),
+          remoteRelayId: dco_decode_String(raw[2]),
+          limit: dco_decode_u_32(raw[3]),
+          beforeMs: dco_decode_opt_box_autoadd_u_64(raw[4]),
+        );
+      case 3:
+        return RsContinuityHostRequest_ListMessages(
+          requestId: dco_decode_u_64(raw[1]),
+          remoteRelayId: dco_decode_String(raw[2]),
+          conversationId: dco_decode_String(raw[3]),
+          limit: dco_decode_u_32(raw[4]),
+          beforeMs: dco_decode_opt_box_autoadd_u_64(raw[5]),
+        );
+      case 4:
+        return RsContinuityHostRequest_SendSms(
+          requestId: dco_decode_u_64(raw[1]),
+          remoteRelayId: dco_decode_String(raw[2]),
+          conversationId: dco_decode_opt_String(raw[3]),
+          recipients: dco_decode_list_String(raw[4]),
+          body: dco_decode_String(raw[5]),
+        );
+      case 5:
+        return RsContinuityHostRequest_CallAction(
+          requestId: dco_decode_u_64(raw[1]),
+          remoteRelayId: dco_decode_String(raw[2]),
+          action: dco_decode_rs_call_action(raw[3]),
+          address: dco_decode_opt_String(raw[4]),
+        );
+      default:
+        throw Exception('unreachable');
+    }
   }
 
   @protected
@@ -4305,6 +5636,37 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       default:
         throw Exception('unreachable');
     }
+  }
+
+  @protected
+  RsSmsConversation dco_decode_rs_sms_conversation(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 6) throw Exception('unexpected arr length: expect 6 but see ${arr.length}');
+    return RsSmsConversation(
+      conversationId: dco_decode_String(arr[0]),
+      displayName: dco_decode_opt_String(arr[1]),
+      addresses: dco_decode_list_String(arr[2]),
+      snippet: dco_decode_opt_String(arr[3]),
+      lastMessageAtMs: dco_decode_u_64(arr[4]),
+      unread: dco_decode_bool(arr[5]),
+    );
+  }
+
+  @protected
+  RsSmsMessage dco_decode_rs_sms_message(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 7) throw Exception('unexpected arr length: expect 7 but see ${arr.length}');
+    return RsSmsMessage(
+      conversationId: dco_decode_String(arr[0]),
+      messageId: dco_decode_String(arr[1]),
+      outgoing: dco_decode_bool(arr[2]),
+      address: dco_decode_opt_String(arr[3]),
+      body: dco_decode_String(arr[4]),
+      sentAtMs: dco_decode_u_64(arr[5]),
+      read: dco_decode_bool(arr[6]),
+    );
   }
 
   @protected
@@ -4828,6 +6190,18 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  RustStreamSink<RsContinuityEvent> sse_decode_StreamSink_rs_continuity_event_Sse(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    throw UnimplementedError('Unreachable ()');
+  }
+
+  @protected
+  RustStreamSink<RsContinuityHostRequest> sse_decode_StreamSink_rs_continuity_host_request_Sse(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    throw UnimplementedError('Unreachable ()');
+  }
+
+  @protected
   RustStreamSink<RsHashFileEvent> sse_decode_StreamSink_rs_hash_file_event_Sse(SseDeserializer deserializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     throw UnimplementedError('Unreachable ()');
@@ -4994,6 +6368,18 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  RsCallState sse_decode_box_autoadd_rs_call_state(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    return (sse_decode_rs_call_state(deserializer));
+  }
+
+  @protected
+  RsCapabilityManifest sse_decode_box_autoadd_rs_capability_manifest(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    return (sse_decode_rs_capability_manifest(deserializer));
+  }
+
+  @protected
   RsDiscoveredDevice sse_decode_box_autoadd_rs_discovered_device(SseDeserializer deserializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     return (sse_decode_rs_discovered_device(deserializer));
@@ -5003,6 +6389,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   RsHttpClientError sse_decode_box_autoadd_rs_http_client_error(SseDeserializer deserializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     return (sse_decode_rs_http_client_error(deserializer));
+  }
+
+  @protected
+  RsSmsMessage sse_decode_box_autoadd_rs_sms_message(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    return (sse_decode_rs_sms_message(deserializer));
   }
 
   @protected
@@ -5021,6 +6413,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   int sse_decode_box_autoadd_u_32(SseDeserializer deserializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     return (sse_decode_u_32(deserializer));
+  }
+
+  @protected
+  BigInt sse_decode_box_autoadd_u_64(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    return (sse_decode_u_64(deserializer));
   }
 
   @protected
@@ -5216,6 +6614,18 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  List<RsCapabilityEntry> sse_decode_list_rs_capability_entry(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    var len_ = sse_decode_i_32(deserializer);
+    var ans_ = <RsCapabilityEntry>[];
+    for (var idx_ = 0; idx_ < len_; ++idx_) {
+      ans_.add(sse_decode_rs_capability_entry(deserializer));
+    }
+    return ans_;
+  }
+
+  @protected
   List<RsDeviceChannel> sse_decode_list_rs_device_channel(SseDeserializer deserializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
 
@@ -5271,6 +6681,30 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var ans_ = <RsRelayTransferFile>[];
     for (var idx_ = 0; idx_ < len_; ++idx_) {
       ans_.add(sse_decode_rs_relay_transfer_file(deserializer));
+    }
+    return ans_;
+  }
+
+  @protected
+  List<RsSmsConversation> sse_decode_list_rs_sms_conversation(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    var len_ = sse_decode_i_32(deserializer);
+    var ans_ = <RsSmsConversation>[];
+    for (var idx_ = 0; idx_ < len_; ++idx_) {
+      ans_.add(sse_decode_rs_sms_conversation(deserializer));
+    }
+    return ans_;
+  }
+
+  @protected
+  List<RsSmsMessage> sse_decode_list_rs_sms_message(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    var len_ = sse_decode_i_32(deserializer);
+    var ans_ = <RsSmsMessage>[];
+    for (var idx_ = 0; idx_ < len_; ++idx_) {
+      ans_.add(sse_decode_rs_sms_message(deserializer));
     }
     return ans_;
   }
@@ -5390,6 +6824,17 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
 
     if (sse_decode_bool(deserializer)) {
       return (sse_decode_box_autoadd_u_32(deserializer));
+    } else {
+      return null;
+    }
+  }
+
+  @protected
+  BigInt? sse_decode_opt_box_autoadd_u_64(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    if (sse_decode_bool(deserializer)) {
+      return (sse_decode_box_autoadd_u_64(deserializer));
     } else {
       return null;
     }
@@ -5595,6 +7040,259 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var var_publicKey = sse_decode_opt_String(deserializer);
     var var_body = sse_decode_register_response_dto(deserializer);
     return ResultWithPublicKeyRegisterResponseDto(publicKey: var_publicKey, body: var_body);
+  }
+
+  @protected
+  RsCallAction sse_decode_rs_call_action(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var inner = sse_decode_i_32(deserializer);
+    return RsCallAction.values[inner];
+  }
+
+  @protected
+  RsCallPhase sse_decode_rs_call_phase(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var inner = sse_decode_i_32(deserializer);
+    return RsCallPhase.values[inner];
+  }
+
+  @protected
+  RsCallState sse_decode_rs_call_state(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_phase = sse_decode_rs_call_phase(deserializer);
+    var var_address = sse_decode_opt_String(deserializer);
+    var var_displayName = sse_decode_opt_String(deserializer);
+    var var_activeDurationMs = sse_decode_opt_box_autoadd_u_64(deserializer);
+    return RsCallState(phase: var_phase, address: var_address, displayName: var_displayName, activeDurationMs: var_activeDurationMs);
+  }
+
+  @protected
+  RsCapabilityEntry sse_decode_rs_capability_entry(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_capability = sse_decode_rs_continuity_capability(deserializer);
+    var var_state = sse_decode_rs_capability_state(deserializer);
+    return RsCapabilityEntry(capability: var_capability, state: var_state);
+  }
+
+  @protected
+  RsCapabilityManifest sse_decode_rs_capability_manifest(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_deviceLabel = sse_decode_String(deserializer);
+    var var_platform = sse_decode_String(deserializer);
+    var var_entries = sse_decode_list_rs_capability_entry(deserializer);
+    return RsCapabilityManifest(deviceLabel: var_deviceLabel, platform: var_platform, entries: var_entries);
+  }
+
+  @protected
+  RsCapabilityState sse_decode_rs_capability_state(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    var tag_ = sse_decode_i_32(deserializer);
+    switch (tag_) {
+      case 0:
+        return RsCapabilityState_Available();
+      case 1:
+        var var_reason = sse_decode_String(deserializer);
+        return RsCapabilityState_PermissionRequired(reason: var_reason);
+      case 2:
+        var var_reason = sse_decode_String(deserializer);
+        return RsCapabilityState_Limited(reason: var_reason);
+      case 3:
+        var var_reason = sse_decode_String(deserializer);
+        return RsCapabilityState_Unavailable(reason: var_reason);
+      default:
+        throw UnimplementedError('');
+    }
+  }
+
+  @protected
+  RsChargingState sse_decode_rs_charging_state(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var inner = sse_decode_i_32(deserializer);
+    return RsChargingState.values[inner];
+  }
+
+  @protected
+  RsClipboardMode sse_decode_rs_clipboard_mode(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var inner = sse_decode_i_32(deserializer);
+    return RsClipboardMode.values[inner];
+  }
+
+  @protected
+  RsContinuityCapability sse_decode_rs_continuity_capability(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var inner = sse_decode_i_32(deserializer);
+    return RsContinuityCapability.values[inner];
+  }
+
+  @protected
+  RsContinuityEvent sse_decode_rs_continuity_event(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    var tag_ = sse_decode_i_32(deserializer);
+    switch (tag_) {
+      case 0:
+        var var_remoteRelayId = sse_decode_String(deserializer);
+        var var_directPath = sse_decode_bool(deserializer);
+        return RsContinuityEvent_SessionEstablished(remoteRelayId: var_remoteRelayId, directPath: var_directPath);
+      case 1:
+        var var_remoteRelayId = sse_decode_String(deserializer);
+        var var_reason = sse_decode_String(deserializer);
+        return RsContinuityEvent_SessionEnded(remoteRelayId: var_remoteRelayId, reason: var_reason);
+      case 2:
+        var var_remoteRelayId = sse_decode_String(deserializer);
+        var var_manifest = sse_decode_box_autoadd_rs_capability_manifest(deserializer);
+        return RsContinuityEvent_ManifestReceived(remoteRelayId: var_remoteRelayId, manifest: var_manifest);
+      case 3:
+        var var_remoteRelayId = sse_decode_String(deserializer);
+        var var_percentage = sse_decode_opt_box_autoadd_u_32(deserializer);
+        var var_charging = sse_decode_rs_charging_state(deserializer);
+        return RsContinuityEvent_BatteryChanged(remoteRelayId: var_remoteRelayId, percentage: var_percentage, charging: var_charging);
+      case 4:
+        var var_remoteRelayId = sse_decode_String(deserializer);
+        var var_text = sse_decode_String(deserializer);
+        var var_explicit = sse_decode_bool(deserializer);
+        return RsContinuityEvent_ClipboardOffered(remoteRelayId: var_remoteRelayId, text: var_text, explicit: var_explicit);
+      case 5:
+        var var_remoteRelayId = sse_decode_String(deserializer);
+        var var_key = sse_decode_String(deserializer);
+        var var_appLabel = sse_decode_String(deserializer);
+        var var_title = sse_decode_opt_String(deserializer);
+        var var_body = sse_decode_opt_String(deserializer);
+        var var_postedAtMs = sse_decode_u_64(deserializer);
+        var var_clearable = sse_decode_bool(deserializer);
+        return RsContinuityEvent_NotificationPosted(
+          remoteRelayId: var_remoteRelayId,
+          key: var_key,
+          appLabel: var_appLabel,
+          title: var_title,
+          body: var_body,
+          postedAtMs: var_postedAtMs,
+          clearable: var_clearable,
+        );
+      case 6:
+        var var_remoteRelayId = sse_decode_String(deserializer);
+        var var_key = sse_decode_String(deserializer);
+        return RsContinuityEvent_NotificationRemoved(remoteRelayId: var_remoteRelayId, key: var_key);
+      case 7:
+        var var_remoteRelayId = sse_decode_String(deserializer);
+        var var_conversations = sse_decode_list_rs_sms_conversation(deserializer);
+        var var_hasMore = sse_decode_bool(deserializer);
+        return RsContinuityEvent_ConversationsPage(remoteRelayId: var_remoteRelayId, conversations: var_conversations, hasMore: var_hasMore);
+      case 8:
+        var var_remoteRelayId = sse_decode_String(deserializer);
+        var var_conversationId = sse_decode_String(deserializer);
+        var var_messages = sse_decode_list_rs_sms_message(deserializer);
+        var var_hasMore = sse_decode_bool(deserializer);
+        return RsContinuityEvent_MessagesPage(
+          remoteRelayId: var_remoteRelayId,
+          conversationId: var_conversationId,
+          messages: var_messages,
+          hasMore: var_hasMore,
+        );
+      case 9:
+        var var_remoteRelayId = sse_decode_String(deserializer);
+        var var_message = sse_decode_box_autoadd_rs_sms_message(deserializer);
+        return RsContinuityEvent_MessageReceived(remoteRelayId: var_remoteRelayId, message: var_message);
+      case 10:
+        var var_remoteRelayId = sse_decode_String(deserializer);
+        var var_requestId = sse_decode_String(deserializer);
+        var var_sent = sse_decode_bool(deserializer);
+        var var_detail = sse_decode_opt_String(deserializer);
+        return RsContinuityEvent_SmsSendCompleted(remoteRelayId: var_remoteRelayId, requestId: var_requestId, sent: var_sent, detail: var_detail);
+      case 11:
+        var var_remoteRelayId = sse_decode_String(deserializer);
+        var var_state = sse_decode_box_autoadd_rs_call_state(deserializer);
+        return RsContinuityEvent_CallStateChanged(remoteRelayId: var_remoteRelayId, state: var_state);
+      case 12:
+        var var_remoteRelayId = sse_decode_String(deserializer);
+        var var_requestId = sse_decode_String(deserializer);
+        var var_accepted = sse_decode_bool(deserializer);
+        var var_detail = sse_decode_opt_String(deserializer);
+        return RsContinuityEvent_CallActionCompleted(
+          remoteRelayId: var_remoteRelayId,
+          requestId: var_requestId,
+          accepted: var_accepted,
+          detail: var_detail,
+        );
+      case 13:
+        var var_remoteRelayId = sse_decode_String(deserializer);
+        var var_code = sse_decode_String(deserializer);
+        var var_detail = sse_decode_String(deserializer);
+        return RsContinuityEvent_PeerError(remoteRelayId: var_remoteRelayId, code: var_code, detail: var_detail);
+      default:
+        throw UnimplementedError('');
+    }
+  }
+
+  @protected
+  RsContinuityHostRequest sse_decode_rs_continuity_host_request(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    var tag_ = sse_decode_i_32(deserializer);
+    switch (tag_) {
+      case 0:
+        var var_requestId = sse_decode_u_64(deserializer);
+        var var_remoteRelayId = sse_decode_String(deserializer);
+        var var_text = sse_decode_String(deserializer);
+        return RsContinuityHostRequest_ApplyClipboard(requestId: var_requestId, remoteRelayId: var_remoteRelayId, text: var_text);
+      case 1:
+        var var_requestId = sse_decode_u_64(deserializer);
+        var var_remoteRelayId = sse_decode_String(deserializer);
+        var var_key = sse_decode_String(deserializer);
+        return RsContinuityHostRequest_DismissNotification(requestId: var_requestId, remoteRelayId: var_remoteRelayId, key: var_key);
+      case 2:
+        var var_requestId = sse_decode_u_64(deserializer);
+        var var_remoteRelayId = sse_decode_String(deserializer);
+        var var_limit = sse_decode_u_32(deserializer);
+        var var_beforeMs = sse_decode_opt_box_autoadd_u_64(deserializer);
+        return RsContinuityHostRequest_ListConversations(
+          requestId: var_requestId,
+          remoteRelayId: var_remoteRelayId,
+          limit: var_limit,
+          beforeMs: var_beforeMs,
+        );
+      case 3:
+        var var_requestId = sse_decode_u_64(deserializer);
+        var var_remoteRelayId = sse_decode_String(deserializer);
+        var var_conversationId = sse_decode_String(deserializer);
+        var var_limit = sse_decode_u_32(deserializer);
+        var var_beforeMs = sse_decode_opt_box_autoadd_u_64(deserializer);
+        return RsContinuityHostRequest_ListMessages(
+          requestId: var_requestId,
+          remoteRelayId: var_remoteRelayId,
+          conversationId: var_conversationId,
+          limit: var_limit,
+          beforeMs: var_beforeMs,
+        );
+      case 4:
+        var var_requestId = sse_decode_u_64(deserializer);
+        var var_remoteRelayId = sse_decode_String(deserializer);
+        var var_conversationId = sse_decode_opt_String(deserializer);
+        var var_recipients = sse_decode_list_String(deserializer);
+        var var_body = sse_decode_String(deserializer);
+        return RsContinuityHostRequest_SendSms(
+          requestId: var_requestId,
+          remoteRelayId: var_remoteRelayId,
+          conversationId: var_conversationId,
+          recipients: var_recipients,
+          body: var_body,
+        );
+      case 5:
+        var var_requestId = sse_decode_u_64(deserializer);
+        var var_remoteRelayId = sse_decode_String(deserializer);
+        var var_action = sse_decode_rs_call_action(deserializer);
+        var var_address = sse_decode_opt_String(deserializer);
+        return RsContinuityHostRequest_CallAction(
+          requestId: var_requestId,
+          remoteRelayId: var_remoteRelayId,
+          action: var_action,
+          address: var_address,
+        );
+      default:
+        throw UnimplementedError('');
+    }
   }
 
   @protected
@@ -6057,6 +7755,46 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       default:
         throw UnimplementedError('');
     }
+  }
+
+  @protected
+  RsSmsConversation sse_decode_rs_sms_conversation(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_conversationId = sse_decode_String(deserializer);
+    var var_displayName = sse_decode_opt_String(deserializer);
+    var var_addresses = sse_decode_list_String(deserializer);
+    var var_snippet = sse_decode_opt_String(deserializer);
+    var var_lastMessageAtMs = sse_decode_u_64(deserializer);
+    var var_unread = sse_decode_bool(deserializer);
+    return RsSmsConversation(
+      conversationId: var_conversationId,
+      displayName: var_displayName,
+      addresses: var_addresses,
+      snippet: var_snippet,
+      lastMessageAtMs: var_lastMessageAtMs,
+      unread: var_unread,
+    );
+  }
+
+  @protected
+  RsSmsMessage sse_decode_rs_sms_message(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_conversationId = sse_decode_String(deserializer);
+    var var_messageId = sse_decode_String(deserializer);
+    var var_outgoing = sse_decode_bool(deserializer);
+    var var_address = sse_decode_opt_String(deserializer);
+    var var_body = sse_decode_String(deserializer);
+    var var_sentAtMs = sse_decode_u_64(deserializer);
+    var var_read = sse_decode_bool(deserializer);
+    return RsSmsMessage(
+      conversationId: var_conversationId,
+      messageId: var_messageId,
+      outgoing: var_outgoing,
+      address: var_address,
+      body: var_body,
+      sentAtMs: var_sentAtMs,
+      read: var_read,
+    );
   }
 
   @protected
@@ -6640,6 +8378,34 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  void sse_encode_StreamSink_rs_continuity_event_Sse(RustStreamSink<RsContinuityEvent> self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_String(
+      self.setupAndSerialize(
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_rs_continuity_event,
+          decodeErrorData: sse_decode_AnyhowException,
+        ),
+      ),
+      serializer,
+    );
+  }
+
+  @protected
+  void sse_encode_StreamSink_rs_continuity_host_request_Sse(RustStreamSink<RsContinuityHostRequest> self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_String(
+      self.setupAndSerialize(
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_rs_continuity_host_request,
+          decodeErrorData: sse_decode_AnyhowException,
+        ),
+      ),
+      serializer,
+    );
+  }
+
+  @protected
   void sse_encode_StreamSink_rs_hash_file_event_Sse(RustStreamSink<RsHashFileEvent> self, SseSerializer serializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     sse_encode_String(
@@ -6885,6 +8651,18 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  void sse_encode_box_autoadd_rs_call_state(RsCallState self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_rs_call_state(self, serializer);
+  }
+
+  @protected
+  void sse_encode_box_autoadd_rs_capability_manifest(RsCapabilityManifest self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_rs_capability_manifest(self, serializer);
+  }
+
+  @protected
   void sse_encode_box_autoadd_rs_discovered_device(RsDiscoveredDevice self, SseSerializer serializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     sse_encode_rs_discovered_device(self, serializer);
@@ -6894,6 +8672,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   void sse_encode_box_autoadd_rs_http_client_error(RsHttpClientError self, SseSerializer serializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     sse_encode_rs_http_client_error(self, serializer);
+  }
+
+  @protected
+  void sse_encode_box_autoadd_rs_sms_message(RsSmsMessage self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_rs_sms_message(self, serializer);
   }
 
   @protected
@@ -6912,6 +8696,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   void sse_encode_box_autoadd_u_32(int self, SseSerializer serializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     sse_encode_u_32(self, serializer);
+  }
+
+  @protected
+  void sse_encode_box_autoadd_u_64(BigInt self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_u_64(self, serializer);
   }
 
   @protected
@@ -7076,6 +8866,15 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  void sse_encode_list_rs_capability_entry(List<RsCapabilityEntry> self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_i_32(self.length, serializer);
+    for (final item in self) {
+      sse_encode_rs_capability_entry(item, serializer);
+    }
+  }
+
+  @protected
   void sse_encode_list_rs_device_channel(List<RsDeviceChannel> self, SseSerializer serializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     sse_encode_i_32(self.length, serializer);
@@ -7117,6 +8916,24 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_i_32(self.length, serializer);
     for (final item in self) {
       sse_encode_rs_relay_transfer_file(item, serializer);
+    }
+  }
+
+  @protected
+  void sse_encode_list_rs_sms_conversation(List<RsSmsConversation> self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_i_32(self.length, serializer);
+    for (final item in self) {
+      sse_encode_rs_sms_conversation(item, serializer);
+    }
+  }
+
+  @protected
+  void sse_encode_list_rs_sms_message(List<RsSmsMessage> self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_i_32(self.length, serializer);
+    for (final item in self) {
+      sse_encode_rs_sms_message(item, serializer);
     }
   }
 
@@ -7226,6 +9043,16 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_bool(self != null, serializer);
     if (self != null) {
       sse_encode_box_autoadd_u_32(self, serializer);
+    }
+  }
+
+  @protected
+  void sse_encode_opt_box_autoadd_u_64(BigInt? self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    sse_encode_bool(self != null, serializer);
+    if (self != null) {
+      sse_encode_box_autoadd_u_64(self, serializer);
     }
   }
 
@@ -7387,6 +9214,239 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     // Codec=Sse (Serialization based), see doc to use other codecs
     sse_encode_opt_String(self.publicKey, serializer);
     sse_encode_register_response_dto(self.body, serializer);
+  }
+
+  @protected
+  void sse_encode_rs_call_action(RsCallAction self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_i_32(self.index, serializer);
+  }
+
+  @protected
+  void sse_encode_rs_call_phase(RsCallPhase self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_i_32(self.index, serializer);
+  }
+
+  @protected
+  void sse_encode_rs_call_state(RsCallState self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_rs_call_phase(self.phase, serializer);
+    sse_encode_opt_String(self.address, serializer);
+    sse_encode_opt_String(self.displayName, serializer);
+    sse_encode_opt_box_autoadd_u_64(self.activeDurationMs, serializer);
+  }
+
+  @protected
+  void sse_encode_rs_capability_entry(RsCapabilityEntry self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_rs_continuity_capability(self.capability, serializer);
+    sse_encode_rs_capability_state(self.state, serializer);
+  }
+
+  @protected
+  void sse_encode_rs_capability_manifest(RsCapabilityManifest self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_String(self.deviceLabel, serializer);
+    sse_encode_String(self.platform, serializer);
+    sse_encode_list_rs_capability_entry(self.entries, serializer);
+  }
+
+  @protected
+  void sse_encode_rs_capability_state(RsCapabilityState self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    switch (self) {
+      case RsCapabilityState_Available():
+        sse_encode_i_32(0, serializer);
+      case RsCapabilityState_PermissionRequired(reason: final reason):
+        sse_encode_i_32(1, serializer);
+        sse_encode_String(reason, serializer);
+      case RsCapabilityState_Limited(reason: final reason):
+        sse_encode_i_32(2, serializer);
+        sse_encode_String(reason, serializer);
+      case RsCapabilityState_Unavailable(reason: final reason):
+        sse_encode_i_32(3, serializer);
+        sse_encode_String(reason, serializer);
+    }
+  }
+
+  @protected
+  void sse_encode_rs_charging_state(RsChargingState self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_i_32(self.index, serializer);
+  }
+
+  @protected
+  void sse_encode_rs_clipboard_mode(RsClipboardMode self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_i_32(self.index, serializer);
+  }
+
+  @protected
+  void sse_encode_rs_continuity_capability(RsContinuityCapability self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_i_32(self.index, serializer);
+  }
+
+  @protected
+  void sse_encode_rs_continuity_event(RsContinuityEvent self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    switch (self) {
+      case RsContinuityEvent_SessionEstablished(remoteRelayId: final remoteRelayId, directPath: final directPath):
+        sse_encode_i_32(0, serializer);
+        sse_encode_String(remoteRelayId, serializer);
+        sse_encode_bool(directPath, serializer);
+      case RsContinuityEvent_SessionEnded(remoteRelayId: final remoteRelayId, reason: final reason):
+        sse_encode_i_32(1, serializer);
+        sse_encode_String(remoteRelayId, serializer);
+        sse_encode_String(reason, serializer);
+      case RsContinuityEvent_ManifestReceived(remoteRelayId: final remoteRelayId, manifest: final manifest):
+        sse_encode_i_32(2, serializer);
+        sse_encode_String(remoteRelayId, serializer);
+        sse_encode_box_autoadd_rs_capability_manifest(manifest, serializer);
+      case RsContinuityEvent_BatteryChanged(remoteRelayId: final remoteRelayId, percentage: final percentage, charging: final charging):
+        sse_encode_i_32(3, serializer);
+        sse_encode_String(remoteRelayId, serializer);
+        sse_encode_opt_box_autoadd_u_32(percentage, serializer);
+        sse_encode_rs_charging_state(charging, serializer);
+      case RsContinuityEvent_ClipboardOffered(remoteRelayId: final remoteRelayId, text: final text, explicit: final explicit):
+        sse_encode_i_32(4, serializer);
+        sse_encode_String(remoteRelayId, serializer);
+        sse_encode_String(text, serializer);
+        sse_encode_bool(explicit, serializer);
+      case RsContinuityEvent_NotificationPosted(
+        remoteRelayId: final remoteRelayId,
+        key: final key,
+        appLabel: final appLabel,
+        title: final title,
+        body: final body,
+        postedAtMs: final postedAtMs,
+        clearable: final clearable,
+      ):
+        sse_encode_i_32(5, serializer);
+        sse_encode_String(remoteRelayId, serializer);
+        sse_encode_String(key, serializer);
+        sse_encode_String(appLabel, serializer);
+        sse_encode_opt_String(title, serializer);
+        sse_encode_opt_String(body, serializer);
+        sse_encode_u_64(postedAtMs, serializer);
+        sse_encode_bool(clearable, serializer);
+      case RsContinuityEvent_NotificationRemoved(remoteRelayId: final remoteRelayId, key: final key):
+        sse_encode_i_32(6, serializer);
+        sse_encode_String(remoteRelayId, serializer);
+        sse_encode_String(key, serializer);
+      case RsContinuityEvent_ConversationsPage(remoteRelayId: final remoteRelayId, conversations: final conversations, hasMore: final hasMore):
+        sse_encode_i_32(7, serializer);
+        sse_encode_String(remoteRelayId, serializer);
+        sse_encode_list_rs_sms_conversation(conversations, serializer);
+        sse_encode_bool(hasMore, serializer);
+      case RsContinuityEvent_MessagesPage(
+        remoteRelayId: final remoteRelayId,
+        conversationId: final conversationId,
+        messages: final messages,
+        hasMore: final hasMore,
+      ):
+        sse_encode_i_32(8, serializer);
+        sse_encode_String(remoteRelayId, serializer);
+        sse_encode_String(conversationId, serializer);
+        sse_encode_list_rs_sms_message(messages, serializer);
+        sse_encode_bool(hasMore, serializer);
+      case RsContinuityEvent_MessageReceived(remoteRelayId: final remoteRelayId, message: final message):
+        sse_encode_i_32(9, serializer);
+        sse_encode_String(remoteRelayId, serializer);
+        sse_encode_box_autoadd_rs_sms_message(message, serializer);
+      case RsContinuityEvent_SmsSendCompleted(remoteRelayId: final remoteRelayId, requestId: final requestId, sent: final sent, detail: final detail):
+        sse_encode_i_32(10, serializer);
+        sse_encode_String(remoteRelayId, serializer);
+        sse_encode_String(requestId, serializer);
+        sse_encode_bool(sent, serializer);
+        sse_encode_opt_String(detail, serializer);
+      case RsContinuityEvent_CallStateChanged(remoteRelayId: final remoteRelayId, state: final state):
+        sse_encode_i_32(11, serializer);
+        sse_encode_String(remoteRelayId, serializer);
+        sse_encode_box_autoadd_rs_call_state(state, serializer);
+      case RsContinuityEvent_CallActionCompleted(
+        remoteRelayId: final remoteRelayId,
+        requestId: final requestId,
+        accepted: final accepted,
+        detail: final detail,
+      ):
+        sse_encode_i_32(12, serializer);
+        sse_encode_String(remoteRelayId, serializer);
+        sse_encode_String(requestId, serializer);
+        sse_encode_bool(accepted, serializer);
+        sse_encode_opt_String(detail, serializer);
+      case RsContinuityEvent_PeerError(remoteRelayId: final remoteRelayId, code: final code, detail: final detail):
+        sse_encode_i_32(13, serializer);
+        sse_encode_String(remoteRelayId, serializer);
+        sse_encode_String(code, serializer);
+        sse_encode_String(detail, serializer);
+    }
+  }
+
+  @protected
+  void sse_encode_rs_continuity_host_request(RsContinuityHostRequest self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    switch (self) {
+      case RsContinuityHostRequest_ApplyClipboard(requestId: final requestId, remoteRelayId: final remoteRelayId, text: final text):
+        sse_encode_i_32(0, serializer);
+        sse_encode_u_64(requestId, serializer);
+        sse_encode_String(remoteRelayId, serializer);
+        sse_encode_String(text, serializer);
+      case RsContinuityHostRequest_DismissNotification(requestId: final requestId, remoteRelayId: final remoteRelayId, key: final key):
+        sse_encode_i_32(1, serializer);
+        sse_encode_u_64(requestId, serializer);
+        sse_encode_String(remoteRelayId, serializer);
+        sse_encode_String(key, serializer);
+      case RsContinuityHostRequest_ListConversations(
+        requestId: final requestId,
+        remoteRelayId: final remoteRelayId,
+        limit: final limit,
+        beforeMs: final beforeMs,
+      ):
+        sse_encode_i_32(2, serializer);
+        sse_encode_u_64(requestId, serializer);
+        sse_encode_String(remoteRelayId, serializer);
+        sse_encode_u_32(limit, serializer);
+        sse_encode_opt_box_autoadd_u_64(beforeMs, serializer);
+      case RsContinuityHostRequest_ListMessages(
+        requestId: final requestId,
+        remoteRelayId: final remoteRelayId,
+        conversationId: final conversationId,
+        limit: final limit,
+        beforeMs: final beforeMs,
+      ):
+        sse_encode_i_32(3, serializer);
+        sse_encode_u_64(requestId, serializer);
+        sse_encode_String(remoteRelayId, serializer);
+        sse_encode_String(conversationId, serializer);
+        sse_encode_u_32(limit, serializer);
+        sse_encode_opt_box_autoadd_u_64(beforeMs, serializer);
+      case RsContinuityHostRequest_SendSms(
+        requestId: final requestId,
+        remoteRelayId: final remoteRelayId,
+        conversationId: final conversationId,
+        recipients: final recipients,
+        body: final body,
+      ):
+        sse_encode_i_32(4, serializer);
+        sse_encode_u_64(requestId, serializer);
+        sse_encode_String(remoteRelayId, serializer);
+        sse_encode_opt_String(conversationId, serializer);
+        sse_encode_list_String(recipients, serializer);
+        sse_encode_String(body, serializer);
+      case RsContinuityHostRequest_CallAction(
+        requestId: final requestId,
+        remoteRelayId: final remoteRelayId,
+        action: final action,
+        address: final address,
+      ):
+        sse_encode_i_32(5, serializer);
+        sse_encode_u_64(requestId, serializer);
+        sse_encode_String(remoteRelayId, serializer);
+        sse_encode_rs_call_action(action, serializer);
+        sse_encode_opt_String(address, serializer);
+    }
   }
 
   @protected
@@ -7797,6 +9857,29 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         sse_encode_i_32(8, serializer);
         sse_encode_list_String(args, serializer);
     }
+  }
+
+  @protected
+  void sse_encode_rs_sms_conversation(RsSmsConversation self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_String(self.conversationId, serializer);
+    sse_encode_opt_String(self.displayName, serializer);
+    sse_encode_list_String(self.addresses, serializer);
+    sse_encode_opt_String(self.snippet, serializer);
+    sse_encode_u_64(self.lastMessageAtMs, serializer);
+    sse_encode_bool(self.unread, serializer);
+  }
+
+  @protected
+  void sse_encode_rs_sms_message(RsSmsMessage self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_String(self.conversationId, serializer);
+    sse_encode_String(self.messageId, serializer);
+    sse_encode_bool(self.outgoing, serializer);
+    sse_encode_opt_String(self.address, serializer);
+    sse_encode_String(self.body, serializer);
+    sse_encode_u_64(self.sentAtMs, serializer);
+    sse_encode_bool(self.read, serializer);
   }
 
   @protected

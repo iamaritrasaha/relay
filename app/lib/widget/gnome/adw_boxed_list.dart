@@ -31,7 +31,7 @@ class AdwPreferencesGroup extends StatelessWidget {
         children: [
           if (title != null) ...[
             Padding(
-              padding: const EdgeInsets.only(left: 12, bottom: 6),
+              padding: const EdgeInsets.only(left: 16, bottom: 6),
               child: Text(
                 title!.toUpperCase(),
                 style: RelayTypography.sectionHeader(palette.textSecondary, isGnome: true),
@@ -40,7 +40,7 @@ class AdwPreferencesGroup extends StatelessWidget {
           ],
           if (description != null) ...[
             Padding(
-              padding: const EdgeInsets.only(left: 12, bottom: 8),
+              padding: const EdgeInsets.only(left: 16, bottom: 8),
               child: Text(
                 description!,
                 style: RelayTypography.caption(palette.textTertiary, isGnome: true),
