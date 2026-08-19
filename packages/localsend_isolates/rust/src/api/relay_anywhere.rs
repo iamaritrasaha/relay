@@ -29,6 +29,17 @@ pub(crate) fn anywhere_runtime() -> &'static Arc<AnywhereRuntime> {
     RUNTIME.get_or_init(|| Arc::new(AnywhereRuntime::new()))
 }
 
+/// The listener's bound endpoint, when it is running.
+///
+/// Continuity reuses it so the device keeps one routing identity and one Iroh
+/// socket rather than binding a second endpoint per feature.
+pub(crate) fn anywhere_listener_endpoint() -> Option<localsend::anywhere::AnywhereEndpoint> {
+    anywhere_listener()
+        .lock()
+        .ok()
+        .and_then(|slot| slot.as_ref().map(|listener| listener.endpoint()))
+}
+
 fn anywhere_listener() -> &'static std::sync::Mutex<Option<AnywhereListener>> {
     static LISTENER: OnceLock<std::sync::Mutex<Option<AnywhereListener>>> = OnceLock::new();
     LISTENER.get_or_init(|| std::sync::Mutex::new(None))
@@ -408,6 +419,9 @@ pub async fn relay_anywhere_start_listener(
             routing_key,
             preference: PathPreference::Auto,
             alias,
+            // Inbound continuity is served on the same endpoint, but only once
+            // the user has enabled at least one capability for some device.
+            continuity: crate::api::continuity::listener_accept_config().await,
         },
         events,
     )

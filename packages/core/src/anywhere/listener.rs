@@ -195,6 +195,15 @@ impl AnywhereListener {
         &self.address
     }
 
+    /// The listener's bound endpoint.
+    ///
+    /// Outbound continuity dials reuse it rather than binding a second Iroh
+    /// endpoint: one routing identity, one socket, no duplicate keep-alive
+    /// traffic on a phone battery.
+    pub fn endpoint(&self) -> AnywhereEndpoint {
+        self.endpoint.clone()
+    }
+
     pub fn local_relay_id(&self) -> &str {
         &self.local_relay_id
     }
