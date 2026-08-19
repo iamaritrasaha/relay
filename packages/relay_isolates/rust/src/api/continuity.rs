@@ -105,6 +105,11 @@ struct ContinuityRuntime {
     pending: Mutex<HashMap<u64, PendingReply>>,
     next_request_id: AtomicU64,
     host_tx: mpsc::Sender<ContinuityHostRequest>,
+    /// Owned here until real session work reaches a Tokio context. Taking the
+    /// receiver is the start-once gate for the host pump.
+    host_rx: Mutex<Option<mpsc::Receiver<ContinuityHostRequest>>>,
+    #[cfg(test)]
+    host_test_sink: Mutex<Option<mpsc::UnboundedSender<RsContinuityHostRequest>>>,
 }
 
 fn runtime() -> &'static Arc<ContinuityRuntime> {
@@ -126,10 +131,25 @@ fn runtime() -> &'static Arc<ContinuityRuntime> {
             pending: Mutex::new(HashMap::new()),
             next_request_id: AtomicU64::new(1),
             host_tx,
+            host_rx: Mutex::new(Some(host_rx)),
+            #[cfg(test)]
+            host_test_sink: Mutex::new(None),
         });
-        spawn_host_pump(runtime.clone(), host_rx);
         runtime
     })
+}
+
+/// Starts the host pump once when called from real asynchronous session work.
+/// A synchronous caller merely leaves the receiver stored for later.
+fn ensure_host_pump_started() {
+    if tokio::runtime::Handle::try_current().is_err() {
+        return;
+    }
+    let runtime = runtime().clone();
+    let host_rx = runtime.host_rx.lock().ok().and_then(|mut slot| slot.take());
+    if let Some(host_rx) = host_rx {
+        spawn_host_pump(runtime, host_rx);
+    }
 }
 
 /// Forwards authorized host work to Dart and remembers where the answer goes.
@@ -144,7 +164,16 @@ fn spawn_host_pump(runtime: Arc<ContinuityRuntime>, mut host_rx: mpsc::Receiver<
                 .lock()
                 .map(|mut map| map.insert(request_id, pending))
                 .ok();
-            let delivered = runtime
+            #[cfg(test)]
+            let delivered_to_test = runtime
+                .host_test_sink
+                .lock()
+                .ok()
+                .and_then(|slot| slot.as_ref().map(|sink| sink.send(wire.clone()).is_ok()))
+                .unwrap_or(false);
+            #[cfg(not(test))]
+            let delivered_to_test = false;
+            let delivered = delivered_to_test || runtime
                 .host_sink
                 .lock()
                 .ok()
@@ -839,6 +868,10 @@ pub(crate) fn adopt_inbound_lan_session<S>(
 }
 
 fn session_config() -> ContinuitySessionConfig {
+    // Every inbound and outbound transport obtains its session configuration
+    // here. If this is called by synchronous test/setup code, the missing
+    // handle is harmless and the receiver remains available for async work.
+    ensure_host_pump_started();
     let runtime = runtime();
     ContinuitySessionConfig {
         local_manifest: runtime
@@ -1634,4 +1667,94 @@ pub(crate) async fn listener_accept_config(
         session_config: Arc::new(session_config),
         links: links_tx,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn sync_initialization_then_async_session_work_starts_one_host_pump() {
+        std::thread::spawn(|| {
+            assert!(tokio::runtime::Handle::try_current().is_err());
+
+            continuity_set_local_capabilities(
+                "Test Relay".to_owned(),
+                "linux".to_owned(),
+                Vec::new(),
+            );
+            continuity_set_device_trust(Vec::new(), Vec::new());
+            assert!(!continuity_is_connected("remote".to_owned()));
+            assert!(continuity_connected_devices().is_empty());
+
+            // Configuration remains safe in synchronous setup code and must
+            // leave receiver ownership available for later async work.
+            drop(session_config());
+            assert!(runtime().host_rx.lock().unwrap().is_some());
+        })
+        .join()
+        .expect("synchronous continuity initialization must not panic");
+
+        tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap()
+            .block_on(async {
+                let (test_sink, mut delivered) = mpsc::unbounded_channel();
+                *runtime().host_test_sink.lock().unwrap() = Some(test_sink);
+
+                let config = session_config();
+                drop(session_config());
+                drop(session_config());
+                assert!(runtime().host_rx.lock().unwrap().is_none());
+
+                let (reply, answered) = oneshot::channel();
+                config
+                    .host
+                    .send(ContinuityHostRequest::DismissNotification {
+                        remote_relay_id: "remote".to_owned(),
+                        key: "notification".to_owned(),
+                        reply,
+                    })
+                    .await
+                    .unwrap();
+
+                let request = tokio::time::timeout(
+                    std::time::Duration::from_secs(1),
+                    delivered.recv(),
+                )
+                .await
+                .expect("the host pump should receive authorized work")
+                .expect("the test host sink should remain open");
+                let request_id = match request {
+                    RsContinuityHostRequest::DismissNotification {
+                        request_id,
+                        remote_relay_id,
+                        key,
+                    } => {
+                        assert_eq!(remote_relay_id, "remote");
+                        assert_eq!(key, "notification");
+                        request_id
+                    }
+                    other => panic!("unexpected host request: {other:?}"),
+                };
+                assert!(runtime().pending.lock().unwrap().contains_key(&request_id));
+
+                continuity_answer_ack(request_id);
+                answered.await.expect("the session reply should be completed");
+                assert!(!runtime().pending.lock().unwrap().contains_key(&request_id));
+
+                // Repeated session setup cannot create another pump or a
+                // duplicate delivery because the receiver was taken once.
+                assert!(
+                    tokio::time::timeout(
+                        std::time::Duration::from_millis(25),
+                        delivered.recv(),
+                    )
+                    .await
+                    .is_err()
+                );
+                *runtime().host_test_sink.lock().unwrap() = None;
+            });
+    }
 }
