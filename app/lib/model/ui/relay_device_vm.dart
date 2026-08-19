@@ -29,6 +29,18 @@ class RelayDeviceVm {
   final RelayConnectionType connectionType;
   final RelaySecurityState securityState;
   final RelayBatteryVm battery;
+
+  /// Continuity capability states for this device, already folded together from
+  /// what the user enabled, what this device can do and what the peer
+  /// advertised. `files` is always present; the rest appear once a continuity
+  /// session has told us something real.
+  final Map<RelayCapability, CapabilityStatus> capabilities;
+
+  /// Whether a live, authenticated continuity session exists right now.
+  ///
+  /// A stored Relay address never makes this true.
+  final bool continuityConnected;
+
   final String? ip;
   final int? port;
   final String? deviceModel;
@@ -46,6 +58,8 @@ class RelayDeviceVm {
     this.connectionType = RelayConnectionType.local,
     this.securityState = RelaySecurityState.verifiedRelay,
     this.battery = const RelayBatteryVm(),
+    this.capabilities = const {},
+    this.continuityConnected = false,
     this.ip,
     this.port,
     this.deviceModel,
@@ -68,17 +82,37 @@ class RelayDeviceVm {
     if (isLocalSend) {
       return 'LocalSend · Nearby';
     }
+    if (continuityConnected) {
+      // "Connected" means an authenticated continuity session is live, which is
+      // strictly more than being reachable.
+      return connectionType == RelayConnectionType.local ? 'Connected · Local' : 'Connected';
+    }
     if (isPaired && connectionType != RelayConnectionType.local) {
       return 'Paired · Remote';
     }
     return 'Nearby · Local';
   }
 
-  Map<RelayCapability, CapabilityStatus> get capabilityStatuses => {
+  /// Capability states for display.
+  ///
+  /// LocalSend-compatible peers get files and nothing else: continuity never
+  /// reaches a peer that cannot prove a RelayId.
+  Map<RelayCapability, CapabilityStatus> get capabilityStatuses {
+    if (isLocalSend) {
+      return const {
         RelayCapability.files: CapabilityStatus.available,
-        RelayCapability.clipboard: CapabilityStatus.comingSoon,
-        RelayCapability.battery: battery.hasInfo ? CapabilityStatus.available : CapabilityStatus.unavailable,
-        RelayCapability.messages: CapabilityStatus.comingSoon,
-        RelayCapability.notifications: CapabilityStatus.comingSoon,
+        RelayCapability.clipboard: CapabilityStatus.unavailable,
+        RelayCapability.battery: CapabilityStatus.unavailable,
+        RelayCapability.messages: CapabilityStatus.unavailable,
+        RelayCapability.notifications: CapabilityStatus.unavailable,
+        RelayCapability.phone: CapabilityStatus.unavailable,
       };
+    }
+    return {
+      RelayCapability.files: CapabilityStatus.available,
+      for (final capability in RelayCapability.values)
+        if (capability != RelayCapability.files)
+          capability: capabilities[capability] ?? CapabilityStatus.disabled,
+    };
+  }
 }
