@@ -1,4 +1,5 @@
 pub mod cancel;
+pub mod continuity;
 pub mod crypto;
 pub mod discovery;
 pub mod filename;
