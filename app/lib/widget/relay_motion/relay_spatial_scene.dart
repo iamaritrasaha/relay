@@ -85,7 +85,8 @@ class RelaySpatialUniversePainter extends CustomPainter {
 ///
 /// Places THIS DEVICE at the visual center of a motion universe with remote devices
 /// orbiting deterministically around it. Real transfers trigger a signature perspective
-/// orbit with directional payload streams and depth layering.
+/// orbit with directional payload streams, curved orbital bridges, depth layering,
+/// and distinct terminal epilogue states (success, failure, cancellation).
 class RelaySpatialScene extends StatefulWidget {
   final String selfAlias;
   final DeviceType selfDeviceType;
@@ -123,9 +124,12 @@ class RelaySpatialScene extends StatefulWidget {
 class _RelaySpatialSceneState extends State<RelaySpatialScene> with TickerProviderStateMixin {
   late final AnimationController _ambientController;
   late final AnimationController _focusController;
+  late final AnimationController _epilogueController;
   late Animation<double> _focusCurve;
 
   String? _internalFocusedKey;
+  RelayTransferVm? _epilogueTransfer;
+  RelayDevicePhase? _epiloguePhase;
 
   @override
   void initState() {
@@ -142,6 +146,20 @@ class _RelaySpatialSceneState extends State<RelaySpatialScene> with TickerProvid
       duration: const Duration(milliseconds: 400),
     );
 
+    _epilogueController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 750),
+    );
+
+    _epilogueController.addStatusListener((status) {
+      if (status == AnimationStatus.completed) {
+        setState(() {
+          _epilogueTransfer = null;
+          _epiloguePhase = null;
+        });
+      }
+    });
+
     _focusCurve = CurvedAnimation(
       parent: _focusController,
       curve: Curves.easeOutCubic,
@@ -155,6 +173,14 @@ class _RelaySpatialSceneState extends State<RelaySpatialScene> with TickerProvid
     if (_internalFocusedKey != null) {
       _focusController.value = 1.0;
     }
+
+    // Check if initial active transfer is already in terminal state
+    if (widget.activeTransfer != null &&
+        (widget.activeTransfer!.phase == RelayDevicePhase.success ||
+            widget.activeTransfer!.phase == RelayDevicePhase.failed ||
+            widget.activeTransfer!.phase == RelayDevicePhase.cancelled)) {
+      _startEpilogue(widget.activeTransfer!, widget.activeTransfer!.phase);
+    }
   }
 
   @override
@@ -166,6 +192,9 @@ class _RelaySpatialSceneState extends State<RelaySpatialScene> with TickerProvid
         unawaited(_ambientController.repeat());
       } else {
         _ambientController.stop();
+        _epilogueController.stop();
+        _epilogueTransfer = null;
+        _epiloguePhase = null;
       }
     }
 
@@ -185,12 +214,61 @@ class _RelaySpatialSceneState extends State<RelaySpatialScene> with TickerProvid
         }
       }
     }
+
+    // Handle Transfer Terminal Transitions & Visual Epilogue Memory
+    final oldTransfer = oldWidget.activeTransfer;
+    final newTransfer = widget.activeTransfer;
+
+    if (newTransfer != null &&
+        (newTransfer.phase == RelayDevicePhase.success ||
+            newTransfer.phase == RelayDevicePhase.failed ||
+            newTransfer.phase == RelayDevicePhase.cancelled)) {
+      if (_epilogueTransfer?.sessionId != newTransfer.sessionId || _epiloguePhase != newTransfer.phase) {
+        _startEpilogue(newTransfer, newTransfer.phase);
+      }
+    } else if (oldTransfer != null && newTransfer == null) {
+      // Backend removed completed/terminal transfer: retain visual epilogue
+      if (_epilogueTransfer == null) {
+        if (oldTransfer.phase == RelayDevicePhase.sending && (oldTransfer.progress ?? 0.0) >= 0.90) {
+          _startEpilogue(oldTransfer, RelayDevicePhase.success);
+        } else if (oldTransfer.phase == RelayDevicePhase.failed ||
+            oldTransfer.phase == RelayDevicePhase.cancelled ||
+            oldTransfer.phase == RelayDevicePhase.success) {
+          _startEpilogue(oldTransfer, oldTransfer.phase);
+        } else {
+          _startEpilogue(oldTransfer, RelayDevicePhase.cancelled);
+        }
+      }
+    } else if (newTransfer != null && _epilogueTransfer != null && _epilogueTransfer!.sessionId != newTransfer.sessionId) {
+      _epilogueController.stop();
+      _epilogueTransfer = null;
+      _epiloguePhase = null;
+    }
+  }
+
+  void _startEpilogue(RelayTransferVm transfer, RelayDevicePhase phase) {
+    if (!widget.animationsEnabled) {
+      _epilogueTransfer = null;
+      _epiloguePhase = null;
+      return;
+    }
+    _epilogueTransfer = transfer;
+    _epiloguePhase = phase;
+    final duration = switch (phase) {
+      RelayDevicePhase.success => const Duration(milliseconds: 800),
+      RelayDevicePhase.failed => const Duration(milliseconds: 600),
+      RelayDevicePhase.cancelled => const Duration(milliseconds: 500),
+      _ => const Duration(milliseconds: 600),
+    };
+    _epilogueController.duration = duration;
+    unawaited(_epilogueController.forward(from: 0.0));
   }
 
   @override
   void dispose() {
     _ambientController.dispose();
     _focusController.dispose();
+    _epilogueController.dispose();
     super.dispose();
   }
 
@@ -236,15 +314,21 @@ class _RelaySpatialSceneState extends State<RelaySpatialScene> with TickerProvid
     final primaryDevices = widget.devices.where((d) => d.isAuthenticatedRelay).toList();
     final compatibilityDevices = widget.devices.where((d) => d.isCompatibilityPeer).toList();
 
-    // Identify active transfer device if any
-    final activeTransfer = widget.activeTransfer;
+    // Identify active transfer device (either canonical active transfer or transient epilogue)
+    final effectiveTransfer = widget.activeTransfer ?? _epilogueTransfer;
+    final isEpilogue = widget.activeTransfer == null && _epilogueTransfer != null;
+    final epilogueProgress = (isEpilogue || _epilogueController.isAnimating) ? _epilogueController.value : null;
+
     RelayDeviceVm? transferringDevice;
-    if (activeTransfer != null) {
+    if (effectiveTransfer != null) {
       transferringDevice = widget.devices.where((d) {
-        return (activeTransfer.deviceKey != null && d.key == activeTransfer.deviceKey) ||
-            d.alias.toLowerCase() == activeTransfer.targetAlias.toLowerCase() ||
+        return (effectiveTransfer.deviceKey != null && d.key == effectiveTransfer.deviceKey) ||
+            d.alias.toLowerCase() == effectiveTransfer.targetAlias.toLowerCase() ||
             d.phase == RelayDevicePhase.sending ||
-            d.phase == RelayDevicePhase.verifying;
+            d.phase == RelayDevicePhase.verifying ||
+            d.phase == RelayDevicePhase.success ||
+            d.phase == RelayDevicePhase.failed ||
+            d.phase == RelayDevicePhase.cancelled;
       }).firstOrNull;
     }
 
@@ -287,15 +371,15 @@ class _RelaySpatialSceneState extends State<RelaySpatialScene> with TickerProvid
 
                       // Layered Device Universe with Depth Z-Ordering and Transfer Stream
                       AnimatedBuilder(
-                        animation: Listenable.merge([_ambientController, _focusController]),
+                        animation: Listenable.merge([_ambientController, _focusController, _epilogueController]),
                         builder: (context, child) {
                           final focusVal = reducedMotion ? (_internalFocusedKey != null ? 1.0 : 0.0) : _focusCurve.value;
                           final ambientVal = reducedMotion ? 0.0 : _ambientController.value;
 
                           final isTransferActive = transferringDevice != null;
-                          final transferProgress = activeTransfer?.progress ?? transferringDevice?.progress;
-                          final transferPhase = activeTransfer?.phase ?? transferringDevice?.phase ?? RelayDevicePhase.idle;
-                          final transferDir = activeTransfer?.direction ?? RelayTransferDirection.send;
+                          final transferProgress = effectiveTransfer?.progress ?? transferringDevice?.progress;
+                          final transferPhase = _epiloguePhase ?? effectiveTransfer?.phase ?? transferringDevice?.phase ?? RelayDevicePhase.idle;
+                          final transferDir = effectiveTransfer?.direction ?? RelayTransferDirection.send;
 
                           // Compute Self Node Position
                           final selfPos = RelaySpatialLayoutEngine.computeSelfPosition(
@@ -304,6 +388,7 @@ class _RelaySpatialSceneState extends State<RelaySpatialScene> with TickerProvid
                             hasFocusedDevice: focusedDevice != null,
                             ambientPhase: ambientVal,
                             isTransferActive: isTransferActive && !reducedMotion,
+                            epilogueProgress: epilogueProgress,
                           );
 
                           final rearNodes = <Widget>[];
@@ -324,6 +409,7 @@ class _RelaySpatialSceneState extends State<RelaySpatialScene> with TickerProvid
                               transferDeviceKey: transferringDevice?.key,
                               transferProgress: transferProgress,
                               transferPhase: transferPhase,
+                              epilogueProgress: epilogueProgress,
                             );
 
                             if (transferringDevice?.key == device.key) {
@@ -377,6 +463,7 @@ class _RelaySpatialSceneState extends State<RelaySpatialScene> with TickerProvid
                               transferDeviceKey: transferringDevice?.key,
                               transferProgress: transferProgress,
                               transferPhase: transferPhase,
+                              epilogueProgress: epilogueProgress,
                             );
 
                             if (transferringDevice?.key == device.key) {
@@ -442,10 +529,10 @@ class _RelaySpatialSceneState extends State<RelaySpatialScene> with TickerProvid
                               direction: transferDir,
                               phase: transferPhase,
                               progress: transferProgress,
-                              pulsePhase: (ambientVal * 4) % 1.0,
+                              pulsePhase: epilogueProgress ?? ((ambientVal * 4) % 1.0),
                               isFocusedPair: true,
-                              fileCount: activeTransfer?.fileCount ?? 1,
-                              origin: activeTransfer?.origin,
+                              fileCount: effectiveTransfer?.fileCount ?? 1,
+                              origin: effectiveTransfer?.origin,
                             );
                           } else if (focusedDevice != null && focusVal > 0.01) {
                             final isPrimary = focusedDevice.isAuthenticatedRelay;
@@ -498,7 +585,7 @@ class _RelaySpatialSceneState extends State<RelaySpatialScene> with TickerProvid
         AnimatedSize(
           duration: const Duration(milliseconds: 300),
           curve: Curves.easeOutCubic,
-          child: focusedDevice != null ? _buildRelationshipPanel(context, palette, focusedDevice, activeTransfer) : const SizedBox.shrink(),
+          child: focusedDevice != null ? _buildRelationshipPanel(context, palette, focusedDevice, effectiveTransfer) : const SizedBox.shrink(),
         ),
       ],
     );
@@ -514,7 +601,28 @@ class _RelaySpatialSceneState extends State<RelaySpatialScene> with TickerProvid
         activeTransfer != null &&
         (device.phase == RelayDevicePhase.sending ||
             device.phase == RelayDevicePhase.verifying ||
+            device.phase == RelayDevicePhase.success ||
+            device.phase == RelayDevicePhase.failed ||
+            device.phase == RelayDevicePhase.cancelled ||
             activeTransfer.targetAlias.toLowerCase() == device.alias.toLowerCase());
+
+    final statusText = isTransferActive
+        ? (activeTransfer.phase == RelayDevicePhase.success
+              ? 'Transfer complete'
+              : activeTransfer.phase == RelayDevicePhase.failed
+              ? 'Transfer failed'
+              : activeTransfer.phase == RelayDevicePhase.cancelled
+              ? 'Transfer cancelled'
+              : activeTransfer.isReceive
+              ? 'Receiving from device…'
+              : 'Sending to device…')
+        : device.statusSummary;
+
+    final showCancel =
+        isTransferActive &&
+        (activeTransfer.phase == RelayDevicePhase.sending ||
+            activeTransfer.phase == RelayDevicePhase.verifying ||
+            activeTransfer.phase == RelayDevicePhase.waiting);
 
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
@@ -541,13 +649,13 @@ class _RelaySpatialSceneState extends State<RelaySpatialScene> with TickerProvid
                       style: RelayTypography.heading(palette.textPrimary),
                     ),
                     Text(
-                      isTransferActive ? (activeTransfer.isReceive ? 'Receiving from device…' : 'Sending to device…') : device.statusSummary,
+                      statusText,
                       style: RelayTypography.caption(isTransferActive ? palette.accentSoft : palette.textSecondary),
                     ),
                   ],
                 ),
               ),
-              if (isTransferActive)
+              if (showCancel)
                 FilledButton.tonalIcon(
                   onPressed: widget.onCancelTransfer,
                   icon: const Icon(Icons.close_rounded, size: 16),
@@ -585,7 +693,7 @@ class _RelaySpatialSceneState extends State<RelaySpatialScene> with TickerProvid
                 value: activeTransfer.progress,
                 minHeight: 4,
                 backgroundColor: palette.canvas,
-                valueColor: AlwaysStoppedAnimation(palette.accent),
+                valueColor: AlwaysStoppedAnimation(activeTransfer.phase == RelayDevicePhase.success ? palette.success : palette.accent),
               ),
             ),
             const SizedBox(height: 4),
@@ -598,7 +706,9 @@ class _RelaySpatialSceneState extends State<RelaySpatialScene> with TickerProvid
                 ),
                 Text(
                   '${(activeTransfer.progress! * 100).toInt()}%',
-                  style: RelayTypography.caption(palette.accentSoft).copyWith(fontSize: 11, fontWeight: FontWeight.w600),
+                  style: RelayTypography.caption(
+                    activeTransfer.phase == RelayDevicePhase.success ? palette.success : palette.accentSoft,
+                  ).copyWith(fontSize: 11, fontWeight: FontWeight.w600),
                 ),
               ],
             ),

@@ -1,10 +1,12 @@
 import 'package:collection/collection.dart';
+import 'package:refena_flutter/refena_flutter.dart';
 import 'package:relay_app/model/continuity/continuity_runtime.dart';
 import 'package:relay_app/model/cross_file.dart';
 import 'package:relay_app/model/persistence/relay_continuity_settings.dart';
 import 'package:relay_app/model/persistence/relay_paired_address.dart';
 import 'package:relay_app/model/state/nearby_devices_state.dart';
 import 'package:relay_app/model/state/send/send_session_state.dart';
+import 'package:relay_app/model/state/server/receive_session_state.dart';
 import 'package:relay_app/model/state/server/server_state.dart';
 import 'package:relay_app/model/ui/relay_capability_vm.dart';
 import 'package:relay_app/model/ui/relay_device_vm.dart';
@@ -22,7 +24,6 @@ import 'package:relay_app/provider/settings_provider.dart';
 import 'package:relay_isolates/model/device.dart';
 import 'package:relay_isolates/model/file_status.dart';
 import 'package:relay_isolates/model/session_status.dart';
-import 'package:refena_flutter/refena_flutter.dart';
 
 enum RelayPresence { offline, ready, discovering }
 
@@ -173,13 +174,30 @@ class RelayHomeVm {
     );
   }
 
+  static RelayDevicePhase _receivePhase(ReceiveSessionState session) {
+    if (session.status == SessionStatus.canceledBySender || session.status == SessionStatus.canceledByReceiver) {
+      return RelayDevicePhase.cancelled;
+    }
+    if (session.status == SessionStatus.finished) {
+      return RelayDevicePhase.success;
+    }
+    if (_isFailedTerminalStatus(session.status)) {
+      return RelayDevicePhase.failed;
+    }
+    return switch (session.status) {
+      SessionStatus.waiting => RelayDevicePhase.waiting,
+      SessionStatus.sending => RelayDevicePhase.sending,
+      _ => RelayDevicePhase.idle,
+    };
+  }
+
   static RelayTransferVm? _activeTransfer({
     required Map<String, SendSessionState> sendSessions,
     required FileTransferNotifier transfers,
     required Map<String, RelayRemoteTransfer> remoteTransfers,
     required ServerState? server,
   }) {
-    // 1. Check local/LAN send sessions
+    // 1. Prioritize in-flight send/receive sessions
     for (final session in sendSessions.values) {
       final hasTransferFailure = transfers.getStatuses(session.sessionId).contains(FileStatus.failed);
       final phase = _phaseFor(session, hasTransferFailure);
@@ -196,14 +214,13 @@ class RelayHomeVm {
         );
       }
     }
-    // 2. Check remote Relay send transfers
     for (final transfer in remoteTransfers.values) {
       if (transfer.phase == RelayRemoteTransferPhase.preparing || transfer.phase == RelayRemoteTransferPhase.sending) {
         return RelayTransferVm(
           sessionId: transfer.sessionId,
           targetAlias: transfer.alias,
           direction: RelayTransferDirection.send,
-          progress: transfer.totalBytes == 0 ? null : transfer.bytes / transfer.totalBytes,
+          progress: transfer.totalBytes == 0 ? null : (transfer.bytes / transfer.totalBytes).clamp(0.0, 1.0),
           remote: true,
           origin: switch (transfer.origin) {
             'direct' => 'Direct',
@@ -216,7 +233,6 @@ class RelayHomeVm {
         );
       }
     }
-    // 3. Check incoming receive session
     if (server?.session != null) {
       final receiveSession = server!.session!;
       if (receiveSession.status == SessionStatus.sending || receiveSession.status == SessionStatus.waiting) {
@@ -239,6 +255,63 @@ class RelayHomeVm {
           deviceKey: receiveSession.sender.fingerprint,
           fileCount: files.length,
           phase: receiveSession.status == SessionStatus.sending ? RelayDevicePhase.sending : RelayDevicePhase.waiting,
+        );
+      }
+    }
+
+    // 2. Next check for terminal transitions (success, failed, cancelled) so presentation layer receives them
+    for (final session in sendSessions.values) {
+      final hasTransferFailure = transfers.getStatuses(session.sessionId).contains(FileStatus.failed);
+      final phase = _phaseFor(session, hasTransferFailure);
+      if (phase == RelayDevicePhase.success || phase == RelayDevicePhase.failed || phase == RelayDevicePhase.cancelled) {
+        return RelayTransferVm(
+          sessionId: session.sessionId,
+          targetAlias: session.target.alias,
+          direction: RelayTransferDirection.send,
+          progress: phase == RelayDevicePhase.success ? 1.0 : _progressFor(session, transfers),
+          origin: 'Local',
+          deviceKey: session.target.fingerprint,
+          fileCount: session.files.length,
+          phase: phase,
+        );
+      }
+    }
+    for (final transfer in remoteTransfers.values) {
+      final phase = _pairedPhase(transfer);
+      if (phase == RelayDevicePhase.success || phase == RelayDevicePhase.failed || phase == RelayDevicePhase.cancelled) {
+        return RelayTransferVm(
+          sessionId: transfer.sessionId,
+          targetAlias: transfer.alias,
+          direction: RelayTransferDirection.send,
+          progress: phase == RelayDevicePhase.success
+              ? 1.0
+              : (transfer.totalBytes == 0 ? null : (transfer.bytes / transfer.totalBytes).clamp(0.0, 1.0)),
+          remote: true,
+          origin: switch (transfer.origin) {
+            'direct' => 'Direct',
+            'relay' => 'Relayed',
+            _ => null,
+          },
+          deviceKey: 'relay:${transfer.relayId}',
+          fileCount: 1,
+          phase: phase,
+        );
+      }
+    }
+    if (server?.session != null) {
+      final receiveSession = server!.session!;
+      final phase = _receivePhase(receiveSession);
+      if (phase == RelayDevicePhase.success || phase == RelayDevicePhase.failed || phase == RelayDevicePhase.cancelled) {
+        final files = receiveSession.files.values.toList();
+        return RelayTransferVm(
+          sessionId: receiveSession.sessionId,
+          targetAlias: receiveSession.senderAlias,
+          direction: RelayTransferDirection.receive,
+          progress: phase == RelayDevicePhase.success ? 1.0 : null,
+          origin: 'Local',
+          deviceKey: receiveSession.sender.fingerprint,
+          fileCount: files.length,
+          phase: phase,
         );
       }
     }
@@ -401,7 +474,8 @@ class RelayHomeVm {
     RelayRemoteTransferPhase.preparing => RelayDevicePhase.verifying,
     RelayRemoteTransferPhase.sending => RelayDevicePhase.sending,
     RelayRemoteTransferPhase.completed => RelayDevicePhase.success,
-    RelayRemoteTransferPhase.failed || RelayRemoteTransferPhase.cancelled => RelayDevicePhase.failed,
+    RelayRemoteTransferPhase.cancelled => RelayDevicePhase.cancelled,
+    RelayRemoteTransferPhase.failed => RelayDevicePhase.failed,
   };
 
   static String _pairedDetail(RelayRemoteTransfer? transfer) => switch (transfer?.phase) {
@@ -420,6 +494,9 @@ class RelayHomeVm {
     if (session.hashedFileCount < session.files.length) {
       return RelayDevicePhase.verifying;
     }
+    if (session.status == SessionStatus.canceledBySender || session.status == SessionStatus.canceledByReceiver) {
+      return RelayDevicePhase.cancelled;
+    }
     if (hasTransferFailure || session.errorMessage != null || _isFailedTerminalStatus(session.status)) {
       return RelayDevicePhase.failed;
     }
@@ -432,12 +509,7 @@ class RelayHomeVm {
   }
 
   static bool _isFailedTerminalStatus(SessionStatus status) => switch (status) {
-    SessionStatus.recipientBusy ||
-    SessionStatus.declined ||
-    SessionStatus.tooManyAttempts ||
-    SessionStatus.finishedWithErrors ||
-    SessionStatus.canceledBySender ||
-    SessionStatus.canceledByReceiver => true,
+    SessionStatus.recipientBusy || SessionStatus.declined || SessionStatus.tooManyAttempts || SessionStatus.finishedWithErrors => true,
     _ => false,
   };
 
@@ -461,6 +533,7 @@ class RelayHomeVm {
     RelayDevicePhase.sending => 'Sending',
     RelayDevicePhase.success => 'Sent',
     RelayDevicePhase.failed => 'Could not send',
+    RelayDevicePhase.cancelled => 'Cancelled',
   };
 }
 

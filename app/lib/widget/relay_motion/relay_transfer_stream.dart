@@ -36,6 +36,25 @@ class RelayTransferStreamPainter extends CustomPainter {
     this.origin,
   });
 
+  /// Computes the deterministic quadratic bezier control point guaranteeing
+  /// a restrained, non-zero curvature that participates in orbital depth.
+  static Offset computeControlPoint({
+    required Offset sourceOffset,
+    required Offset targetOffset,
+    bool isFocusedPair = false,
+  }) {
+    final midPoint = (sourceOffset + targetOffset) / 2;
+    final delta = targetOffset - sourceOffset;
+    final distance = delta.distance;
+    if (distance < 1.0) return midPoint;
+    final normal = Offset(-delta.dy, delta.dx) / distance;
+    // Signature spatial curvature: participate in the orbital universe without collapsing to straight line
+    final double curvatureMagnitude = (distance * 0.13).clamp(16.0, 30.0);
+    // Maintain a cohesive, premium arc orientation
+    final double arcSign = (delta.dx * delta.dy < 0) ? -1.0 : 1.0;
+    return midPoint + (normal * (curvatureMagnitude * arcSign));
+  }
+
   @override
   void paint(Canvas canvas, Size size) {
     final distance = (targetOffset - sourceOffset).distance;
@@ -48,20 +67,22 @@ class RelayTransferStreamPainter extends CustomPainter {
     final arrivalOffset = direction == RelayTransferDirection.send ? targetOffset : sourceOffset;
 
     // Compute curved trajectory control point (subtle curve based on orbital orientation)
-    final midPoint = (sourceOffset + targetOffset) / 2;
-    final delta = targetOffset - sourceOffset;
-    final normal = Offset(-delta.dy, delta.dx) / (delta.distance + 0.001);
-    final curvature = isFocusedPair ? 0.0 : (delta.dx.abs() > delta.dy.abs() ? 24.0 : 16.0);
-    final controlPoint = midPoint + (normal * curvature);
+    final controlPoint = computeControlPoint(
+      sourceOffset: sourceOffset,
+      targetOffset: targetOffset,
+      isFocusedPair: isFocusedPair,
+    );
 
     final path = Path()
       ..moveTo(departureOffset.dx, departureOffset.dy)
       ..quadraticBezierTo(controlPoint.dx, controlPoint.dy, arrivalOffset.dx, arrivalOffset.dy);
 
     // 1. Render Underlying Connection Bridge Track
-    _paintConnectionBridge(canvas, path, departureOffset, arrivalOffset);
+    if (phase != RelayDevicePhase.cancelled) {
+      _paintConnectionBridge(canvas, path, departureOffset, arrivalOffset);
+    }
 
-    // 2. Render State-Driven Payload Stream (if actively sending/receiving)
+    // 2. Render State-Driven Payload Stream / Epilogue
     if (phase == RelayDevicePhase.sending) {
       _paintPayloadStream(canvas, departureOffset, controlPoint, arrivalOffset);
     } else if (phase == RelayDevicePhase.waiting || phase == RelayDevicePhase.verifying) {
@@ -70,6 +91,8 @@ class RelayTransferStreamPainter extends CustomPainter {
       _paintSuccessPulse(canvas, arrivalOffset);
     } else if (phase == RelayDevicePhase.failed) {
       _paintFailureBridge(canvas, path);
+    } else if (phase == RelayDevicePhase.cancelled) {
+      _paintCancelledBridge(canvas, departureOffset, controlPoint, arrivalOffset);
     }
   }
 
@@ -121,7 +144,7 @@ class RelayTransferStreamPainter extends CustomPainter {
     final effectiveProgress = (progress ?? (pulsePhase % 1.0)).clamp(0.0, 1.0);
     final isDeterminate = progress != null;
 
-    // Bounded number of travelling visual payload objects (3 to 6 particles)
+    // Bounded number of travelling visual payload objects (3 to 5 particles)
     final int particleCount = (fileCount > 1) ? 5 : 3;
 
     for (int i = 0; i < particleCount; i++) {
@@ -198,27 +221,53 @@ class RelayTransferStreamPainter extends CustomPainter {
 
   void _paintSuccessPulse(Canvas canvas, Offset destination) {
     // Soft completion ripple expanding around the receiving destination node
-    final double rippleRadius = 24.0 + (16.0 * pulsePhase);
+    final double rippleRadius = 20.0 + (32.0 * pulsePhase);
     final double rippleAlpha = (1.0 - pulsePhase).clamp(0.0, 1.0);
 
     final pulsePaint = Paint()
-      ..color = successColor.withValues(alpha: 0.45 * rippleAlpha)
+      ..color = successColor.withValues(alpha: 0.55 * rippleAlpha)
       ..style = PaintingStyle.stroke
-      ..strokeWidth = 2.0;
+      ..strokeWidth = 2.2;
     canvas.drawCircle(destination, rippleRadius, pulsePaint);
 
     final innerGlow = Paint()
-      ..color = successColor.withValues(alpha: 0.20 * rippleAlpha)
+      ..color = successColor.withValues(alpha: 0.22 * rippleAlpha)
       ..style = PaintingStyle.fill;
-    canvas.drawCircle(destination, rippleRadius * 0.8, innerGlow);
+    canvas.drawCircle(destination, rippleRadius * 0.75, innerGlow);
   }
 
   void _paintFailureBridge(Canvas canvas, Path path) {
+    final double fadeAlpha = (1.0 - pulsePhase).clamp(0.2, 1.0) * 0.38;
     final errorPaint = Paint()
-      ..color = errorColor.withValues(alpha: 0.35)
+      ..color = errorColor.withValues(alpha: fadeAlpha)
       ..style = PaintingStyle.stroke
-      ..strokeWidth = 1.5;
+      ..strokeWidth = 1.4 * (1.0 - pulsePhase).clamp(0.3, 1.0);
     canvas.drawPath(path, errorPaint);
+  }
+
+  void _paintCancelledBridge(Canvas canvas, Offset p0, Offset pC, Offset p1) {
+    // Stream retracts / fades toward source (departure)
+    final double retractT = (1.0 - pulsePhase).clamp(0.0, 1.0);
+    if (retractT <= 0.01) return;
+
+    final retractPath = Path()..moveTo(p0.dx, p0.dy);
+    const int segments = 20;
+    final int count = (segments * retractT).ceil();
+    for (int i = 1; i <= count; i++) {
+      final double t = (i / segments) * retractT;
+      final double invT = 1.0 - t;
+      final double x = (invT * invT * p0.dx) + (2 * invT * t * pC.dx) + (t * t * p1.dx);
+      final double y = (invT * invT * p0.dy) + (2 * invT * t * pC.dy) + (t * t * p1.dy);
+      retractPath.lineTo(x, y);
+    }
+
+    final double fadeAlpha = (1.0 - pulsePhase).clamp(0.0, 1.0) * 0.35;
+    final cancelPaint = Paint()
+      ..color = accentColor.withValues(alpha: fadeAlpha)
+      ..style = PaintingStyle.stroke
+      ..strokeCap = StrokeCap.round
+      ..strokeWidth = 1.5 * (1.0 - pulsePhase).clamp(0.2, 1.0);
+    canvas.drawPath(retractPath, cancelPaint);
   }
 
   @override

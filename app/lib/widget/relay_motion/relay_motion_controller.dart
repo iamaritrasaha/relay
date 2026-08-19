@@ -72,14 +72,26 @@ class RelaySpatialLayoutEngine {
     required bool hasFocusedDevice,
     required double ambientPhase,
     bool isTransferActive = false,
+    double? epilogueProgress,
   }) {
     final center = Offset(sceneSize.width / 2, sceneSize.height / 2);
 
     if (isTransferActive) {
       // During active transfer, self node shifts slightly to provide orbital clearance
       final transferShift = Offset(-math.min(sceneSize.width * 0.08, 30.0), 0);
+      final activeOffset = center + transferShift;
+
+      if (epilogueProgress != null) {
+        final t = Curves.easeOutCubic.transform(epilogueProgress.clamp(0.0, 1.0));
+        return SpatialNodePosition(
+          offset: Offset.lerp(activeOffset, center, t)!,
+          scale: 1.05 - (0.05 * t),
+          opacity: 1.0,
+        );
+      }
+
       return SpatialNodePosition(
-        offset: center + transferShift,
+        offset: activeOffset,
         scale: 1.05,
         opacity: 1.0,
       );
@@ -111,7 +123,7 @@ class RelaySpatialLayoutEngine {
   }
 
   /// Computes layout position, depth, and scale for a remote device node given scene dimensions,
-  /// ambient oscillation, focus transition state, and active transfer state.
+  /// ambient oscillation, focus transition state, active transfer state, and terminal epilogue settlement.
   static SpatialNodePosition computeRemotePosition({
     required RelayDeviceVm device,
     required int indexInRing,
@@ -123,6 +135,7 @@ class RelaySpatialLayoutEngine {
     String? transferDeviceKey,
     double? transferProgress,
     RelayDevicePhase? transferPhase,
+    double? epilogueProgress,
   }) {
     final center = Offset(sceneSize.width / 2, sceneSize.height / 2);
     final sceneRadius = math.min(sceneSize.width, sceneSize.height) / 2;
@@ -154,11 +167,15 @@ class RelaySpatialLayoutEngine {
     final isThisTransferring =
         (transferDeviceKey != null && transferDeviceKey == device.key) ||
         device.phase == RelayDevicePhase.sending ||
-        device.phase == RelayDevicePhase.verifying;
+        device.phase == RelayDevicePhase.verifying ||
+        (transferDeviceKey == device.key &&
+            (transferPhase == RelayDevicePhase.success || transferPhase == RelayDevicePhase.failed || transferPhase == RelayDevicePhase.cancelled));
     final hasAnyTransfer = transferDeviceKey != null || device.phase == RelayDevicePhase.sending;
 
     if (isThisTransferring) {
-      final progressVal = (transferProgress ?? (ambientPhase % 1.0)).clamp(0.0, 1.0);
+      final isTerminal =
+          transferPhase == RelayDevicePhase.success || transferPhase == RelayDevicePhase.failed || transferPhase == RelayDevicePhase.cancelled;
+      final progressVal = isTerminal ? 1.0 : (transferProgress ?? (ambientPhase % 1.0)).clamp(0.0, 1.0);
 
       // Signature 3D Perspective Orbit: Elliptical path tilted on Y-axis
       final rx = math.min(sceneSize.width * 0.26, 100.0);
@@ -177,8 +194,8 @@ class RelaySpatialLayoutEngine {
       final orbitOffset = transferCenter + Offset(rx * math.cos(currentOrbitalAngle), ry * math.sin(currentOrbitalAngle));
 
       // Perspective Scale & Opacity Modulation
-      final depthScale = 1.0 + (0.16 * zDepth); // 0.84x in back, 1.16x in front
-      final depthOpacity = isBehind ? 0.80 : 1.0;
+      double depthScale = 1.0 + (0.16 * zDepth); // 0.84x in back, 1.16x in front
+      double depthOpacity = isBehind ? 0.80 : 1.0;
 
       // Smooth approach / exit transition based on progress
       Offset effectiveOffset;
@@ -191,6 +208,14 @@ class RelaySpatialLayoutEngine {
         effectiveOffset = Offset.lerp(orbitOffset, pairedOffset, Curves.easeInOutCubic.transform(t))!;
       } else {
         effectiveOffset = orbitOffset;
+      }
+
+      // Epilogue settlement back to resting orbit
+      if (epilogueProgress != null) {
+        final settleT = Curves.easeOutCubic.transform(epilogueProgress.clamp(0.0, 1.0));
+        effectiveOffset = Offset.lerp(effectiveOffset, restingOffset, settleT)!;
+        depthScale = Offset.lerp(Offset(depthScale, 0), const Offset(1.0, 0), settleT)!.dx;
+        depthOpacity = Offset.lerp(Offset(depthOpacity, 0), const Offset(1.0, 0), settleT)!.dx;
       }
 
       return SpatialNodePosition(
@@ -206,15 +231,22 @@ class RelaySpatialLayoutEngine {
 
     if (hasAnyTransfer) {
       // Unrelated devices recede smoothly while a transfer is active
-      final recededScale = 0.82;
-      final recededOpacity = 0.22;
+      double recededScale = 0.82;
+      double recededOpacity = 0.22;
       final recededRadius = restingRadius + 24.0;
-      final recededOffset =
+      Offset recededOffset =
           center +
           Offset(
             recededRadius * math.cos(restingAngle),
             recededRadius * math.sin(restingAngle),
           );
+
+      if (epilogueProgress != null) {
+        final settleT = Curves.easeOutCubic.transform(epilogueProgress.clamp(0.0, 1.0));
+        recededScale = 0.82 + (0.18 * settleT);
+        recededOpacity = 0.22 + (0.78 * settleT);
+        recededOffset = Offset.lerp(recededOffset, restingOffset, settleT)!;
+      }
 
       return SpatialNodePosition(
         offset: recededOffset,

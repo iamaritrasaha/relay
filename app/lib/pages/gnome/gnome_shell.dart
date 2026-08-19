@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:collection/collection.dart';
 import 'package:flutter/material.dart';
+import 'package:refena_flutter/refena_flutter.dart';
 import 'package:relay_app/config/relay_brand.dart';
 import 'package:relay_app/model/cross_file.dart';
 import 'package:relay_app/model/ui/relay_device_vm.dart';
@@ -16,6 +17,7 @@ import 'package:relay_app/pages/gnome/gnome_settings_view.dart';
 import 'package:relay_app/pages/relay_home_vm.dart';
 import 'package:relay_app/provider/network/nearby_devices_provider.dart';
 import 'package:relay_app/provider/network/relay_send_service.dart';
+import 'package:relay_app/provider/network/server/server_provider.dart';
 import 'package:relay_app/provider/relay_paired_routes_provider.dart';
 import 'package:relay_app/provider/relay_verified_lan_devices_provider.dart';
 import 'package:relay_app/provider/selection/selected_sending_files_provider.dart';
@@ -26,7 +28,6 @@ import 'package:relay_app/widget/gnome/adw_header_bar.dart';
 import 'package:relay_app/widget/gnome/adw_split_view.dart';
 import 'package:relay_app/widget/gnome/adw_status_page.dart';
 import 'package:relay_app/widget/relay_motion/relay_spatial_scene.dart';
-import 'package:refena_flutter/refena_flutter.dart';
 import 'package:routerino/routerino.dart';
 
 enum GnomeSubView {
@@ -356,9 +357,13 @@ class _GnomeShellState extends State<GnomeShell> with Refena {
   }
 
   Future<void> _cancelTransfer() async {
-    final sessionId = widget.vm.activeTransfer?.sessionId;
-    if (sessionId != null && await context.pushBottomSheet(() => const CancelSessionDialog()) == true) {
-      ref.read(relaySendServiceProvider).cancel(sessionId);
+    final transfer = widget.vm.activeTransfer;
+    if (transfer != null && await context.pushBottomSheet(() => const CancelSessionDialog()) == true) {
+      if (transfer.isReceive) {
+        ref.notifier(serverProvider).cancelSession();
+      } else {
+        ref.read(relaySendServiceProvider).cancel(transfer.sessionId);
+      }
     }
   }
 

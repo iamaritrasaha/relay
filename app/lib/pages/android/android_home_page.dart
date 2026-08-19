@@ -8,6 +8,7 @@ import 'package:relay_app/pages/android/android_device_detail_page.dart';
 import 'package:relay_app/pages/relay_home_vm.dart';
 import 'package:relay_app/provider/network/nearby_devices_provider.dart';
 import 'package:relay_app/provider/network/relay_send_service.dart';
+import 'package:relay_app/provider/network/server/server_provider.dart';
 import 'package:relay_app/provider/receive_history_provider.dart';
 import 'package:relay_app/provider/relay_paired_routes_provider.dart';
 import 'package:relay_app/provider/relay_verified_lan_devices_provider.dart';
@@ -70,9 +71,13 @@ class _AndroidHomePageState extends State<AndroidHomePage> {
                 },
                 onSendFiles: (device) => _pickAndSendFiles(context, ref, device),
                 onCancelTransfer: () {
-                  final sessionId = widget.vm.activeTransfer?.sessionId;
-                  if (sessionId != null) {
-                    ref.read(relaySendServiceProvider).cancel(sessionId);
+                  final transfer = widget.vm.activeTransfer;
+                  if (transfer != null) {
+                    if (transfer.isReceive) {
+                      ref.notifier(serverProvider).cancelSession();
+                    } else {
+                      ref.read(relaySendServiceProvider).cancel(transfer.sessionId);
+                    }
                   }
                 },
                 onOpenDetails: (device) {

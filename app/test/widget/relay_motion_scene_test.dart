@@ -7,6 +7,7 @@ import 'package:relay_app/model/ui/relay_device_vm.dart';
 import 'package:relay_app/pages/relay_home_vm.dart';
 import 'package:relay_app/widget/relay_motion/relay_motion_controller.dart';
 import 'package:relay_app/widget/relay_motion/relay_spatial_scene.dart';
+import 'package:relay_app/widget/relay_motion/relay_transfer_stream.dart';
 import 'package:relay_isolates/model/device.dart';
 
 void main() {
@@ -140,7 +141,68 @@ void main() {
     });
   });
 
-  group('RelaySpatialScene Phase 2 Transfer Tests', () {
+  group('RelayTransferStream Curved Trajectory & Direction Geometry', () {
+    test('active transfer path has non-zero curvature when isFocusedPair is true', () {
+      const source = Offset(100, 150);
+      const target = Offset(300, 220);
+      final midPoint = (source + target) / 2;
+
+      final controlPoint = RelayTransferStreamPainter.computeControlPoint(
+        sourceOffset: source,
+        targetOffset: target,
+        isFocusedPair: true,
+      );
+
+      final deflection = (controlPoint - midPoint).distance;
+      expect(deflection, greaterThan(15.0));
+    });
+
+    test('send path departs from source and arrives at target', () {
+      const source = Offset(120, 160);
+      const target = Offset(280, 240);
+
+      const painter = RelayTransferStreamPainter(
+        sourceOffset: source,
+        targetOffset: target,
+        direction: RelayTransferDirection.send,
+        phase: RelayDevicePhase.sending,
+        progress: 0.5,
+        primaryColor: Colors.grey,
+        accentColor: Colors.blue,
+        successColor: Colors.green,
+        errorColor: Colors.red,
+        isFocusedPair: true,
+      );
+
+      expect(painter.direction, equals(RelayTransferDirection.send));
+      expect(painter.sourceOffset, equals(source));
+      expect(painter.targetOffset, equals(target));
+    });
+
+    test('receive path departs from remote target and arrives at center source', () {
+      const source = Offset(120, 160);
+      const target = Offset(280, 240);
+
+      const painter = RelayTransferStreamPainter(
+        sourceOffset: source,
+        targetOffset: target,
+        direction: RelayTransferDirection.receive,
+        phase: RelayDevicePhase.sending,
+        progress: 0.5,
+        primaryColor: Colors.grey,
+        accentColor: Colors.blue,
+        successColor: Colors.green,
+        errorColor: Colors.red,
+        isFocusedPair: true,
+      );
+
+      expect(painter.direction, equals(RelayTransferDirection.receive));
+      expect(painter.sourceOffset, equals(source));
+      expect(painter.targetOffset, equals(target));
+    });
+  });
+
+  group('RelaySpatialScene Phase 2.1 Terminal State & Epilogue Tests', () {
     testWidgets('renders active SEND transfer from center to remote device', (tester) async {
       tester.view.physicalSize = const Size(500, 800);
       tester.view.devicePixelRatio = 1.0;
@@ -217,6 +279,188 @@ void main() {
       expect(find.text('Receiving from device…'), findsOneWidget);
       expect(find.text('72%'), findsOneWidget);
       expect(find.text('Cancel'), findsOneWidget);
+    });
+
+    testWidgets('completed backend state reaches visual success epilogue', (tester) async {
+      tester.view.physicalSize = const Size(500, 800);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(() => tester.view.resetPhysicalSize());
+
+      const successTransfer = RelayTransferVm(
+        sessionId: 'test-success-1',
+        targetAlias: 'Arch Laptop',
+        direction: RelayTransferDirection.send,
+        progress: 1.0,
+        deviceKey: 'laptop-key-1',
+        phase: RelayDevicePhase.success,
+      );
+
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: darkTheme,
+          home: const Scaffold(
+            body: RelaySpatialScene(
+              selfAlias: 'Linux Workstation',
+              selfDeviceType: DeviceType.desktop,
+              presence: RelayPresence.ready,
+              devices: [verifiedLaptop],
+              activeTransfer: successTransfer,
+              animationsEnabled: true,
+            ),
+          ),
+        ),
+      );
+
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 200));
+
+      expect(find.text('Transfer complete'), findsOneWidget);
+      expect(find.text('100%'), findsOneWidget);
+      expect(find.byType(RelayTransferStream), findsOneWidget);
+
+      final stream = tester.widget<RelayTransferStream>(find.byType(RelayTransferStream));
+      expect(stream.phase, equals(RelayDevicePhase.success));
+    });
+
+    testWidgets('failed backend state reaches failure epilogue', (tester) async {
+      tester.view.physicalSize = const Size(500, 800);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(() => tester.view.resetPhysicalSize());
+
+      const failedTransfer = RelayTransferVm(
+        sessionId: 'test-fail-1',
+        targetAlias: 'Arch Laptop',
+        direction: RelayTransferDirection.send,
+        progress: 0.35,
+        deviceKey: 'laptop-key-1',
+        phase: RelayDevicePhase.failed,
+      );
+
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: darkTheme,
+          home: const Scaffold(
+            body: RelaySpatialScene(
+              selfAlias: 'Linux Workstation',
+              selfDeviceType: DeviceType.desktop,
+              presence: RelayPresence.ready,
+              devices: [verifiedLaptop],
+              activeTransfer: failedTransfer,
+              animationsEnabled: true,
+            ),
+          ),
+        ),
+      );
+
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 200));
+
+      expect(find.text('Transfer failed'), findsOneWidget);
+      expect(find.byType(RelayTransferStream), findsOneWidget);
+
+      final stream = tester.widget<RelayTransferStream>(find.byType(RelayTransferStream));
+      expect(stream.phase, equals(RelayDevicePhase.failed));
+    });
+
+    testWidgets('cancelled backend state reaches distinct cancel epilogue', (tester) async {
+      tester.view.physicalSize = const Size(500, 800);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(() => tester.view.resetPhysicalSize());
+
+      const cancelledTransfer = RelayTransferVm(
+        sessionId: 'test-cancel-1',
+        targetAlias: 'Arch Laptop',
+        direction: RelayTransferDirection.send,
+        progress: 0.40,
+        deviceKey: 'laptop-key-1',
+        phase: RelayDevicePhase.cancelled,
+      );
+
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: darkTheme,
+          home: const Scaffold(
+            body: RelaySpatialScene(
+              selfAlias: 'Linux Workstation',
+              selfDeviceType: DeviceType.desktop,
+              presence: RelayPresence.ready,
+              devices: [verifiedLaptop],
+              activeTransfer: cancelledTransfer,
+              animationsEnabled: true,
+            ),
+          ),
+        ),
+      );
+
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 200));
+
+      expect(find.text('Transfer cancelled'), findsOneWidget);
+      expect(find.byType(RelayTransferStream), findsOneWidget);
+
+      final stream = tester.widget<RelayTransferStream>(find.byType(RelayTransferStream));
+      expect(stream.phase, equals(RelayDevicePhase.cancelled));
+    });
+
+    testWidgets('terminal visual epilogue retains transition when backend clears immediately and settles to idle', (tester) async {
+      tester.view.physicalSize = const Size(500, 800);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(() => tester.view.resetPhysicalSize());
+
+      const nearCompleteTransfer = RelayTransferVm(
+        sessionId: 'test-transient-1',
+        targetAlias: 'Arch Laptop',
+        direction: RelayTransferDirection.send,
+        progress: 0.98,
+        deviceKey: 'laptop-key-1',
+        phase: RelayDevicePhase.sending,
+      );
+
+      // Step 1: In-flight active transfer
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: darkTheme,
+          home: const Scaffold(
+            body: RelaySpatialScene(
+              selfAlias: 'Linux Workstation',
+              selfDeviceType: DeviceType.desktop,
+              presence: RelayPresence.ready,
+              devices: [verifiedLaptop],
+              activeTransfer: nearCompleteTransfer,
+              animationsEnabled: true,
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+      expect(find.text('Sending to device…'), findsOneWidget);
+
+      // Step 2: Backend immediately removes the transfer session (activeTransfer = null)
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: darkTheme,
+          home: const Scaffold(
+            body: RelaySpatialScene(
+              selfAlias: 'Linux Workstation',
+              selfDeviceType: DeviceType.desktop,
+              presence: RelayPresence.ready,
+              devices: [verifiedLaptop],
+              activeTransfer: null, // Removed by backend
+              animationsEnabled: true,
+            ),
+          ),
+        ),
+      );
+
+      // Frame during epilogue (~200ms in): UI transition memory retains success epilogue
+      await tester.pump(const Duration(milliseconds: 200));
+      expect(find.byType(RelayTransferStream), findsOneWidget);
+      final streamDuringEpilogue = tester.widget<RelayTransferStream>(find.byType(RelayTransferStream));
+      expect(streamDuringEpilogue.phase, equals(RelayDevicePhase.success));
+
+      // Step 3: Epilogue duration expires (~900ms total) -> scene settles back to idle
+      await tester.pump(const Duration(milliseconds: 900));
+      expect(find.byType(RelayTransferStream), findsNothing);
     });
 
     testWidgets('handles progress states: 0%, 50%, 100%, and unknown/null progress', (tester) async {
@@ -303,7 +547,7 @@ void main() {
       expect(find.text('Arch Laptop'), findsWidgets);
     });
 
-    testWidgets('reduced-motion mode renders static transfer view without continuous orbit', (tester) async {
+    testWidgets('reduced-motion mode renders static transfer view without continuous orbit and bypasses epilogue delays', (tester) async {
       tester.view.physicalSize = const Size(500, 800);
       tester.view.devicePixelRatio = 1.0;
       addTearDown(() => tester.view.resetPhysicalSize());
