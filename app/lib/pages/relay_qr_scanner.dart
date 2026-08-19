@@ -2,15 +2,14 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:localsend_app/config/relay_brand.dart';
-import 'package:localsend_app/pages/ra2b_invite_scan.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 import 'package:permission_handler/permission_handler.dart';
 
-void ra2bScannerLog(String message) {
-  debugPrint('RA2B $message');
+void relayScannerLog(String message) {
+  debugPrint('Relay scanner: $message');
 }
 
-String ra2bScannerErrorCategory(Object error) {
+String relayScannerErrorCategory(Object error) {
   if (error is MobileScannerException) {
     return switch (error.errorCode) {
       MobileScannerErrorCode.permissionDenied => 'permission',
@@ -26,7 +25,7 @@ String ra2bScannerErrorCategory(Object error) {
   return 'init';
 }
 
-String ra2bScannerVisibleError(String category) {
+String relayScannerVisibleError(String category) {
   return switch (category) {
     'permission' => 'Camera permission required',
     'unavailable' => 'Camera unavailable',
@@ -54,16 +53,6 @@ class RelayQrScannerPage extends StatefulWidget {
   State<RelayQrScannerPage> createState() => _RelayQrScannerPageState();
 }
 
-/// Explicit harness wrapper retained for RA2B development routes.
-class Ra2bQrScannerPage extends RelayQrScannerPage {
-  const Ra2bQrScannerPage({super.key, super.requestCamera})
-    : super(
-        title: 'Scan Relay Anywhere Invite',
-        instruction: 'Scan the Linux Host QR. This does not connect or create trust.',
-        validate: ra2bInviteShapeError,
-      );
-}
-
 class _RelayQrScannerPageState extends State<RelayQrScannerPage> with WidgetsBindingObserver {
   late final MobileScannerController _controller;
   StreamSubscription<BarcodeCapture>? _barcodes;
@@ -83,12 +72,12 @@ class _RelayQrScannerPageState extends State<RelayQrScannerPage> with WidgetsBin
   @override
   void initState() {
     super.initState();
-    ra2bScannerLog('SCANNER_PAGE_OPEN');
+    relayScannerLog('SCANNER_PAGE_OPEN');
     _controller = MobileScannerController(
       autoStart: false,
       formats: const [BarcodeFormat.qrCode],
     );
-    ra2bScannerLog('SCANNER_CONTROLLER_CREATED');
+    relayScannerLog('SCANNER_CONTROLLER_CREATED');
     WidgetsBinding.instance.addObserver(this);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       unawaited(_startScanner());
@@ -121,7 +110,7 @@ class _RelayQrScannerPageState extends State<RelayQrScannerPage> with WidgetsBin
   }
 
   Future<void> _stopScanner({bool disposeController = false}) async {
-    ra2bScannerLog('SCANNER_STOPPED');
+    relayScannerLog('SCANNER_STOPPED');
     await _barcodes?.cancel();
     _barcodes = null;
     try {
@@ -143,42 +132,42 @@ class _RelayQrScannerPageState extends State<RelayQrScannerPage> with WidgetsBin
       _previewReady = false;
     });
     try {
-      ra2bScannerLog('CAMERA_PERMISSION_REQUEST');
+      relayScannerLog('CAMERA_PERMISSION_REQUEST');
       final status = await _requestCamera();
       if (!mounted || _disposed || _handled) {
         return;
       }
       if (!status.isGranted) {
-        ra2bScannerLog('CAMERA_PERMISSION_DENIED');
+        relayScannerLog('CAMERA_PERMISSION_DENIED');
         setState(() {
           _errorCategory = 'permission';
-          _status = ra2bScannerVisibleError('permission');
+          _status = relayScannerVisibleError('permission');
         });
         return;
       }
-      ra2bScannerLog('CAMERA_PERMISSION_GRANTED');
+      relayScannerLog('CAMERA_PERMISSION_GRANTED');
       _barcodes ??= _controller.barcodes.listen(
         _onDetect,
         onError: (Object error, StackTrace stack) {
-          ra2bScannerLog('SCANNER_ERROR=${ra2bScannerErrorCategory(error)}');
+          relayScannerLog('SCANNER_ERROR=${relayScannerErrorCategory(error)}');
           debugPrint('$error\n$stack');
         },
       );
-      ra2bScannerLog('SCANNER_START_REQUEST');
+      relayScannerLog('SCANNER_START_REQUEST');
       await _controller.start();
       if (!mounted || _disposed || _handled) {
         return;
       }
-      ra2bScannerLog('SCANNER_STARTED');
+      relayScannerLog('SCANNER_STARTED');
       setState(() {
         _previewReady = true;
         _status = null;
         _errorCategory = null;
       });
     } catch (error, stack) {
-      final category = ra2bScannerErrorCategory(error);
-      ra2bScannerLog('SCANNER_ERROR=$category');
-      debugPrint('RA2B scanner start failed: $error\n$stack');
+      final category = relayScannerErrorCategory(error);
+      relayScannerLog('SCANNER_ERROR=$category');
+      debugPrint('Relay scanner start failed: $error\n$stack');
       if (!mounted || _disposed) {
         return;
       }
@@ -193,7 +182,7 @@ class _RelayQrScannerPageState extends State<RelayQrScannerPage> with WidgetsBin
       setState(() {
         _previewReady = false;
         _errorCategory = category;
-        _status = ra2bScannerVisibleError(category);
+        _status = relayScannerVisibleError(category);
       });
     } finally {
       _starting = false;
@@ -212,7 +201,7 @@ class _RelayQrScannerPageState extends State<RelayQrScannerPage> with WidgetsBin
     if (raw.isEmpty || raw == _lastRaw) {
       return;
     }
-    ra2bScannerLog('BARCODE_DETECTED');
+    relayScannerLog('BARCODE_DETECTED');
     _lastRaw = raw;
     final error = widget.validate?.call(raw);
     if (error != null) {
@@ -223,12 +212,12 @@ class _RelayQrScannerPageState extends State<RelayQrScannerPage> with WidgetsBin
           : error.contains('exceeds')
           ? 'too_long'
           : 'malformed';
-      ra2bScannerLog('RA2B_INVITE_REJECTED=$category');
+      relayScannerLog('QR_REJECTED=$category');
       setState(() => _reject = error);
       return;
     }
     _handled = true;
-    ra2bScannerLog('RA2B_INVITE_ACCEPTED');
+    relayScannerLog('QR_ACCEPTED');
     unawaited(_accept(raw));
   }
 
@@ -267,11 +256,11 @@ class _RelayQrScannerPageState extends State<RelayQrScannerPage> with WidgetsBin
                   useAppLifecycleState: false,
                   placeholderBuilder: (_) => _statusPane(palette, 'Starting camera…'),
                   errorBuilder: (context, error) {
-                    final category = ra2bScannerErrorCategory(error);
-                    return _statusPane(palette, ra2bScannerVisibleError(category), retry: true);
+                    final category = relayScannerErrorCategory(error);
+                    return _statusPane(palette, relayScannerVisibleError(category), retry: true);
                   },
                 ),
-                if (_errorCategory != null) _statusPane(palette, _status ?? ra2bScannerVisibleError(_errorCategory!), retry: true),
+                if (_errorCategory != null) _statusPane(palette, _status ?? relayScannerVisibleError(_errorCategory!), retry: true),
                 if (_previewReady && _errorCategory == null)
                   IgnorePointer(
                     child: Center(
