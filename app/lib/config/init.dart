@@ -13,6 +13,7 @@ import 'package:localsend_app/pages/home_page_controller.dart';
 import 'package:localsend_app/pages/whats_new_page.dart';
 import 'package:localsend_app/provider/animation_provider.dart';
 import 'package:localsend_app/provider/app_arguments_provider.dart';
+import 'package:localsend_app/provider/continuity/continuity_provider.dart';
 import 'package:localsend_app/provider/device_info_provider.dart';
 import 'package:localsend_app/provider/network/nearby_devices_provider.dart';
 import 'package:localsend_app/provider/network/server/server_provider.dart';
@@ -413,6 +414,15 @@ Future<void> postInit(BuildContext context, Ref ref, bool appStart, NetworkBoots
   await ref.future(versionProvider).then((version) async {
     await ref.read(persistenceProvider).setWhatsNew(version.version);
   });
+
+  // Continuity reads its persisted consent and publishes what this device can
+  // actually do. On a fresh install nothing is enabled, so this ends there: no
+  // observation, no background service and no connection.
+  unawaited(
+    ref
+        .redux(continuityProvider)
+        .dispatchAsync(ContinuityInitAction(deviceLabel: ref.read(settingsProvider).alias)),
+  );
 
   // [FOSS_REMOVE_START]
   if (checkPlatformSupportPayment()) {

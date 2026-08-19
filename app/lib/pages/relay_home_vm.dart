@@ -1,11 +1,14 @@
 import 'package:collection/collection.dart';
+import 'package:localsend_app/model/continuity/continuity_runtime.dart';
 import 'package:localsend_app/model/cross_file.dart';
+import 'package:localsend_app/model/persistence/relay_continuity_settings.dart';
 import 'package:localsend_app/model/persistence/relay_paired_address.dart';
 import 'package:localsend_app/model/state/nearby_devices_state.dart';
 import 'package:localsend_app/model/state/send/send_session_state.dart';
 import 'package:localsend_app/model/state/server/server_state.dart';
 import 'package:localsend_app/model/ui/relay_capability_vm.dart';
 import 'package:localsend_app/model/ui/relay_device_vm.dart';
+import 'package:localsend_app/provider/continuity/continuity_provider.dart';
 import 'package:localsend_app/provider/device_info_provider.dart';
 import 'package:localsend_app/provider/file_transfer_provider.dart';
 import 'package:localsend_app/provider/network/nearby_devices_provider.dart';
@@ -100,6 +103,7 @@ class RelayHomeVm {
     List<RelayPairedAddress> pairedRoutes = const [],
     Map<String, RelayRemoteTransfer> remoteTransfers = const {},
     Map<String, RelayVerifiedLanDevice> verifiedLanDevices = const {},
+    RelayContinuityState continuity = const RelayContinuityState(),
   }) {
     final selection = RelayPayloadVm(
       fileCount: selectedFiles.length,
@@ -121,6 +125,7 @@ class RelayHomeVm {
           for (final verified in verifiedLanDevices.values)
             if (nearby.allDevices.containsKey(verified.device.fingerprint))
               _verifiedDeviceVm(
+                continuity: continuity,
                 verified: verified,
                 route: pairedByRelayId.remove(verified.relayId),
                 transfer: remoteTransfers.values.firstWhereOrNull((entry) => entry.relayId == verified.relayId),
@@ -128,7 +133,7 @@ class RelayHomeVm {
                 transfers: transfers,
               ),
           for (final route in pairedByRelayId.values)
-            _pairedDeviceVm(route, remoteTransfers.values.firstWhereOrNull((entry) => entry.relayId == route.relayId)),
+            _pairedDeviceVm(route, remoteTransfers.values.firstWhereOrNull((entry) => entry.relayId == route.relayId), continuity),
         ]..sort((a, b) {
           final aliasComparison = a.alias.toLowerCase().compareTo(b.alias.toLowerCase());
           return aliasComparison != 0 ? aliasComparison : a.key.compareTo(b.key);
@@ -230,7 +235,11 @@ class RelayHomeVm {
     deviceModel: device.deviceModel,
   );
 
-  static RelayDeviceVm _pairedDeviceVm(RelayPairedAddress route, RelayRemoteTransfer? transfer) => RelayDeviceVm(
+  static RelayDeviceVm _pairedDeviceVm(
+    RelayPairedAddress route,
+    RelayRemoteTransfer? transfer,
+    RelayContinuityState continuity,
+  ) => RelayDeviceVm(
     key: 'relay:${route.relayId}',
     alias: route.displayLabel ?? 'Relay device',
     deviceType: DeviceType.desktop,
@@ -245,9 +254,13 @@ class RelayHomeVm {
       _ => RelayConnectionType.relayed,
     },
     securityState: RelaySecurityState.verifiedRelay,
+    battery: _batteryFor(continuity, route.relayId),
+    capabilities: _capabilitiesFor(continuity, route.relayId),
+    continuityConnected: continuity.deviceFor(route.relayId).connected,
   );
 
   static RelayDeviceVm _verifiedDeviceVm({
+    required RelayContinuityState continuity,
     required RelayVerifiedLanDevice verified,
     required RelayPairedAddress? route,
     required RelayRemoteTransfer? transfer,
@@ -275,8 +288,58 @@ class RelayHomeVm {
       ip: verified.device.ip,
       port: verified.device.port,
       deviceModel: verified.device.deviceModel,
+      battery: _batteryFor(continuity, verified.relayId),
+      capabilities: _capabilitiesFor(continuity, verified.relayId),
+      continuityConnected: continuity.deviceFor(verified.relayId).connected,
     );
   }
+
+  /// The peer's last reported battery, marked stale rather than dropped when it
+  /// is old.
+  static RelayBatteryVm _batteryFor(RelayContinuityState continuity, String relayId) {
+    final battery = continuity.deviceFor(relayId).battery;
+    if (battery == null) {
+      return const RelayBatteryVm();
+    }
+    return RelayBatteryVm(
+      percentage: battery.percentage,
+      isCharging: battery.isCharging,
+      isFull: battery.isFull,
+      isStale: battery.isStale(DateTime.now()),
+    );
+  }
+
+  /// Folds three separate facts into one status per capability: what the user
+  /// enabled here, whether a session is live, and what the peer advertised.
+  static Map<RelayCapability, CapabilityStatus> _capabilitiesFor(RelayContinuityState continuity, String relayId) {
+    final settings = continuity.settingsFor(relayId);
+    final device = continuity.deviceFor(relayId);
+    final result = <RelayCapability, CapabilityStatus>{};
+    for (final kind in ContinuityCapabilityKind.values) {
+      final capability = _capabilityOf(kind);
+      if (!settings.isEnabled(kind)) {
+        result[capability] = CapabilityStatus.disabled;
+        continue;
+      }
+      final remote = device.remoteCapabilities[kind];
+      result[capability] = switch (remote) {
+        null => device.connected ? CapabilityStatus.available : CapabilityStatus.disabled,
+        final state when state.needsPermission => CapabilityStatus.permissionRequired,
+        final state when state.isLimited => CapabilityStatus.limited,
+        final state when state.isAvailable => CapabilityStatus.available,
+        _ => CapabilityStatus.unavailable,
+      };
+    }
+    return result;
+  }
+
+  static RelayCapability _capabilityOf(ContinuityCapabilityKind kind) => switch (kind) {
+    ContinuityCapabilityKind.battery => RelayCapability.battery,
+    ContinuityCapabilityKind.clipboard => RelayCapability.clipboard,
+    ContinuityCapabilityKind.notifications => RelayCapability.notifications,
+    ContinuityCapabilityKind.messages => RelayCapability.messages,
+    ContinuityCapabilityKind.phone => RelayCapability.phone,
+  };
 
   static RelayDevicePhase _pairedPhase(RelayRemoteTransfer? transfer) => switch (transfer?.phase) {
     null => RelayDevicePhase.idle,
@@ -358,5 +421,6 @@ final relayHomeVmProvider = ViewProvider<RelayHomeVm>((ref) {
     pairedRoutes: ref.watch(relayPairedRoutesProvider),
     remoteTransfers: ref.watch(relayRemoteTransfersProvider),
     verifiedLanDevices: ref.watch(relayVerifiedLanDevicesProvider),
+    continuity: ref.watch(continuityProvider),
   );
 }, debugLabel: 'relayHomeVmProvider');
