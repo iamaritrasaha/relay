@@ -9,6 +9,7 @@ use std::sync::Arc;
 use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 
+use super::continuity_link::{accept_continuity, spawn_link, ContinuityLink, CONTINUITY_ALPN};
 use super::endpoint::{bind_endpoint_with_key, AnywhereEndpoint, PathPreference};
 use super::transfer::{
     receive_on_connection, wait_online, AnywhereEvent, AnywhereEventSink, AnywhereReceiveRequest,
@@ -18,14 +19,31 @@ use super::{
     RelayAddressV1,
 };
 
+/// Everything the listener needs to serve an inbound continuity connection.
+///
+/// The factory is called once per accepted connection so each session gets its
+/// own event sink and host channel; the trust directory and permission store it
+/// closes over are shared and read live, which is what makes revoking a
+/// capability take effect on the next message rather than the next restart.
+#[derive(Clone)]
+pub struct ContinuityAcceptConfig {
+    pub session_config: Arc<dyn Fn() -> crate::continuity::ContinuitySessionConfig + Send + Sync>,
+    pub links: tokio::sync::mpsc::Sender<crate::continuity::ContinuitySessionHandle>,
+}
+
 /// Listener configuration. The Routing key is separate from the Relay
 /// identity and remains an opaque platform-secret-store value.
+///
+/// `continuity` is `None` unless the user has enabled at least one continuity
+/// capability, so an install that only transfers files never serves the
+/// continuity ALPN.
 #[derive(Clone)]
 pub struct AnywhereListenerConfig {
     pub identity: AnywhereIdentity,
     pub routing_key: AnywhereRoutingKey,
     pub preference: PathPreference,
     pub alias: String,
+    pub continuity: Option<ContinuityAcceptConfig>,
 }
 
 /// Transport-neutral listener events. Transfer progress and completion are
@@ -102,6 +120,31 @@ impl AnywhereListener {
                 let events = accept_events.clone();
                 let listener_cancel = accept_cancel.clone();
                 tokio::spawn(async move {
+                    let connection = tokio::select! {
+                        _ = listener_cancel.cancelled() => return,
+                        connection = incoming => match connection {
+                            Ok(connection) => connection,
+                            Err(error) => {
+                                tracing::warn!("Anywhere listener connection failed: {error}");
+                                return;
+                            }
+                        },
+                    };
+
+                    // Continuity and transfer are separate protocols on one
+                    // endpoint. Dispatching on the negotiated ALPN keeps the
+                    // transfer wire format untouched.
+                    if connection.alpn() == CONTINUITY_ALPN {
+                        let Some(continuity) = config.continuity.clone() else {
+                            // Continuity is not enabled on this device; refuse
+                            // rather than half-serving it.
+                            connection.close(0_u32.into(), b"continuity disabled");
+                            return;
+                        };
+                        serve_continuity(connection, &config, continuity, listener_cancel).await;
+                        return;
+                    }
+
                     let (session_id, session_cancel) = runtime.open_session();
                     let event_sink: AnywhereEventSink = Arc::new({
                         let events = events.clone();
@@ -112,22 +155,19 @@ impl AnywhereListener {
                     let result = tokio::select! {
                         _ = listener_cancel.cancelled() => Err(AnywhereError::Cancelled),
                         _ = session_cancel.cancelled() => Err(AnywhereError::Cancelled),
-                        connection = incoming => match connection {
-                            Ok(connection) => receive_on_connection(
-                                runtime.clone(),
-                                session_id,
-                                session_cancel.clone(),
-                                AnywhereReceiveRequest {
-                                    identity: config.identity,
-                                    preference: config.preference,
-                                    alias: config.alias,
-                                    expected_remote_relay_id: None,
-                                },
-                                connection,
-                                event_sink,
-                            ).await,
-                            Err(error) => Err(AnywhereError::transport(super::TransportStage::Accept, error)),
-                        },
+                        outcome = receive_on_connection(
+                            runtime.clone(),
+                            session_id,
+                            session_cancel.clone(),
+                            AnywhereReceiveRequest {
+                                identity: config.identity,
+                                preference: config.preference,
+                                alias: config.alias,
+                                expected_remote_relay_id: None,
+                            },
+                            connection,
+                            event_sink,
+                        ) => outcome,
                     };
                     if let Err(error) = result {
                         events(AnywhereListenerEvent::SessionFailed {
@@ -168,6 +208,30 @@ impl AnywhereListener {
     }
 }
 
+/// Authenticates and serves one inbound continuity connection.
+///
+/// Authorization is *not* performed here: `run_session` re-checks the trust
+/// record and the per-capability grant against the proven RelayId, so there is
+/// exactly one place that decides.
+async fn serve_continuity(
+    connection: iroh::endpoint::Connection,
+    config: &AnywhereListenerConfig,
+    continuity: ContinuityAcceptConfig,
+    cancel: CancellationToken,
+) {
+    let accepted = accept_continuity(connection, &config.identity, config.preference).await;
+    let (session, stream) = match accepted {
+        Ok(accepted) => accepted,
+        Err(error) => {
+            tracing::warn!("continuity authentication failed: {}", error.category());
+            return;
+        }
+    };
+    let link: ContinuityLink = spawn_link(stream, session, (continuity.session_config)(), cancel);
+    let _ = continuity.links.send(link.handle().clone()).await;
+    let _ = link.shutdown().await;
+}
+
 #[cfg(test)]
 mod tests {
     use std::sync::Mutex;
@@ -196,6 +260,7 @@ mod tests {
                 routing_key,
                 preference: PathPreference::ForceDirect,
                 alias: "listener-test".to_owned(),
+                continuity: None,
             },
             event_sink,
         )
