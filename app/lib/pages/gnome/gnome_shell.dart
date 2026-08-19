@@ -280,6 +280,7 @@ class _GnomeShellState extends State<GnomeShell> with Refena {
           selfDeviceType: widget.vm.selfDeviceType,
           presence: widget.vm.presence,
           devices: widget.vm.devices,
+          activeTransfer: widget.vm.activeTransfer,
           selectedDeviceKey: _selectedDeviceKey,
           animationsEnabled: widget.animationsEnabled,
           height: 280,
@@ -288,6 +289,7 @@ class _GnomeShellState extends State<GnomeShell> with Refena {
           },
           onSendFiles: (device) => _pickAndSendFiles(device),
           onOpenDetails: (device) => _openDiagnostics(device),
+          onCancelTransfer: () => _cancelTransfer(),
         ),
         GnomeDeviceDetailView(
           device: selectedDevice,

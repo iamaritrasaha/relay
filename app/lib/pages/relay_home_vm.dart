@@ -35,24 +35,37 @@ class RelayPayloadVm {
   bool get isEmpty => fileCount == 0;
 }
 
-/// The one in-flight send the payload dock reports on.
+enum RelayTransferDirection { send, receive }
+
+/// The one in-flight transfer (send or receive) the spatial scene and payload dock report on.
 ///
-/// Everything here is read off the existing send session state — the dock does
+/// Everything here is read off the existing session state — it does
 /// not introduce any transfer information the model does not already expose.
 class RelayTransferVm {
   final String sessionId;
   final String targetAlias;
+  final RelayTransferDirection direction;
   final double? progress;
   final bool remote;
   final String? origin;
+  final String? deviceKey;
+  final int fileCount;
+  final RelayDevicePhase phase;
 
   const RelayTransferVm({
     required this.sessionId,
     required this.targetAlias,
+    this.direction = RelayTransferDirection.send,
     required this.progress,
     this.remote = false,
     this.origin,
+    this.deviceKey,
+    this.fileCount = 1,
+    this.phase = RelayDevicePhase.sending,
   });
+
+  bool get isSend => direction == RelayTransferDirection.send;
+  bool get isReceive => direction == RelayTransferDirection.receive;
 }
 
 class RelayIncomingVm {
@@ -151,7 +164,12 @@ class RelayHomeVm {
       devices: devices,
       incoming: RelayIncomingVm(hasActiveRequest: server?.session != null),
       intents: RelayHomeIntents(canSelectPayload: true, canChooseTarget: !selection.isEmpty),
-      activeTransfer: _activeTransfer(sendSessions: sendSessions, transfers: transfers, remoteTransfers: remoteTransfers),
+      activeTransfer: _activeTransfer(
+        sendSessions: sendSessions,
+        transfers: transfers,
+        remoteTransfers: remoteTransfers,
+        server: server,
+      ),
     );
   }
 
@@ -159,7 +177,9 @@ class RelayHomeVm {
     required Map<String, SendSessionState> sendSessions,
     required FileTransferNotifier transfers,
     required Map<String, RelayRemoteTransfer> remoteTransfers,
+    required ServerState? server,
   }) {
+    // 1. Check local/LAN send sessions
     for (final session in sendSessions.values) {
       final hasTransferFailure = transfers.getStatuses(session.sessionId).contains(FileStatus.failed);
       final phase = _phaseFor(session, hasTransferFailure);
@@ -167,16 +187,22 @@ class RelayHomeVm {
         return RelayTransferVm(
           sessionId: session.sessionId,
           targetAlias: session.target.alias,
+          direction: RelayTransferDirection.send,
           progress: phase == RelayDevicePhase.sending ? _progressFor(session, transfers) : null,
           origin: 'Local',
+          deviceKey: session.target.fingerprint,
+          fileCount: session.files.length,
+          phase: phase,
         );
       }
     }
+    // 2. Check remote Relay send transfers
     for (final transfer in remoteTransfers.values) {
       if (transfer.phase == RelayRemoteTransferPhase.preparing || transfer.phase == RelayRemoteTransferPhase.sending) {
         return RelayTransferVm(
           sessionId: transfer.sessionId,
           targetAlias: transfer.alias,
+          direction: RelayTransferDirection.send,
           progress: transfer.totalBytes == 0 ? null : transfer.bytes / transfer.totalBytes,
           remote: true,
           origin: switch (transfer.origin) {
@@ -184,6 +210,35 @@ class RelayHomeVm {
             'relay' => 'Relayed',
             _ => null,
           },
+          deviceKey: 'relay:${transfer.relayId}',
+          fileCount: 1,
+          phase: transfer.phase == RelayRemoteTransferPhase.preparing ? RelayDevicePhase.verifying : RelayDevicePhase.sending,
+        );
+      }
+    }
+    // 3. Check incoming receive session
+    if (server?.session != null) {
+      final receiveSession = server!.session!;
+      if (receiveSession.status == SessionStatus.sending || receiveSession.status == SessionStatus.waiting) {
+        final files = receiveSession.files.values.toList();
+        final totalBytes = files.fold<int>(0, (total, file) => total + file.file.size);
+        double? progress;
+        if (totalBytes > 0 && receiveSession.status == SessionStatus.sending) {
+          final currentBytes = files.fold<double>(
+            0,
+            (total, file) => total + transfers.getProgress(sessionId: receiveSession.sessionId, fileId: file.file.id).clamp(0, 1) * file.file.size,
+          );
+          progress = (currentBytes / totalBytes).clamp(0, 1);
+        }
+        return RelayTransferVm(
+          sessionId: receiveSession.sessionId,
+          targetAlias: receiveSession.senderAlias,
+          direction: RelayTransferDirection.receive,
+          progress: progress,
+          origin: 'Local',
+          deviceKey: receiveSession.sender.fingerprint,
+          fileCount: files.length,
+          phase: receiveSession.status == SessionStatus.sending ? RelayDevicePhase.sending : RelayDevicePhase.waiting,
         );
       }
     }

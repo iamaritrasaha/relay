@@ -84,16 +84,19 @@ class RelaySpatialUniversePainter extends CustomPainter {
 /// The core spatial device experience scene.
 ///
 /// Places THIS DEVICE at the visual center of a motion universe with remote devices
-/// orbiting deterministically around it. Tapping a device smoothly focuses the relationship.
+/// orbiting deterministically around it. Real transfers trigger a signature perspective
+/// orbit with directional payload streams and depth layering.
 class RelaySpatialScene extends StatefulWidget {
   final String selfAlias;
   final DeviceType selfDeviceType;
   final RelayPresence presence;
   final List<RelayDeviceVm> devices;
+  final RelayTransferVm? activeTransfer;
   final String? selectedDeviceKey;
   final ValueChanged<RelayDeviceVm?>? onDeviceSelected;
   final ValueChanged<RelayDeviceVm>? onSendFiles;
   final ValueChanged<RelayDeviceVm>? onOpenDetails;
+  final VoidCallback? onCancelTransfer;
   final bool animationsEnabled;
   final double height;
 
@@ -103,10 +106,12 @@ class RelaySpatialScene extends StatefulWidget {
     required this.selfDeviceType,
     required this.presence,
     required this.devices,
+    this.activeTransfer,
     this.selectedDeviceKey,
     this.onDeviceSelected,
     this.onSendFiles,
     this.onOpenDetails,
+    this.onCancelTransfer,
     this.animationsEnabled = true,
     this.height = 360,
   });
@@ -231,7 +236,19 @@ class _RelaySpatialSceneState extends State<RelaySpatialScene> with TickerProvid
     final primaryDevices = widget.devices.where((d) => d.isAuthenticatedRelay).toList();
     final compatibilityDevices = widget.devices.where((d) => d.isCompatibilityPeer).toList();
 
-    final focusedDevice = widget.devices.where((d) => d.key == _internalFocusedKey).firstOrNull;
+    // Identify active transfer device if any
+    final activeTransfer = widget.activeTransfer;
+    RelayDeviceVm? transferringDevice;
+    if (activeTransfer != null) {
+      transferringDevice = widget.devices.where((d) {
+        return (activeTransfer.deviceKey != null && d.key == activeTransfer.deviceKey) ||
+            d.alias.toLowerCase() == activeTransfer.targetAlias.toLowerCase() ||
+            d.phase == RelayDevicePhase.sending ||
+            d.phase == RelayDevicePhase.verifying;
+      }).firstOrNull;
+    }
+
+    final focusedDevice = transferringDevice ?? widget.devices.where((d) => d.key == _internalFocusedKey).firstOrNull;
 
     return Column(
       mainAxisSize: MainAxisSize.min,
@@ -268,21 +285,169 @@ class _RelaySpatialSceneState extends State<RelaySpatialScene> with TickerProvid
                         ),
                       ),
 
-                      // Animated Relationship Energy Bridge / Stream
+                      // Layered Device Universe with Depth Z-Ordering and Transfer Stream
                       AnimatedBuilder(
                         animation: Listenable.merge([_ambientController, _focusController]),
                         builder: (context, child) {
                           final focusVal = reducedMotion ? (_internalFocusedKey != null ? 1.0 : 0.0) : _focusCurve.value;
                           final ambientVal = reducedMotion ? 0.0 : _ambientController.value;
 
-                          if (focusedDevice != null && focusVal > 0.01) {
-                            final selfPos = RelaySpatialLayoutEngine.computeSelfPosition(
+                          final isTransferActive = transferringDevice != null;
+                          final transferProgress = activeTransfer?.progress ?? transferringDevice?.progress;
+                          final transferPhase = activeTransfer?.phase ?? transferringDevice?.phase ?? RelayDevicePhase.idle;
+                          final transferDir = activeTransfer?.direction ?? RelayTransferDirection.send;
+
+                          // Compute Self Node Position
+                          final selfPos = RelaySpatialLayoutEngine.computeSelfPosition(
+                            sceneSize: sceneSize,
+                            focusProgress: focusVal,
+                            hasFocusedDevice: focusedDevice != null,
+                            ambientPhase: ambientVal,
+                            isTransferActive: isTransferActive && !reducedMotion,
+                          );
+
+                          final rearNodes = <Widget>[];
+                          final frontNodes = <Widget>[];
+                          SpatialNodePosition? activeTransferRemotePos;
+
+                          // Process and position compatibility devices (Outer Ring)
+                          for (int i = 0; i < compatibilityDevices.length; i++) {
+                            final device = compatibilityDevices[i];
+                            final pos = RelaySpatialLayoutEngine.computeRemotePosition(
+                              device: device,
+                              indexInRing: i,
+                              totalInRing: compatibilityDevices.length,
                               sceneSize: sceneSize,
-                              focusProgress: focusVal,
-                              hasFocusedDevice: true,
                               ambientPhase: ambientVal,
+                              focusedDeviceKey: focusedDevice?.key,
+                              focusProgress: focusVal,
+                              transferDeviceKey: transferringDevice?.key,
+                              transferProgress: transferProgress,
+                              transferPhase: transferPhase,
                             );
 
+                            if (transferringDevice?.key == device.key) {
+                              activeTransferRemotePos = pos;
+                            }
+
+                            final isThisFocused = focusedDevice?.key == device.key;
+                            final isDimmed = (focusedDevice != null && !isThisFocused) || pos.opacity < 0.99;
+
+                            final nodeWidget = Positioned(
+                              left: pos.offset.dx - 50,
+                              top: pos.offset.dy - 40,
+                              child: Transform.scale(
+                                scale: pos.scale,
+                                child: RelayDeviceNode(
+                                  alias: device.alias,
+                                  deviceType: device.deviceType,
+                                  isSelected: isThisFocused,
+                                  isDimmed: isDimmed,
+                                  isVerifiedRelay: false,
+                                  isCompatibilityPeer: true,
+                                  continuityConnected: device.continuityConnected,
+                                  battery: device.battery,
+                                  detail: device.detail,
+                                  phase: device.phase,
+                                  progress: device.progress,
+                                  ambientPulse: ambientVal,
+                                  onTap: () => _handleDeviceTap(device),
+                                ),
+                              ),
+                            );
+
+                            if (pos.isBehindCenter) {
+                              rearNodes.add(nodeWidget);
+                            } else {
+                              frontNodes.add(nodeWidget);
+                            }
+                          }
+
+                          // Process and position primary/authenticated devices (Inner Ring)
+                          for (int i = 0; i < primaryDevices.length; i++) {
+                            final device = primaryDevices[i];
+                            final pos = RelaySpatialLayoutEngine.computeRemotePosition(
+                              device: device,
+                              indexInRing: i,
+                              totalInRing: primaryDevices.length,
+                              sceneSize: sceneSize,
+                              ambientPhase: ambientVal,
+                              focusedDeviceKey: focusedDevice?.key,
+                              focusProgress: focusVal,
+                              transferDeviceKey: transferringDevice?.key,
+                              transferProgress: transferProgress,
+                              transferPhase: transferPhase,
+                            );
+
+                            if (transferringDevice?.key == device.key) {
+                              activeTransferRemotePos = pos;
+                            }
+
+                            final isThisFocused = focusedDevice?.key == device.key;
+                            final isDimmed = (focusedDevice != null && !isThisFocused) || pos.opacity < 0.99;
+
+                            final nodeWidget = Positioned(
+                              left: pos.offset.dx - 50,
+                              top: pos.offset.dy - 40,
+                              child: Transform.scale(
+                                scale: pos.scale,
+                                child: RelayDeviceNode(
+                                  alias: device.alias,
+                                  deviceType: device.deviceType,
+                                  isSelected: isThisFocused,
+                                  isDimmed: isDimmed,
+                                  isVerifiedRelay: device.isVerifiedRelay,
+                                  isCompatibilityPeer: false,
+                                  continuityConnected: device.continuityConnected,
+                                  battery: device.battery,
+                                  detail: device.detail,
+                                  phase: device.phase,
+                                  progress: device.progress,
+                                  ambientPulse: ambientVal,
+                                  onTap: () => _handleDeviceTap(device),
+                                ),
+                              ),
+                            );
+
+                            if (pos.isBehindCenter) {
+                              rearNodes.add(nodeWidget);
+                            } else {
+                              frontNodes.add(nodeWidget);
+                            }
+                          }
+
+                          // Center Self Device Node Widget
+                          final selfNodeWidget = Positioned(
+                            left: selfPos.offset.dx - 50,
+                            top: selfPos.offset.dy - 46,
+                            child: Transform.scale(
+                              scale: selfPos.scale,
+                              child: RelayDeviceNode(
+                                alias: widget.selfAlias,
+                                deviceType: widget.selfDeviceType,
+                                isSelf: true,
+                                isSelected: false,
+                                isDimmed: false,
+                                ambientPulse: ambientVal,
+                              ),
+                            ),
+                          );
+
+                          // State-Driven Transfer Stream / Relationship Bridge
+                          Widget? streamWidget;
+                          if (transferringDevice != null && activeTransferRemotePos != null) {
+                            streamWidget = RelayTransferStream(
+                              sourceOffset: selfPos.offset,
+                              targetOffset: activeTransferRemotePos.offset,
+                              direction: transferDir,
+                              phase: transferPhase,
+                              progress: transferProgress,
+                              pulsePhase: (ambientVal * 4) % 1.0,
+                              isFocusedPair: true,
+                              fileCount: activeTransfer?.fileCount ?? 1,
+                              origin: activeTransfer?.origin,
+                            );
+                          } else if (focusedDevice != null && focusVal > 0.01) {
                             final isPrimary = focusedDevice.isAuthenticatedRelay;
                             final ringList = isPrimary ? primaryDevices : compatibilityDevices;
                             final idx = math.max(0, ringList.indexWhere((d) => d.key == focusedDevice.key));
@@ -293,143 +458,32 @@ class _RelaySpatialSceneState extends State<RelaySpatialScene> with TickerProvid
                               totalInRing: math.max(1, ringList.length),
                               sceneSize: sceneSize,
                               ambientPhase: ambientVal,
-                              focusedDeviceKey: _internalFocusedKey,
+                              focusedDeviceKey: focusedDevice.key,
                               focusProgress: focusVal,
                             );
 
-                            return RelayTransferStream(
+                            streamWidget = RelayTransferStream(
                               sourceOffset: selfPos.offset,
                               targetOffset: targetPos.offset,
+                              direction: RelayTransferDirection.send,
                               phase: focusedDevice.phase,
                               progress: focusedDevice.progress,
                               pulsePhase: (ambientVal * 4) % 1.0,
                               isFocusedPair: true,
+                              origin: focusedDevice.connectionType.label,
                             );
                           }
-                          return const SizedBox.shrink();
-                        },
-                      ),
 
-                      // Surrounding Remote Device Nodes
-                      AnimatedBuilder(
-                        animation: Listenable.merge([_ambientController, _focusController]),
-                        builder: (context, child) {
-                          final focusVal = reducedMotion ? (_internalFocusedKey != null ? 1.0 : 0.0) : _focusCurve.value;
-                          final ambientVal = reducedMotion ? 0.0 : _ambientController.value;
-
-                          final widgets = <Widget>[];
-
-                          // Render Center / Self Device Node (Base layer)
-                          final selfPos = RelaySpatialLayoutEngine.computeSelfPosition(
-                            sceneSize: sceneSize,
-                            focusProgress: focusVal,
-                            hasFocusedDevice: _internalFocusedKey != null,
-                            ambientPhase: ambientVal,
+                          // Compose Z-Order: Rear Nodes -> Self Node -> Stream -> Front Nodes
+                          return Stack(
+                            clipBehavior: Clip.none,
+                            children: [
+                              ...rearNodes,
+                              selfNodeWidget,
+                              ?streamWidget,
+                              ...frontNodes,
+                            ],
                           );
-
-                          widgets.add(
-                            Positioned(
-                              left: selfPos.offset.dx - 50,
-                              top: selfPos.offset.dy - 46,
-                              child: Transform.scale(
-                                scale: selfPos.scale,
-                                child: RelayDeviceNode(
-                                  alias: widget.selfAlias,
-                                  deviceType: widget.selfDeviceType,
-                                  isSelf: true,
-                                  isSelected: false,
-                                  isDimmed: false,
-                                  ambientPulse: ambientVal,
-                                ),
-                              ),
-                            ),
-                          );
-
-                          // Render Compatibility Devices (Outer Ring)
-                          for (int i = 0; i < compatibilityDevices.length; i++) {
-                            final device = compatibilityDevices[i];
-                            final pos = RelaySpatialLayoutEngine.computeRemotePosition(
-                              device: device,
-                              indexInRing: i,
-                              totalInRing: compatibilityDevices.length,
-                              sceneSize: sceneSize,
-                              ambientPhase: ambientVal,
-                              focusedDeviceKey: _internalFocusedKey,
-                              focusProgress: focusVal,
-                            );
-
-                            final isThisFocused = _internalFocusedKey == device.key;
-                            final isDimmed = _internalFocusedKey != null && !isThisFocused;
-
-                            widgets.add(
-                              Positioned(
-                                left: pos.offset.dx - 50,
-                                top: pos.offset.dy - 40,
-                                child: Transform.scale(
-                                  scale: pos.scale,
-                                  child: RelayDeviceNode(
-                                    alias: device.alias,
-                                    deviceType: device.deviceType,
-                                    isSelected: isThisFocused,
-                                    isDimmed: isDimmed,
-                                    isVerifiedRelay: false,
-                                    isCompatibilityPeer: true,
-                                    continuityConnected: device.continuityConnected,
-                                    battery: device.battery,
-                                    detail: device.detail,
-                                    phase: device.phase,
-                                    progress: device.progress,
-                                    ambientPulse: ambientVal,
-                                    onTap: () => _handleDeviceTap(device),
-                                  ),
-                                ),
-                              ),
-                            );
-                          }
-
-                          // Render Authenticated / Paired Devices (Inner Ring)
-                          for (int i = 0; i < primaryDevices.length; i++) {
-                            final device = primaryDevices[i];
-                            final pos = RelaySpatialLayoutEngine.computeRemotePosition(
-                              device: device,
-                              indexInRing: i,
-                              totalInRing: primaryDevices.length,
-                              sceneSize: sceneSize,
-                              ambientPhase: ambientVal,
-                              focusedDeviceKey: _internalFocusedKey,
-                              focusProgress: focusVal,
-                            );
-
-                            final isThisFocused = _internalFocusedKey == device.key;
-                            final isDimmed = _internalFocusedKey != null && !isThisFocused;
-
-                            widgets.add(
-                              Positioned(
-                                left: pos.offset.dx - 50,
-                                top: pos.offset.dy - 40,
-                                child: Transform.scale(
-                                  scale: pos.scale,
-                                  child: RelayDeviceNode(
-                                    alias: device.alias,
-                                    deviceType: device.deviceType,
-                                    isSelected: isThisFocused,
-                                    isDimmed: isDimmed,
-                                    isVerifiedRelay: device.isVerifiedRelay,
-                                    isCompatibilityPeer: false,
-                                    continuityConnected: device.continuityConnected,
-                                    battery: device.battery,
-                                    detail: device.detail,
-                                    phase: device.phase,
-                                    progress: device.progress,
-                                    ambientPulse: ambientVal,
-                                    onTap: () => _handleDeviceTap(device),
-                                  ),
-                                ),
-                              ),
-                            );
-                          }
-
-                          return Stack(clipBehavior: Clip.none, children: widgets);
                         },
                       ),
                     ],
@@ -440,24 +494,37 @@ class _RelaySpatialSceneState extends State<RelaySpatialScene> with TickerProvid
           ),
         ),
 
-        // Emergent Relationship Capabilities Panel (Active when a device is focused)
+        // Emergent Relationship / Active Transfer Capabilities Panel
         AnimatedSize(
           duration: const Duration(milliseconds: 300),
           curve: Curves.easeOutCubic,
-          child: focusedDevice != null ? _buildRelationshipPanel(context, palette, focusedDevice) : const SizedBox.shrink(),
+          child: focusedDevice != null ? _buildRelationshipPanel(context, palette, focusedDevice, activeTransfer) : const SizedBox.shrink(),
         ),
       ],
     );
   }
 
-  Widget _buildRelationshipPanel(BuildContext context, RelayPalette palette, RelayDeviceVm device) {
+  Widget _buildRelationshipPanel(
+    BuildContext context,
+    RelayPalette palette,
+    RelayDeviceVm device,
+    RelayTransferVm? activeTransfer,
+  ) {
+    final bool isTransferActive =
+        activeTransfer != null &&
+        (device.phase == RelayDevicePhase.sending ||
+            device.phase == RelayDevicePhase.verifying ||
+            activeTransfer.targetAlias.toLowerCase() == device.alias.toLowerCase());
+
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: palette.softSurface,
         borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: palette.accent.withValues(alpha: 0.25)),
+        border: Border.all(
+          color: isTransferActive ? palette.accent.withValues(alpha: 0.45) : palette.accent.withValues(alpha: 0.25),
+        ),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -474,23 +541,34 @@ class _RelaySpatialSceneState extends State<RelaySpatialScene> with TickerProvid
                       style: RelayTypography.heading(palette.textPrimary),
                     ),
                     Text(
-                      device.statusSummary,
-                      style: RelayTypography.caption(palette.textSecondary),
+                      isTransferActive ? (activeTransfer.isReceive ? 'Receiving from device…' : 'Sending to device…') : device.statusSummary,
+                      style: RelayTypography.caption(isTransferActive ? palette.accentSoft : palette.textSecondary),
                     ),
                   ],
                 ),
               ),
-              FilledButton.icon(
-                onPressed: () => widget.onSendFiles?.call(device),
-                icon: const Icon(Icons.send_rounded, size: 16),
-                label: const Text('Send Files'),
-                style: FilledButton.styleFrom(
-                  backgroundColor: palette.accent,
-                  foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              if (isTransferActive)
+                FilledButton.tonalIcon(
+                  onPressed: widget.onCancelTransfer,
+                  icon: const Icon(Icons.close_rounded, size: 16),
+                  label: const Text('Cancel'),
+                  style: FilledButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  ),
+                )
+              else
+                FilledButton.icon(
+                  onPressed: () => widget.onSendFiles?.call(device),
+                  icon: const Icon(Icons.send_rounded, size: 16),
+                  label: const Text('Send Files'),
+                  style: FilledButton.styleFrom(
+                    backgroundColor: palette.accent,
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  ),
                 ),
-              ),
               const SizedBox(width: 6),
               IconButton(
                 icon: const Icon(Icons.chevron_right_rounded),
@@ -499,6 +577,32 @@ class _RelaySpatialSceneState extends State<RelaySpatialScene> with TickerProvid
               ),
             ],
           ),
+          if (isTransferActive && activeTransfer.progress != null) ...[
+            const SizedBox(height: 12),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(4),
+              child: LinearProgressIndicator(
+                value: activeTransfer.progress,
+                minHeight: 4,
+                backgroundColor: palette.canvas,
+                valueColor: AlwaysStoppedAnimation(palette.accent),
+              ),
+            ),
+            const SizedBox(height: 4),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  activeTransfer.origin ?? 'Local',
+                  style: RelayTypography.caption(palette.textTertiary).copyWith(fontSize: 11),
+                ),
+                Text(
+                  '${(activeTransfer.progress! * 100).toInt()}%',
+                  style: RelayTypography.caption(palette.accentSoft).copyWith(fontSize: 11, fontWeight: FontWeight.w600),
+                ),
+              ],
+            ),
+          ],
           const SizedBox(height: 14),
           // Relationship capability pills
           SingleChildScrollView(

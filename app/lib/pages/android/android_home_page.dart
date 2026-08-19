@@ -61,6 +61,7 @@ class _AndroidHomePageState extends State<AndroidHomePage> {
                 selfDeviceType: widget.vm.selfDeviceType,
                 presence: widget.vm.presence,
                 devices: widget.vm.devices,
+                activeTransfer: widget.vm.activeTransfer,
                 selectedDeviceKey: _selectedDeviceKey,
                 animationsEnabled: widget.animationsEnabled,
                 height: widget.vm.devices.isEmpty ? 260 : 340,
@@ -68,6 +69,12 @@ class _AndroidHomePageState extends State<AndroidHomePage> {
                   setState(() => _selectedDeviceKey = device?.key);
                 },
                 onSendFiles: (device) => _pickAndSendFiles(context, ref, device),
+                onCancelTransfer: () {
+                  final sessionId = widget.vm.activeTransfer?.sessionId;
+                  if (sessionId != null) {
+                    ref.read(relaySendServiceProvider).cancel(sessionId);
+                  }
+                },
                 onOpenDetails: (device) {
                   unawaited(
                     Navigator.of(context).push(
