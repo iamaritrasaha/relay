@@ -34,30 +34,10 @@ class _AndroidShellState extends State<AndroidShell> {
 
     return Scaffold(
       backgroundColor: palette.canvas,
-      appBar: _currentIndex == 0
-          ? AppBar(
-              title: Text(
-                'Relay',
-                style: RelayTypography.wordmark(palette.textPrimary),
-              ),
-              actions: [
-                IconButton(
-                  icon: const Icon(Icons.add_link_rounded),
-                  tooltip: 'Pair Device',
-                  onPressed: () {
-                    if (widget.onPairDevice != null) {
-                      widget.onPairDevice!();
-                    } else {
-                      _openPairDialog();
-                    }
-                  },
-                ),
-              ],
-            )
-          : null,
-      body: SafeArea(
-        child: switch (_currentIndex) {
-          0 => AndroidHomePage(
+      body: switch (_currentIndex) {
+        0 => TickerMode(
+          enabled: _currentIndex == 0,
+          child: AndroidHomePage(
             vm: widget.vm,
             animationsEnabled: widget.animationsEnabled,
             onAddDevice: () {
@@ -67,11 +47,12 @@ class _AndroidShellState extends State<AndroidShell> {
                 _openPairDialog();
               }
             },
+            onOpenActivity: () => setState(() => _currentIndex = 1),
           ),
-          1 => const AndroidActivityPage(),
-          _ => const AndroidSettingsPage(),
-        },
-      ),
+        ),
+        1 => const SafeArea(child: AndroidActivityPage()),
+        _ => const SafeArea(child: AndroidSettingsPage()),
+      },
       bottomNavigationBar: NavigationBar(
         selectedIndex: _currentIndex,
         onDestinationSelected: (index) => setState(() => _currentIndex = index),

@@ -1,14 +1,22 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:mockito/mockito.dart';
+import 'package:refena_flutter/refena_flutter.dart';
 import 'package:relay_app/config/theme.dart';
 import 'package:relay_app/model/persistence/color_mode.dart';
+import 'package:relay_app/model/state/nearby_devices_state.dart';
 import 'package:relay_app/model/ui/relay_capability_vm.dart';
 import 'package:relay_app/model/ui/relay_device_vm.dart';
+import 'package:relay_app/pages/android/android_home_page.dart';
 import 'package:relay_app/pages/relay_home_vm.dart';
+import 'package:relay_app/provider/file_transfer_provider.dart';
+import 'package:relay_app/provider/persistence_provider.dart';
 import 'package:relay_app/widget/relay_motion/relay_motion_controller.dart';
 import 'package:relay_app/widget/relay_motion/relay_spatial_scene.dart';
 import 'package:relay_app/widget/relay_motion/relay_transfer_stream.dart';
 import 'package:relay_isolates/model/device.dart';
+
+import '../mocks.mocks.dart';
 
 void main() {
   final darkTheme = getTheme(ColorMode.relay, Colors.teal, Brightness.dark, null);
@@ -62,7 +70,7 @@ void main() {
     securityState: RelaySecurityState.verifiedRelay,
   );
 
-  group('RelaySpatialLayoutEngine deterministic positions & depth', () {
+  group('RelaySpatialLayoutEngine Continuous Idle Orbit & Depth', () {
     test('calculates deterministic resting polar coordinates for devices', () {
       final polar1 = RelaySpatialLayoutEngine.calculatePolarResting(
         device: verifiedLaptop,
@@ -100,10 +108,88 @@ void main() {
       expect(polarVerified.radius, lessThan(polarCompat.radius));
     });
 
-    test('computes depth z-ordering and perspective scale during transfer', () {
-      const sceneSize = Size(400, 360);
+    test('deterministic idle orbit advances angular position continuously over time', () {
+      const sceneSize = Size(400, 600);
 
-      // Early orbit (front/side)
+      final pos1 = RelaySpatialLayoutEngine.computeRemotePosition(
+        device: verifiedLaptop,
+        indexInRing: 0,
+        totalInRing: 1,
+        sceneSize: sceneSize,
+        ambientPhase: 0.1,
+        focusedDeviceKey: null,
+        focusProgress: 0.0,
+      );
+
+      final pos2 = RelaySpatialLayoutEngine.computeRemotePosition(
+        device: verifiedLaptop,
+        indexInRing: 0,
+        totalInRing: 1,
+        sceneSize: sceneSize,
+        ambientPhase: 0.4,
+        focusedDeviceKey: null,
+        focusProgress: 0.0,
+      );
+
+      expect(pos1.offset, isNot(equals(pos2.offset)));
+      expect(pos1.angle, isNot(equals(pos2.angle)));
+    });
+
+    test('different devices revolve at distinct deterministic velocities', () {
+      const sceneSize = Size(400, 600);
+
+      final posVerified = RelaySpatialLayoutEngine.computeRemotePosition(
+        device: verifiedLaptop,
+        indexInRing: 0,
+        totalInRing: 1,
+        sceneSize: sceneSize,
+        ambientPhase: 0.25,
+        focusedDeviceKey: null,
+        focusProgress: 0.0,
+      );
+
+      final posCompat = RelaySpatialLayoutEngine.computeRemotePosition(
+        device: compatibilityPhone,
+        indexInRing: 0,
+        totalInRing: 1,
+        sceneSize: sceneSize,
+        ambientPhase: 0.25,
+        focusedDeviceKey: null,
+        focusProgress: 0.0,
+      );
+
+      // Inner primary vs outer compatibility revolve at different speeds
+      expect(posVerified.distance, isNot(equals(posCompat.distance)));
+    });
+
+    test('reduced motion freezes continuous orbital revolution to static polar resting coordinates', () {
+      const sceneSize = Size(400, 600);
+
+      final posReduced = RelaySpatialLayoutEngine.computeRemotePosition(
+        device: verifiedLaptop,
+        indexInRing: 0,
+        totalInRing: 1,
+        sceneSize: sceneSize,
+        ambientPhase: 0.0, // Reduced motion / static phase
+        focusedDeviceKey: null,
+        focusProgress: 0.0,
+      );
+
+      final polar = RelaySpatialLayoutEngine.calculatePolarResting(
+        device: verifiedLaptop,
+        indexInRing: 0,
+        totalInRing: 1,
+        sceneRadius: 200,
+      );
+
+      expect(posReduced.angle, equals(polar.angle));
+      expect(posReduced.scale, equals(1.0));
+      expect(posReduced.opacity, equals(1.0));
+    });
+
+    test('computes depth z-ordering and perspective scale during transfer', () {
+      const sceneSize = Size(400, 600);
+
       final posFront = RelaySpatialLayoutEngine.computeRemotePosition(
         device: verifiedLaptop,
         indexInRing: 0,
@@ -121,7 +207,7 @@ void main() {
     });
 
     test('other devices recede during active transfer', () {
-      const sceneSize = Size(400, 360);
+      const sceneSize = Size(400, 600);
 
       final bystanderPos = RelaySpatialLayoutEngine.computeRemotePosition(
         device: tabletPeer,
@@ -202,7 +288,56 @@ void main() {
     });
   });
 
-  group('RelaySpatialScene Phase 2.1 Terminal State & Epilogue Tests', () {
+  group('RelaySpatialScene Full-Page & Terminal State Tests', () {
+    testWidgets('Android home page spatial scene fills available viewport without enclosing Card', (tester) async {
+      tester.view.physicalSize = const Size(500, 800);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(() => tester.view.resetPhysicalSize());
+
+      final homeVm = RelayHomeVm.fromState(
+        configuredAlias: 'Linux Workstation',
+        selfDeviceType: DeviceType.desktop,
+        server: null,
+        nearby: const NearbyDevicesState(runningFavoriteScan: false, runningIps: {}, devices: {}, signalingDevices: {}),
+        sendSessions: const {},
+        transfers: FileTransferNotifier(),
+        selectedFiles: const [],
+      );
+
+      final mockPersistence = MockPersistenceService();
+      when(mockPersistence.getReceiveHistory()).thenReturn([]);
+
+      await tester.pumpWidget(
+        RefenaScope(
+          overrides: [
+            persistenceProvider.overrideWithValue(mockPersistence),
+          ],
+          child: MaterialApp(
+            theme: darkTheme,
+            home: Scaffold(
+              body: AndroidHomePage(
+                vm: homeVm,
+                animationsEnabled: true,
+                onAddDevice: () {},
+              ),
+            ),
+          ),
+        ),
+      );
+
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 200));
+
+      // Spatial scene is present and fills the full viewport
+      expect(find.byType(RelaySpatialScene), findsOneWidget);
+      final sceneBox = tester.renderObject<RenderBox>(find.byType(RelaySpatialScene));
+      expect(sceneBox.size.height, equals(800));
+
+      // Floating header is present
+      expect(find.text('Relay'), findsOneWidget);
+      expect(find.byIcon(Icons.add_link_rounded), findsWidgets);
+    });
+
     testWidgets('renders active SEND transfer from center to remote device', (tester) async {
       tester.view.physicalSize = const Size(500, 800);
       tester.view.devicePixelRatio = 1.0;
