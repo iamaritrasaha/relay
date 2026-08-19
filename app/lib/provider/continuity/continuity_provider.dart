@@ -255,14 +255,18 @@ class ContinuityConnectEnabledDevicesAction extends AsyncReduxAction<ContinuityS
     await notifier._identityCoordinator.withPrivateKey((privateKey, identity) async {
       for (final target in targets) {
         final route = routes[target.relayId];
-        if (route == null) {
+        final address = route?.relayAddress;
+        if (address == null) {
+          // A LAN-only pairing has no stored address to dial. Continuity rides
+          // the Anywhere endpoint today, so such a device simply has nothing to
+          // connect to yet — it is skipped rather than guessed at.
           continue;
         }
         try {
           await rust.continuityConnectDevice(
             privateKeyPem: privateKey,
             relayId: identity.relayId,
-            remoteAddress: route.relayAddress,
+            remoteAddress: address,
           );
         } catch (error) {
           _logger.warning('continuity connect failed for ${target.relayId}: $error');
@@ -313,6 +317,44 @@ class ContinuitySetTrustedAction extends AsyncReduxAction<ContinuityService, Rel
     final settings = Map<String, RelayContinuitySettings>.from(state.settings)..[relayId] = updated;
     await notifier._persistence.setRelayContinuitySettings(settings.values.toList());
     return state.copyWith(settings: settings);
+  }
+}
+
+/// Removes every continuity fact this device holds about one peer.
+///
+/// Called by the unpair lifecycle. It revokes trust, clears every capability
+/// grant, turns clipboard sharing off, disconnects any live session, and drops
+/// the stored record entirely so a later re-pairing starts from nothing rather
+/// than silently restoring old consent.
+///
+/// Other devices are untouched, and this device's own Relay identity is not
+/// affected.
+class ContinuityForgetDeviceAction extends AsyncReduxAction<ContinuityService, RelayContinuityState> {
+  final String relayId;
+
+  ContinuityForgetDeviceAction({required this.relayId});
+
+  @override
+  Future<RelayContinuityState> reduce() async {
+    final settings = Map<String, RelayContinuitySettings>.from(state.settings)..remove(relayId);
+    await notifier._persistence.setRelayContinuitySettings(settings.values.toList());
+    final next = state.copyWith(settings: settings);
+
+    // Rust enforces trust and consent, so it is told before anything else can
+    // observe the change: the forgotten device is no longer in the trusted set
+    // and every capability is explicitly disabled for it.
+    rust.continuitySetDeviceTrust(
+      trusted: next.settings.values.where((entry) => entry.trusted).map((entry) => entry.relayId).toList(),
+      blocked: const [],
+    );
+    for (final capability in ContinuityCapabilityKind.values) {
+      await rust.continuityDisableCapability(relayId: relayId, capability: _toRustCapability(capability));
+    }
+    await rust.continuitySetClipboardMode(relayId: relayId, mode: rust.RsClipboardMode.off);
+    rust.continuityDisconnectDevice(relayId: relayId);
+
+    unawaited(dispatchAsync(ContinuityApplyEnablementAction()));
+    return next;
   }
 }
 

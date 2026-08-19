@@ -11,6 +11,7 @@ import 'package:relay_app/util/native/open_folder.dart';
 import 'package:relay_app/widget/gnome/adw_action_row.dart';
 import 'package:relay_app/widget/gnome/adw_boxed_list.dart';
 import 'package:relay_app/widget/gnome/adw_button.dart';
+import 'package:relay_app/widget/relay/relay_device_relationship_tile.dart';
 import 'package:relay_isolates/util/file_size_helper.dart';
 
 /// GNOME Device Detail and Overview View.
@@ -200,6 +201,16 @@ class GnomeDeviceDetailView extends StatelessWidget {
               ),
 
               const SizedBox(height: 32),
+
+              // The relationship itself: pair, or remove. Trust and capability
+              // consent are separate decisions with their own controls.
+              if (!device.isCompatibilityPeer) ...[
+                AdwPreferencesGroup(
+                  title: 'Pairing',
+                  children: [RelayDeviceRelationshipTile(device: device)],
+                ),
+                const SizedBox(height: 32),
+              ],
 
               // Device Information Boxed Group
               AdwPreferencesGroup(

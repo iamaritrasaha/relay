@@ -235,6 +235,11 @@ impl App {
                     send.cancel.token.cancel();
                 }
             }
+            // The CLI has no place to show a pairing prompt and answering for
+            // the user would defeat the point of asking, so it declines.
+            ServerEventV2::RelayPairRequest { decision_tx, .. } => {
+                let _ = decision_tx.send(relay_core::relay::RelayPairingDecision::Declined);
+            }
         }
     }
 

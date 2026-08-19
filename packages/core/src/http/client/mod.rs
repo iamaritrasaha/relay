@@ -1,5 +1,5 @@
 mod anywhere;
-mod relay;
+pub mod relay;
 mod scoped_host;
 mod server_cert_verifier;
 pub(crate) use server_cert_verifier::PinnedServerCertVerifier;
@@ -225,6 +225,88 @@ impl LsHttpClient {
             LsHttpClient::V3(client) => client.authenticate_relay_server(protocol, ip, port).await,
         }
     }
+
+    /// Runs the mutual Relay LAN pairing handshake against another Relay device.
+    ///
+    /// The client must already be pinned to the peer's certificate, because
+    /// both proofs are bound to the certificates of this exact connection.
+    pub async fn pair_with_relay_server(
+        &self,
+        protocol: model::discovery::ProtocolType,
+        ip: &str,
+        port: u16,
+        request: relay::RelayLanPairingRequest<'_>,
+        events: &tokio::sync::mpsc::Sender<relay::RelayLanPairingEvent>,
+    ) -> crate::relay::RelayLanPairingOutcome {
+        match self {
+            LsHttpClient::V2(client) => {
+                client
+                    .pair_with_relay_server(protocol, ip, port, request, events)
+                    .await
+            }
+            LsHttpClient::V3(client) => {
+                client
+                    .pair_with_relay_server(protocol, ip, port, request, events)
+                    .await
+            }
+        }
+    }
+}
+
+/// Pairs with a Relay device discovered on the LAN.
+///
+/// This is the whole initiator entry point: it pins a fresh HTTPS client to the
+/// certificate fingerprint that discovery observed, then runs the mutual
+/// handshake over it. The fingerprint decides *which socket* is talked to; it
+/// never decides *who* the peer is — only the two proofs do that, and a peer
+/// that swapped identities behind the same certificate still fails
+/// `expected_relay_id`.
+#[allow(clippy::too_many_arguments)]
+pub async fn pair_relay_lan_device(
+    private_key: &str,
+    cert: &str,
+    version: LsHttpClientVersion,
+    protocol: model::discovery::ProtocolType,
+    ip: &str,
+    port: u16,
+    certificate_fingerprint: &str,
+    identity: &crypto::relay_identity::RelayIdentity,
+    alias: &str,
+    expected_relay_id: Option<&crate::relay::RelayId>,
+    events: &tokio::sync::mpsc::Sender<relay::RelayLanPairingEvent>,
+) -> crate::relay::RelayLanPairingOutcome {
+    let client = match LsHttpClient::new(
+        private_key,
+        cert,
+        version,
+        Some(certificate_fingerprint.to_owned()),
+        None,
+    ) {
+        Ok(client) => client,
+        Err(err) => {
+            tracing::warn!("Could not create a pinned Relay pairing client: {err:#}");
+            let outcome = crate::relay::RelayLanPairingOutcome::TransportFailed;
+            let _ = events
+                .send(relay::RelayLanPairingEvent::Outcome(outcome.clone()))
+                .await;
+            return outcome;
+        }
+    };
+
+    client
+        .pair_with_relay_server(
+            protocol,
+            ip,
+            port,
+            relay::RelayLanPairingRequest {
+                identity,
+                client_certificate_pem: cert,
+                alias,
+                expected_relay_id,
+            },
+            events,
+        )
+        .await
 }
 
 /// Builds a streaming request body from the file content, invoking `progress`

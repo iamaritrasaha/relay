@@ -522,6 +522,494 @@ as String,
 }
 
 /// @nodoc
+mixin _$RsRelayLanPairingEvent {
+
+
+
+
+
+@override
+bool operator ==(Object other) {
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is RsRelayLanPairingEvent);
+}
+
+
+@override
+int get hashCode => runtimeType.hashCode;
+
+@override
+String toString() {
+  return 'RsRelayLanPairingEvent()';
+}
+
+
+}
+
+/// @nodoc
+class $RsRelayLanPairingEventCopyWith<$Res>  {
+$RsRelayLanPairingEventCopyWith(RsRelayLanPairingEvent _, $Res Function(RsRelayLanPairingEvent) __);
+}
+
+
+/// Adds pattern-matching-related methods to [RsRelayLanPairingEvent].
+extension RsRelayLanPairingEventPatterns on RsRelayLanPairingEvent {
+/// A variant of `map` that fallback to returning `orElse`.
+///
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case final Subclass value:
+///     return ...;
+///   case _:
+///     return orElse();
+/// }
+/// ```
+
+@optionalTypeArgs TResult maybeMap<TResult extends Object?>({TResult Function( RsRelayLanPairingEvent_VerificationCode value)?  verificationCode,TResult Function( RsRelayLanPairingEvent_Paired value)?  paired,TResult Function( RsRelayLanPairingEvent_Declined value)?  declined,TResult Function( RsRelayLanPairingEvent_Unsupported value)?  unsupported,TResult Function( RsRelayLanPairingEvent_Busy value)?  busy,TResult Function( RsRelayLanPairingEvent_AuthenticationFailed value)?  authenticationFailed,TResult Function( RsRelayLanPairingEvent_TransportFailed value)?  transportFailed,required TResult orElse(),}){
+final _that = this;
+switch (_that) {
+case RsRelayLanPairingEvent_VerificationCode() when verificationCode != null:
+return verificationCode(_that);case RsRelayLanPairingEvent_Paired() when paired != null:
+return paired(_that);case RsRelayLanPairingEvent_Declined() when declined != null:
+return declined(_that);case RsRelayLanPairingEvent_Unsupported() when unsupported != null:
+return unsupported(_that);case RsRelayLanPairingEvent_Busy() when busy != null:
+return busy(_that);case RsRelayLanPairingEvent_AuthenticationFailed() when authenticationFailed != null:
+return authenticationFailed(_that);case RsRelayLanPairingEvent_TransportFailed() when transportFailed != null:
+return transportFailed(_that);case _:
+  return orElse();
+
+}
+}
+/// A `switch`-like method, using callbacks.
+///
+/// Callbacks receives the raw object, upcasted.
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case final Subclass value:
+///     return ...;
+///   case final Subclass2 value:
+///     return ...;
+/// }
+/// ```
+
+@optionalTypeArgs TResult map<TResult extends Object?>({required TResult Function( RsRelayLanPairingEvent_VerificationCode value)  verificationCode,required TResult Function( RsRelayLanPairingEvent_Paired value)  paired,required TResult Function( RsRelayLanPairingEvent_Declined value)  declined,required TResult Function( RsRelayLanPairingEvent_Unsupported value)  unsupported,required TResult Function( RsRelayLanPairingEvent_Busy value)  busy,required TResult Function( RsRelayLanPairingEvent_AuthenticationFailed value)  authenticationFailed,required TResult Function( RsRelayLanPairingEvent_TransportFailed value)  transportFailed,}){
+final _that = this;
+switch (_that) {
+case RsRelayLanPairingEvent_VerificationCode():
+return verificationCode(_that);case RsRelayLanPairingEvent_Paired():
+return paired(_that);case RsRelayLanPairingEvent_Declined():
+return declined(_that);case RsRelayLanPairingEvent_Unsupported():
+return unsupported(_that);case RsRelayLanPairingEvent_Busy():
+return busy(_that);case RsRelayLanPairingEvent_AuthenticationFailed():
+return authenticationFailed(_that);case RsRelayLanPairingEvent_TransportFailed():
+return transportFailed(_that);}
+}
+/// A variant of `map` that fallback to returning `null`.
+///
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case final Subclass value:
+///     return ...;
+///   case _:
+///     return null;
+/// }
+/// ```
+
+@optionalTypeArgs TResult? mapOrNull<TResult extends Object?>({TResult? Function( RsRelayLanPairingEvent_VerificationCode value)?  verificationCode,TResult? Function( RsRelayLanPairingEvent_Paired value)?  paired,TResult? Function( RsRelayLanPairingEvent_Declined value)?  declined,TResult? Function( RsRelayLanPairingEvent_Unsupported value)?  unsupported,TResult? Function( RsRelayLanPairingEvent_Busy value)?  busy,TResult? Function( RsRelayLanPairingEvent_AuthenticationFailed value)?  authenticationFailed,TResult? Function( RsRelayLanPairingEvent_TransportFailed value)?  transportFailed,}){
+final _that = this;
+switch (_that) {
+case RsRelayLanPairingEvent_VerificationCode() when verificationCode != null:
+return verificationCode(_that);case RsRelayLanPairingEvent_Paired() when paired != null:
+return paired(_that);case RsRelayLanPairingEvent_Declined() when declined != null:
+return declined(_that);case RsRelayLanPairingEvent_Unsupported() when unsupported != null:
+return unsupported(_that);case RsRelayLanPairingEvent_Busy() when busy != null:
+return busy(_that);case RsRelayLanPairingEvent_AuthenticationFailed() when authenticationFailed != null:
+return authenticationFailed(_that);case RsRelayLanPairingEvent_TransportFailed() when transportFailed != null:
+return transportFailed(_that);case _:
+  return null;
+
+}
+}
+/// A variant of `when` that fallback to an `orElse` callback.
+///
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case Subclass(:final field):
+///     return ...;
+///   case _:
+///     return orElse();
+/// }
+/// ```
+
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>({TResult Function( String code,  String remoteRelayId)?  verificationCode,TResult Function( String remoteRelayId,  String remoteAlias,  String verificationCode)?  paired,TResult Function()?  declined,TResult Function()?  unsupported,TResult Function()?  busy,TResult Function()?  authenticationFailed,TResult Function()?  transportFailed,required TResult orElse(),}) {final _that = this;
+switch (_that) {
+case RsRelayLanPairingEvent_VerificationCode() when verificationCode != null:
+return verificationCode(_that.code,_that.remoteRelayId);case RsRelayLanPairingEvent_Paired() when paired != null:
+return paired(_that.remoteRelayId,_that.remoteAlias,_that.verificationCode);case RsRelayLanPairingEvent_Declined() when declined != null:
+return declined();case RsRelayLanPairingEvent_Unsupported() when unsupported != null:
+return unsupported();case RsRelayLanPairingEvent_Busy() when busy != null:
+return busy();case RsRelayLanPairingEvent_AuthenticationFailed() when authenticationFailed != null:
+return authenticationFailed();case RsRelayLanPairingEvent_TransportFailed() when transportFailed != null:
+return transportFailed();case _:
+  return orElse();
+
+}
+}
+/// A `switch`-like method, using callbacks.
+///
+/// As opposed to `map`, this offers destructuring.
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case Subclass(:final field):
+///     return ...;
+///   case Subclass2(:final field2):
+///     return ...;
+/// }
+/// ```
+
+@optionalTypeArgs TResult when<TResult extends Object?>({required TResult Function( String code,  String remoteRelayId)  verificationCode,required TResult Function( String remoteRelayId,  String remoteAlias,  String verificationCode)  paired,required TResult Function()  declined,required TResult Function()  unsupported,required TResult Function()  busy,required TResult Function()  authenticationFailed,required TResult Function()  transportFailed,}) {final _that = this;
+switch (_that) {
+case RsRelayLanPairingEvent_VerificationCode():
+return verificationCode(_that.code,_that.remoteRelayId);case RsRelayLanPairingEvent_Paired():
+return paired(_that.remoteRelayId,_that.remoteAlias,_that.verificationCode);case RsRelayLanPairingEvent_Declined():
+return declined();case RsRelayLanPairingEvent_Unsupported():
+return unsupported();case RsRelayLanPairingEvent_Busy():
+return busy();case RsRelayLanPairingEvent_AuthenticationFailed():
+return authenticationFailed();case RsRelayLanPairingEvent_TransportFailed():
+return transportFailed();}
+}
+/// A variant of `when` that fallback to returning `null`
+///
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case Subclass(:final field):
+///     return ...;
+///   case _:
+///     return null;
+/// }
+/// ```
+
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>({TResult? Function( String code,  String remoteRelayId)?  verificationCode,TResult? Function( String remoteRelayId,  String remoteAlias,  String verificationCode)?  paired,TResult? Function()?  declined,TResult? Function()?  unsupported,TResult? Function()?  busy,TResult? Function()?  authenticationFailed,TResult? Function()?  transportFailed,}) {final _that = this;
+switch (_that) {
+case RsRelayLanPairingEvent_VerificationCode() when verificationCode != null:
+return verificationCode(_that.code,_that.remoteRelayId);case RsRelayLanPairingEvent_Paired() when paired != null:
+return paired(_that.remoteRelayId,_that.remoteAlias,_that.verificationCode);case RsRelayLanPairingEvent_Declined() when declined != null:
+return declined();case RsRelayLanPairingEvent_Unsupported() when unsupported != null:
+return unsupported();case RsRelayLanPairingEvent_Busy() when busy != null:
+return busy();case RsRelayLanPairingEvent_AuthenticationFailed() when authenticationFailed != null:
+return authenticationFailed();case RsRelayLanPairingEvent_TransportFailed() when transportFailed != null:
+return transportFailed();case _:
+  return null;
+
+}
+}
+
+}
+
+/// @nodoc
+
+
+class RsRelayLanPairingEvent_VerificationCode extends RsRelayLanPairingEvent {
+  const RsRelayLanPairingEvent_VerificationCode({required this.code, required this.remoteRelayId}): super._();
+
+
+ final  String code;
+ final  String remoteRelayId;
+
+/// Create a copy of RsRelayLanPairingEvent
+/// with the given fields replaced by the non-null parameter values.
+@JsonKey(includeFromJson: false, includeToJson: false)
+@pragma('vm:prefer-inline')
+$RsRelayLanPairingEvent_VerificationCodeCopyWith<RsRelayLanPairingEvent_VerificationCode> get copyWith => _$RsRelayLanPairingEvent_VerificationCodeCopyWithImpl<RsRelayLanPairingEvent_VerificationCode>(this, _$identity);
+
+
+
+@override
+bool operator ==(Object other) {
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is RsRelayLanPairingEvent_VerificationCode&&(identical(other.code, code) || other.code == code)&&(identical(other.remoteRelayId, remoteRelayId) || other.remoteRelayId == remoteRelayId));
+}
+
+
+@override
+int get hashCode => Object.hash(runtimeType,code,remoteRelayId);
+
+@override
+String toString() {
+  return 'RsRelayLanPairingEvent.verificationCode(code: $code, remoteRelayId: $remoteRelayId)';
+}
+
+
+}
+
+/// @nodoc
+abstract mixin class $RsRelayLanPairingEvent_VerificationCodeCopyWith<$Res> implements $RsRelayLanPairingEventCopyWith<$Res> {
+  factory $RsRelayLanPairingEvent_VerificationCodeCopyWith(RsRelayLanPairingEvent_VerificationCode value, $Res Function(RsRelayLanPairingEvent_VerificationCode) _then) = _$RsRelayLanPairingEvent_VerificationCodeCopyWithImpl;
+@useResult
+$Res call({
+ String code, String remoteRelayId
+});
+
+
+
+
+}
+/// @nodoc
+class _$RsRelayLanPairingEvent_VerificationCodeCopyWithImpl<$Res>
+    implements $RsRelayLanPairingEvent_VerificationCodeCopyWith<$Res> {
+  _$RsRelayLanPairingEvent_VerificationCodeCopyWithImpl(this._self, this._then);
+
+  final RsRelayLanPairingEvent_VerificationCode _self;
+  final $Res Function(RsRelayLanPairingEvent_VerificationCode) _then;
+
+/// Create a copy of RsRelayLanPairingEvent
+/// with the given fields replaced by the non-null parameter values.
+@pragma('vm:prefer-inline') $Res call({Object? code = null,Object? remoteRelayId = null,}) {
+  return _then(RsRelayLanPairingEvent_VerificationCode(
+code: null == code ? _self.code : code // ignore: cast_nullable_to_non_nullable
+as String,remoteRelayId: null == remoteRelayId ? _self.remoteRelayId : remoteRelayId // ignore: cast_nullable_to_non_nullable
+as String,
+  ));
+}
+
+
+}
+
+/// @nodoc
+
+
+class RsRelayLanPairingEvent_Paired extends RsRelayLanPairingEvent {
+  const RsRelayLanPairingEvent_Paired({required this.remoteRelayId, required this.remoteAlias, required this.verificationCode}): super._();
+
+
+ final  String remoteRelayId;
+ final  String remoteAlias;
+ final  String verificationCode;
+
+/// Create a copy of RsRelayLanPairingEvent
+/// with the given fields replaced by the non-null parameter values.
+@JsonKey(includeFromJson: false, includeToJson: false)
+@pragma('vm:prefer-inline')
+$RsRelayLanPairingEvent_PairedCopyWith<RsRelayLanPairingEvent_Paired> get copyWith => _$RsRelayLanPairingEvent_PairedCopyWithImpl<RsRelayLanPairingEvent_Paired>(this, _$identity);
+
+
+
+@override
+bool operator ==(Object other) {
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is RsRelayLanPairingEvent_Paired&&(identical(other.remoteRelayId, remoteRelayId) || other.remoteRelayId == remoteRelayId)&&(identical(other.remoteAlias, remoteAlias) || other.remoteAlias == remoteAlias)&&(identical(other.verificationCode, verificationCode) || other.verificationCode == verificationCode));
+}
+
+
+@override
+int get hashCode => Object.hash(runtimeType,remoteRelayId,remoteAlias,verificationCode);
+
+@override
+String toString() {
+  return 'RsRelayLanPairingEvent.paired(remoteRelayId: $remoteRelayId, remoteAlias: $remoteAlias, verificationCode: $verificationCode)';
+}
+
+
+}
+
+/// @nodoc
+abstract mixin class $RsRelayLanPairingEvent_PairedCopyWith<$Res> implements $RsRelayLanPairingEventCopyWith<$Res> {
+  factory $RsRelayLanPairingEvent_PairedCopyWith(RsRelayLanPairingEvent_Paired value, $Res Function(RsRelayLanPairingEvent_Paired) _then) = _$RsRelayLanPairingEvent_PairedCopyWithImpl;
+@useResult
+$Res call({
+ String remoteRelayId, String remoteAlias, String verificationCode
+});
+
+
+
+
+}
+/// @nodoc
+class _$RsRelayLanPairingEvent_PairedCopyWithImpl<$Res>
+    implements $RsRelayLanPairingEvent_PairedCopyWith<$Res> {
+  _$RsRelayLanPairingEvent_PairedCopyWithImpl(this._self, this._then);
+
+  final RsRelayLanPairingEvent_Paired _self;
+  final $Res Function(RsRelayLanPairingEvent_Paired) _then;
+
+/// Create a copy of RsRelayLanPairingEvent
+/// with the given fields replaced by the non-null parameter values.
+@pragma('vm:prefer-inline') $Res call({Object? remoteRelayId = null,Object? remoteAlias = null,Object? verificationCode = null,}) {
+  return _then(RsRelayLanPairingEvent_Paired(
+remoteRelayId: null == remoteRelayId ? _self.remoteRelayId : remoteRelayId // ignore: cast_nullable_to_non_nullable
+as String,remoteAlias: null == remoteAlias ? _self.remoteAlias : remoteAlias // ignore: cast_nullable_to_non_nullable
+as String,verificationCode: null == verificationCode ? _self.verificationCode : verificationCode // ignore: cast_nullable_to_non_nullable
+as String,
+  ));
+}
+
+
+}
+
+/// @nodoc
+
+
+class RsRelayLanPairingEvent_Declined extends RsRelayLanPairingEvent {
+  const RsRelayLanPairingEvent_Declined(): super._();
+
+
+
+
+
+
+
+@override
+bool operator ==(Object other) {
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is RsRelayLanPairingEvent_Declined);
+}
+
+
+@override
+int get hashCode => runtimeType.hashCode;
+
+@override
+String toString() {
+  return 'RsRelayLanPairingEvent.declined()';
+}
+
+
+}
+
+
+
+
+/// @nodoc
+
+
+class RsRelayLanPairingEvent_Unsupported extends RsRelayLanPairingEvent {
+  const RsRelayLanPairingEvent_Unsupported(): super._();
+
+
+
+
+
+
+
+@override
+bool operator ==(Object other) {
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is RsRelayLanPairingEvent_Unsupported);
+}
+
+
+@override
+int get hashCode => runtimeType.hashCode;
+
+@override
+String toString() {
+  return 'RsRelayLanPairingEvent.unsupported()';
+}
+
+
+}
+
+
+
+
+/// @nodoc
+
+
+class RsRelayLanPairingEvent_Busy extends RsRelayLanPairingEvent {
+  const RsRelayLanPairingEvent_Busy(): super._();
+
+
+
+
+
+
+
+@override
+bool operator ==(Object other) {
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is RsRelayLanPairingEvent_Busy);
+}
+
+
+@override
+int get hashCode => runtimeType.hashCode;
+
+@override
+String toString() {
+  return 'RsRelayLanPairingEvent.busy()';
+}
+
+
+}
+
+
+
+
+/// @nodoc
+
+
+class RsRelayLanPairingEvent_AuthenticationFailed extends RsRelayLanPairingEvent {
+  const RsRelayLanPairingEvent_AuthenticationFailed(): super._();
+
+
+
+
+
+
+
+@override
+bool operator ==(Object other) {
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is RsRelayLanPairingEvent_AuthenticationFailed);
+}
+
+
+@override
+int get hashCode => runtimeType.hashCode;
+
+@override
+String toString() {
+  return 'RsRelayLanPairingEvent.authenticationFailed()';
+}
+
+
+}
+
+
+
+
+/// @nodoc
+
+
+class RsRelayLanPairingEvent_TransportFailed extends RsRelayLanPairingEvent {
+  const RsRelayLanPairingEvent_TransportFailed(): super._();
+
+
+
+
+
+
+
+@override
+bool operator ==(Object other) {
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is RsRelayLanPairingEvent_TransportFailed);
+}
+
+
+@override
+int get hashCode => runtimeType.hashCode;
+
+@override
+String toString() {
+  return 'RsRelayLanPairingEvent.transportFailed()';
+}
+
+
+}
+
+
+
+
+/// @nodoc
 mixin _$RsRelayPeerAuth {
 
 

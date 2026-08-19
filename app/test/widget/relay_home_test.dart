@@ -219,6 +219,7 @@ void main() {
           relayId: relayId,
           displayLabel: 'Pixel Relay',
           relayAddress: 'RELAY1.test',
+          pairedAt: DateTime.utc(2026),
           updatedAt: DateTime.utc(2026),
         ),
       ],
@@ -244,7 +245,13 @@ void main() {
       transfers: FileTransferNotifier(),
       selectedFiles: const [],
       pairedRoutes: [
-        RelayPairedAddress(relayId: relayId, displayLabel: 'Linux', relayAddress: 'RELAY1.test', updatedAt: DateTime.utc(2026)),
+        RelayPairedAddress(
+          relayId: relayId,
+          displayLabel: 'Linux',
+          relayAddress: 'RELAY1.test',
+          pairedAt: DateTime.utc(2026),
+          updatedAt: DateTime.utc(2026),
+        ),
       ],
     );
 
@@ -272,7 +279,13 @@ void main() {
 
   test('reconnecting a verified paired Relay device does not duplicate it', () {
     const relayId = 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
-    final route = RelayPairedAddress(relayId: relayId, displayLabel: 'Linux', relayAddress: 'RELAY1.test', updatedAt: DateTime.utc(2026));
+    final route = RelayPairedAddress(
+      relayId: relayId,
+      displayLabel: 'Linux',
+      relayAddress: 'RELAY1.test',
+      pairedAt: DateTime.utc(2026),
+      updatedAt: DateTime.utc(2026),
+    );
     final relayVm = RelayHomeVm.fromState(
       configuredAlias: 'My Linux',
       selfDeviceType: DeviceType.desktop,
@@ -300,7 +313,13 @@ void main() {
       transfers: FileTransferNotifier(),
       selectedFiles: const [],
       pairedRoutes: [
-        RelayPairedAddress(relayId: relayId, displayLabel: 'Linux', relayAddress: 'RELAY1.test', updatedAt: DateTime.utc(2026)),
+        RelayPairedAddress(
+          relayId: relayId,
+          displayLabel: 'Linux',
+          relayAddress: 'RELAY1.test',
+          pairedAt: DateTime.utc(2026),
+          updatedAt: DateTime.utc(2026),
+        ),
       ],
       continuity: const RelayContinuityState(devices: {relayId: DeviceContinuity(relayId: relayId, connected: true)}),
     );

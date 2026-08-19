@@ -128,6 +128,37 @@ pub enum ServerEventV2 {
         /// The session ID as known by the remote device.
         session_id: String,
     },
+
+    /// A Relay device on the LAN completed a mutual identity proof and is
+    /// asking this device's user to pair.
+    ///
+    /// This is emitted **only** from `POST /api/relay/v1/pair/complete`, after
+    /// a Client-role `RelayIdentityProofV1` was verified against the client
+    /// certificate of the live mTLS connection. The LocalSend-compatible v2
+    /// routes never produce it, and no amount of discovery, registration or
+    /// transfer traffic can.
+    ///
+    /// The application must answer on `decision_tx`. Dropping it, or answering
+    /// [`crate::relay::RelayPairingDecision::Declined`], leaves no relationship
+    /// on either device.
+    RelayPairRequest {
+        /// The initiator's **proven** RelayId, uppercase hex.
+        relay_id: String,
+
+        /// The initiator's claimed display alias. Untrusted text, already
+        /// bounded and stripped of control characters; never an identity.
+        alias: String,
+
+        /// The IP the request arrived from. Addressing only.
+        ip: Option<PeerIp>,
+
+        /// The six-digit code both devices display so the two users can confirm
+        /// they are looking at the same pairing.
+        verification_code: String,
+
+        /// Channel for the local user's decision.
+        decision_tx: oneshot::Sender<crate::relay::RelayPairingDecision>,
+    },
 }
 
 /// The application's decision for a prepare-upload request.

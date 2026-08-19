@@ -12,8 +12,8 @@ import 'package:relay_isolates/rust/frb_generated.dart';
 
 part 'http.freezed.dart';
 
-// These functions are ignored because they are not marked as `pub`: `resolve_file_content`
-// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `clone`, `clone`, `clone`, `from`, `from`
+// These functions are ignored because they are not marked as `pub`: `load_pairing_identity`, `resolve_file_content`
+// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `clone`, `clone`, `clone`, `from`, `from`, `from`
 
 /// Creates an HTTP client.
 ///
@@ -33,6 +33,41 @@ RsHttpClient createClient({
   version: version,
   expectedFingerprint: expectedFingerprint,
   timeoutMs: timeoutMs,
+);
+
+/// Runs the mutual Relay LAN pairing handshake against a discovered device.
+///
+/// `certificate_fingerprint` pins *which socket* is spoken to. It is not an
+/// identity: the peer still has to produce a Server-role proof over that exact
+/// certificate, and this device still has to produce a Client-role proof over
+/// its own, before the remote user is asked anything.
+///
+/// `expected_relay_id`, when given, is the identity the user targeted. A peer
+/// that proves a different one is a hard failure rather than a new device.
+Stream<RsRelayLanPairingEvent> relayLanPair({
+  required List<int> privateKeyPem,
+  required String relayId,
+  required String clientPrivateKey,
+  required String clientCertificate,
+  required LsHttpClientVersion version,
+  required ProtocolType protocol,
+  required String ip,
+  required int port,
+  required String certificateFingerprint,
+  required String alias,
+  String? expectedRelayId,
+}) => RustLib.instance.api.crateApiHttpRelayLanPair(
+  privateKeyPem: privateKeyPem,
+  relayId: relayId,
+  clientPrivateKey: clientPrivateKey,
+  clientCertificate: clientCertificate,
+  version: version,
+  protocol: protocol,
+  ip: ip,
+  port: port,
+  certificateFingerprint: certificateFingerprint,
+  alias: alias,
+  expectedRelayId: expectedRelayId,
 );
 
 // Rust type: RustOpaqueMoi<flutter_rust_bridge::for_generated::RustAutoOpaqueInner<RsHttpClient>>
@@ -143,6 +178,41 @@ sealed class RsHttpClientError with _$RsHttpClientError implements FrbException 
   const factory RsHttpClientError.other(
     String field0,
   ) = RsHttpClientError_Other;
+}
+
+@freezed
+sealed class RsRelayLanPairingEvent with _$RsRelayLanPairingEvent {
+  const RsRelayLanPairingEvent._();
+
+  /// Both identities are proven and the remote user is being asked. Show this
+  /// code so both people can confirm they are looking at the same pairing.
+  const factory RsRelayLanPairingEvent.verificationCode({
+    required String code,
+    required String remoteRelayId,
+  }) = RsRelayLanPairingEvent_VerificationCode;
+
+  /// The remote user accepted. This is the only outcome that establishes a
+  /// relationship, and it still grants no capability.
+  const factory RsRelayLanPairingEvent.paired({
+    required String remoteRelayId,
+    required String remoteAlias,
+    required String verificationCode,
+  }) = RsRelayLanPairingEvent_Paired;
+
+  /// The remote user rejected. Nothing may be stored.
+  const factory RsRelayLanPairingEvent.declined() = RsRelayLanPairingEvent_Declined;
+
+  /// The peer does not support Relay pairing.
+  const factory RsRelayLanPairingEvent.unsupported() = RsRelayLanPairingEvent_Unsupported;
+
+  /// The peer is already showing a pairing prompt for another device.
+  const factory RsRelayLanPairingEvent.busy() = RsRelayLanPairingEvent_Busy;
+
+  /// An identity proof was missing, wrong, or not the identity we demanded.
+  const factory RsRelayLanPairingEvent.authenticationFailed() = RsRelayLanPairingEvent_AuthenticationFailed;
+
+  /// The exchange did not complete. Nothing about identity may be inferred.
+  const factory RsRelayLanPairingEvent.transportFailed() = RsRelayLanPairingEvent_TransportFailed;
 }
 
 @freezed

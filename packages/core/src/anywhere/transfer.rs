@@ -637,6 +637,13 @@ where
         tokio::select! {
             _ = cancel.cancelled() => stop_with!(AnywhereError::Cancelled),
             event = event_rx.recv() => match event {
+                // Relay pairing is a LAN-only interaction: an Anywhere session
+                // is already mutually proven, so a pairing prompt over it would
+                // be asking a question that was answered before the stream
+                // opened. It is declined rather than surfaced.
+                Some(ServerEventV2::RelayPairRequest { decision_tx, .. }) => {
+                    let _ = decision_tx.send(crate::relay::RelayPairingDecision::Declined);
+                }
                 Some(ServerEventV2::PrepareUpload { files, decision_tx, authenticated_relay_id, .. }) => {
                     let remote = authenticated_relay_id
                         .unwrap_or_else(|| remote_relay_id.to_owned());

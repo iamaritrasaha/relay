@@ -116,6 +116,9 @@ async fn start_test_server_with_verification(
                     }
                     ServerEventV2::PrepareUploadAborted { .. } => {}
                     ServerEventV2::CancelReceived { .. } => {}
+                    // Never emitted by the LocalSend-compatible v2 routes this
+                    // test exercises: pairing has its own endpoints.
+                    ServerEventV2::RelayPairRequest { .. } => {}
                 }
             }
         }

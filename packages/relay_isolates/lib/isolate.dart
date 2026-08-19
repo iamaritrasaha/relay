@@ -9,6 +9,7 @@ export 'package:relay_isolates/src/isolate/child/server_isolate.dart'
         HttpServerPrepareUploadEvent,
         HttpServerReceiveConfig,
         HttpServerRegisterEvent,
+        HttpServerRelayPairRequestEvent,
         HttpServerSessionEndEvent,
         HttpServerShowEvent,
         HttpServerStartedEvent,

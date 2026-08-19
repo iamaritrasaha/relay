@@ -124,6 +124,12 @@ class RelaySendService {
   /// The Rust side performs Iroh path selection, inner TLS, proof verification,
   /// and then delegates the v2 file batch to the canonical engine.
   Future<void> sendPaired({required RelayPairedAddress route, required List<CrossFile> files}) async {
+    final address = route.relayAddress;
+    if (address == null) {
+      // A device paired over the local network has no Anywhere route. It is
+      // reached through discovery instead, so there is nothing to dial here.
+      return;
+    }
     final sessionId = rust_relay_anywhere.relayAnywhereOpenSession();
     final sessionKey = sessionId.toString();
     final transfers = _ref.notifier(relayRemoteTransfersProvider);
@@ -144,7 +150,7 @@ class RelaySendService {
         sessionId: sessionId,
         privateKeyPem: privateKey,
         relayId: identity.relayId,
-        address: route.relayAddress,
+        address: address,
         alias: _ref.read(settingsProvider).alias,
         pathPreference: rust_relay_anywhere.RsRelayPathPreference.auto,
         files: sources,

@@ -20,6 +20,7 @@ import 'package:relay_app/util/device_type_ext.dart';
 import 'package:relay_app/util/native/file_picker.dart';
 import 'package:relay_app/util/native/open_file.dart';
 import 'package:relay_app/widget/dialogs/cancel_session_dialog.dart';
+import 'package:relay_app/widget/relay/relay_device_relationship_tile.dart';
 import 'package:relay_isolates/util/file_size_helper.dart';
 import 'package:refena_flutter/refena_flutter.dart';
 import 'package:routerino/routerino.dart';
@@ -266,6 +267,19 @@ class AndroidDeviceDetailPage extends StatelessWidget {
                 label: const Text('Clipboard'),
               ),
             ],
+          ),
+
+          // The relationship itself: pair, or remove. Kept separate from the
+          // consent controls below, because they answer different questions.
+          const SizedBox(height: 24),
+          Card(
+            elevation: 0,
+            color: palette.softSurface,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
+              side: BorderSide(color: palette.hairline),
+            ),
+            child: RelayDeviceRelationshipTile(device: device),
           ),
 
           // Per-device continuity consent. Absent for Relay peers, which

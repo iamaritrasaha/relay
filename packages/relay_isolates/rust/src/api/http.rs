@@ -8,7 +8,7 @@ pub use relay_core::http::dto::{
     RegisterResponseDto,
 };
 use relay_core::model::discovery::ProtocolType;
-use relay_core::relay::RelayPeerAuth;
+use relay_core::relay::{RelayLanPairingOutcome, RelayPeerAuth};
 use relay_core::reqwest;
 use relay_core::util::error::ErrorChain;
 
@@ -216,6 +216,165 @@ fn resolve_file_content(
             "Exactly one upload content source must be provided".into(),
         )),
     }
+}
+
+/// Progress of a mutual Relay LAN pairing attempt.
+///
+/// Flutter never sees a private key, a nonce, or proof bytes: it sees the
+/// verification code to display and the terminal result. Only
+/// [RsRelayLanPairingEvent::Paired] may be persisted, and the RelayId it
+/// carries is the **proven** one.
+pub enum RsRelayLanPairingEvent {
+    /// Both identities are proven and the remote user is being asked. Show this
+    /// code so both people can confirm they are looking at the same pairing.
+    VerificationCode {
+        code: String,
+        remote_relay_id: String,
+    },
+    /// The remote user accepted. This is the only outcome that establishes a
+    /// relationship, and it still grants no capability.
+    Paired {
+        remote_relay_id: String,
+        remote_alias: String,
+        verification_code: String,
+    },
+    /// The remote user rejected. Nothing may be stored.
+    Declined,
+    /// The peer does not support Relay pairing.
+    Unsupported,
+    /// The peer is already showing a pairing prompt for another device.
+    Busy,
+    /// An identity proof was missing, wrong, or not the identity we demanded.
+    AuthenticationFailed,
+    /// The exchange did not complete. Nothing about identity may be inferred.
+    TransportFailed,
+}
+
+impl From<RelayLanPairingOutcome> for RsRelayLanPairingEvent {
+    fn from(value: RelayLanPairingOutcome) -> Self {
+        match value {
+            RelayLanPairingOutcome::Paired {
+                remote_relay_id,
+                remote_alias,
+                verification_code,
+            } => Self::Paired {
+                remote_relay_id,
+                remote_alias,
+                verification_code,
+            },
+            RelayLanPairingOutcome::Declined => Self::Declined,
+            RelayLanPairingOutcome::Unsupported => Self::Unsupported,
+            RelayLanPairingOutcome::Busy => Self::Busy,
+            RelayLanPairingOutcome::AuthenticationFailed => Self::AuthenticationFailed,
+            RelayLanPairingOutcome::TransportFailed => Self::TransportFailed,
+        }
+    }
+}
+
+/// Runs the mutual Relay LAN pairing handshake against a discovered device.
+///
+/// `certificate_fingerprint` pins *which socket* is spoken to. It is not an
+/// identity: the peer still has to produce a Server-role proof over that exact
+/// certificate, and this device still has to produce a Client-role proof over
+/// its own, before the remote user is asked anything.
+///
+/// `expected_relay_id`, when given, is the identity the user targeted. A peer
+/// that proves a different one is a hard failure rather than a new device.
+#[allow(clippy::too_many_arguments)]
+pub async fn relay_lan_pair(
+    sink: StreamSink<RsRelayLanPairingEvent>,
+    private_key_pem: Vec<u8>,
+    relay_id: String,
+    client_private_key: String,
+    client_certificate: String,
+    version: LsHttpClientVersion,
+    protocol: ProtocolType,
+    ip: String,
+    port: u16,
+    certificate_fingerprint: String,
+    alias: String,
+    expected_relay_id: Option<String>,
+) {
+    let identity = match load_pairing_identity(&private_key_pem, &relay_id) {
+        Ok(identity) => identity,
+        Err(event) => {
+            let _ = sink.add(event);
+            return;
+        }
+    };
+    let expected = match expected_relay_id
+        .as_deref()
+        .map(relay_core::relay::RelayId::from_expected_canonical_hex)
+        .transpose()
+    {
+        Ok(expected) => expected,
+        Err(_) => {
+            let _ = sink.add(RsRelayLanPairingEvent::AuthenticationFailed);
+            return;
+        }
+    };
+
+    let (event_tx, mut event_rx) = tokio::sync::mpsc::channel(8);
+    // The sender is owned by the pairing future so it is dropped exactly when
+    // the handshake ends, which is what closes the forwarding loop below.
+    let pairing = async move {
+        let event_tx = event_tx;
+        relay_core::http::client::pair_relay_lan_device(
+            &client_private_key,
+            &client_certificate,
+            version,
+            protocol,
+            &ip,
+            port,
+            &certificate_fingerprint,
+            &identity,
+            &alias,
+            expected.as_ref(),
+            &event_tx,
+        )
+        .await;
+    };
+
+    let forward = async {
+        while let Some(event) = event_rx.recv().await {
+            let mapped = match event {
+                relay_core::http::client::relay::RelayLanPairingEvent::VerificationCode {
+                    code,
+                    remote_relay_id,
+                } => RsRelayLanPairingEvent::VerificationCode {
+                    code,
+                    remote_relay_id,
+                },
+                relay_core::http::client::relay::RelayLanPairingEvent::Outcome(outcome) => {
+                    outcome.into()
+                }
+            };
+            if sink.add(mapped).is_err() {
+                break;
+            }
+        }
+    };
+
+    tokio::join!(pairing, forward);
+}
+
+/// Loads the local Relay identity for pairing and checks it against the
+/// RelayId the caller believes it holds, so a mismatched key never signs.
+fn load_pairing_identity(
+    private_key_pem: &[u8],
+    relay_id: &str,
+) -> Result<relay_core::crypto::relay_identity::RelayIdentity, RsRelayLanPairingEvent> {
+    let pem = std::str::from_utf8(private_key_pem)
+        .map_err(|_| RsRelayLanPairingEvent::AuthenticationFailed)?;
+    let identity = relay_core::crypto::relay_identity::RelayIdentity::from_private_key(pem)
+        .map_err(|_| RsRelayLanPairingEvent::AuthenticationFailed)?;
+    let own = identity
+        .relay_id()
+        .map_err(|_| RsRelayLanPairingEvent::AuthenticationFailed)?;
+    if own != relay_id {
+        return Err(RsRelayLanPairingEvent::AuthenticationFailed);
+    }
+    Ok(identity)
 }
 
 /// An event emitted while a file is being uploaded by [RsHttpClient::upload].

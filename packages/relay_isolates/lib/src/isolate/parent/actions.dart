@@ -458,6 +458,43 @@ class IsolateHttpServerPrepareUploadDecisionAction extends ReduxAction<IsolateCo
   }
 }
 
+/// Answers a pending [HttpServerRelayPairRequestEvent].
+///
+/// [relayId] must be the proven RelayId that event carried, so a decision can
+/// never be applied to a device other than the one the user was shown.
+/// Accepting records the relationship only; it grants no capability.
+class IsolateHttpServerRelayPairDecisionAction extends ReduxAction<IsolateController, ParentIsolateState> {
+  final String relayId;
+  final bool accepted;
+
+  IsolateHttpServerRelayPairDecisionAction({
+    required this.relayId,
+    required this.accepted,
+  });
+
+  @override
+  ParentIsolateState reduce() {
+    final connection = state.httpServer;
+    if (connection == null) {
+      throw StateError('httpServer is not initialized');
+    }
+
+    connection.sendToIsolate(
+      SendToIsolateData(
+        syncState: null,
+        data: IsolateTask(
+          data: HttpServerRelayPairDecisionTask(
+            relayId: relayId,
+            accepted: accepted,
+          ),
+        ),
+      ),
+    );
+
+    return state;
+  }
+}
+
 /// Cancels the active upload session of the HTTP server, e.g. because the
 /// user aborted the transfer on the receiving side.
 /// No [HttpServerSessionEndEvent] is emitted.

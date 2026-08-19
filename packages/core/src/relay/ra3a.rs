@@ -27,6 +27,132 @@ fn coordinator_for(local: &RelayIdentity) -> RelayAuthCoordinator {
     RelayAuthCoordinator::new(RelayId::from_local_identity(local).unwrap())
 }
 
+fn client_proof(client: &RelayIdentity, nonce: [u8; 32]) -> RelayIdentityProofV1 {
+    create_relay_identity_proof(client, RelayProofRole::Client, nonce, TLS_FINGERPRINT).unwrap()
+}
+
+#[test]
+fn a_client_role_proof_over_the_issued_nonce_yields_a_mutual_responder_session() {
+    let (local, client) = identities();
+    let session = coordinator_for(&local)
+        .complete_lan_responder(
+            &client_proof(&client, NONCE),
+            TLS_FINGERPRINT,
+            &NONCE,
+            None,
+            PathDescriptor::lan("192.0.2.8", None),
+        )
+        .unwrap();
+
+    assert_eq!(
+        session.remote_relay_id(),
+        &RelayId::from_local_identity(&client).unwrap()
+    );
+    assert_eq!(session.local_role(), SessionRole::Responder);
+    assert!(session.mutual());
+}
+
+#[test]
+fn a_lan_responder_rejects_a_proof_answering_a_different_challenge() {
+    let (local, client) = identities();
+    let err = coordinator_for(&local)
+        .complete_lan_responder(
+            &client_proof(&client, [0x99; 32]),
+            TLS_FINGERPRINT,
+            &NONCE,
+            None,
+            PathDescriptor::lan("192.0.2.8", None),
+        )
+        .unwrap_err();
+
+    assert_eq!(err, RelayAuthError::ChallengeMismatch);
+}
+
+#[test]
+fn a_lan_responder_rejects_a_server_role_proof() {
+    let (local, client) = identities();
+    let err = coordinator_for(&local)
+        .complete_lan_responder(
+            &create_relay_identity_proof(&client, RelayProofRole::Server, NONCE, TLS_FINGERPRINT)
+                .unwrap(),
+            TLS_FINGERPRINT,
+            &NONCE,
+            None,
+            PathDescriptor::lan("192.0.2.8", None),
+        )
+        .unwrap_err();
+
+    assert_eq!(err, RelayAuthError::RoleMismatch);
+}
+
+#[test]
+fn a_lan_responder_rejects_a_proof_bound_to_another_client_certificate() {
+    let (local, client) = identities();
+    let err = coordinator_for(&local)
+        .complete_lan_responder(
+            &client_proof(&client, NONCE),
+            [0x77; 32],
+            &NONCE,
+            None,
+            PathDescriptor::lan("192.0.2.8", None),
+        )
+        .unwrap_err();
+
+    assert_eq!(err, RelayAuthError::CryptoInvalid);
+}
+
+#[test]
+fn a_lan_responder_rejects_an_identity_other_than_the_one_demanded() {
+    let (local, client) = identities();
+    let expected = RelayId::from_local_identity(&RelayIdentity::generate()).unwrap();
+    let err = coordinator_for(&local)
+        .complete_lan_responder(
+            &client_proof(&client, NONCE),
+            TLS_FINGERPRINT,
+            &NONCE,
+            Some(&expected),
+            PathDescriptor::lan("192.0.2.8", None),
+        )
+        .unwrap_err();
+
+    assert!(matches!(
+        err,
+        RelayAuthError::ExpectedIdentityMismatch { .. }
+    ));
+}
+
+/// A LAN observation never becomes an identity: the same proof reached over a
+/// different address, alias or IP still authenticates the same RelayId, and a
+/// changed address never authenticates a different one.
+#[test]
+fn lan_addressing_does_not_participate_in_the_proven_identity() {
+    let (local, client) = identities();
+    let coordinator = coordinator_for(&local);
+    let proof = client_proof(&client, NONCE);
+
+    let first = coordinator
+        .complete_lan_responder(
+            &proof,
+            TLS_FINGERPRINT,
+            &NONCE,
+            None,
+            PathDescriptor::lan("192.0.2.8", Some(53317)),
+        )
+        .unwrap();
+    let second = coordinator
+        .complete_lan_responder(
+            &proof,
+            TLS_FINGERPRINT,
+            &NONCE,
+            None,
+            PathDescriptor::lan("198.51.100.4", Some(9999)),
+        )
+        .unwrap();
+
+    assert_eq!(first.remote_relay_id(), second.remote_relay_id());
+    assert_ne!(first.path(), second.path());
+}
+
 #[test]
 fn proven_server_relay_id_constructs_authenticated_initiator_session() {
     let (local, server) = identities();

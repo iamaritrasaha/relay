@@ -7,6 +7,7 @@ mod coordinator;
 #[cfg(feature = "anywhere")]
 mod device;
 mod id;
+mod pairing;
 mod path;
 mod policy;
 #[cfg(feature = "anywhere")]
@@ -25,6 +26,10 @@ pub use device::{
     UnresolvedLanCandidate,
 };
 pub use id::{ClaimedRelayId, RelayId};
+pub use pairing::{
+    format_verification_code, sanitize_pairing_alias, verification_code, RelayLanPairingOutcome,
+    RelayPairingDecision, MAX_PAIRING_ALIAS_LEN, VERIFICATION_CODE_DIGITS,
+};
 pub use path::{ChannelBinding, PathDescriptor};
 pub use policy::{
     AuthorizationAdvisory, AuthorizationDecision, DeviceBinding, MemoryTrustDirectory,
@@ -82,6 +87,21 @@ impl RelayTlsContext {
         }
     }
 
+    /// Creates a client context from the exact DER certificate this device
+    /// presents as its mTLS client certificate.
+    ///
+    /// The fingerprint is derived here from our own certificate bytes, so a
+    /// peer can never influence what a Client-role proof is bound to.
+    pub(crate) fn from_client_certificate_der(certificate_der: &[u8]) -> Self {
+        let own_tls_fingerprint: [u8; 32] = crate::crypto::hash::sha256(certificate_der)
+            .try_into()
+            .expect("SHA-256 digest has a fixed length");
+        Self {
+            role: RelayProofRole::Client,
+            own_tls_fingerprint,
+        }
+    }
+
     pub(crate) fn role(&self) -> RelayProofRole {
         self.role
     }
@@ -98,6 +118,12 @@ pub trait RelayProofSigner: Send + Sync + fmt::Debug {
         nonce: &[u8; 32],
         tls: &RelayTlsContext,
     ) -> Result<RelayIdentityProofV1, RelaySignError>;
+
+    /// This device's own RelayId, derived from the installed identity.
+    ///
+    /// It is local key material, not anything a peer supplied, so a responder
+    /// can name itself when it constructs an authenticated session.
+    fn local_relay_id(&self) -> &str;
 }
 
 /// Transport-neutral signing failure for later HTTP mapping.
@@ -168,6 +194,10 @@ impl RelayProofSigner for ProductionRelaySigner {
         )
         .map_err(|_| RelaySignError::SigningFailed)
     }
+
+    fn local_relay_id(&self) -> &str {
+        &self.relay_id
+    }
 }
 
 /// Result of Relay cryptographic authentication, without trust policy.
@@ -198,12 +228,14 @@ fn test_tls_context(role: RelayProofRole, own_tls_fingerprint: [u8; 32]) -> Rela
 #[cfg(test)]
 struct TestRelayProofSigner {
     identity: crate::crypto::relay_identity::RelayIdentity,
+    relay_id: String,
 }
 
 #[cfg(test)]
 impl TestRelayProofSigner {
     fn new(identity: crate::crypto::relay_identity::RelayIdentity) -> Self {
-        Self { identity }
+        let relay_id = identity.relay_id().unwrap_or_default();
+        Self { identity, relay_id }
     }
 }
 
@@ -232,6 +264,10 @@ impl RelayProofSigner for TestRelayProofSigner {
             tls.own_tls_fingerprint(),
         )
         .map_err(|_| RelaySignError::SigningFailed)
+    }
+
+    fn local_relay_id(&self) -> &str {
+        &self.relay_id
     }
 }
 

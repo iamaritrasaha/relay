@@ -126,7 +126,9 @@ impl AnywhereError {
             RelayAuthError::ExpectedIdentityMismatch { expected, proven } => {
                 Self::ExpectedIdentityMismatch { expected, proven }
             }
-            RelayAuthError::CryptoInvalid | RelayAuthError::RoleMismatch => Self::RelayProof,
+            RelayAuthError::CryptoInvalid
+            | RelayAuthError::RoleMismatch
+            | RelayAuthError::ChallengeMismatch => Self::RelayProof,
         }
     }
 
