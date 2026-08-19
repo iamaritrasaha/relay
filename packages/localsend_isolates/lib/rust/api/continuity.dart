@@ -63,18 +63,11 @@ List<String> continuityConnectedDevices() => RustLib.instance.api.crateApiContin
 
 /// Opens and maintains an outbound continuity link to one paired device.
 ///
-/// Both secret materials come from the platform stores and are wiped here.
-Future<void> continuityConnectDevice({
-  required List<int> privateKeyPem,
-  required String relayId,
-  required List<int> routingKey,
-  required String remoteAddress,
-}) => RustLib.instance.api.crateApiContinuityContinuityConnectDevice(
-  privateKeyPem: privateKeyPem,
-  relayId: relayId,
-  routingKey: routingKey,
-  remoteAddress: remoteAddress,
-);
+/// The Relay private key comes from the platform secret store and is wiped
+/// here. No routing key is needed: continuity rides the endpoint the Anywhere
+/// listener already bound, so there is one routing identity per device.
+Future<void> continuityConnectDevice({required List<int> privateKeyPem, required String relayId, required String remoteAddress}) =>
+    RustLib.instance.api.crateApiContinuityContinuityConnectDevice(privateKeyPem: privateKeyPem, relayId: relayId, remoteAddress: remoteAddress);
 
 /// Stops the continuity link with one device without affecting others.
 void continuityDisconnectDevice({required String relayId}) => RustLib.instance.api.crateApiContinuityContinuityDisconnectDevice(relayId: relayId);

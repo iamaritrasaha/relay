@@ -16,8 +16,7 @@ use std::sync::{Arc, Mutex, OnceLock};
 
 use flutter_rust_bridge::frb;
 use localsend::anywhere::{
-    connect_continuity, spawn_link, AnywhereIdentity, AnywhereRoutingKey, PathPreference,
-    RelayAddressV1,
+    connect_continuity, spawn_link, AnywhereIdentity, PathPreference, RelayAddressV1,
 };
 use localsend::continuity::{
     capability_entry, clipboard_fingerprint, now_ms, BatteryState, CallAction, CallActionOutcome,
@@ -905,19 +904,17 @@ pub fn continuity_connected_devices() -> Vec<String> {
 
 /// Opens and maintains an outbound continuity link to one paired device.
 ///
-/// Both secret materials come from the platform stores and are wiped here.
+/// The Relay private key comes from the platform secret store and is wiped
+/// here. No routing key is needed: continuity rides the endpoint the Anywhere
+/// listener already bound, so there is one routing identity per device.
 pub async fn continuity_connect_device(
     mut private_key_pem: Vec<u8>,
     relay_id: String,
-    mut routing_key: Vec<u8>,
     remote_address: String,
 ) -> anyhow::Result<()> {
     let identity = AnywhereIdentity::load(&mut private_key_pem, &relay_id);
     private_key_pem.fill(0);
     let identity = identity?;
-    let routing_key_result = AnywhereRoutingKey::from_bytes(&routing_key);
-    routing_key.fill(0);
-    let routing_key = routing_key_result?;
     let remote = RelayAddressV1::decode(&remote_address)?;
     let remote_relay_id = remote.claimed_relay_id.clone();
 
@@ -938,7 +935,6 @@ pub async fn continuity_connect_device(
     // and a single socket.
     let endpoint = crate::api::relay_anywhere::anywhere_listener_endpoint()
         .ok_or_else(|| anyhow::anyhow!("the Relay listener must be running before continuity connects"))?;
-    drop(routing_key);
 
     tokio::spawn(async move {
         let runtime = runtime();

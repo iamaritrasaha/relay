@@ -9,6 +9,7 @@ import 'package:localsend_app/model/persistence/color_mode.dart';
 import 'package:localsend_app/model/persistence/favorite_device.dart';
 import 'package:localsend_app/model/persistence/quick_save_mode.dart';
 import 'package:localsend_app/model/persistence/receive_history_entry.dart';
+import 'package:localsend_app/model/persistence/relay_continuity_settings.dart';
 import 'package:localsend_app/model/persistence/relay_paired_address.dart';
 import 'package:localsend_app/model/persistence/relay_public_identity.dart';
 import 'package:localsend_app/model/send_mode.dart';
@@ -109,6 +110,7 @@ const _relayIdentityPublicKeyKey = 'ls_relay_identity_public_key';
 // Non-secret, untrusted routing metadata for Relay Anywhere. The routing
 // private key remains exclusively in platform secure storage.
 const _relayPairedAddressesKey = 'ls_relay_paired_addresses_v1';
+const _relayContinuitySettingsKey = 'ls_relay_continuity_settings_v1';
 
 final persistenceProvider = Provider<PersistenceService>((ref) {
   throw Exception('persistenceProvider not initialized');
@@ -278,6 +280,33 @@ class PersistenceService {
 
   Future<void> setRelayPairedAddresses(List<RelayPairedAddress> addresses) async {
     await _prefs.setStringList(_relayPairedAddressesKey, addresses.map((entry) => jsonEncode(entry.toJson())).toList());
+  }
+
+  /// Per-device continuity consent.
+  ///
+  /// Unparseable entries are dropped rather than partially restored, so a
+  /// corrupted store fails closed to "nothing is shared".
+  List<RelayContinuitySettings> getRelayContinuitySettings() {
+    final raw = _prefs.getStringList(_relayContinuitySettingsKey) ?? const [];
+    final entries = <RelayContinuitySettings>[];
+    for (final value in raw) {
+      try {
+        final parsed = RelayContinuitySettings.tryParse(jsonDecode(value));
+        if (parsed != null) {
+          entries.add(parsed);
+        }
+      } catch (_) {
+        // Ignore a single corrupted record instead of losing every setting.
+      }
+    }
+    return entries;
+  }
+
+  Future<void> setRelayContinuitySettings(List<RelayContinuitySettings> settings) async {
+    await _prefs.setStringList(
+      _relayContinuitySettingsKey,
+      settings.map((entry) => jsonEncode(entry.toJson())).toList(),
+    );
   }
 
   List<String>? getSignalingServers() {
