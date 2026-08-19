@@ -100,3 +100,32 @@ Future<void> destroyTray() async {
     await tm.trayManager.destroy();
   }
 }
+
+bool _trayIconHidden = false;
+
+/// Removes Relay from the notification area.
+///
+/// Used when a desktop shell surface already presents Relay, so the user is not
+/// given two Relay entry points in the same panel. Only the icon goes away: the
+/// app keeps running exactly as before.
+Future<void> hideTrayIcon() async {
+  if (!checkPlatformHasTray() || _trayIconHidden) {
+    return;
+  }
+  _trayIconHidden = true;
+  try {
+    await tm.trayManager.destroy();
+  } catch (e) {
+    _trayIconHidden = false;
+    _logger.warning('Failed to hide the tray icon', e);
+  }
+}
+
+/// Puts Relay back in the notification area after [hideTrayIcon].
+Future<void> restoreTrayIcon() async {
+  if (!checkPlatformHasTray() || !_trayIconHidden) {
+    return;
+  }
+  _trayIconHidden = false;
+  await initTray();
+}

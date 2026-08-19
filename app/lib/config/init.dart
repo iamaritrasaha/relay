@@ -24,6 +24,7 @@ import 'package:relay_app/provider/persistence_provider.dart';
 import 'package:relay_app/provider/purchase_provider.dart';
 // [FOSS_REMOVE_END]
 import 'package:relay_app/provider/relay_anywhere_listener_provider.dart';
+import 'package:relay_app/provider/relay_shell_status_provider.dart';
 import 'package:relay_app/provider/selection/selected_sending_files_provider.dart';
 import 'package:relay_app/provider/settings_provider.dart';
 import 'package:relay_app/provider/tv_provider.dart';
@@ -179,6 +180,15 @@ Future<RefenaContainer> preInit(List<String> args) async {
   );
 
   await container.redux(parentIsolateProvider).dispatchAsync(IsolateSetupAction());
+
+  // Desktop shell surfaces read Relay's phone status from here. It is started
+  // with the container rather than with a page so a Relay that is running
+  // without a visible window still feeds the shell.
+  try {
+    await startRelayShellStatusBridge(container);
+  } catch (e) {
+    _logger.warning('Starting the shell status bridge failed', e);
+  }
 
   return container;
 }
