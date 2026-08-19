@@ -16,6 +16,16 @@ pub const ALPN: &[u8] = b"relay-anywhere/1";
 
 static IROH_ENDPOINT_BIND_COUNT: AtomicU64 = AtomicU64::new(0);
 
+/// Protocols an Anywhere endpoint accepts. Transfer and continuity are separate
+/// ALPNs on one endpoint, so a device needs a single routing identity while the
+/// two wire formats stay completely independent.
+fn accepted_alpns() -> Vec<Vec<u8>> {
+    vec![
+        ALPN.to_vec(),
+        super::continuity_link::CONTINUITY_ALPN.to_vec(),
+    ]
+}
+
 /// Number of times an Iroh [`Endpoint`] has been bound in this process.
 ///
 /// LAN HTTP/multicast startup must leave this at zero.
@@ -63,8 +73,18 @@ impl AnywhereEndpoint {
     }
 
     pub async fn connect(&self, addr: EndpointAddr) -> Result<Connection, AnywhereError> {
+        self.connect_with_alpn(addr, ALPN).await
+    }
+
+    /// Connects using a specific ALPN. Continuity uses its own, so a continuity
+    /// dial can never land in the transfer accept path or vice versa.
+    pub async fn connect_with_alpn(
+        &self,
+        addr: EndpointAddr,
+        alpn: &[u8],
+    ) -> Result<Connection, AnywhereError> {
         self.inner
-            .connect(addr, ALPN)
+            .connect(addr, alpn)
             .await
             .map_err(|error| AnywhereError::transport(TransportStage::Connect, error))
     }
@@ -88,7 +108,7 @@ pub async fn bind_endpoint_with_key(
         PathPreference::Auto => {
             let builder = Endpoint::builder(presets::N0)
                 .relay_mode(RelayMode::Default)
-                .alpns(vec![ALPN.to_vec()]);
+                .alpns(accepted_alpns());
             let builder = match routing_key {
                 Some(key) => builder.secret_key(key),
                 None => builder,
@@ -102,7 +122,7 @@ pub async fn bind_endpoint_with_key(
             let builder = Endpoint::builder(presets::N0)
                 .relay_mode(RelayMode::Default)
                 .clear_ip_transports()
-                .alpns(vec![ALPN.to_vec()]);
+                .alpns(accepted_alpns());
             let builder = match routing_key {
                 Some(key) => builder.secret_key(key),
                 None => builder,
@@ -115,7 +135,7 @@ pub async fn bind_endpoint_with_key(
         PathPreference::ForceDirect => {
             let builder = Endpoint::builder(presets::Minimal)
                 .relay_mode(RelayMode::Disabled)
-                .alpns(vec![ALPN.to_vec()]);
+                .alpns(accepted_alpns());
             let builder = match routing_key {
                 Some(key) => builder.secret_key(key),
                 None => builder,

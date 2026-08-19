@@ -4,6 +4,7 @@
 //! startup never calls into this module.
 
 pub mod address;
+pub mod continuity_link;
 pub mod endpoint;
 pub mod error;
 pub mod identity;
@@ -18,6 +19,10 @@ pub mod transfer;
 pub use address::{
     parse_relay_address, validate_relay_id, RelayAddressV1, MAX_RELAY_ADDRESS_LEN,
     RELAY_ADDRESS_PREFIX, RELAY_ADDRESS_VERSION,
+};
+pub use continuity_link::{
+    accept_continuity, broadcast, connect_continuity, run_dialer, spawn_link, ContinuityDialerConfig,
+    ContinuityLink, CONTINUITY_ALPN,
 };
 pub use endpoint::{
     bind_endpoint, bind_endpoint_with_key, iroh_endpoint_bind_count, selected_path, wrap_endpoint,
