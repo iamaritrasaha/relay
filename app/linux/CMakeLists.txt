@@ -66,6 +66,7 @@ add_executable(${BINARY_NAME}
   "main.cc"
   "my_application.cc"
   "relay_identity_secret_channel.cc"
+  "relay_shell_status_channel.cc"
   "${FLUTTER_MANAGED_DIR}/generated_plugin_registrant.cc"
 )
 

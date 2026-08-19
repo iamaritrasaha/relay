@@ -1,0 +1,49 @@
+/* Relay — GNOME Shell integration
+ *
+ * The shell theme already draws panel buttons as capsules, with hover, focus
+ * and open states, the right padding for the current panel height, and the
+ * session's own font. This sheet deliberately sets neither font nor colour: it
+ * only spaces the pill's groups so they read as groups, and sizes icons in em
+ * so the pill grows with the user's text size.
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+.relay-pill-box {
+  spacing: 8px;
+}
+
+.relay-pill-segment {
+  spacing: 4px;
+}
+
+.relay-pill-icon {
+  icon-size: 1.091em;
+}
+
+.relay-header {
+  spacing: 12px;
+  padding-top: 10px;
+  padding-bottom: 10px;
+}
+
+.relay-header-icon {
+  icon-size: 2em;
+}
+
+.relay-header-text {
+  spacing: 2px;
+}
+
+.relay-header-name {
+  font-weight: bold;
+}
+
+.relay-info-row {
+  spacing: 12px;
+}
+
+.relay-info-value {
+  font-weight: bold;
+  max-width: 260px;
+}
