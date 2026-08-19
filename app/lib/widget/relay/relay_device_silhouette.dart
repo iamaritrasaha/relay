@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:localsend_isolates/model/device.dart';
+import 'package:relay_isolates/model/device.dart';
 
 /// Minimal, monochrome forms for Relay medallions. This maps only existing
 /// protocol categories and deliberately never infers a device from its name.

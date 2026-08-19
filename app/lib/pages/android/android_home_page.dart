@@ -1,19 +1,19 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
-import 'package:localsend_app/config/relay_brand.dart';
-import 'package:localsend_app/model/ui/relay_device_vm.dart';
-import 'package:localsend_app/pages/android/android_device_detail_page.dart';
-import 'package:localsend_app/pages/relay_home_vm.dart';
-import 'package:localsend_app/provider/network/nearby_devices_provider.dart';
-import 'package:localsend_app/provider/network/relay_send_service.dart';
-import 'package:localsend_app/provider/receive_history_provider.dart';
-import 'package:localsend_app/provider/relay_paired_routes_provider.dart';
-import 'package:localsend_app/provider/relay_verified_lan_devices_provider.dart';
-import 'package:localsend_app/provider/selection/selected_sending_files_provider.dart';
-import 'package:localsend_app/util/device_type_ext.dart';
-import 'package:localsend_app/util/native/file_picker.dart';
-import 'package:localsend_isolates/util/file_size_helper.dart';
+import 'package:relay_app/config/relay_brand.dart';
+import 'package:relay_app/model/ui/relay_device_vm.dart';
+import 'package:relay_app/pages/android/android_device_detail_page.dart';
+import 'package:relay_app/pages/relay_home_vm.dart';
+import 'package:relay_app/provider/network/nearby_devices_provider.dart';
+import 'package:relay_app/provider/network/relay_send_service.dart';
+import 'package:relay_app/provider/receive_history_provider.dart';
+import 'package:relay_app/provider/relay_paired_routes_provider.dart';
+import 'package:relay_app/provider/relay_verified_lan_devices_provider.dart';
+import 'package:relay_app/provider/selection/selected_sending_files_provider.dart';
+import 'package:relay_app/util/device_type_ext.dart';
+import 'package:relay_app/util/native/file_picker.dart';
+import 'package:relay_isolates/util/file_size_helper.dart';
 import 'package:refena_flutter/refena_flutter.dart';
 
 /// Android Material 3 Devices Page (Home tab).
@@ -33,8 +33,8 @@ class AndroidHomePage extends StatelessWidget {
     final history = context.watch(receiveHistoryProvider);
     final ref = context.ref;
 
-    final relayDevices = vm.devices.where((d) => !d.isLocalSend).toList();
-    final localSendDevices = vm.devices.where((d) => d.isLocalSend).toList();
+    final relayDevices = vm.devices.where((d) => !d.isRelay).toList();
+    final localSendDevices = vm.devices.where((d) => d.isRelay).toList();
 
     return ListView(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),

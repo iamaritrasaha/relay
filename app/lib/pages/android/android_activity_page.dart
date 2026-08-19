@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
-import 'package:localsend_app/config/relay_brand.dart';
-import 'package:localsend_app/provider/receive_history_provider.dart';
-import 'package:localsend_app/util/native/open_file.dart';
-import 'package:localsend_app/widget/dialogs/history_clear_dialog.dart';
-import 'package:localsend_isolates/util/file_size_helper.dart';
+import 'package:relay_app/config/relay_brand.dart';
+import 'package:relay_app/provider/receive_history_provider.dart';
+import 'package:relay_app/util/native/open_file.dart';
+import 'package:relay_app/widget/dialogs/history_clear_dialog.dart';
+import 'package:relay_isolates/util/file_size_helper.dart';
 import 'package:refena_flutter/refena_flutter.dart';
 
 /// Android Material 3 Activity Page.

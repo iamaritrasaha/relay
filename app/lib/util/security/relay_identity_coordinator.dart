@@ -1,11 +1,11 @@
 import 'dart:async';
 import 'dart:typed_data';
 
-import 'package:localsend_app/model/persistence/relay_public_identity.dart';
-import 'package:localsend_app/util/security/relay_identity_metadata_store.dart';
-import 'package:localsend_app/util/security/relay_identity_secret_store.dart';
-import 'package:localsend_app/util/security/relay_server_signer_port.dart';
-import 'package:localsend_isolates/rust/api/crypto.dart' as rust_crypto;
+import 'package:relay_app/model/persistence/relay_public_identity.dart';
+import 'package:relay_app/util/security/relay_identity_metadata_store.dart';
+import 'package:relay_app/util/security/relay_identity_secret_store.dart';
+import 'package:relay_app/util/security/relay_server_signer_port.dart';
+import 'package:relay_isolates/rust/api/crypto.dart' as rust_crypto;
 import 'package:logging/logging.dart';
 
 final _logger = Logger('RelayIdentityCoordinator');

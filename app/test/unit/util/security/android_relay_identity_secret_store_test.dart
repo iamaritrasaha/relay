@@ -1,9 +1,9 @@
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:localsend_app/util/security/android_relay_identity_secret_store.dart';
-import 'package:localsend_app/util/security/relay_identity_secret_store.dart';
+import 'package:relay_app/util/security/android_relay_identity_secret_store.dart';
+import 'package:relay_app/util/security/relay_identity_secret_store.dart';
 
-const _channelName = 'org.localsend.localsend_app/localsend';
+const _channelName = 'com.foresight.app.relay/relay';
 const _channel = MethodChannel(_channelName);
 
 void main() {

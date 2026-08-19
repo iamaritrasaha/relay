@@ -4,7 +4,7 @@ import 'package:logging/logging.dart';
 
 part 'android_channel.mapper.dart';
 
-const _methodChannel = MethodChannel('org.localsend.localsend_app/localsend');
+const _methodChannel = MethodChannel('com.foresight.app.relay/relay');
 final _logger = Logger('AndroidSaf');
 
 Future<T?> invokeAndroidMethod<T>(String method, [Object? arguments]) => _methodChannel.invokeMethod<T>(method, arguments);

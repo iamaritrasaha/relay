@@ -2780,79 +2780,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "11d3d7f243d5c5a8b9bb5d6dd2b1602c0cb0b9db1621bafc7ed66e35ff9fe092"
 
 [[package]]
-name = "localsend"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "base64 0.23.0",
- "bytes",
- "ed25519-dalek",
- "flate2",
- "form_urlencoded",
- "futures-util",
- "http-body-util",
- "hyper",
- "hyper-util",
- "if-addrs",
- "iroh",
- "libc",
- "lru",
- "pem 4.0.0",
- "percent-encoding",
- "rand 0.10.2",
- "rcgen 0.14.8",
- "reqwest",
- "rsa",
- "rustls",
- "serde",
- "serde_json",
- "sha2 0.11.0",
- "socket2 0.6.5",
- "thiserror 2.0.19",
- "time",
- "tokio",
- "tokio-rustls",
- "tokio-stream",
- "tokio-tungstenite 0.30.0",
- "tokio-util",
- "tracing",
- "tracing-subscriber",
- "tungstenite 0.30.0",
- "uuid",
- "webrtc",
- "x509-parser 0.18.1",
-]
-
-[[package]]
-name = "localsend-cli"
-version = "1.18.1"
-dependencies = [
- "anyhow",
- "bytes",
- "clap",
- "crossterm",
- "dirs",
- "futures-util",
- "gethostname",
- "localsend",
- "mime_guess",
- "pem 4.0.0",
- "qrcode",
- "ratatui",
- "ratatui-explorer",
- "rcgen 0.14.8",
- "serde",
- "serde_json",
- "tokio",
- "tokio-stream",
- "tokio-util",
- "toml",
- "unicode-width",
- "uuid",
- "winresource",
-]
-
-[[package]]
 name = "lock_api"
 version = "0.4.14"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4363,6 +4290,79 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d6f6ff9a378485b298a5286656da665ba74413d36db0979633275d2e708145d4"
 
 [[package]]
+name = "relay-cli"
+version = "1.18.1"
+dependencies = [
+ "anyhow",
+ "bytes",
+ "clap",
+ "crossterm",
+ "dirs",
+ "futures-util",
+ "gethostname",
+ "mime_guess",
+ "pem 4.0.0",
+ "qrcode",
+ "ratatui",
+ "ratatui-explorer",
+ "rcgen 0.14.8",
+ "relay_core",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tokio-stream",
+ "tokio-util",
+ "toml",
+ "unicode-width",
+ "uuid",
+ "winresource",
+]
+
+[[package]]
+name = "relay_core"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "base64 0.23.0",
+ "bytes",
+ "ed25519-dalek",
+ "flate2",
+ "form_urlencoded",
+ "futures-util",
+ "http-body-util",
+ "hyper",
+ "hyper-util",
+ "if-addrs",
+ "iroh",
+ "libc",
+ "lru",
+ "pem 4.0.0",
+ "percent-encoding",
+ "rand 0.10.2",
+ "rcgen 0.14.8",
+ "reqwest",
+ "rsa",
+ "rustls",
+ "serde",
+ "serde_json",
+ "sha2 0.11.0",
+ "socket2 0.6.5",
+ "thiserror 2.0.19",
+ "time",
+ "tokio",
+ "tokio-rustls",
+ "tokio-stream",
+ "tokio-tungstenite 0.30.0",
+ "tokio-util",
+ "tracing",
+ "tracing-subscriber",
+ "tungstenite 0.30.0",
+ "uuid",
+ "webrtc",
+ "x509-parser 0.18.1",
+]
+
+[[package]]
 name = "reqwest"
 version = "0.13.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4482,13 +4482,13 @@ dependencies = [
 ]
 
 [[package]]
-name = "rust_lib_localsend_app"
+name = "rust_lib_relay_app"
 version = "0.1.0"
 dependencies = [
  "anyhow",
  "bytes",
  "flutter_rust_bridge",
- "localsend",
+ "relay_core",
  "serde",
  "serde_json",
  "tokio",
@@ -4833,7 +4833,7 @@ dependencies = [
  "axum",
  "base64 0.22.1",
  "futures-util",
- "localsend",
+ "relay_core",
  "serde",
  "serde_json",
  "tokio",

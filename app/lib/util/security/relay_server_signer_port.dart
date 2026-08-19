@@ -1,6 +1,6 @@
 import 'dart:typed_data';
 
-import 'package:localsend_isolates/isolate.dart';
+import 'package:relay_isolates/isolate.dart';
 import 'package:refena_flutter/refena_flutter.dart';
 
 abstract interface class RelayServerSignerPort {

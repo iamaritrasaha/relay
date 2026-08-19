@@ -1,15 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:localsend_app/config/theme.dart';
-import 'package:localsend_app/model/persistence/color_mode.dart';
-import 'package:localsend_app/widget/gnome/adw_action_row.dart';
-import 'package:localsend_app/widget/gnome/adw_boxed_list.dart';
-import 'package:localsend_app/widget/gnome/adw_button.dart';
-import 'package:localsend_app/widget/gnome/adw_header_bar.dart';
-import 'package:localsend_app/widget/gnome/adw_status_page.dart';
+import 'package:relay_app/config/theme.dart';
+import 'package:relay_app/model/persistence/color_mode.dart';
+import 'package:relay_app/widget/gnome/adw_action_row.dart';
+import 'package:relay_app/widget/gnome/adw_boxed_list.dart';
+import 'package:relay_app/widget/gnome/adw_button.dart';
+import 'package:relay_app/widget/gnome/adw_header_bar.dart';
+import 'package:relay_app/widget/gnome/adw_status_page.dart';
 
 void main() {
-  final darkTheme = getTheme(ColorMode.localsend, Colors.teal, Brightness.dark, null);
+  final darkTheme = getTheme(ColorMode.relay, Colors.teal, Brightness.dark, null);
 
   testWidgets('AdwHeaderBar renders title and subtitle in dark theme', (tester) async {
     await tester.pumpWidget(

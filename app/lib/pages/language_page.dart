@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
-import 'package:localsend_app/gen/strings.g.dart';
-import 'package:localsend_app/provider/settings_provider.dart';
-import 'package:localsend_app/util/i18n.dart';
-import 'package:localsend_app/widget/responsive_list_view.dart';
+import 'package:relay_app/gen/strings.g.dart';
+import 'package:relay_app/provider/settings_provider.dart';
+import 'package:relay_app/util/i18n.dart';
+import 'package:relay_app/widget/responsive_list_view.dart';
 import 'package:refena_flutter/refena_flutter.dart';
 
 class LanguagePage extends StatelessWidget {

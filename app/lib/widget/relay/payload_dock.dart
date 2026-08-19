@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
-import 'package:localsend_app/config/relay_brand.dart';
-import 'package:localsend_app/config/relay_motion.dart';
-import 'package:localsend_app/pages/relay_home_vm.dart';
-import 'package:localsend_app/widget/relay/relay_desktop_metrics.dart';
-import 'package:localsend_isolates/util/file_size_helper.dart';
+import 'package:relay_app/config/relay_brand.dart';
+import 'package:relay_app/config/relay_motion.dart';
+import 'package:relay_app/pages/relay_home_vm.dart';
+import 'package:relay_app/widget/relay/relay_desktop_metrics.dart';
+import 'package:relay_isolates/util/file_size_helper.dart';
 
 /// The one control Home carries, docked below the nearby field.
 ///

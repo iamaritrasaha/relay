@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
-import 'package:localsend_app/config/relay_brand.dart';
-import 'package:localsend_app/model/persistence/relay_continuity_settings.dart';
-import 'package:localsend_app/model/ui/relay_device_vm.dart';
-import 'package:localsend_app/provider/continuity/continuity_provider.dart';
+import 'package:relay_app/config/relay_brand.dart';
+import 'package:relay_app/model/persistence/relay_continuity_settings.dart';
+import 'package:relay_app/model/ui/relay_device_vm.dart';
+import 'package:relay_app/provider/continuity/continuity_provider.dart';
 import 'package:refena_flutter/refena_flutter.dart';
 
 /// Android messages continuity page.
@@ -31,7 +31,7 @@ class AndroidMessagesPage extends StatelessWidget {
                   context,
                   icon: Icons.sms_outlined,
                   title: 'Not a Relay device',
-                  body: '${device.alias} is a LocalSend-compatible device and can only receive files.',
+                  body: '${device.alias} is a Relay-compatible device and can only receive files.',
                 )
               : Consumer(
                   builder: (context, ref) {

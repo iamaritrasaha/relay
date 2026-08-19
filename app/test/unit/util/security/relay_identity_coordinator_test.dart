@@ -1,13 +1,13 @@
 import 'dart:async';
 import 'dart:typed_data';
 
-import 'package:localsend_app/model/persistence/relay_public_identity.dart';
-import 'package:localsend_app/util/security/relay_identity_coordinator.dart';
-import 'package:localsend_app/util/security/relay_identity_metadata_store.dart';
-import 'package:localsend_app/util/security/relay_identity_reset_service.dart';
-import 'package:localsend_app/util/security/relay_identity_secret_store.dart';
-import 'package:localsend_app/util/security/relay_server_signer_port.dart';
-import 'package:localsend_isolates/rust/api/crypto.dart';
+import 'package:relay_app/model/persistence/relay_public_identity.dart';
+import 'package:relay_app/util/security/relay_identity_coordinator.dart';
+import 'package:relay_app/util/security/relay_identity_metadata_store.dart';
+import 'package:relay_app/util/security/relay_identity_reset_service.dart';
+import 'package:relay_app/util/security/relay_identity_secret_store.dart';
+import 'package:relay_app/util/security/relay_server_signer_port.dart';
+import 'package:relay_isolates/rust/api/crypto.dart';
 import 'package:test/test.dart';
 
 void main() {

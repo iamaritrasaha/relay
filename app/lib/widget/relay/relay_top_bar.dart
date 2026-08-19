@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
-import 'package:localsend_app/config/relay_brand.dart';
-import 'package:localsend_app/widget/relay/relay_desktop_metrics.dart';
+import 'package:relay_app/config/relay_brand.dart';
+import 'package:relay_app/widget/relay/relay_desktop_metrics.dart';
 
 /// The quiet bar that sits at the top of every Relay surface.
 ///

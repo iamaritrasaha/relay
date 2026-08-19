@@ -1,17 +1,17 @@
 #![cfg(feature = "full")]
 
 use bytes::Bytes;
-use localsend::crypto::relay_identity::RelayIdentity;
-use localsend::crypto::relay_identity_proof::{RelayProofRole, create_relay_identity_proof};
-use localsend::http::client::AnywhereHttpClient;
-use localsend::http::dto_v2::{PrepareUploadRequestDtoV2, RegisterDtoV2};
-use localsend::http::server::common::save::FileUploadTarget;
-use localsend::http::server::v2::{PrepareUploadDecisionV2, ServerEventV2};
-use localsend::http::server::{ConnectionOrigin, ServerConfigV2, start_with_port};
-use localsend::http::state::ClientInfo as ServerInfo;
-use localsend::model::discovery::ProtocolType;
-use localsend::model::transfer::{FileContent, FileDto};
-use localsend::relay::{AuthenticatedRelaySession, PathDescriptor, RelayAuthCoordinator};
+use relay_core::crypto::relay_identity::RelayIdentity;
+use relay_core::crypto::relay_identity_proof::{RelayProofRole, create_relay_identity_proof};
+use relay_core::http::client::AnywhereHttpClient;
+use relay_core::http::dto_v2::{PrepareUploadRequestDtoV2, RegisterDtoV2};
+use relay_core::http::server::common::save::FileUploadTarget;
+use relay_core::http::server::v2::{PrepareUploadDecisionV2, ServerEventV2};
+use relay_core::http::server::{ConnectionOrigin, ServerConfigV2, start_with_port};
+use relay_core::http::state::ClientInfo as ServerInfo;
+use relay_core::model::discovery::ProtocolType;
+use relay_core::model::transfer::{FileContent, FileDto};
+use relay_core::relay::{AuthenticatedRelaySession, PathDescriptor, RelayAuthCoordinator};
 use sha2::{Digest, Sha256};
 use std::collections::{HashMap, HashSet};
 use std::io;
@@ -78,7 +78,7 @@ fn session() -> AuthenticatedRelaySession {
     let proof =
         create_relay_identity_proof(&remote, RelayProofRole::Client, [0x21; 32], [0x22; 32])
             .unwrap();
-    RelayAuthCoordinator::new(localsend::relay::RelayId::from_local_identity(&local).unwrap())
+    RelayAuthCoordinator::new(relay_core::relay::RelayId::from_local_identity(&local).unwrap())
         .complete_anywhere_responder(
             &proof,
             [0x22; 32],
@@ -92,7 +92,7 @@ fn session() -> AuthenticatedRelaySession {
 
 async fn server(
     events: mpsc::Sender<ServerEventV2>,
-) -> (localsend::http::server::ServerHandle, oneshot::Sender<()>) {
+) -> (relay_core::http::server::ServerHandle, oneshot::Sender<()>) {
     let (stop_tx, stop_rx) = oneshot::channel();
     let handle = start_with_port(
         0,
@@ -158,7 +158,7 @@ async fn anywhere_uses_existing_v2_prepare_and_streaming_save_on_a_non_tcp_strea
 
     let data = Bytes::from_static(b"relay anywhere file body");
     let content_length = data.len() as u64;
-    let hash = localsend::crypto::hash::sha256_hex(&data);
+    let hash = relay_core::crypto::hash::sha256_hex(&data);
     let file = FileDto {
         id: "one".into(),
         file_name: "one.txt".into(),
@@ -293,7 +293,7 @@ async fn anywhere_decline_returns_before_body_and_keeps_route_surface_restricted
     let result = request.await.unwrap();
     assert!(matches!(
         result,
-        Err(localsend::http::client::ClientError::StatusCode(_))
+        Err(relay_core::http::client::ClientError::StatusCode(_))
     ));
     let _ = stop_tx.send(());
     server.wait_stopped().await;
@@ -306,9 +306,9 @@ async fn anywhere_http_cannot_start_with_a_non_mutual_lan_session() {
     let proof =
         create_relay_identity_proof(&remote, RelayProofRole::Server, [0x31; 32], [0x32; 32])
             .unwrap();
-    let expected = localsend::relay::RelayId::from_local_identity(&remote).unwrap();
+    let expected = relay_core::relay::RelayId::from_local_identity(&remote).unwrap();
     let session =
-        RelayAuthCoordinator::new(localsend::relay::RelayId::from_local_identity(&local).unwrap())
+        RelayAuthCoordinator::new(relay_core::relay::RelayId::from_local_identity(&local).unwrap())
             .complete_lan_initiator(
                 &proof,
                 [0x32; 32],
@@ -451,7 +451,7 @@ async fn transfer_generated_chunks(size: usize) {
         "saved bytes"
     );
     assert_eq!(
-        localsend::crypto::hash::sha256_file_content(
+        relay_core::crypto::hash::sha256_file_content(
             FileContent::Path(path.clone()),
             &CancellationToken::new(),
             |_| {}

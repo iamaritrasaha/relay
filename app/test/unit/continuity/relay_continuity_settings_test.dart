@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:localsend_app/model/persistence/relay_continuity_settings.dart';
+import 'package:relay_app/model/persistence/relay_continuity_settings.dart';
 
 const _relayId = 'A1B2C3D4E5F6071829304152637485960718293041526374859607182930415C';
 

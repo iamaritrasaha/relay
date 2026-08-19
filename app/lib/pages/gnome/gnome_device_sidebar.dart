@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
-import 'package:localsend_app/config/relay_brand.dart';
-import 'package:localsend_app/model/ui/relay_device_vm.dart';
-import 'package:localsend_app/pages/relay_home_vm.dart';
-import 'package:localsend_app/util/device_type_ext.dart';
-import 'package:localsend_app/widget/gnome/adw_button.dart';
+import 'package:relay_app/config/relay_brand.dart';
+import 'package:relay_app/model/ui/relay_device_vm.dart';
+import 'package:relay_app/pages/relay_home_vm.dart';
+import 'package:relay_app/util/device_type_ext.dart';
+import 'package:relay_app/widget/gnome/adw_button.dart';
 
 /// Libadwaita device list sidebar for GNOME desktop.
 class GnomeDeviceSidebar extends StatelessWidget {
@@ -29,8 +29,8 @@ class GnomeDeviceSidebar extends StatelessWidget {
     final palette = Theme.of(context).relayPalette;
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
-    final relayDevices = vm.devices.where((d) => !d.isLocalSend).toList();
-    final localSendDevices = vm.devices.where((d) => d.isLocalSend).toList();
+    final relayDevices = vm.devices.where((d) => !d.isRelay).toList();
+    final localSendDevices = vm.devices.where((d) => d.isRelay).toList();
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,

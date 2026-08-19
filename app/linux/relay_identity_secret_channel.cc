@@ -6,7 +6,7 @@
 
 namespace {
 
-constexpr char kChannelName[] = "org.localsend.localsend_app/relay_identity_secret";
+constexpr char kChannelName[] = "com.foresight.app.relay/relay_identity_secret";
 
 constexpr char kMethodLoad[] = "relayIdentitySecretLoad";
 constexpr char kMethodSave[] = "relayIdentitySecretSave";
@@ -68,7 +68,7 @@ void relay_no_prompt_secret_service_init(RelayNoPromptSecretService* /*service*/
 // Fixed schema for Relay's local secrets. Lookup is always by fixed
 // application/purpose/version attributes, never by alias/IP/RelayId.
 const SecretSchema kRelayIdentitySchema = {
-    "org.localsend.relay.identity",
+    "org.relay.relay.identity",
     SECRET_SCHEMA_NONE,
     {
         {"application", SECRET_SCHEMA_ATTRIBUTE_STRING},

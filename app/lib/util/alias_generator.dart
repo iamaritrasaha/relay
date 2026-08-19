@@ -1,8 +1,8 @@
 import 'dart:math';
 
 import 'package:flutter/foundation.dart';
-import 'package:localsend_app/gen/strings.g.dart';
-import 'package:localsend_app/util/native/device_info_helper.dart';
+import 'package:relay_app/gen/strings.g.dart';
+import 'package:relay_app/util/native/device_info_helper.dart';
 
 Future<String> generateDefaultAlias() async {
   try {

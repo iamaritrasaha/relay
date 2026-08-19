@@ -3,17 +3,17 @@ import 'dart:io';
 
 import 'package:flutter/services.dart';
 
-import 'package:localsend_app/model/continuity/continuity_runtime.dart';
-import 'package:localsend_app/model/persistence/relay_continuity_settings.dart';
-import 'package:localsend_app/model/persistence/relay_paired_address.dart';
-import 'package:localsend_app/provider/persistence_provider.dart';
-import 'package:localsend_app/provider/relay_anywhere_listener_provider.dart';
-import 'package:localsend_app/provider/relay_identity_provider.dart';
-import 'package:localsend_app/provider/relay_paired_routes_provider.dart';
-import 'package:localsend_app/util/native/continuity_channel.dart';
-import 'package:localsend_app/util/security/relay_anywhere_listener_service.dart';
-import 'package:localsend_app/util/security/relay_identity_coordinator.dart';
-import 'package:localsend_isolates/rust/api/continuity.dart' as rust;
+import 'package:relay_app/model/continuity/continuity_runtime.dart';
+import 'package:relay_app/model/persistence/relay_continuity_settings.dart';
+import 'package:relay_app/model/persistence/relay_paired_address.dart';
+import 'package:relay_app/provider/persistence_provider.dart';
+import 'package:relay_app/provider/relay_anywhere_listener_provider.dart';
+import 'package:relay_app/provider/relay_identity_provider.dart';
+import 'package:relay_app/provider/relay_paired_routes_provider.dart';
+import 'package:relay_app/util/native/continuity_channel.dart';
+import 'package:relay_app/util/security/relay_anywhere_listener_service.dart';
+import 'package:relay_app/util/security/relay_identity_coordinator.dart';
+import 'package:relay_isolates/rust/api/continuity.dart' as rust;
 import 'package:logging/logging.dart';
 import 'package:refena_flutter/refena_flutter.dart';
 import 'package:uuid/uuid.dart';

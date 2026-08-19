@@ -1,7 +1,7 @@
 import 'dart:io' show Directory, Platform;
 
 import 'package:flutter/foundation.dart';
-import 'package:localsend_app/util/native/channel/android_channel.dart';
+import 'package:relay_app/util/native/channel/android_channel.dart';
 import 'package:path_provider/path_provider.dart' as path;
 
 Future<String> getDefaultDestinationDirectory() async {

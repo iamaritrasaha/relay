@@ -1,1 +1,1 @@
-Add-AppxPackage .\localsend_msix_helper.msix -ExternalLocation $(Get-Location)
+Add-AppxPackage .\relay_msix_helper.msix -ExternalLocation $(Get-Location)

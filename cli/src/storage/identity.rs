@@ -1,13 +1,13 @@
 //! `identity.pem`: this device's certificate and private key.
 
 use anyhow::Context;
-use localsend::crypto::cert::fingerprint_from_cert_der;
-use localsend::http::dto_v2::RegisterDtoV2;
-use localsend::http::server::TlsConfig;
-use localsend::http::state::ClientInfo;
-use localsend::model::discovery::DeviceType;
-use localsend::model::discovery::{PROTOCOL_VERSION_V2, ProtocolType};
-use localsend::multicast::MulticastDevice;
+use relay_core::crypto::cert::fingerprint_from_cert_der;
+use relay_core::http::dto_v2::RegisterDtoV2;
+use relay_core::http::server::TlsConfig;
+use relay_core::http::state::ClientInfo;
+use relay_core::model::discovery::DeviceType;
+use relay_core::model::discovery::{PROTOCOL_VERSION_V2, ProtocolType};
+use relay_core::multicast::MulticastDevice;
 use std::path::Path;
 
 /// This device's identity: a self-signed certificate whose SHA-256
@@ -87,7 +87,7 @@ impl Identity {
     }
 
     fn generate(alias: String, port: u16) -> anyhow::Result<Self> {
-        let cert = localsend::crypto::cert::generate_self_signed()?;
+        let cert = relay_core::crypto::cert::generate_self_signed()?;
 
         Ok(Self {
             alias,

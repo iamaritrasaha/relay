@@ -1,12 +1,12 @@
 import 'package:flutter/material.dart';
-import 'package:localsend_app/config/relay_brand.dart';
-import 'package:localsend_app/pages/relay_home_vm.dart';
-import 'package:localsend_app/widget/relay/nearby_stage.dart';
-import 'package:localsend_app/widget/relay/payload_dock.dart';
-import 'package:localsend_app/widget/relay/relay_desktop_metrics.dart';
-import 'package:localsend_app/widget/relay/relay_top_bar.dart';
-import 'package:localsend_app/widget/relay/self_identity_block.dart';
-import 'package:localsend_app/widget/relay_symbol.dart';
+import 'package:relay_app/config/relay_brand.dart';
+import 'package:relay_app/pages/relay_home_vm.dart';
+import 'package:relay_app/widget/relay/nearby_stage.dart';
+import 'package:relay_app/widget/relay/payload_dock.dart';
+import 'package:relay_app/widget/relay/relay_desktop_metrics.dart';
+import 'package:relay_app/widget/relay/relay_top_bar.dart';
+import 'package:relay_app/widget/relay/self_identity_block.dart';
+import 'package:relay_app/widget/relay_symbol.dart';
 
 /// Relay's Home surface.
 ///

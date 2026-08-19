@@ -1,22 +1,22 @@
 import 'dart:async';
 
-import 'package:localsend_app/gen/strings.g.dart';
-import 'package:localsend_app/model/cross_file.dart';
-import 'package:localsend_app/model/state/send/web/web_send_state.dart';
-import 'package:localsend_app/model/state/server/server_state.dart';
-import 'package:localsend_app/provider/network/server/controller/receive_controller.dart';
-import 'package:localsend_app/provider/network/server/controller/send_controller.dart';
-import 'package:localsend_app/provider/network/server/server_utils.dart';
-import 'package:localsend_app/provider/relay_identity_provider.dart';
-import 'package:localsend_app/provider/settings_provider.dart';
-import 'package:localsend_app/util/alias_generator.dart';
-import 'package:localsend_app/util/security/relay_server_signer_port.dart';
-import 'package:localsend_isolates/constants.dart';
-import 'package:localsend_isolates/isolate.dart';
-import 'package:localsend_isolates/model/dto/multicast_dto.dart';
-import 'package:localsend_isolates/rust/api/relay_anywhere.dart' as rust_relay_anywhere;
-import 'package:localsend_isolates/rust/api/server.dart' show WebI18n, WebParams, WebSendParams;
-import 'package:localsend_isolates/util/rust.dart';
+import 'package:relay_app/gen/strings.g.dart';
+import 'package:relay_app/model/cross_file.dart';
+import 'package:relay_app/model/state/send/web/web_send_state.dart';
+import 'package:relay_app/model/state/server/server_state.dart';
+import 'package:relay_app/provider/network/server/controller/receive_controller.dart';
+import 'package:relay_app/provider/network/server/controller/send_controller.dart';
+import 'package:relay_app/provider/network/server/server_utils.dart';
+import 'package:relay_app/provider/relay_identity_provider.dart';
+import 'package:relay_app/provider/settings_provider.dart';
+import 'package:relay_app/util/alias_generator.dart';
+import 'package:relay_app/util/security/relay_server_signer_port.dart';
+import 'package:relay_isolates/constants.dart';
+import 'package:relay_isolates/isolate.dart';
+import 'package:relay_isolates/model/dto/multicast_dto.dart';
+import 'package:relay_isolates/rust/api/relay_anywhere.dart' as rust_relay_anywhere;
+import 'package:relay_isolates/rust/api/server.dart' show WebI18n, WebParams, WebSendParams;
+import 'package:relay_isolates/util/rust.dart';
 import 'package:logging/logging.dart';
 import 'package:refena_flutter/refena_flutter.dart';
 
@@ -192,7 +192,7 @@ class ServerService extends Notifier<ServerState?> {
           }
           // The ordinary server is already listening. Relay signer activation
           // is deliberately non-blocking so secret-store failures never make
-          // normal LocalSend transfers unavailable.
+          // normal Relay transfers unavailable.
           unawaited(_relaySignerActivation.onServerStarted());
           return;
         }

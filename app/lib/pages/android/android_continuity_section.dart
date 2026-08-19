@@ -1,11 +1,11 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
-import 'package:localsend_app/config/relay_brand.dart';
-import 'package:localsend_app/model/persistence/relay_continuity_settings.dart';
-import 'package:localsend_app/model/ui/relay_device_vm.dart';
-import 'package:localsend_app/provider/continuity/continuity_provider.dart';
-import 'package:localsend_app/util/native/continuity_channel.dart';
+import 'package:relay_app/config/relay_brand.dart';
+import 'package:relay_app/model/persistence/relay_continuity_settings.dart';
+import 'package:relay_app/model/ui/relay_device_vm.dart';
+import 'package:relay_app/provider/continuity/continuity_provider.dart';
+import 'package:relay_app/util/native/continuity_channel.dart';
 import 'package:refena_flutter/refena_flutter.dart';
 
 /// Material 3 continuity controls for one paired device.
@@ -23,7 +23,7 @@ class AndroidContinuitySection extends StatelessWidget {
   Widget build(BuildContext context) {
     final relayId = device.relayId;
     if (relayId == null) {
-      // LocalSend-compatible peers never get continuity.
+      // Relay-compatible peers never get continuity.
       return const SizedBox.shrink();
     }
     final palette = Theme.of(context).relayPalette;

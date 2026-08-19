@@ -26,7 +26,7 @@ subprojects {
 
 
 // Disable the linker build-id in the "jni" pub package's native library.
-// https://github.com/localsend/localsend/issues/3219
+// https://github.com/relay/relay/issues/3219
 // https://f-droid.org/docs/Reproducible_Builds/
 subprojects {
     plugins.withId("com.android.library") {

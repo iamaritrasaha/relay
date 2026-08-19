@@ -1,11 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show rootBundle;
 import 'package:flutter_markdown/flutter_markdown.dart';
-import 'package:localsend_app/config/relay_brand.dart';
-import 'package:localsend_app/provider/version_provider.dart';
-import 'package:localsend_app/util/ui/nav_bar_padding.dart';
-import 'package:localsend_app/widget/relay/relay_top_bar.dart';
-import 'package:localsend_app/widget/relay_components.dart';
+import 'package:relay_app/config/relay_brand.dart';
+import 'package:relay_app/provider/version_provider.dart';
+import 'package:relay_app/util/ui/nav_bar_padding.dart';
+import 'package:relay_app/widget/relay/relay_top_bar.dart';
+import 'package:relay_app/widget/relay_components.dart';
 import 'package:refena_flutter/refena_flutter.dart';
 import 'package:routerino/routerino.dart';
 
@@ -116,7 +116,7 @@ class _ReleaseNotesScaffold extends StatelessWidget {
   }
 }
 
-/// The preserved LocalSend history remains available only as explicitly
+/// The preserved Relay history remains available only as explicitly
 /// upstream material; it is never presented as Relay's release history.
 class UpstreamProjectHistoryPage extends StatelessWidget {
   const UpstreamProjectHistoryPage({super.key});

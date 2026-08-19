@@ -1,6 +1,6 @@
-import 'package:localsend_app/model/persistence/receive_history_entry.dart';
-import 'package:localsend_app/provider/persistence_provider.dart';
-import 'package:localsend_isolates/model/file_type.dart';
+import 'package:relay_app/model/persistence/receive_history_entry.dart';
+import 'package:relay_app/provider/persistence_provider.dart';
+import 'package:relay_isolates/model/file_type.dart';
 import 'package:refena_flutter/refena_flutter.dart';
 
 const _maxHistoryEntries = 30;

@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
-import 'package:localsend_app/pages/android/android_shell.dart';
-import 'package:localsend_app/pages/gnome/gnome_shell.dart';
-import 'package:localsend_app/pages/relay_home_vm.dart';
-import 'package:localsend_app/provider/animation_provider.dart';
-import 'package:localsend_app/util/native/platform_check.dart';
-import 'package:localsend_app/widget/dialogs/relay_pair_device_dialog.dart';
+import 'package:relay_app/pages/android/android_shell.dart';
+import 'package:relay_app/pages/gnome/gnome_shell.dart';
+import 'package:relay_app/pages/relay_home_vm.dart';
+import 'package:relay_app/provider/animation_provider.dart';
+import 'package:relay_app/util/native/platform_check.dart';
+import 'package:relay_app/widget/dialogs/relay_pair_device_dialog.dart';
 import 'package:refena_flutter/refena_flutter.dart';
 
 /// Relay's Root Home surface, mounted as the primary page of [HomePage].

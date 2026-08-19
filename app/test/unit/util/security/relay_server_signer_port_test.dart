@@ -1,4 +1,4 @@
-import 'package:localsend_app/util/security/relay_server_signer_port.dart';
+import 'package:relay_app/util/security/relay_server_signer_port.dart';
 import 'package:test/test.dart';
 
 void main() {

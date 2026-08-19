@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:localsend_app/config/relay_brand.dart';
+import 'package:relay_app/config/relay_brand.dart';
 
 /// Shared restrained frame for active Relay desktop dialogs.
 class RelayDialog extends StatelessWidget {

@@ -1,5 +1,5 @@
-import 'package:localsend_app/model/persistence/relay_paired_address.dart';
-import 'package:localsend_app/provider/persistence_provider.dart';
+import 'package:relay_app/model/persistence/relay_paired_address.dart';
+import 'package:relay_app/provider/persistence_provider.dart';
 
 /// The persistence boundary for non-secret paired Relay routing metadata.
 abstract interface class RelayPairedAddressPersistence {

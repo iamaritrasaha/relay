@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:localsend_app/config/relay_brand.dart';
-import 'package:localsend_app/config/theme.dart';
-import 'package:localsend_app/model/persistence/color_mode.dart';
-import 'package:localsend_app/util/native/file_picker.dart';
-import 'package:localsend_app/widget/dialogs/add_file_dialog.dart';
+import 'package:relay_app/config/relay_brand.dart';
+import 'package:relay_app/config/theme.dart';
+import 'package:relay_app/model/persistence/color_mode.dart';
+import 'package:relay_app/util/native/file_picker.dart';
+import 'package:relay_app/widget/dialogs/add_file_dialog.dart';
 
 void main() {
   const desktopOptions = [FilePickerOption.file, FilePickerOption.folder, FilePickerOption.text, FilePickerOption.clipboard];
@@ -15,7 +15,7 @@ void main() {
     addTearDown(tester.view.reset);
     await tester.pumpWidget(
       MaterialApp(
-        theme: getTheme(ColorMode.localsend, Colors.blue, Brightness.dark, null),
+        theme: getTheme(ColorMode.relay, Colors.blue, Brightness.dark, null),
         home: Scaffold(
           body: Align(
             alignment: mobile ? Alignment.bottomCenter : Alignment.center,

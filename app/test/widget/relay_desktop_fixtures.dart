@@ -1,12 +1,12 @@
 import 'package:flutter/material.dart';
-import 'package:localsend_app/model/ui/relay_device_vm.dart';
-import 'package:localsend_app/pages/about/about_page.dart';
-import 'package:localsend_app/pages/relay_home_vm.dart';
-import 'package:localsend_app/widget/relay/relay_desktop_metrics.dart';
-import 'package:localsend_app/widget/relay/relay_settings_primitives.dart';
-import 'package:localsend_app/widget/relay/relay_shell.dart';
-import 'package:localsend_app/widget/relay/relay_top_bar.dart';
-import 'package:localsend_isolates/model/device.dart';
+import 'package:relay_app/model/ui/relay_device_vm.dart';
+import 'package:relay_app/pages/about/about_page.dart';
+import 'package:relay_app/pages/relay_home_vm.dart';
+import 'package:relay_app/widget/relay/relay_desktop_metrics.dart';
+import 'package:relay_app/widget/relay/relay_settings_primitives.dart';
+import 'package:relay_app/widget/relay/relay_shell.dart';
+import 'package:relay_app/widget/relay/relay_top_bar.dart';
+import 'package:relay_isolates/model/device.dart';
 
 enum RelayHomeState { empty, nearby, sending }
 

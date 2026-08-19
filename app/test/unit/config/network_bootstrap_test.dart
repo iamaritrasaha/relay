@@ -1,4 +1,4 @@
-import 'package:localsend_app/config/init.dart';
+import 'package:relay_app/config/init.dart';
 import 'package:test/test.dart';
 
 void main() {

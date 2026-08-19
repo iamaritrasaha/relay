@@ -1,16 +1,16 @@
 import 'package:flutter/material.dart';
-import 'package:localsend_app/config/relay_brand.dart';
-import 'package:localsend_app/model/ui/relay_capability_vm.dart';
-import 'package:localsend_app/model/ui/relay_device_vm.dart';
-import 'package:localsend_app/pages/relay_home_vm.dart';
-import 'package:localsend_app/provider/receive_history_provider.dart';
-import 'package:localsend_app/util/device_type_ext.dart';
-import 'package:localsend_app/util/native/open_file.dart';
-import 'package:localsend_app/util/native/open_folder.dart';
-import 'package:localsend_app/widget/gnome/adw_action_row.dart';
-import 'package:localsend_app/widget/gnome/adw_boxed_list.dart';
-import 'package:localsend_app/widget/gnome/adw_button.dart';
-import 'package:localsend_isolates/util/file_size_helper.dart';
+import 'package:relay_app/config/relay_brand.dart';
+import 'package:relay_app/model/ui/relay_capability_vm.dart';
+import 'package:relay_app/model/ui/relay_device_vm.dart';
+import 'package:relay_app/pages/relay_home_vm.dart';
+import 'package:relay_app/provider/receive_history_provider.dart';
+import 'package:relay_app/util/device_type_ext.dart';
+import 'package:relay_app/util/native/open_file.dart';
+import 'package:relay_app/util/native/open_folder.dart';
+import 'package:relay_app/widget/gnome/adw_action_row.dart';
+import 'package:relay_app/widget/gnome/adw_boxed_list.dart';
+import 'package:relay_app/widget/gnome/adw_button.dart';
+import 'package:relay_isolates/util/file_size_helper.dart';
 import 'package:refena_flutter/refena_flutter.dart';
 
 /// GNOME Device Detail and Overview View.
@@ -189,7 +189,7 @@ class GnomeDeviceDetailView extends StatelessWidget {
                     onPressed: onOpenMessages,
                   ),
                   // Phone only makes sense for a device that could have one.
-                  if (!device.isLocalSend)
+                  if (!device.isRelay)
                     AdwButton.flat(
                       key: const ValueKey('gnome-phone-button'),
                       icon: Icons.call_outlined,
@@ -208,7 +208,7 @@ class GnomeDeviceDetailView extends StatelessWidget {
                   AdwActionRow(
                     leading: const Icon(Icons.wifi_rounded),
                     title: 'Connection',
-                    subtitle: device.isLocalSend
+                    subtitle: device.isRelay
                         ? 'Nearby on your local network'
                         : device.connectionType == RelayConnectionType.direct
                         ? 'Direct connection'
@@ -221,7 +221,7 @@ class GnomeDeviceDetailView extends StatelessWidget {
                       device.isVerifiedRelay ? Icons.verified_user_rounded : Icons.info_outline_rounded,
                     ),
                     title: 'Device verification',
-                    subtitle: device.isVerifiedRelay ? 'Authenticated Relay device identity' : 'LocalSend-compatible device (unauthenticated)',
+                    subtitle: device.isVerifiedRelay ? 'Authenticated Relay device identity' : 'Relay-compatible device (unauthenticated)',
                   ),
                   AdwActionRow(
                     leading: const Icon(Icons.battery_std_rounded),
@@ -229,7 +229,7 @@ class GnomeDeviceDetailView extends StatelessWidget {
                     subtitle: switch (device.battery) {
                       // A stale reading is labelled as such rather than shown as live.
                       final battery when !battery.hasInfo =>
-                        device.isLocalSend ? 'LocalSend devices do not share battery status' : 'Not shared by this device',
+                        device.isRelay ? 'Relay devices do not share battery status' : 'Not shared by this device',
                       final battery when battery.isStale => 'Last known before disconnecting',
                       final battery when battery.isFull => 'Charged',
                       final battery when battery.isCharging => 'Charging',

@@ -3,10 +3,10 @@ import 'dart:async';
 import 'package:collection/collection.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:flutter/foundation.dart';
-import 'package:localsend_app/model/state/network_state.dart';
-import 'package:localsend_app/provider/settings_provider.dart';
-import 'package:localsend_app/util/native/platform_check.dart';
-import 'package:localsend_isolates/util/network_interfaces.dart';
+import 'package:relay_app/model/state/network_state.dart';
+import 'package:relay_app/provider/settings_provider.dart';
+import 'package:relay_app/util/native/platform_check.dart';
+import 'package:relay_isolates/util/network_interfaces.dart';
 import 'package:logging/logging.dart';
 import 'package:network_info_plus/network_info_plus.dart' as plugin;
 import 'package:refena_flutter/refena_flutter.dart';
@@ -47,8 +47,8 @@ class InitLocalIpAction extends ReduxAction<LocalIpService, NetworkState> {
       _subscription?.cancel();
 
       if (checkPlatform([TargetPlatform.windows])) {
-        // https://github.com/localsend/localsend/issues/12
-        // https://github.com/localsend/localsend/issues/78
+        // https://github.com/relay/relay/issues/12
+        // https://github.com/relay/relay/issues/78
       } else {
         _subscription = Connectivity().onConnectivityChanged.listen((_) async {
           await dispatchAsync(FetchLocalIpAction());

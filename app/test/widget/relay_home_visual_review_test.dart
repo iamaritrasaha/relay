@@ -1,19 +1,19 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:localsend_app/config/theme.dart';
-import 'package:localsend_app/model/cross_file.dart';
-import 'package:localsend_app/model/persistence/color_mode.dart';
-import 'package:localsend_app/model/state/nearby_devices_state.dart';
-import 'package:localsend_app/model/state/send/send_session_state.dart';
-import 'package:localsend_app/model/state/send/sending_file.dart';
-import 'package:localsend_app/model/state/server/server_state.dart';
-import 'package:localsend_app/pages/relay_home_vm.dart';
-import 'package:localsend_app/provider/file_transfer_provider.dart';
-import 'package:localsend_app/widget/relay/relay_shell.dart';
-import 'package:localsend_isolates/model/device.dart';
-import 'package:localsend_isolates/model/dto/file_dto.dart';
-import 'package:localsend_isolates/model/file_type.dart';
-import 'package:localsend_isolates/model/session_status.dart';
+import 'package:relay_app/config/theme.dart';
+import 'package:relay_app/model/cross_file.dart';
+import 'package:relay_app/model/persistence/color_mode.dart';
+import 'package:relay_app/model/state/nearby_devices_state.dart';
+import 'package:relay_app/model/state/send/send_session_state.dart';
+import 'package:relay_app/model/state/send/sending_file.dart';
+import 'package:relay_app/model/state/server/server_state.dart';
+import 'package:relay_app/pages/relay_home_vm.dart';
+import 'package:relay_app/provider/file_transfer_provider.dart';
+import 'package:relay_app/widget/relay/relay_shell.dart';
+import 'package:relay_isolates/model/device.dart';
+import 'package:relay_isolates/model/dto/file_dto.dart';
+import 'package:relay_isolates/model/file_type.dart';
+import 'package:relay_isolates/model/session_status.dart';
 
 void main() {
   const selfAlias = 'My Linux';
@@ -115,7 +115,7 @@ void main() {
     addTearDown(tester.view.reset);
     await tester.pumpWidget(
       MaterialApp(
-        theme: getTheme(ColorMode.localsend, Colors.blue, Brightness.dark, null),
+        theme: getTheme(ColorMode.relay, Colors.blue, Brightness.dark, null),
         home: RelayShell(vm: vm, animationsEnabled: false, onSelectPayload: () {}),
       ),
     );

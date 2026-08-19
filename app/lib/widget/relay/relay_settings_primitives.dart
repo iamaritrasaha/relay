@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
-import 'package:localsend_app/config/relay_brand.dart';
-import 'package:localsend_app/widget/relay/relay_desktop_metrics.dart';
+import 'package:relay_app/config/relay_brand.dart';
+import 'package:relay_app/widget/relay/relay_desktop_metrics.dart';
 
 /// The row/group vocabulary Relay's Settings is built from.
 ///

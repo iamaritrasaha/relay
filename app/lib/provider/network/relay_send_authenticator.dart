@@ -1,5 +1,5 @@
-import 'package:localsend_isolates/rust/api/http.dart' as rust_http;
-import 'package:localsend_isolates/rust/api/model.dart' as rust_model;
+import 'package:relay_isolates/rust/api/http.dart' as rust_http;
+import 'package:relay_isolates/rust/api/model.dart' as rust_model;
 
 /// Performs at most one Relay proof check for a logical send initiation.
 ///

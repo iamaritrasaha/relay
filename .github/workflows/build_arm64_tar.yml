@@ -46,7 +46,7 @@ jobs:
           toolchain: stable
 
       - name: Check rust-toolchain.toml
-        working-directory: packages/localsend_isolates
+        working-directory: packages/relay_isolates
         run: rustup show
 
       - name: Dependencies

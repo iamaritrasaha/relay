@@ -2,37 +2,37 @@ import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:localsend_app/config/relay_brand.dart';
-import 'package:localsend_app/gen/strings.g.dart';
-import 'package:localsend_app/model/persistence/color_mode.dart';
-import 'package:localsend_app/pages/about/about_page.dart';
-import 'package:localsend_app/pages/changelog_page.dart';
-import 'package:localsend_app/pages/settings/network_interfaces_page.dart';
-import 'package:localsend_app/pages/tabs/settings_tab_controller.dart';
-import 'package:localsend_app/provider/network/server/server_provider.dart';
-import 'package:localsend_app/provider/relay_anywhere_listener_provider.dart';
-import 'package:localsend_app/provider/settings_provider.dart';
-import 'package:localsend_app/provider/version_provider.dart';
-import 'package:localsend_app/util/alias_generator.dart';
-import 'package:localsend_app/util/device_type_ext.dart';
-import 'package:localsend_app/util/i18n.dart';
-import 'package:localsend_app/util/native/macos_channel.dart';
-import 'package:localsend_app/util/native/pick_directory_path.dart';
-import 'package:localsend_app/util/native/platform_check.dart';
-import 'package:localsend_app/util/ui/theme_mode_ext.dart';
-import 'package:localsend_app/widget/custom_dropdown_button.dart';
-import 'package:localsend_app/widget/dialogs/encryption_disabled_notice.dart';
-import 'package:localsend_app/widget/dialogs/pin_dialog.dart';
-import 'package:localsend_app/widget/dialogs/quick_save_from_favorites_notice.dart';
-import 'package:localsend_app/widget/dialogs/quick_save_notice.dart';
-import 'package:localsend_app/widget/dialogs/text_field_tv.dart';
-import 'package:localsend_app/widget/dialogs/text_field_with_actions.dart';
-import 'package:localsend_app/widget/relay/relay_desktop_metrics.dart';
-import 'package:localsend_app/widget/relay/relay_settings_primitives.dart';
-import 'package:localsend_app/widget/relay/relay_top_bar.dart';
-import 'package:localsend_app/widget/responsive_list_view.dart';
-import 'package:localsend_isolates/constants.dart';
-import 'package:localsend_isolates/model/device.dart';
+import 'package:relay_app/config/relay_brand.dart';
+import 'package:relay_app/gen/strings.g.dart';
+import 'package:relay_app/model/persistence/color_mode.dart';
+import 'package:relay_app/pages/about/about_page.dart';
+import 'package:relay_app/pages/changelog_page.dart';
+import 'package:relay_app/pages/settings/network_interfaces_page.dart';
+import 'package:relay_app/pages/tabs/settings_tab_controller.dart';
+import 'package:relay_app/provider/network/server/server_provider.dart';
+import 'package:relay_app/provider/relay_anywhere_listener_provider.dart';
+import 'package:relay_app/provider/settings_provider.dart';
+import 'package:relay_app/provider/version_provider.dart';
+import 'package:relay_app/util/alias_generator.dart';
+import 'package:relay_app/util/device_type_ext.dart';
+import 'package:relay_app/util/i18n.dart';
+import 'package:relay_app/util/native/macos_channel.dart';
+import 'package:relay_app/util/native/pick_directory_path.dart';
+import 'package:relay_app/util/native/platform_check.dart';
+import 'package:relay_app/util/ui/theme_mode_ext.dart';
+import 'package:relay_app/widget/custom_dropdown_button.dart';
+import 'package:relay_app/widget/dialogs/encryption_disabled_notice.dart';
+import 'package:relay_app/widget/dialogs/pin_dialog.dart';
+import 'package:relay_app/widget/dialogs/quick_save_from_favorites_notice.dart';
+import 'package:relay_app/widget/dialogs/quick_save_notice.dart';
+import 'package:relay_app/widget/dialogs/text_field_tv.dart';
+import 'package:relay_app/widget/dialogs/text_field_with_actions.dart';
+import 'package:relay_app/widget/relay/relay_desktop_metrics.dart';
+import 'package:relay_app/widget/relay/relay_settings_primitives.dart';
+import 'package:relay_app/widget/relay/relay_top_bar.dart';
+import 'package:relay_app/widget/responsive_list_view.dart';
+import 'package:relay_isolates/constants.dart';
+import 'package:relay_isolates/model/device.dart';
 import 'package:refena_flutter/refena_flutter.dart';
 import 'package:routerino/routerino.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -86,7 +86,7 @@ class SettingsTab extends StatelessWidget {
               onTap: () => vm.onTapLanguage(context),
             ),
             if (checkPlatformIsDesktop()) ...[
-              // Wayland handles window position itself. See localsend/localsend#544.
+              // Wayland handles window position itself. See relay/relay#544.
               if (vm.advanced && checkPlatformIsNotWaylandDesktop())
                 RelayBooleanEntry(
                   label: defaultTargetPlatform == TargetPlatform.windows
@@ -457,7 +457,7 @@ class SettingsTab extends StatelessWidget {
           children: [
             RelayNavigationEntry(
               // Not t.aboutPage.title — the inherited string reads "About
-              // LocalSend". Relay's own surfaces name themselves.
+              // Relay". Relay's own surfaces name themselves.
               label: 'About Relay',
               value: ref
                   .watch(versionProvider)
@@ -473,7 +473,7 @@ class SettingsTab extends StatelessWidget {
               onTap: () async => context.push(() => const ChangelogPage()),
             ),
             // Store requirement on Apple platforms; kept where it applies.
-            // LocalSend's privacy policy is deliberately not linked here — it
+            // Relay's privacy policy is deliberately not linked here — it
             // is not Relay's, and the upstream references live in About.
             if (checkPlatform([TargetPlatform.iOS, TargetPlatform.macOS]))
               RelayNavigationEntry(

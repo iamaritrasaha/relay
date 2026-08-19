@@ -1,26 +1,26 @@
-# LocalSend
+# Relay
 
 [![Status CI][ci-badge]][ci-workflow]
 [![Penterjemahan][translate-badge]][translate-link]
 [![Status pembungkusan][packaging-badge]][packaging-link]
 
-[ci-badge]: https://github.com/localsend/localsend/actions/workflows/ci.yml/badge.svg
-[ci-workflow]: https://github.com/localsend/localsend/actions/workflows/ci.yml
-[translate-badge]: https://hosted.weblate.org/widget/localsend/app/svg-badge.svg
-[translate-link]: https://hosted.weblate.org/engage/localsend/
-[packaging-badge]: https://repology.org/badge/tiny-repos/localsend.svg
-[packaging-link]: https://repology.org/project/localsend/versions
+[ci-badge]: https://github.com/relay/relay/actions/workflows/ci.yml/badge.svg
+[ci-workflow]: https://github.com/relay/relay/actions/workflows/ci.yml
+[translate-badge]: https://hosted.weblate.org/widget/relay/app/svg-badge.svg
+[translate-link]: https://hosted.weblate.org/engage/relay/
+[packaging-badge]: https://repology.org/badge/tiny-repos/relay.svg
+[packaging-link]: https://repology.org/project/relay/versions
 
 [Laman Utama][laman utama] • [Discord][discord] • [GitHub][github] • [Codeberg][codeberg]
 
 [Bahasa Inggeris (Lalai)](/README.md) • [Bahasa Melayu](README_MS.md) • [Bahasa Sepanyol](README_ES.md) • [Bahasa Parsi](README_FA.md) • [Bahasa Filipino](README_PH.md) • [Bahasa Perancis](README_FR.md) • [Bahasa Indonesia](README_ID.md) • [Bahasa Itali](README_IT.md) • [Bahasa Jepun](README_JA.md) • [Bahasa Khmer](README_KM.md) • [Bahasa Korea](README_KO.md) • [Bahasa Poland](README_PL.md) • [Bahasa Portugis Brazil](README_PT_BR.md) • [Bahasa Rusia](README_RU.md) • [Bahasa Thai](README_TH.md) • [Bahasa Türkiye](README_TR.md) • [Bahasa Ukraine](README_UK.md) • [Bahasa Vietnam](README_VI.md) • [Bahasa Cina](README_ZH.md)
 
-[laman utama]: https://localsend.org
+[laman utama]: https://relay.org
 [discord]: https://discord.gg/GSRWmQNP87
-[github]: https://github.com/localsend/localsend
-[codeberg]: https://codeberg.org/localsend/localsend
+[github]: https://github.com/relay/relay
+[codeberg]: https://codeberg.org/relay/relay
 
-LocalSend adalah aplikasi sumber terbuka percuma yang membolehkan anda berkongsi fail dan mesej secara terjamin dengan peranti berdekatan melalui rangkaian tempatan anda tanpa memerlukan sambungan internet.
+Relay adalah aplikasi sumber terbuka percuma yang membolehkan anda berkongsi fail dan mesej secara terjamin dengan peranti berdekatan melalui rangkaian tempatan anda tanpa memerlukan sambungan internet.
 
 - [Tentang](#tentang)
 - [Syot-syot Layar](#syot-syot-layar)
@@ -40,15 +40,15 @@ LocalSend adalah aplikasi sumber terbuka percuma yang membolehkan anda berkongsi
 
 ## Tentang
 
-LocalSend adalah aplikasi merentas platform yang membolehkan komunikasi selamat antara peranti-peranti menggunakan REST API dan penyulitan HTTPS. Bukan seperti aplikasi pemesejan lain yang bergantung pada pelayan luaran, LocalSend tidak memerlukan sambungan internet atau pelayan pihak ketiga, menjadikannya penyelesaian yang pantas dan boleh dipercayai untuk komunikasi tempatan.
+Relay adalah aplikasi merentas platform yang membolehkan komunikasi selamat antara peranti-peranti menggunakan REST API dan penyulitan HTTPS. Bukan seperti aplikasi pemesejan lain yang bergantung pada pelayan luaran, Relay tidak memerlukan sambungan internet atau pelayan pihak ketiga, menjadikannya penyelesaian yang pantas dan boleh dipercayai untuk komunikasi tempatan.
 
 ## Syot-syot Layar
 
-<img src="https://localsend.org/img/screenshot-iphone.webp" alt="iPhone screenshot" height="300"/> <img src="https://localsend.org/img/screenshot-pc.webp" alt="PC screenshot" height="300"/>
+<img src="https://relay.org/img/screenshot-iphone.webp" alt="iPhone screenshot" height="300"/> <img src="https://relay.org/img/screenshot-pc.webp" alt="PC screenshot" height="300"/>
 
 ## Muat Turun
 
-[![Status pembungkusan](https://repology.org/badge/tiny-repos/localsend.svg)](https://repology.org/project/localsend/versions)
+[![Status pembungkusan](https://repology.org/badge/tiny-repos/relay.svg)](https://repology.org/project/relay/versions)
 
 Adalah digalakkan untuk memuat turun aplikasi sama ada dari gedung aplikasi atau dari pengurus pakej kerana aplikasi ini tidak mempunyai pengemaskinian automatik.
 
@@ -65,20 +65,20 @@ Adalah digalakkan untuk memuat turun aplikasi sama ada dari gedung aplikasi atau
 Baca lebih lanjut tentang [saluran pengedaran][].
 
 [windows store]: https://www.microsoft.com/store/apps/9NCB4Z0TZ6RR
-[app store]: https://apps.apple.com/us/app/localsend/id1661733229
-[play store]: https://play.google.com/store/apps/details?id=org.localsend.localsend_app
-[f-droid]: https://f-droid.org/packages/org.localsend.localsend_app
+[app store]: https://apps.apple.com/us/app/relay/id1661733229
+[play store]: https://play.google.com/store/apps/details?id=com.foresight.app.relay
+[f-droid]: https://f-droid.org/packages/com.foresight.app.relay
 [amazon]: https://www.amazon.com/dp/B0BW6MP732
-[winget]: https://github.com/microsoft/winget-pkgs/tree/master/manifests/l/LocalSend/LocalSend
-[scoop]: https://scoop.sh/#/apps?s=0&d=1&o=true&q=localsend&id=fb88113be361ca32c0dcac423cb4afdeda0b0c66
-[chocolatey]: https://community.chocolatey.org/packages/localsend
-[homebrew]: https://formulae.brew.sh/cask/localsend
-[flathub]: https://flathub.org/apps/details/org.localsend.localsend_app
-[nixpkgs]: https://search.nixos.org/packages?show=localsend
-[snap]: https://snapcraft.io/localsend
-[aur]: https://aur.archlinux.org/packages/localsend-bin
-[terkini]: https://github.com/localsend/localsend/releases/latest
-[saluran pengedaran]: https://github.com/localsend/localsend/blob/main/CONTRIBUTING.md#distribution
+[winget]: https://github.com/microsoft/winget-pkgs/tree/master/manifests/l/Relay/Relay
+[scoop]: https://scoop.sh/#/apps?s=0&d=1&o=true&q=relay&id=fb88113be361ca32c0dcac423cb4afdeda0b0c66
+[chocolatey]: https://community.chocolatey.org/packages/relay
+[homebrew]: https://formulae.brew.sh/cask/relay
+[flathub]: https://flathub.org/apps/details/com.foresight.app.relay
+[nixpkgs]: https://search.nixos.org/packages?show=relay
+[snap]: https://snapcraft.io/relay
+[aur]: https://aur.archlinux.org/packages/relay-bin
+[terkini]: https://github.com/relay/relay/releases/latest
+[saluran pengedaran]: https://github.com/relay/relay/blob/main/CONTRIBUTING.md#distribution
 
 **Keserasian**
 
@@ -86,13 +86,13 @@ Baca lebih lanjut tentang [saluran pengedaran][].
 |----------|---------------|---------------------------------------------------------------------------------------------------------------------------------------------|
 | Android  | 5.0           | -                                                                                                                                           |
 | iOS      | 12.0          | -                                                                                                                                           |
-| macOS    | 11 Big Sur    | Gunakan OpenCore Legacy Patcher 2.0.2 (Lihat [#1005](https://github.com/localsend/localsend/issues/1005#issuecomment-2449899384))           |
+| macOS    | 11 Big Sur    | Gunakan OpenCore Legacy Patcher 2.0.2 (Lihat [#1005](https://github.com/relay/relay/issues/1005#issuecomment-2449899384))           |
 | Windows  | 10            | Versi terakhir yang menyokong Windows 7 ialah v1.15.4. Mungkin terdapat sokongan versi yang lebih baharu untuk Windows 7 pada masa hadapan. |
 | Linux    | N.A.          | -                                                                                                                                           |
 
 ## Penyediaan
 
-Dalam kebanyakan kes, LocalSend akan berfungsi terus. Walau bagaimanapun, jika anda menghadapi masalah menghantar atau menerima fail, anda mungkin perlu mengkonfigurasi tembok api (_firewall_) anda untuk membenarkan LocalSend berkomunikasi melalui rangkaian tempatan anda.
+Dalam kebanyakan kes, Relay akan berfungsi terus. Walau bagaimanapun, jika anda menghadapi masalah menghantar atau menerima fail, anda mungkin perlu mengkonfigurasi tembok api (_firewall_) anda untuk membenarkan Relay berkomunikasi melalui rangkaian tempatan anda.
 
 | Jenis Trafik | Protokol | Port        | Tindakan |
 |--------------|----------|-------------|----------|
@@ -114,47 +114,47 @@ Apl akan menggunakan fail ini untuk menyimpan tetapan, bukannya lokasi lalai.
 
 (Dikemas kini dalam v1.15.0)
 
-Untuk memulakan apl tersembunyi (hanya dalam dulang (_tray_)), gunakan bendera (_flag_) `--hidden` (contoh: `localsend_app.exe --hidden`).
+Untuk memulakan apl tersembunyi (hanya dalam dulang (_tray_)), gunakan bendera (_flag_) `--hidden` (contoh: `relay.exe --hidden`).
 
 Pada v1.14.0 dan lebih awal, apl mula disembunyikan jika bendera `autostart` ditetapkan dan tetapan tersembunyi didayakan.
 
 ## Bagaimana ia Berfungsi
 
-LocalSend menggunakan protokol komunikasi terjamin yang membolehkan peranti berkomunikasi antara satu sama lain menggunakan API REST. Semua data dihantar dengan selamat melalui HTTPS dan sijil TLS/SSL dijana dengan segera pada setiap peranti, memastikan keterjaminan maksimum.
+Relay menggunakan protokol komunikasi terjamin yang membolehkan peranti berkomunikasi antara satu sama lain menggunakan API REST. Semua data dihantar dengan selamat melalui HTTPS dan sijil TLS/SSL dijana dengan segera pada setiap peranti, memastikan keterjaminan maksimum.
 
-Untuk mendapatkan maklumat lanjut tentang Protokol LocalSend, lihat [dokumentasi](https://github.com/localsend/protocol).
+Untuk mendapatkan maklumat lanjut tentang Protokol Relay, lihat [dokumentasi](https://github.com/relay/protocol).
 
 ## Cara Mula
 
-Untuk kompil LocalSend daripada kod sumber, ikuti langkah berikut:
+Untuk kompil Relay daripada kod sumber, ikuti langkah berikut:
 
 1. Pasang Flutter [secara langsung](https://flutter.dev) atau gunakan [fvm](https://fvm.app) (lihat [versi diperlukan](.fvmrc))
 2. Pasang [Rust](https://www.rust-lang.org/tools/install)
-3. Klon repositori `LocalSend`
+3. Klon repositori `Relay`
 4. Jalankan `cd app` untuk memasuki direktori apl
 5. Jalankan `flutter pub get` untuk memuat turun kebergantungan
 6. Jalankan `flutter run` untuk memulakan apl
 
 > [!NOTA]
-> LocalSend pada masa ini memerlukan versi Flutter lama (dinyatakan dalam [.fvmrc](.fvmrc))
+> Relay pada masa ini memerlukan versi Flutter lama (dinyatakan dalam [.fvmrc](.fvmrc))
 > dan dengan itu, isu binaan (_build issue_) mungkin disebabkan oleh ketidakpadanan antara versi Flutter yang diperlukan dan (seluruh sistem) yang dipasang.  
-> Untuk menjadikan pembangunan lebih konsisten, LocalSend menggunakan [fvm](https://fvm.app) untuk mengurus versi projek Flutter.
+> Untuk menjadikan pembangunan lebih konsisten, Relay menggunakan [fvm](https://fvm.app) untuk mengurus versi projek Flutter.
 > Selepas memasang `fvm`, jalankan `fvm flutter` dan bukannya `flutter`.
 
 ## Mengambil Bahagian
 
-Kami mengalu-alukan sumbangan daripada sesiapa sahaja yang berminat untuk bantu memperbaiki LocalSend. Jika anda ingin menyumbang, terdapat beberapa cara untuk menglibatkan diri:
+Kami mengalu-alukan sumbangan daripada sesiapa sahaja yang berminat untuk bantu memperbaiki Relay. Jika anda ingin menyumbang, terdapat beberapa cara untuk menglibatkan diri:
 
 ### Penterjemahan
 
-Anda boleh membantu menterjemahkan LocalSend ke dalam bahasa-bahasa lain. Kami menggunakan platform [Weblate](https://hosted.weblate.org/projects/localsend/app) untuk mengurus penterjemahan.
+Anda boleh membantu menterjemahkan Relay ke dalam bahasa-bahasa lain. Kami menggunakan platform [Weblate](https://hosted.weblate.org/projects/relay/app) untuk mengurus penterjemahan.
 
 Secara alternatif, anda juga boleh menyumbang atau mengambil bahagian dengan forking repositori ini dan menambah penterjemahan secara manual.
 
-Terjemahan-terjemahan berada di dalam direktori [app/assets/i18n](https://github.com/localsend/localsend/tree/main/app/assets/i18n). Sunting fail `_missing_translations_<locale>.json` atau `strings_<locale>.i18n.json` untuk menambah atau mengemas kini terjemahan.
+Terjemahan-terjemahan berada di dalam direktori [app/assets/i18n](https://github.com/relay/relay/tree/main/app/assets/i18n). Sunting fail `_missing_translations_<locale>.json` atau `strings_<locale>.i18n.json` untuk menambah atau mengemas kini terjemahan.
 
-<a href="https://hosted.weblate.org/engage/localsend/">
-<img src="https://hosted.weblate.org/widget/localsend/app/multi-auto.svg" alt="Translation status" />
+<a href="https://hosted.weblate.org/engage/relay/">
+<img src="https://hosted.weblate.org/widget/relay/app/multi-auto.svg" alt="Translation status" />
 </a>
 
 **_Ambil perhatian:_ Medan yang dihiasi dengan `@` tidak dimaksudkan untuk diterjemahkan; ia tidak digunakan dalam apl dalam apa jua cara, hanya sebagai teks bermaklumat tentang fail atau untuk memberikan konteks kepada penterjemah.**
@@ -162,9 +162,9 @@ Terjemahan-terjemahan berada di dalam direktori [app/assets/i18n](https://github
 ### Pembetulan Pepijat dan Penambahbaikan
 
 - **Pembetulan Pepijat:** Jika anda menjumpai pepijat, sila buat permintaan tarik (_pull request_) dengan penerangan yang jelas tentang isu itu dan cara membetulkannya.
-- **Penambahbaikan:** Mempunyai idea untuk menambah baik LocalSend? Sila buat isu dahulu untuk membincangkan mengapa penambahbaikan itu diperlukan.
+- **Penambahbaikan:** Mempunyai idea untuk menambah baik Relay? Sila buat isu dahulu untuk membincangkan mengapa penambahbaikan itu diperlukan.
 
-Untuk mengetahui dengan lebih lanjut, rujuk pada [panduan menyumbang](https://github.com/localsend/localsend/blob/main/CONTRIBUTING.md).
+Untuk mengetahui dengan lebih lanjut, rujuk pada [panduan menyumbang](https://github.com/relay/relay/blob/main/CONTRIBUTING.md).
 
 ## Menyelesaikan Masalah
 
@@ -179,6 +179,6 @@ Untuk mengetahui dengan lebih lanjut, rujuk pada [panduan menyumbang](https://gi
 
 ## Penyumbang yang Berbakti
 
-<a href="https://github.com/localsend/localsend/graphs/contributors">
-  <img src="https://contrib.rocks/image?repo=localsend/localsend"  alt="Penyumbang Localsend"/>
+<a href="https://github.com/relay/relay/graphs/contributors">
+  <img src="https://contrib.rocks/image?repo=relay/relay"  alt="Penyumbang Relay"/>
 </a>

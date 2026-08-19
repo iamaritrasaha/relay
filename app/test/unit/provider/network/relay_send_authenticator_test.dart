@@ -1,6 +1,6 @@
-import 'package:localsend_app/provider/network/relay_send_authenticator.dart';
-import 'package:localsend_isolates/rust/api/http.dart' as rust_http;
-import 'package:localsend_isolates/rust/api/model.dart' as rust_model;
+import 'package:relay_app/provider/network/relay_send_authenticator.dart';
+import 'package:relay_isolates/rust/api/http.dart' as rust_http;
+import 'package:relay_isolates/rust/api/model.dart' as rust_model;
 import 'package:test/test.dart';
 
 void main() {

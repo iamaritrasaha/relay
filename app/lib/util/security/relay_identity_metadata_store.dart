@@ -1,5 +1,5 @@
-import 'package:localsend_app/model/persistence/relay_public_identity.dart';
-import 'package:localsend_app/provider/persistence_provider.dart';
+import 'package:relay_app/model/persistence/relay_public_identity.dart';
+import 'package:relay_app/provider/persistence_provider.dart';
 
 abstract interface class RelayIdentityMetadataStore {
   Future<RelayPublicIdentity?> load();

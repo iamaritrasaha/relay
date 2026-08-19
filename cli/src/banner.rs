@@ -1,6 +1,6 @@
 use crate::storage::Repository;
 use crossterm::style::Stylize;
-use localsend::http::server::ServerHandle;
+use relay_core::http::server::ServerHandle;
 use std::net::SocketAddr;
 
 #[rustfmt::skip]
@@ -17,7 +17,7 @@ pub fn render(storage: &Repository, server: &ServerHandle) -> String {
         .enumerate()
         .map(|(i, line)| {
             let right = match i {
-                1 => "  LocalSend CLI",
+                1 => "  Relay CLI",
                 2 => concat!("  v", env!("CARGO_PKG_VERSION")),
                 _ => "",
             };

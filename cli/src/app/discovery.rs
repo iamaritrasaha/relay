@@ -7,8 +7,8 @@ use super::web_link::WebMode;
 use crate::slots::slot_label;
 use crate::storage::PairedChannel;
 use crate::ui::Category;
-use localsend::discovery::{DeviceChannel, DiscoveredDevice, DiscoveryEvent, HttpChannel};
-use localsend::http::dto_v2::RegisterDtoV2;
+use relay_core::discovery::{DeviceChannel, DiscoveredDevice, DiscoveryEvent, HttpChannel};
+use relay_core::http::dto_v2::RegisterDtoV2;
 
 impl App {
     pub(super) fn handle_discovery(&mut self, event: DiscoveryEvent) {

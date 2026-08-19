@@ -1,5 +1,5 @@
 import 'package:dart_mappable/dart_mappable.dart';
-import 'package:localsend_isolates/model/dto/file_dto.dart';
+import 'package:relay_isolates/model/dto/file_dto.dart';
 
 part 'receiving_file.mapper.dart';
 

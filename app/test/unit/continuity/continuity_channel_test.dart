@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:localsend_app/util/native/continuity_channel.dart';
+import 'package:relay_app/util/native/continuity_channel.dart';
 
 /// The channel decodes untrusted-shaped platform maps. Missing or wrong-typed
 /// entries must produce a usable value rather than throwing into a stream.

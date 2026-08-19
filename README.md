@@ -4,7 +4,7 @@ Relay is a cross-device continuity and local transfer application. It connects y
 
 ## Status
 
-Relay is in early development. Its current verified foundation includes Linux and Android builds, local-network transfer infrastructure inherited from LocalSend, background receiver lifecycle support, and Android local-network permission handling.
+Relay is in early development. Its current verified foundation includes Linux and Android builds, local-network transfer infrastructure inherited from Relay, background receiver lifecycle support, and Android local-network permission handling.
 
 ## Current Scope
 
@@ -48,4 +48,4 @@ fvm flutter build apk --debug
 
 ## Upstream / Attribution
 
-Relay is built on the open-source [LocalSend](https://github.com/localsend/localsend) project and retains portions of its transfer, discovery, and cross-platform infrastructure. LocalSend is licensed under Apache-2.0; Relay preserves applicable license and copyright notices. Relay is an independent fork and is not affiliated with or endorsed by LocalSend.
+Relay is built on the open-source [Relay](https://github.com/relay/relay) project and retains portions of its transfer, discovery, and cross-platform infrastructure. Relay is licensed under Apache-2.0; Relay preserves applicable license and copyright notices. Relay is an independent fork and is not affiliated with or endorsed by Relay.

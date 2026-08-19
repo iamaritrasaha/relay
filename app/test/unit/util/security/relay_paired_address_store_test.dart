@@ -1,5 +1,5 @@
-import 'package:localsend_app/model/persistence/relay_paired_address.dart';
-import 'package:localsend_app/util/security/relay_paired_address_store.dart';
+import 'package:relay_app/model/persistence/relay_paired_address.dart';
+import 'package:relay_app/util/security/relay_paired_address_store.dart';
 import 'package:test/test.dart';
 
 void main() {

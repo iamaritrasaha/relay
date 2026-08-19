@@ -3,10 +3,10 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:localsend_app/config/theme.dart';
-import 'package:localsend_app/model/persistence/color_mode.dart';
-import 'package:localsend_app/util/native/file_picker.dart';
-import 'package:localsend_app/widget/dialogs/add_file_dialog.dart';
+import 'package:relay_app/config/theme.dart';
+import 'package:relay_app/model/persistence/color_mode.dart';
+import 'package:relay_app/util/native/file_picker.dart';
+import 'package:relay_app/widget/dialogs/add_file_dialog.dart';
 
 import 'relay_desktop_fixtures.dart';
 
@@ -45,7 +45,7 @@ void main() {
     tester.view.physicalSize = size;
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.reset);
-    final theme = getTheme(ColorMode.localsend, Colors.blue, Brightness.dark, null);
+    final theme = getTheme(ColorMode.relay, Colors.blue, Brightness.dark, null);
     await tester.pumpWidget(
       MaterialApp(
         debugShowCheckedModeBanner: false,

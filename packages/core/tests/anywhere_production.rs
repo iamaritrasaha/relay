@@ -1,18 +1,18 @@
-//! Production Anywhere orchestration, exercised through `localsend::anywhere`
+//! Production Anywhere orchestration, exercised through `relay_core::anywhere`
 //! only. Nothing here links the development RA2B crate.
 
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
-use localsend::anywhere::AnywhereError;
-use localsend::anywhere::{
+use relay_core::anywhere::AnywhereError;
+use relay_core::anywhere::{
     AnywhereBatch, AnywhereDecision, AnywhereEvent, AnywhereFileSource, AnywhereFileSpec,
     AnywhereIdentity, AnywhereOutcome, AnywherePathClass, AnywhereReceiveRequest, AnywhereRuntime,
     AnywhereSaveTarget, AnywhereSendRequest, PathPreference, RelayAddressV1, authenticate_address,
     receive, send_batch,
 };
-use localsend::crypto::relay_identity::RelayIdentity;
+use relay_core::crypto::relay_identity::RelayIdentity;
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 
@@ -48,12 +48,12 @@ fn file_spec(path: &std::path::Path, size: u64) -> AnywhereFileSpec {
 /// Collects events and forwards inbound requests so a test can answer them.
 struct Recorder {
     events: Arc<Mutex<Vec<String>>>,
-    incoming_tx: mpsc::UnboundedSender<(localsend::anywhere::IncomingTransferId, u64)>,
+    incoming_tx: mpsc::UnboundedSender<(relay_core::anywhere::IncomingTransferId, u64)>,
     address_tx: Arc<Mutex<Option<tokio::sync::oneshot::Sender<String>>>>,
 }
 
 impl Recorder {
-    fn sink(self) -> localsend::anywhere::AnywhereEventSink {
+    fn sink(self) -> relay_core::anywhere::AnywhereEventSink {
         Arc::new(move |event: AnywhereEvent| {
             self.events
                 .lock()
@@ -78,10 +78,10 @@ impl Recorder {
 }
 
 struct Receiver {
-    session: localsend::anywhere::AnywhereSessionId,
+    session: relay_core::anywhere::AnywhereSessionId,
     cancel: CancellationToken,
     address: String,
-    incoming: mpsc::UnboundedReceiver<(localsend::anywhere::IncomingTransferId, u64)>,
+    incoming: mpsc::UnboundedReceiver<(relay_core::anywhere::IncomingTransferId, u64)>,
     join: tokio::task::JoinHandle<Result<AnywhereOutcome, AnywhereError>>,
     relay_id: String,
 }
@@ -126,7 +126,7 @@ async fn start_receiver(runtime: Arc<AnywhereRuntime>) -> Receiver {
     }
 }
 
-fn silent_sink() -> localsend::anywhere::AnywhereEventSink {
+fn silent_sink() -> relay_core::anywhere::AnywhereEventSink {
     Arc::new(|_event| {})
 }
 
@@ -137,7 +137,7 @@ async fn send_to(
 ) -> Result<AnywhereOutcome, AnywhereError> {
     let (_session, cancel) = AnywhereRuntime::new().open_session();
     send_batch(
-        localsend::anywhere::AnywhereSessionId::from_u64(1),
+        relay_core::anywhere::AnywhereSessionId::from_u64(1),
         cancel,
         AnywhereSendRequest {
             identity: identity(),
@@ -295,7 +295,7 @@ async fn wrong_expected_relay_id_fails_before_any_transfer() {
 
     let (_session, cancel) = runtime.open_session();
     let result = send_batch(
-        localsend::anywhere::AnywhereSessionId::from_u64(2),
+        relay_core::anywhere::AnywhereSessionId::from_u64(2),
         cancel,
         AnywhereSendRequest {
             identity: identity(),

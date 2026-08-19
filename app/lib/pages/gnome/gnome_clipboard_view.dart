@@ -1,11 +1,11 @@
 import 'package:flutter/material.dart';
-import 'package:localsend_app/config/relay_brand.dart';
-import 'package:localsend_app/model/persistence/relay_continuity_settings.dart';
-import 'package:localsend_app/model/ui/relay_device_vm.dart';
-import 'package:localsend_app/provider/continuity/continuity_provider.dart';
-import 'package:localsend_app/widget/gnome/adw_action_row.dart';
-import 'package:localsend_app/widget/gnome/adw_boxed_list.dart';
-import 'package:localsend_app/widget/gnome/adw_button.dart';
+import 'package:relay_app/config/relay_brand.dart';
+import 'package:relay_app/model/persistence/relay_continuity_settings.dart';
+import 'package:relay_app/model/ui/relay_device_vm.dart';
+import 'package:relay_app/provider/continuity/continuity_provider.dart';
+import 'package:relay_app/widget/gnome/adw_action_row.dart';
+import 'package:relay_app/widget/gnome/adw_boxed_list.dart';
+import 'package:relay_app/widget/gnome/adw_button.dart';
 import 'package:refena_flutter/refena_flutter.dart';
 
 /// GNOME clipboard continuity surface.
@@ -47,7 +47,7 @@ class GnomeClipboardView extends StatelessWidget {
               if (relayId == null)
                 Text(
                   'Clipboard sharing needs a paired Relay device. '
-                  '${device.alias} is a LocalSend-compatible peer, which can only receive files.',
+                  '${device.alias} is a Relay-compatible peer, which can only receive files.',
                   style: RelayTypography.body(palette.textSecondary, isGnome: true),
                 )
               else

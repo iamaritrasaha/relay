@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:localsend_app/config/relay_brand.dart';
+import 'package:relay_app/config/relay_brand.dart';
 
 /// Libadwaita Boxed List / Preferences Group for GNOME.
 ///

@@ -9,9 +9,9 @@
 //! This test lowers the descriptor limit of its own process, which is why it
 //! is the only test in this binary.
 
-use localsend::http::server::v2::ServerEventV2;
-use localsend::http::server::{start_with_port, ServerConfigV2};
-use localsend::http::state::ClientInfo;
+use relay_core::http::server::v2::ServerEventV2;
+use relay_core::http::server::{start_with_port, ServerConfigV2};
+use relay_core::http::state::ClientInfo;
 use std::time::Duration;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::sync::{mpsc, oneshot};

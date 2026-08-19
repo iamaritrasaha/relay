@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:localsend_app/model/continuity/continuity_runtime.dart';
-import 'package:localsend_app/model/persistence/relay_continuity_settings.dart';
-import 'package:localsend_app/model/ui/relay_capability_vm.dart';
-import 'package:localsend_app/model/ui/relay_device_vm.dart';
-import 'package:localsend_isolates/model/device.dart';
+import 'package:relay_app/model/continuity/continuity_runtime.dart';
+import 'package:relay_app/model/persistence/relay_continuity_settings.dart';
+import 'package:relay_app/model/ui/relay_capability_vm.dart';
+import 'package:relay_app/model/ui/relay_device_vm.dart';
+import 'package:relay_isolates/model/device.dart';
 
 const _relayId = 'A1B2C3D4E5F6071829304152637485960718293041526374859607182930415C';
 
@@ -30,8 +30,8 @@ RelayDeviceVm _device({
 }
 
 void main() {
-  group('LocalSend isolation', () {
-    test('a LocalSend peer is offered files and nothing else', () {
+  group('Relay isolation', () {
+    test('a Relay peer is offered files and nothing else', () {
       final statuses = _device(
         kind: RelayDeviceTargetKind.unresolvedLan,
         // Even if some capability state leaked in, it must not be presented.
@@ -44,7 +44,7 @@ void main() {
         expect(
           statuses[capability],
           CapabilityStatus.unavailable,
-          reason: 'LocalSend peers never receive $capability',
+          reason: 'Relay peers never receive $capability',
         );
       }
     });

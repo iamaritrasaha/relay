@@ -1,6 +1,6 @@
 use crossterm::terminal::{Clear, ClearType};
 use crossterm::{cursor, execute};
-use localsend::util::filename;
+use relay_core::util::filename;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 

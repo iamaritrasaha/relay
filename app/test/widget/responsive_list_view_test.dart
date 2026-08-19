@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:localsend_app/widget/responsive_list_view.dart';
+import 'package:relay_app/widget/responsive_list_view.dart';
 
 /// Regression coverage for the desktop Settings overflow.
 ///

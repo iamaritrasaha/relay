@@ -1,20 +1,20 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:localsend_app/config/theme.dart';
-import 'package:localsend_app/model/persistence/color_mode.dart';
-import 'package:localsend_app/model/ui/relay_capability_vm.dart';
-import 'package:localsend_app/model/ui/relay_device_vm.dart';
-import 'package:localsend_app/pages/gnome/gnome_shell.dart';
-import 'package:localsend_app/pages/relay_home_vm.dart';
-import 'package:localsend_app/provider/persistence_provider.dart';
-import 'package:localsend_isolates/model/device.dart';
+import 'package:relay_app/config/theme.dart';
+import 'package:relay_app/model/persistence/color_mode.dart';
+import 'package:relay_app/model/ui/relay_capability_vm.dart';
+import 'package:relay_app/model/ui/relay_device_vm.dart';
+import 'package:relay_app/pages/gnome/gnome_shell.dart';
+import 'package:relay_app/pages/relay_home_vm.dart';
+import 'package:relay_app/provider/persistence_provider.dart';
+import 'package:relay_isolates/model/device.dart';
 import 'package:mockito/mockito.dart';
 import 'package:refena_flutter/refena_flutter.dart';
 
 import '../../mocks.mocks.dart';
 
 void main() {
-  final darkTheme = getTheme(ColorMode.localsend, Colors.teal, Brightness.dark, null);
+  final darkTheme = getTheme(ColorMode.relay, Colors.teal, Brightness.dark, null);
 
   late MockPersistenceService mockPersistence;
 
