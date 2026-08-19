@@ -588,10 +588,10 @@ return peerError(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeWhen<TResult extends Object?>({TResult Function( String remoteRelayId,  bool directPath)?  sessionEstablished,TResult Function( String remoteRelayId,  String reason)?  sessionEnded,TResult Function( String remoteRelayId,  RsCapabilityManifest manifest)?  manifestReceived,TResult Function( String remoteRelayId,  int? percentage,  RsChargingState charging)?  batteryChanged,TResult Function( String remoteRelayId,  String text,  bool explicit)?  clipboardOffered,TResult Function( String remoteRelayId,  String key,  String appLabel,  String? title,  String? body,  BigInt postedAtMs,  bool clearable)?  notificationPosted,TResult Function( String remoteRelayId,  String key)?  notificationRemoved,TResult Function( String remoteRelayId,  List<RsSmsConversation> conversations,  bool hasMore)?  conversationsPage,TResult Function( String remoteRelayId,  String conversationId,  List<RsSmsMessage> messages,  bool hasMore)?  messagesPage,TResult Function( String remoteRelayId,  RsSmsMessage message)?  messageReceived,TResult Function( String remoteRelayId,  String requestId,  bool sent,  String? detail)?  smsSendCompleted,TResult Function( String remoteRelayId,  RsCallState state)?  callStateChanged,TResult Function( String remoteRelayId,  String requestId,  bool accepted,  String? detail)?  callActionCompleted,TResult Function( String remoteRelayId,  String code,  String detail)?  peerError,required TResult orElse(),}) {final _that = this;
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>({TResult Function( String remoteRelayId,  bool directPath,  bool localPath)?  sessionEstablished,TResult Function( String remoteRelayId,  String reason)?  sessionEnded,TResult Function( String remoteRelayId,  RsCapabilityManifest manifest)?  manifestReceived,TResult Function( String remoteRelayId,  int? percentage,  RsChargingState charging)?  batteryChanged,TResult Function( String remoteRelayId,  String text,  bool explicit)?  clipboardOffered,TResult Function( String remoteRelayId,  String key,  String appLabel,  String? title,  String? body,  BigInt postedAtMs,  bool clearable)?  notificationPosted,TResult Function( String remoteRelayId,  String key)?  notificationRemoved,TResult Function( String remoteRelayId,  List<RsSmsConversation> conversations,  bool hasMore)?  conversationsPage,TResult Function( String remoteRelayId,  String conversationId,  List<RsSmsMessage> messages,  bool hasMore)?  messagesPage,TResult Function( String remoteRelayId,  RsSmsMessage message)?  messageReceived,TResult Function( String remoteRelayId,  String requestId,  bool sent,  String? detail)?  smsSendCompleted,TResult Function( String remoteRelayId,  RsCallState state)?  callStateChanged,TResult Function( String remoteRelayId,  String requestId,  bool accepted,  String? detail)?  callActionCompleted,TResult Function( String remoteRelayId,  String code,  String detail)?  peerError,required TResult orElse(),}) {final _that = this;
 switch (_that) {
 case RsContinuityEvent_SessionEstablished() when sessionEstablished != null:
-return sessionEstablished(_that.remoteRelayId,_that.directPath);case RsContinuityEvent_SessionEnded() when sessionEnded != null:
+return sessionEstablished(_that.remoteRelayId,_that.directPath,_that.localPath);case RsContinuityEvent_SessionEnded() when sessionEnded != null:
 return sessionEnded(_that.remoteRelayId,_that.reason);case RsContinuityEvent_ManifestReceived() when manifestReceived != null:
 return manifestReceived(_that.remoteRelayId,_that.manifest);case RsContinuityEvent_BatteryChanged() when batteryChanged != null:
 return batteryChanged(_that.remoteRelayId,_that.percentage,_that.charging);case RsContinuityEvent_ClipboardOffered() when clipboardOffered != null:
@@ -622,10 +622,10 @@ return peerError(_that.remoteRelayId,_that.code,_that.detail);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult when<TResult extends Object?>({required TResult Function( String remoteRelayId,  bool directPath)  sessionEstablished,required TResult Function( String remoteRelayId,  String reason)  sessionEnded,required TResult Function( String remoteRelayId,  RsCapabilityManifest manifest)  manifestReceived,required TResult Function( String remoteRelayId,  int? percentage,  RsChargingState charging)  batteryChanged,required TResult Function( String remoteRelayId,  String text,  bool explicit)  clipboardOffered,required TResult Function( String remoteRelayId,  String key,  String appLabel,  String? title,  String? body,  BigInt postedAtMs,  bool clearable)  notificationPosted,required TResult Function( String remoteRelayId,  String key)  notificationRemoved,required TResult Function( String remoteRelayId,  List<RsSmsConversation> conversations,  bool hasMore)  conversationsPage,required TResult Function( String remoteRelayId,  String conversationId,  List<RsSmsMessage> messages,  bool hasMore)  messagesPage,required TResult Function( String remoteRelayId,  RsSmsMessage message)  messageReceived,required TResult Function( String remoteRelayId,  String requestId,  bool sent,  String? detail)  smsSendCompleted,required TResult Function( String remoteRelayId,  RsCallState state)  callStateChanged,required TResult Function( String remoteRelayId,  String requestId,  bool accepted,  String? detail)  callActionCompleted,required TResult Function( String remoteRelayId,  String code,  String detail)  peerError,}) {final _that = this;
+@optionalTypeArgs TResult when<TResult extends Object?>({required TResult Function( String remoteRelayId,  bool directPath,  bool localPath)  sessionEstablished,required TResult Function( String remoteRelayId,  String reason)  sessionEnded,required TResult Function( String remoteRelayId,  RsCapabilityManifest manifest)  manifestReceived,required TResult Function( String remoteRelayId,  int? percentage,  RsChargingState charging)  batteryChanged,required TResult Function( String remoteRelayId,  String text,  bool explicit)  clipboardOffered,required TResult Function( String remoteRelayId,  String key,  String appLabel,  String? title,  String? body,  BigInt postedAtMs,  bool clearable)  notificationPosted,required TResult Function( String remoteRelayId,  String key)  notificationRemoved,required TResult Function( String remoteRelayId,  List<RsSmsConversation> conversations,  bool hasMore)  conversationsPage,required TResult Function( String remoteRelayId,  String conversationId,  List<RsSmsMessage> messages,  bool hasMore)  messagesPage,required TResult Function( String remoteRelayId,  RsSmsMessage message)  messageReceived,required TResult Function( String remoteRelayId,  String requestId,  bool sent,  String? detail)  smsSendCompleted,required TResult Function( String remoteRelayId,  RsCallState state)  callStateChanged,required TResult Function( String remoteRelayId,  String requestId,  bool accepted,  String? detail)  callActionCompleted,required TResult Function( String remoteRelayId,  String code,  String detail)  peerError,}) {final _that = this;
 switch (_that) {
 case RsContinuityEvent_SessionEstablished():
-return sessionEstablished(_that.remoteRelayId,_that.directPath);case RsContinuityEvent_SessionEnded():
+return sessionEstablished(_that.remoteRelayId,_that.directPath,_that.localPath);case RsContinuityEvent_SessionEnded():
 return sessionEnded(_that.remoteRelayId,_that.reason);case RsContinuityEvent_ManifestReceived():
 return manifestReceived(_that.remoteRelayId,_that.manifest);case RsContinuityEvent_BatteryChanged():
 return batteryChanged(_that.remoteRelayId,_that.percentage,_that.charging);case RsContinuityEvent_ClipboardOffered():
@@ -652,10 +652,10 @@ return peerError(_that.remoteRelayId,_that.code,_that.detail);}
 /// }
 /// ```
 
-@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>({TResult? Function( String remoteRelayId,  bool directPath)?  sessionEstablished,TResult? Function( String remoteRelayId,  String reason)?  sessionEnded,TResult? Function( String remoteRelayId,  RsCapabilityManifest manifest)?  manifestReceived,TResult? Function( String remoteRelayId,  int? percentage,  RsChargingState charging)?  batteryChanged,TResult? Function( String remoteRelayId,  String text,  bool explicit)?  clipboardOffered,TResult? Function( String remoteRelayId,  String key,  String appLabel,  String? title,  String? body,  BigInt postedAtMs,  bool clearable)?  notificationPosted,TResult? Function( String remoteRelayId,  String key)?  notificationRemoved,TResult? Function( String remoteRelayId,  List<RsSmsConversation> conversations,  bool hasMore)?  conversationsPage,TResult? Function( String remoteRelayId,  String conversationId,  List<RsSmsMessage> messages,  bool hasMore)?  messagesPage,TResult? Function( String remoteRelayId,  RsSmsMessage message)?  messageReceived,TResult? Function( String remoteRelayId,  String requestId,  bool sent,  String? detail)?  smsSendCompleted,TResult? Function( String remoteRelayId,  RsCallState state)?  callStateChanged,TResult? Function( String remoteRelayId,  String requestId,  bool accepted,  String? detail)?  callActionCompleted,TResult? Function( String remoteRelayId,  String code,  String detail)?  peerError,}) {final _that = this;
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>({TResult? Function( String remoteRelayId,  bool directPath,  bool localPath)?  sessionEstablished,TResult? Function( String remoteRelayId,  String reason)?  sessionEnded,TResult? Function( String remoteRelayId,  RsCapabilityManifest manifest)?  manifestReceived,TResult? Function( String remoteRelayId,  int? percentage,  RsChargingState charging)?  batteryChanged,TResult? Function( String remoteRelayId,  String text,  bool explicit)?  clipboardOffered,TResult? Function( String remoteRelayId,  String key,  String appLabel,  String? title,  String? body,  BigInt postedAtMs,  bool clearable)?  notificationPosted,TResult? Function( String remoteRelayId,  String key)?  notificationRemoved,TResult? Function( String remoteRelayId,  List<RsSmsConversation> conversations,  bool hasMore)?  conversationsPage,TResult? Function( String remoteRelayId,  String conversationId,  List<RsSmsMessage> messages,  bool hasMore)?  messagesPage,TResult? Function( String remoteRelayId,  RsSmsMessage message)?  messageReceived,TResult? Function( String remoteRelayId,  String requestId,  bool sent,  String? detail)?  smsSendCompleted,TResult? Function( String remoteRelayId,  RsCallState state)?  callStateChanged,TResult? Function( String remoteRelayId,  String requestId,  bool accepted,  String? detail)?  callActionCompleted,TResult? Function( String remoteRelayId,  String code,  String detail)?  peerError,}) {final _that = this;
 switch (_that) {
 case RsContinuityEvent_SessionEstablished() when sessionEstablished != null:
-return sessionEstablished(_that.remoteRelayId,_that.directPath);case RsContinuityEvent_SessionEnded() when sessionEnded != null:
+return sessionEstablished(_that.remoteRelayId,_that.directPath,_that.localPath);case RsContinuityEvent_SessionEnded() when sessionEnded != null:
 return sessionEnded(_that.remoteRelayId,_that.reason);case RsContinuityEvent_ManifestReceived() when manifestReceived != null:
 return manifestReceived(_that.remoteRelayId,_that.manifest);case RsContinuityEvent_BatteryChanged() when batteryChanged != null:
 return batteryChanged(_that.remoteRelayId,_that.percentage,_that.charging);case RsContinuityEvent_ClipboardOffered() when clipboardOffered != null:
@@ -680,11 +680,14 @@ return peerError(_that.remoteRelayId,_that.code,_that.detail);case _:
 
 
 class RsContinuityEvent_SessionEstablished extends RsContinuityEvent {
-  const RsContinuityEvent_SessionEstablished({required this.remoteRelayId, required this.directPath}): super._();
+  const RsContinuityEvent_SessionEstablished({required this.remoteRelayId, required this.directPath, required this.localPath}): super._();
 
 
 @override final  String remoteRelayId;
  final  bool directPath;
+/// Whether this session runs over the local network. Read from the path
+/// the transport established, never claimed by the peer.
+ final  bool localPath;
 
 /// Create a copy of RsContinuityEvent
 /// with the given fields replaced by the non-null parameter values.
@@ -696,16 +699,16 @@ $RsContinuityEvent_SessionEstablishedCopyWith<RsContinuityEvent_SessionEstablish
 
 @override
 bool operator ==(Object other) {
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is RsContinuityEvent_SessionEstablished&&(identical(other.remoteRelayId, remoteRelayId) || other.remoteRelayId == remoteRelayId)&&(identical(other.directPath, directPath) || other.directPath == directPath));
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is RsContinuityEvent_SessionEstablished&&(identical(other.remoteRelayId, remoteRelayId) || other.remoteRelayId == remoteRelayId)&&(identical(other.directPath, directPath) || other.directPath == directPath)&&(identical(other.localPath, localPath) || other.localPath == localPath));
 }
 
 
 @override
-int get hashCode => Object.hash(runtimeType,remoteRelayId,directPath);
+int get hashCode => Object.hash(runtimeType,remoteRelayId,directPath,localPath);
 
 @override
 String toString() {
-  return 'RsContinuityEvent.sessionEstablished(remoteRelayId: $remoteRelayId, directPath: $directPath)';
+  return 'RsContinuityEvent.sessionEstablished(remoteRelayId: $remoteRelayId, directPath: $directPath, localPath: $localPath)';
 }
 
 
@@ -716,7 +719,7 @@ abstract mixin class $RsContinuityEvent_SessionEstablishedCopyWith<$Res> impleme
   factory $RsContinuityEvent_SessionEstablishedCopyWith(RsContinuityEvent_SessionEstablished value, $Res Function(RsContinuityEvent_SessionEstablished) _then) = _$RsContinuityEvent_SessionEstablishedCopyWithImpl;
 @override @useResult
 $Res call({
- String remoteRelayId, bool directPath
+ String remoteRelayId, bool directPath, bool localPath
 });
 
 
@@ -733,10 +736,11 @@ class _$RsContinuityEvent_SessionEstablishedCopyWithImpl<$Res>
 
 /// Create a copy of RsContinuityEvent
 /// with the given fields replaced by the non-null parameter values.
-@override @pragma('vm:prefer-inline') $Res call({Object? remoteRelayId = null,Object? directPath = null,}) {
+@override @pragma('vm:prefer-inline') $Res call({Object? remoteRelayId = null,Object? directPath = null,Object? localPath = null,}) {
   return _then(RsContinuityEvent_SessionEstablished(
 remoteRelayId: null == remoteRelayId ? _self.remoteRelayId : remoteRelayId // ignore: cast_nullable_to_non_nullable
 as String,directPath: null == directPath ? _self.directPath : directPath // ignore: cast_nullable_to_non_nullable
+as bool,localPath: null == localPath ? _self.localPath : localPath // ignore: cast_nullable_to_non_nullable
 as bool,
   ));
 }

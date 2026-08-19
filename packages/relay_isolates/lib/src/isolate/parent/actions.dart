@@ -458,6 +458,50 @@ class IsolateHttpServerPrepareUploadDecisionAction extends ReduxAction<IsolateCo
   }
 }
 
+/// Starts or stops serving the Relay-only local continuity endpoint.
+///
+/// Installing it is what makes this device answer local continuity connections
+/// at all; every accepted connection still completes a mutual identity proof.
+class IsolateHttpServerRelayContinuityAcceptorAction extends AsyncReduxActionWithResult<IsolateController, ParentIsolateState, bool> {
+  Uint8List? _privateKey;
+  final String? relayId;
+
+  /// Installs the acceptor with this device's Relay identity.
+  IsolateHttpServerRelayContinuityAcceptorAction.install({
+    required Uint8List privateKey,
+    required String this.relayId,
+  }) : _privateKey = privateKey;
+
+  /// Stops serving the endpoint and drops the identity it held.
+  IsolateHttpServerRelayContinuityAcceptorAction.revoke()
+    : _privateKey = null,
+      relayId = null;
+
+  @override
+  Future<(ParentIsolateState, bool)> reduce() async {
+    final connection = state.httpServer;
+    if (connection == null) {
+      throw StateError('httpServer is not initialized');
+    }
+    final privateKey = _privateKey;
+    final relayId = this.relayId;
+
+    try {
+      final event = await connection
+          .sendWrappedTaskAndListenStream(
+            task: privateKey == null || relayId == null
+                ? HttpServerRevokeRelayContinuityAcceptorTask()
+                : HttpServerInstallRelayContinuityAcceptorTask(privateKey: privateKey, relayId: relayId),
+          )
+          .single;
+
+      return (state, (event as HttpServerRelayContinuityAcceptorEvent).serving);
+    } finally {
+      _privateKey = null;
+    }
+  }
+}
+
 /// Answers a pending [HttpServerRelayPairRequestEvent].
 ///
 /// [relayId] must be the proven RelayId that event carried, so a decision can

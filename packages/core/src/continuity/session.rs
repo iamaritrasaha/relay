@@ -74,6 +74,14 @@ fn is_direct(path: &PathDescriptor) -> bool {
     !matches!(path, PathDescriptor::IrohRelay { .. })
 }
 
+/// Whether the session runs over the local network.
+///
+/// Read from the path the transport established, so it cannot be claimed by a
+/// peer or inferred from an address.
+fn is_local(path: &PathDescriptor) -> bool {
+    matches!(path, PathDescriptor::Lan { .. })
+}
+
 /// Creates the outbound channel and the handle the app publishes through.
 pub fn session_channel(
     remote_relay_id: &str,
@@ -150,6 +158,7 @@ where
     (config.events)(ContinuityEvent::SessionEstablished {
         remote_relay_id: remote_relay_id.clone(),
         direct_path: is_direct(session.path()),
+        local_path: is_local(session.path()),
     });
 
     // Advertise, then ask for what this device is allowed to consume.

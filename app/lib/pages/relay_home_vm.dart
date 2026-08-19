@@ -376,10 +376,17 @@ class RelayHomeVm {
     detail: _pairedDetail(transfer),
     targetKind: RelayDeviceTargetKind.pairedRelay,
     relayId: route.relayId,
-    connectionType: switch (transfer?.origin) {
-      'direct' => RelayConnectionType.direct,
-      'relay' => RelayConnectionType.relayed,
-      _ => RelayConnectionType.relayed,
+    // A live continuity session knows the path it actually runs over, so it
+    // decides how this device is reported. A past transfer's origin is only a
+    // fallback for a device with no session right now.
+    connectionType: switch (continuity.deviceFor(route.relayId)) {
+      final device when device.connected && device.localPath => RelayConnectionType.local,
+      final device when device.connected && device.directPath => RelayConnectionType.direct,
+      _ => switch (transfer?.origin) {
+        'direct' => RelayConnectionType.direct,
+        'relay' => RelayConnectionType.relayed,
+        _ => RelayConnectionType.relayed,
+      },
     },
     securityState: RelaySecurityState.verifiedRelay,
     battery: _batteryFor(continuity, route.relayId),

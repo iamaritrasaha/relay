@@ -7,6 +7,7 @@ pub mod v3;
 pub mod web;
 
 pub use peer_ip::PeerIp;
+pub use relay::RELAY_CONTINUITY_PROTOCOL;
 
 use crate::crypto::cert::{fingerprint_from_cert_der, public_key_from_cert_der};
 use crate::crypto::relay_identity::RelayIdentity;
@@ -114,6 +115,64 @@ pub(crate) struct RelayPairState {
     /// At most one pairing prompt may be outstanding, so a peer cannot bury the
     /// user under prompts or race two requests into one decision.
     pub(crate) prompt: Mutex<()>,
+}
+
+/// An inbound Relay continuity connection whose peer is already proven.
+///
+/// Both fields come from the same handshake: there is no constructor that pairs
+/// an arbitrary stream with an arbitrary identity.
+#[cfg(feature = "anywhere")]
+pub struct RelayLanContinuityInbound {
+    pub session: AuthenticatedRelaySession,
+    pub stream: TokioIo<hyper::upgrade::Upgraded>,
+}
+
+/// What this device needs in order to accept local continuity connections.
+///
+/// The identity is held only while continuity is switched on: revoking the
+/// acceptor drops it, so a device that shares nothing keeps no signing key in
+/// the server at all.
+#[cfg(feature = "anywhere")]
+pub struct RelayContinuityAcceptConfig {
+    pub identity: RelayIdentity,
+    pub inbound: mpsc::Sender<RelayLanContinuityInbound>,
+}
+
+/// Server-side state for the Relay-only local continuity endpoint.
+///
+/// `None` means the endpoint is not served. A device with no continuity
+/// capability enabled therefore has no local continuity entry point, rather
+/// than one that answers and then refuses.
+#[cfg(feature = "anywhere")]
+pub(crate) struct RelayContinuityState {
+    config: RwLock<Option<Arc<RelayContinuityAcceptConfig>>>,
+}
+
+#[cfg(feature = "anywhere")]
+impl RelayContinuityState {
+    pub(crate) fn config(&self) -> Option<Arc<RelayContinuityAcceptConfig>> {
+        self.config.read().ok().and_then(|slot| slot.clone())
+    }
+
+    fn install(&self, config: RelayContinuityAcceptConfig) -> bool {
+        match self.config.write() {
+            Ok(mut slot) => {
+                slot.replace(Arc::new(config));
+                true
+            }
+            Err(_) => false,
+        }
+    }
+
+    fn revoke(&self) -> bool {
+        let removed = match self.config.write() {
+            Ok(mut slot) => slot.take(),
+            Err(error) => error.into_inner().take(),
+        };
+        let was_present = removed.is_some();
+        drop(removed);
+        was_present
+    }
 }
 
 pub(crate) struct RelayProofState {
@@ -272,6 +331,10 @@ pub struct AppState {
 
     /// State for the TLS-only Relay LAN pairing endpoints.
     pub(crate) relay_pair: Arc<RelayPairState>,
+
+    /// State for the TLS-only Relay local continuity endpoint.
+    #[cfg(feature = "anywhere")]
+    pub(crate) relay_continuity: Arc<RelayContinuityState>,
 }
 
 impl AppState {
@@ -323,6 +386,10 @@ impl AppState {
             relay_pair: Arc::new(RelayPairState {
                 challenges: Mutex::new(LruCache::new(NonZeroUsize::new(32).unwrap())),
                 prompt: Mutex::new(()),
+            }),
+            #[cfg(feature = "anywhere")]
+            relay_continuity: Arc::new(RelayContinuityState {
+                config: RwLock::new(None),
             }),
         }
     }
@@ -457,6 +524,22 @@ impl ServerHandle {
     /// the old Arc may still complete their one in-flight signature.
     pub fn revoke_relay_signer(&self) -> bool {
         self.relay_proof.revoke()
+    }
+
+    /// Starts serving the Relay-only local continuity endpoint.
+    ///
+    /// Until this is installed the endpoint answers "unavailable", so a device
+    /// with nothing enabled never accepts a continuity connection.
+    #[cfg(feature = "anywhere")]
+    pub fn install_relay_continuity_acceptor(&self, config: RelayContinuityAcceptConfig) -> bool {
+        self.state.relay_continuity.install(config)
+    }
+
+    /// Stops serving the local continuity endpoint and drops the identity it
+    /// held. Sessions already running are unaffected; their owners end them.
+    #[cfg(feature = "anywhere")]
+    pub fn revoke_relay_continuity_acceptor(&self) -> bool {
+        self.state.relay_continuity.revoke()
     }
 }
 
@@ -811,8 +894,11 @@ async fn serve_stream_with_tls<S>(
 ) where
     S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send + 'static,
 {
+    // Upgrades are enabled only on the TLS listener, which is the only place a
+    // Relay continuity connection can arrive: the endpoint requires a verified
+    // client certificate.
     if let Err(err) = Builder::new(TokioExecutor::new())
-        .serve_connection(
+        .serve_connection_with_upgrades(
             TokioIo::new(stream),
             hyper::service::service_fn(move |mut req: Request<Incoming>| {
                 req.extensions_mut().insert::<RequestClientInfo>(client_info.clone());
@@ -1034,6 +1120,10 @@ async fn handle_request_inner(mut req: Request<Incoming>) -> Result<Response<Box
         }
         (&Method::POST, "/api/relay/v1/pair/complete") => {
             relay::pair_complete(req, state, client_info).await
+        }
+        #[cfg(feature = "anywhere")]
+        (&Method::POST, "/api/relay/v1/continuity") => {
+            relay::continuity(req, state, client_info).await
         }
         _ => {
             let mut res = Response::new(response::empty_body());

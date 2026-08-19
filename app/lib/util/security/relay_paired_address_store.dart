@@ -35,6 +35,12 @@ class RelayPairedAddressStore {
 
   bool isPaired(String relayId) => find(relayId) != null;
 
+  /// Records, or refreshes, the Relay Anywhere address of a proven device.
+  ///
+  /// Called after an authenticated Anywhere session. If the device is already
+  /// paired — including a device first paired over the local network — this
+  /// adds the address to that existing relationship rather than starting a new
+  /// one: the original pairing date and origin are kept.
   Future<bool> refreshAfterAuthenticatedSession({
     required String authenticatedRelayId,
     required String claimedRelayId,
@@ -61,9 +67,10 @@ class RelayPairedAddressStore {
   /// are required: a proof without approval, or approval without a proof, must
   /// leave nothing behind.
   ///
-  /// No route address is stored. A LAN peer is reached through live discovery
-  /// plus a fresh proof every time, so there is nothing here an attacker could
-  /// point at a different machine.
+  /// No route address is *learned* here: a LAN peer is reached through live
+  /// discovery plus a fresh proof every time, so there is nothing an attacker
+  /// could point at a different machine. An address the device already has is
+  /// left alone — pairing over one transport says nothing about another.
   Future<bool> recordLanPairing({
     required String authenticatedRelayId,
     required bool remoteApproved,
@@ -97,6 +104,13 @@ class RelayPairedAddressStore {
     return true;
   }
 
+  /// Writes the record for one proven identity, merging with what is already
+  /// stored for it.
+  ///
+  /// Every field here is *additive*. Proving a device over one transport is
+  /// never evidence that its other route, its label, or its pairing date is
+  /// wrong, so an omitted value keeps the stored one instead of erasing it.
+  /// Only [forget] removes anything.
   Future<bool> _store({
     required String relayId,
     required String? displayLabel,
@@ -108,13 +122,17 @@ class RelayPairedAddressStore {
     final existing = find(relayId);
     final record = RelayPairedAddress(
       relayId: relayId,
-      displayLabel: displayLabel,
-      relayAddress: relayAddress,
+      displayLabel: displayLabel ?? existing?.displayLabel,
+      // A LAN re-pairing carries no address; it must not drop the Anywhere
+      // route the device already had, which is its fallback when the two are
+      // no longer on the same network.
+      relayAddress: relayAddress ?? existing?.relayAddress,
       // Re-pairing an already paired device keeps the original date; the
       // relationship was not established twice.
       pairedAt: existing?.pairedAt ?? timestamp,
       updatedAt: timestamp,
-      origin: origin,
+      // Where the relationship began never changes once it exists.
+      origin: existing?.origin ?? origin,
     );
     if (RelayPairedAddress.tryParse(record.toJson()) == null) {
       return false;

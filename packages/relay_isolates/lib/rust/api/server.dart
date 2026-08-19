@@ -76,6 +76,17 @@ abstract class RsHttpServer implements RustOpaqueInterface {
   /// as failed. Does nothing if the upload was already answered.
   Future<void> failFileUpload({required String sessionId, required String fileId});
 
+  /// Starts serving the Relay-only local continuity endpoint.
+  ///
+  /// Until this runs, the endpoint reports itself unavailable, so a device
+  /// with no continuity capability enabled never accepts a local session.
+  /// The identity is held only while the acceptor is installed.
+  ///
+  /// Every accepted connection still completes a mutual `RelayIdentityProofV1`
+  /// exchange inside the server before a session exists, and trust plus
+  /// per-capability consent are still enforced by the session itself.
+  Future<void> installRelayContinuityAcceptor({required List<int> privateKeyPem, required String relayId});
+
   /// Installs the running server's Relay proof signer from a PKCS#8 PEM
   /// private key.
   ///
@@ -131,6 +142,10 @@ abstract class RsHttpServer implements RustOpaqueInterface {
   /// Accepting establishes the relationship only — it grants no continuity
   /// capability and marks nothing as trusted.
   Future<void> respondRelayPair({required String relayId, required bool accepted});
+
+  /// Stops serving the local continuity endpoint and drops the identity it
+  /// held. Sessions already running are ended by their own owners.
+  Future<bool> revokeRelayContinuityAcceptor();
 
   /// Revokes the running server's Relay proof signer.
   ///

@@ -9,9 +9,9 @@ import 'package:relay_isolates/rust/frb_generated.dart';
 
 part 'continuity.freezed.dart';
 
-// These functions are ignored because they are not marked as `pub`: `_protocol_surface`, `event_sink`, `listener_accept_config`, `map_action_out`, `map_capability_in`, `map_charging_in`, `map_conversation`, `map_end`, `map_event`, `map_message`, `map_phase_in`, `map_state_in`, `publish_all`, `publish_to`, `runtime`, `session_config`, `spawn_host_pump`, `split_host_request`, `take_pending`
-// These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `AppTrustDirectory`, `ContinuityRuntime`, `PendingReply`
-// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `from`, `from`, `from`, `from`, `from`, `from`, `lookup`
+// These functions are ignored because they are not marked as `pub`: `_protocol_surface`, `adopt_inbound_lan_session`, `adopt_link`, `dial_lan_candidates`, `event_sink`, `listener_accept_config`, `map_action_out`, `map_capability_in`, `map_charging_in`, `map_conversation`, `map_end`, `map_event`, `map_message`, `map_phase_in`, `map_state_in`, `publish_all`, `publish_to`, `release_link`, `runtime`, `session_config`, `spawn_host_pump`, `split_host_request`, `take_pending`
+// These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `AppTrustDirectory`, `ContinuityRuntime`, `LiveLink`, `PendingReply`
+// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `from`, `from`, `from`, `from`, `from`, `from`, `lookup`
 // These functions are ignored (category: IgnoreBecauseOwnerTyShouldIgnore): `default`
 
 /// Registers the continuity event stream. Called once, at app start.
@@ -68,6 +68,31 @@ List<String> continuityConnectedDevices() => RustLib.instance.api.crateApiContin
 /// listener already bound, so there is one routing identity per device.
 Future<void> continuityConnectDevice({required List<int> privateKeyPem, required String relayId, required String remoteAddress}) =>
     RustLib.instance.api.crateApiContinuityContinuityConnectDevice(privateKeyPem: privateKeyPem, relayId: relayId, remoteAddress: remoteAddress);
+
+/// Opens a continuity session to a paired device over the local network.
+///
+/// Returns whether an authenticated local session was established. `false`
+/// means the app should fall back to another *authenticated* transport; there
+/// is deliberately no unauthenticated local path to fall back to.
+///
+/// `remote_relay_id` is the paired identity and is demanded of whichever
+/// candidate answers, so resolution can never bind a pairing to a device that
+/// merely occupies the right address.
+Future<bool> continuityConnectDeviceLan({
+  required List<int> privateKeyPem,
+  required String relayId,
+  required String remoteRelayId,
+  required String clientPrivateKey,
+  required String clientCertificate,
+  required List<RsLanCandidate> candidates,
+}) => RustLib.instance.api.crateApiContinuityContinuityConnectDeviceLan(
+  privateKeyPem: privateKeyPem,
+  relayId: relayId,
+  remoteRelayId: remoteRelayId,
+  clientPrivateKey: clientPrivateKey,
+  clientCertificate: clientCertificate,
+  candidates: candidates,
+);
 
 /// Stops the continuity link with one device without affecting others.
 void continuityDisconnectDevice({required String relayId}) => RustLib.instance.api.crateApiContinuityContinuityDisconnectDevice(relayId: relayId);
@@ -314,6 +339,10 @@ sealed class RsContinuityEvent with _$RsContinuityEvent {
   const factory RsContinuityEvent.sessionEstablished({
     required String remoteRelayId,
     required bool directPath,
+
+    /// Whether this session runs over the local network. Read from the path
+    /// the transport established, never claimed by the peer.
+    required bool localPath,
   }) = RsContinuityEvent_SessionEstablished;
   const factory RsContinuityEvent.sessionEnded({
     required String remoteRelayId,
@@ -424,6 +453,38 @@ sealed class RsContinuityHostRequest with _$RsContinuityHostRequest {
     required RsCallAction action,
     String? address,
   }) = RsContinuityHostRequest_CallAction;
+}
+
+/// One local network observation a paired device might be reachable at.
+///
+/// This is addressing only. `certificate_fingerprint` selects which socket is
+/// spoken to; it never decides who the peer is, and a candidate that answers
+/// while proving a different RelayId is discarded rather than adopted.
+class RsLanCandidate {
+  final String ip;
+  final int port;
+  final bool https;
+  final String certificateFingerprint;
+
+  const RsLanCandidate({
+    required this.ip,
+    required this.port,
+    required this.https,
+    required this.certificateFingerprint,
+  });
+
+  @override
+  int get hashCode => ip.hashCode ^ port.hashCode ^ https.hashCode ^ certificateFingerprint.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is RsLanCandidate &&
+          runtimeType == other.runtimeType &&
+          ip == other.ip &&
+          port == other.port &&
+          https == other.https &&
+          certificateFingerprint == other.certificateFingerprint;
 }
 
 class RsSmsConversation {

@@ -3,14 +3,20 @@
 ///
 /// This is explicitly not a trust record and not a capability grant. A `RelayId`
 /// is the only stable key; display labels and route addresses are replaceable
-/// metadata, and [relayAddress] is absent for a device paired purely over the
-/// local network, which is reached through live discovery rather than through a
-/// stored address.
+/// metadata.
+///
+/// Routes accumulate. The same relationship can be reachable on the local
+/// network *and* through a stored Relay Anywhere address, so proving the peer
+/// over one transport is never evidence that another route stopped working.
+/// Nothing here removes a route; only unpairing removes the record.
 class RelayPairedAddress {
   static const currentVersion = 2;
 
-  /// How the relationship was established. Both are mutually authenticated;
-  /// they differ only in what route metadata they leave behind.
+  /// How the relationship *began*. Both origins are mutually authenticated.
+  ///
+  /// This is provenance, not routing: an [originLan] record that later learns a
+  /// Relay Anywhere address keeps saying `lan`, because that is still where the
+  /// relationship started. Ask [hasAnywhereRoute] about reachability instead.
   static const originAnywhere = 'anywhere';
   static const originLan = 'lan';
 
@@ -18,12 +24,16 @@ class RelayPairedAddress {
   final String relayId;
   final String? displayLabel;
 
-  /// The Relay Anywhere address, when one is known. `null` for a device that
-  /// was paired over the local network only.
+  /// The Relay Anywhere address, when one is known.
+  ///
+  /// `null` means only that no address has been learned yet — a device paired
+  /// over the local network is still reached through live discovery plus a
+  /// fresh proof each time.
   final String? relayAddress;
 
   /// When the relationship was established. Distinct from [updatedAt], which
-  /// moves whenever route metadata is refreshed.
+  /// moves whenever route metadata is refreshed. Re-pairing an existing device
+  /// does not move it: the relationship was not established twice.
   final DateTime pairedAt;
   final DateTime updatedAt;
   final String origin;
@@ -122,11 +132,9 @@ class RelayPairedAddress {
     if (origin != originAnywhere && origin != originLan) {
       return null;
     }
-    // An Anywhere-origin record without its address is not a route we can act
-    // on, so it is dropped rather than silently downgraded to a LAN pairing.
-    if (origin == originAnywhere && relayAddress == null) {
-      return null;
-    }
+    // A record with no Anywhere address is still a real relationship: the peer
+    // is reachable on the local network. Requiring an address here would treat
+    // the origin as transport exclusivity and quietly drop a valid pairing.
     final parsedPairedAt = pairedAt is String ? DateTime.tryParse(pairedAt) : null;
     if (parsedPairedAt == null) {
       return null;

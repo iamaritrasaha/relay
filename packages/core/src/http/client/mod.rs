@@ -253,6 +253,54 @@ impl LsHttpClient {
     }
 }
 
+/// Opens an authenticated local continuity connection to a paired Relay device.
+///
+/// This is the whole local continuity entry point. It pins a fresh HTTPS client
+/// to the certificate discovery observed, upgrades the connection to the Relay
+/// continuity protocol, and completes the mutual identity proof over it. The
+/// caller receives a stream that `continuity::run_session` can take directly.
+///
+/// Every connection re-proves the peer. A stored pairing says a relationship
+/// exists; it never lets a later connection skip authentication.
+#[cfg(feature = "anywhere")]
+#[allow(clippy::too_many_arguments)]
+pub async fn connect_relay_lan_continuity(
+    private_key: &str,
+    cert: &str,
+    version: LsHttpClientVersion,
+    protocol: model::discovery::ProtocolType,
+    ip: &str,
+    port: u16,
+    certificate_fingerprint: &str,
+    identity: &crypto::relay_identity::RelayIdentity,
+    expected_relay_id: &crate::relay::RelayId,
+) -> Result<relay::RelayLanContinuityConnection, relay::RelayLanContinuityError> {
+    let client = LsHttpClient::new(
+        private_key,
+        cert,
+        version,
+        Some(certificate_fingerprint.to_owned()),
+        None,
+    )
+    .map_err(|err| {
+        tracing::debug!("Could not create a pinned Relay continuity client: {err:#}");
+        relay::RelayLanContinuityError::TransportFailed
+    })?;
+
+    match client {
+        LsHttpClient::V2(client) => {
+            client
+                .connect_lan_continuity(protocol, ip, port, identity, cert, expected_relay_id)
+                .await
+        }
+        LsHttpClient::V3(client) => {
+            client
+                .connect_lan_continuity(protocol, ip, port, identity, cert, expected_relay_id)
+                .await
+        }
+    }
+}
+
 /// Pairs with a Relay device discovered on the LAN.
 ///
 /// This is the whole initiator entry point: it pins a fresh HTTPS client to the

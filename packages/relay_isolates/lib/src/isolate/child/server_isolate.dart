@@ -75,6 +75,26 @@ class HttpServerInstallRelaySignerTask implements BaseHttpServerTask {
 /// This is a one-shot control-plane command.
 class HttpServerRevokeRelaySignerTask implements BaseHttpServerTask {}
 
+/// Starts serving the Relay-only local continuity endpoint.
+///
+/// One-shot control-plane command. The private key is forwarded for the
+/// duration of the call and never retained in [SyncState].
+class HttpServerInstallRelayContinuityAcceptorTask implements BaseHttpServerTask {
+  final Uint8List privateKey;
+  final String relayId;
+
+  HttpServerInstallRelayContinuityAcceptorTask({
+    required this.privateKey,
+    required this.relayId,
+  });
+
+  @override
+  String toString() => 'HttpServerInstallRelayContinuityAcceptorTask(relayId: $relayId, privateKey: <redacted>)';
+}
+
+/// Stops serving the local continuity endpoint. One-shot control-plane command.
+class HttpServerRevokeRelayContinuityAcceptorTask implements BaseHttpServerTask {}
+
 /// Everything the server isolate needs to receive the accepted files on its
 /// own, without further involvement of the main isolate.
 class HttpServerReceiveConfig {
@@ -205,6 +225,13 @@ sealed class HttpServerEvent {}
 /// Always the first event emitted by a [HttpServerStartTask].
 class HttpServerStartedEvent extends HttpServerEvent {}
 
+/// The local continuity endpoint started or stopped being served.
+class HttpServerRelayContinuityAcceptorEvent extends HttpServerEvent {
+  final bool serving;
+
+  HttpServerRelayContinuityAcceptorEvent({required this.serving});
+}
+
 /// A Relay device on the LAN proved its identity and asks this device to pair.
 ///
 /// Must be answered with a [HttpServerRelayPairDecisionTask]. This event is
@@ -260,6 +287,12 @@ Future<HttpServerEvent> executeHttpServerRelaySignerTask({
     case HttpServerRevokeRelaySignerTask _:
       final hadSigner = await service.revokeRelaySigner();
       return HttpServerRelaySignerRevokedEvent(hadSigner: hadSigner);
+    case HttpServerInstallRelayContinuityAcceptorTask(:final privateKey, :final relayId):
+      await service.installRelayContinuityAcceptor(privateKey: privateKey, relayId: relayId);
+      return HttpServerRelayContinuityAcceptorEvent(serving: true);
+    case HttpServerRevokeRelayContinuityAcceptorTask _:
+      await service.revokeRelayContinuityAcceptor();
+      return HttpServerRelayContinuityAcceptorEvent(serving: false);
     default:
       throw ArgumentError.value(task, 'task', 'Not a Relay signer control-plane task');
   }
@@ -679,6 +712,8 @@ Future<void> setupHttpServerIsolate(
             );
           }
           return;
+        case HttpServerInstallRelayContinuityAcceptorTask _:
+        case HttpServerRevokeRelayContinuityAcceptorTask _:
         case HttpServerRevokeRelaySignerTask _:
           try {
             final event = await executeHttpServerRelaySignerTask(

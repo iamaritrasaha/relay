@@ -208,6 +208,13 @@ class DeviceContinuity {
   final String relayId;
   final bool connected;
   final bool directPath;
+
+  /// Whether the live session runs over the local network.
+  ///
+  /// Read from the path the transport actually established, so it is a fact
+  /// about this connection rather than a claim by the peer or a guess from an
+  /// address. False whenever there is no session.
+  final bool localPath;
   final String? remoteLabel;
   final Map<ContinuityCapabilityKind, RemoteCapabilityState> remoteCapabilities;
   final RemoteBattery? battery;
@@ -225,6 +232,7 @@ class DeviceContinuity {
     required this.relayId,
     this.connected = false,
     this.directPath = false,
+    this.localPath = false,
     this.remoteLabel,
     this.remoteCapabilities = const {},
     this.battery,
@@ -242,6 +250,7 @@ class DeviceContinuity {
   DeviceContinuity copyWith({
     bool? connected,
     bool? directPath,
+    bool? localPath,
     String? remoteLabel,
     Map<ContinuityCapabilityKind, RemoteCapabilityState>? remoteCapabilities,
     RemoteBattery? battery,
@@ -261,6 +270,7 @@ class DeviceContinuity {
       relayId: relayId,
       connected: connected ?? this.connected,
       directPath: directPath ?? this.directPath,
+      localPath: localPath ?? this.localPath,
       remoteLabel: remoteLabel ?? this.remoteLabel,
       remoteCapabilities: remoteCapabilities ?? this.remoteCapabilities,
       battery: battery ?? this.battery,

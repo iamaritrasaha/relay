@@ -389,6 +389,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   List<RsDeviceLog> dco_decode_list_rs_device_log(dynamic raw);
 
   @protected
+  List<RsLanCandidate> dco_decode_list_rs_lan_candidate(dynamic raw);
+
+  @protected
   List<RsRelayAnywhereFile> dco_decode_list_rs_relay_anywhere_file(dynamic raw);
 
   @protected
@@ -544,6 +547,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   RsHttpClientError dco_decode_rs_http_client_error(dynamic raw);
+
+  @protected
+  RsLanCandidate dco_decode_rs_lan_candidate(dynamic raw);
 
   @protected
   RsRelayAddress dco_decode_rs_relay_address(dynamic raw);
@@ -982,6 +988,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   List<RsDeviceLog> sse_decode_list_rs_device_log(SseDeserializer deserializer);
 
   @protected
+  List<RsLanCandidate> sse_decode_list_rs_lan_candidate(SseDeserializer deserializer);
+
+  @protected
   List<RsRelayAnywhereFile> sse_decode_list_rs_relay_anywhere_file(SseDeserializer deserializer);
 
   @protected
@@ -1139,6 +1148,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   RsHttpClientError sse_decode_rs_http_client_error(SseDeserializer deserializer);
+
+  @protected
+  RsLanCandidate sse_decode_rs_lan_candidate(SseDeserializer deserializer);
 
   @protected
   RsRelayAddress sse_decode_rs_relay_address(SseDeserializer deserializer);
@@ -1622,6 +1634,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   void sse_encode_list_rs_device_log(List<RsDeviceLog> self, SseSerializer serializer);
 
   @protected
+  void sse_encode_list_rs_lan_candidate(List<RsLanCandidate> self, SseSerializer serializer);
+
+  @protected
   void sse_encode_list_rs_relay_anywhere_file(List<RsRelayAnywhereFile> self, SseSerializer serializer);
 
   @protected
@@ -1780,6 +1795,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   void sse_encode_rs_http_client_error(RsHttpClientError self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_rs_lan_candidate(RsLanCandidate self, SseSerializer serializer);
 
   @protected
   void sse_encode_rs_relay_address(RsRelayAddress self, SseSerializer serializer);

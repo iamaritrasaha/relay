@@ -2,20 +2,25 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/services.dart';
+import 'package:logging/logging.dart';
+import 'package:refena_flutter/refena_flutter.dart';
 
 import 'package:relay_app/model/continuity/continuity_runtime.dart';
 import 'package:relay_app/model/persistence/relay_continuity_settings.dart';
 import 'package:relay_app/model/persistence/relay_paired_address.dart';
+import 'package:relay_app/provider/network/nearby_devices_provider.dart';
 import 'package:relay_app/provider/persistence_provider.dart';
 import 'package:relay_app/provider/relay_anywhere_listener_provider.dart';
 import 'package:relay_app/provider/relay_identity_provider.dart';
 import 'package:relay_app/provider/relay_paired_routes_provider.dart';
+import 'package:relay_app/provider/relay_verified_lan_devices_provider.dart';
+import 'package:relay_app/provider/security_provider.dart';
 import 'package:relay_app/util/native/continuity_channel.dart';
-import 'package:relay_app/util/security/relay_anywhere_listener_service.dart';
 import 'package:relay_app/util/security/relay_identity_coordinator.dart';
+import 'package:relay_isolates/isolate.dart';
+import 'package:relay_isolates/model/device.dart';
+import 'package:relay_isolates/model/stored_security_context.dart';
 import 'package:relay_isolates/rust/api/continuity.dart' as rust;
-import 'package:logging/logging.dart';
-import 'package:refena_flutter/refena_flutter.dart';
 import 'package:uuid/uuid.dart';
 
 final _logger = Logger('RelayContinuity');
@@ -35,34 +40,154 @@ final continuityProvider = ReduxProvider<ContinuityService, RelayContinuityState
     persistence: ref.read(persistenceProvider),
     channel: const ContinuityChannel(),
     identityCoordinator: ref.read(relayIdentityCoordinatorProvider),
-    listenerService: ref.read(relayAnywhereListenerServiceProvider),
+    listenerAddress: () => ref.read(relayAnywhereListenerServiceProvider).address,
     pairedRoutes: () => ref.read(relayPairedRoutesProvider),
+    connectOverLan: rust.continuityConnectDeviceLan,
+    connectOverAnywhere: rust.continuityConnectDevice,
+    lanCandidates: (relayId) => _lanCandidatesFor(ref, relayId),
+    localAvailabilityChanges: ref.stream(nearbyDevicesProvider).map((_) {}),
+    securityContext: () => ref.read(securityProvider),
+    serveLocalContinuity: (privateKey, relayId) => ref
+        .redux(parentIsolateProvider)
+        .dispatchAsyncTakeResult(
+          privateKey == null
+              ? IsolateHttpServerRelayContinuityAcceptorAction.revoke()
+              : IsolateHttpServerRelayContinuityAcceptorAction.install(privateKey: privateKey, relayId: relayId!),
+        ),
   );
 });
+
+/// The local observations a paired device might be reachable at, best first.
+///
+/// Discovery is not identity: this only decides which sockets are worth trying.
+/// Whichever one answers still has to prove [relayId], and a candidate that
+/// proves anything else is discarded rather than remembered.
+List<rust.RsLanCandidate> _lanCandidatesFor(Ref ref, String relayId) {
+  final candidates = <String, rust.RsLanCandidate>{};
+
+  rust.RsLanCandidate? candidateOf(Device device) {
+    final ip = device.ip;
+    if (ip == null || !device.https) {
+      return null;
+    }
+    return rust.RsLanCandidate(
+      ip: ip,
+      port: device.port,
+      https: device.https,
+      certificateFingerprint: device.fingerprint,
+    );
+  }
+
+  // A device whose RelayId was already proven on this network is tried first.
+  // The mapping is in-memory and proof-backed; it is a hint, never a binding.
+  final verified = ref.read(relayVerifiedLanDevicesProvider)[relayId];
+  if (verified != null) {
+    final candidate = candidateOf(verified.device);
+    if (candidate != null) {
+      candidates[candidate.certificateFingerprint] = candidate;
+    }
+  }
+  for (final device in ref.read(nearbyDevicesProvider).devices.values) {
+    final candidate = candidateOf(device);
+    if (candidate != null) {
+      candidates.putIfAbsent(candidate.certificateFingerprint, () => candidate);
+    }
+  }
+  return candidates.values.toList();
+}
 
 class ContinuityService extends ReduxNotifier<RelayContinuityState> {
   final PersistenceService _persistence;
   final ContinuityChannel _channel;
   final RelayIdentityCoordinator _identityCoordinator;
-  final RelayAnywhereListenerService _listenerService;
+
+  /// The Anywhere listener's published address, or `null` while it is not
+  /// running. Routing metadata; never identity.
+  final String? Function() _listenerAddress;
+
   final List<RelayPairedAddress> Function() _pairedRoutes;
+
+  /// Opens an authenticated session over the local network, reporting whether
+  /// one was established.
+  final Future<bool> Function({
+    required Uint8List privateKeyPem,
+    required String relayId,
+    required String remoteRelayId,
+    required String clientPrivateKey,
+    required String clientCertificate,
+    required List<rust.RsLanCandidate> candidates,
+  })
+  _connectOverLan;
+
+  /// Opens an authenticated session over the existing Anywhere route.
+  final Future<void> Function({
+    required Uint8List privateKeyPem,
+    required String relayId,
+    required String remoteAddress,
+  })
+  _connectOverAnywhere;
+
+  /// Local observations worth dialing for one paired identity.
+  final List<rust.RsLanCandidate> Function(String relayId) _lanCandidates;
+
+  /// Confirmed local-discovery changes. These are routing hints only; a
+  /// candidate is still freshly authenticated as [relayId] before adoption.
+  final Stream<void>? _localAvailabilityChanges;
+
+  /// This device's LAN TLS material, used to open the local connection the
+  /// identity proofs bind to.
+  final StoredSecurityContext Function() _securityContext;
+
+  /// Starts (with an identity) or stops (with `null`) serving the local
+  /// continuity endpoint. Returns whether it is being served.
+  final Future<bool> Function(Uint8List? privateKey, String? relayId) _serveLocalContinuity;
   final Uuid _uuid = const Uuid();
 
   StreamSubscription<rust.RsContinuityEvent>? _events;
   StreamSubscription<rust.RsContinuityHostRequest>? _hostRequests;
   StreamSubscription<PlatformContinuityEvent>? _platformEvents;
+  StreamSubscription<void>? _localAvailabilitySubscription;
+  final Set<String> _pendingReselections = {};
+  final void Function(Duration delay, void Function() callback) _scheduleReselection;
 
   ContinuityService({
     required PersistenceService persistence,
     required ContinuityChannel channel,
     required RelayIdentityCoordinator identityCoordinator,
-    required RelayAnywhereListenerService listenerService,
+    required String? Function() listenerAddress,
     required List<RelayPairedAddress> Function() pairedRoutes,
+    required Future<bool> Function({
+      required Uint8List privateKeyPem,
+      required String relayId,
+      required String remoteRelayId,
+      required String clientPrivateKey,
+      required String clientCertificate,
+      required List<rust.RsLanCandidate> candidates,
+    })
+    connectOverLan,
+    required Future<void> Function({
+      required Uint8List privateKeyPem,
+      required String relayId,
+      required String remoteAddress,
+    })
+    connectOverAnywhere,
+    required List<rust.RsLanCandidate> Function(String relayId) lanCandidates,
+    Stream<void>? localAvailabilityChanges,
+    required StoredSecurityContext Function() securityContext,
+    required Future<bool> Function(Uint8List? privateKey, String? relayId) serveLocalContinuity,
+    void Function(Duration delay, void Function() callback)? scheduleReselection,
   }) : _persistence = persistence,
        _channel = channel,
        _identityCoordinator = identityCoordinator,
-       _listenerService = listenerService,
-       _pairedRoutes = pairedRoutes;
+       _listenerAddress = listenerAddress,
+       _pairedRoutes = pairedRoutes,
+       _connectOverLan = connectOverLan,
+       _connectOverAnywhere = connectOverAnywhere,
+       _lanCandidates = lanCandidates,
+       _localAvailabilityChanges = localAvailabilityChanges,
+       _securityContext = securityContext,
+       _serveLocalContinuity = serveLocalContinuity,
+       _scheduleReselection = scheduleReselection ?? ((delay, callback) => Timer(delay, callback));
 
   @override
   RelayContinuityState init() {
@@ -83,6 +208,27 @@ class ContinuityService extends ReduxNotifier<RelayContinuityState> {
   }
 
   String _newRequestId() => _uuid.v4();
+
+  /// Coalesces terminal transport events for one peer. Eligibility is checked
+  /// again by the dispatched action so a delayed callback cannot revive a
+  /// forgotten, untrusted, or disabled relationship.
+  void scheduleTransportReselection(String relayId) {
+    final settings = state.settings[relayId];
+    final paired = _pairedRoutes().any((route) => route.relayId == relayId);
+    if (settings == null || !settings.trusted || !settings.hasAnyCapability || !paired) {
+      return;
+    }
+    if (!_pendingReselections.add(relayId)) {
+      return;
+    }
+    _scheduleReselection(const Duration(milliseconds: 250), () {
+      unawaited(
+        Dispatcher.ofNotifier(
+          this,
+        ).dispatchAsync(ContinuityConnectEnabledDevicesAction(relayIds: {relayId})).whenComplete(() => _pendingReselections.remove(relayId)),
+      );
+    });
+  }
 }
 
 // --------------------------------------------------------------- lifecycle
@@ -200,6 +346,24 @@ class ContinuityInitAction extends AsyncReduxAction<ContinuityService, RelayCont
       (event) => dispatchAsync(ContinuityPlatformEventAction(event)),
       onError: (Object error) => _logger.warning('continuity platform stream failed: $error'),
     );
+    notifier._localAvailabilitySubscription ??= notifier._localAvailabilityChanges?.listen(
+      (_) => dispatch(ContinuityLocalAvailabilityChangedAction()),
+    );
+  }
+}
+
+/// Uses a confirmed local discovery change to retry only disconnected peers.
+/// Discovery remains a routing hint; every attempted link must freshly prove
+/// the paired RelayId.
+class ContinuityLocalAvailabilityChangedAction extends ReduxAction<ContinuityService, RelayContinuityState> {
+  @override
+  RelayContinuityState reduce() {
+    for (final entry in state.settings.values) {
+      if (!state.deviceFor(entry.relayId).connected && entry.trusted && entry.hasAnyCapability) {
+        notifier.scheduleTransportReselection(entry.relayId);
+      }
+    }
+    return state;
   }
 }
 
@@ -218,52 +382,98 @@ class ContinuityApplyEnablementAction extends AsyncReduxAction<ContinuityService
     }
 
     if (enabledCapabilities.isEmpty) {
-      // Nothing is shared: tear down everything rather than idling.
+      // Nothing is shared: tear down everything rather than idling. The local
+      // continuity endpoint stops being served too, so this device does not
+      // even answer a connection it would have nothing to say on.
       await notifier._channel.stopObserving();
       await notifier._channel.stopBackgroundService();
       rust.continuityDisconnectAll();
+      await _serveLocalContinuity(false);
       return state.copyWith(backgroundServiceRunning: false);
     }
 
     await notifier._channel.startObserving(enabledCapabilities.toList());
     await notifier._channel.startBackgroundService();
+    await _serveLocalContinuity(true);
     unawaited(dispatchAsync(ContinuityConnectEnabledDevicesAction()));
     return state.copyWith(backgroundServiceRunning: notifier._channel.isSupported);
+  }
+
+  /// Starts or stops answering local continuity connections.
+  ///
+  /// Serving is tied to enablement, never to pairing: a paired device that has
+  /// been granted nothing finds no local continuity endpoint to connect to.
+  Future<void> _serveLocalContinuity(bool serving) async {
+    try {
+      if (!serving) {
+        await notifier._serveLocalContinuity(null, null);
+        return;
+      }
+      await notifier._identityCoordinator.withPrivateKey(
+        (privateKey, identity) => notifier._serveLocalContinuity(privateKey, identity.relayId),
+      );
+    } catch (error) {
+      _logger.warning('could not change the local continuity endpoint: $error');
+    }
   }
 }
 
 /// Opens continuity links to every device that is trusted and has at least one
 /// capability enabled. A stored route on its own connects nothing.
 class ContinuityConnectEnabledDevicesAction extends AsyncReduxAction<ContinuityService, RelayContinuityState> {
+  /// Restricts a retry to the peer whose session ended. The normal enablement
+  /// path leaves this null and considers every eligible paired peer.
+  final Set<String>? relayIds;
+
+  ContinuityConnectEnabledDevicesAction({this.relayIds});
+
   @override
   Future<RelayContinuityState> reduce() async {
     final routes = {
       for (final route in notifier._pairedRoutes()) route.relayId: route,
     };
-    final targets = state.settings.values.where((entry) => entry.hasAnyCapability).toList();
+    // Only a paired device is a target at all, and only one the user has
+    // trusted and granted something. Discovery alone reaches none of this.
+    final targets = state.settings.values
+        .where(
+          (entry) =>
+              (relayIds == null || relayIds!.contains(entry.relayId)) &&
+              entry.trusted &&
+              entry.hasAnyCapability &&
+              routes.containsKey(entry.relayId) &&
+              !state.deviceFor(entry.relayId).connected,
+        )
+        .toList();
     if (targets.isEmpty) {
       return state;
     }
 
-    // The listener owns the endpoint continuity rides on; without it there is
-    // nothing to dial from, and that is reported rather than retried blindly.
-    if (notifier._listenerService.address == null) {
-      _logger.info('continuity is enabled but the Relay listener is not running yet');
-      return state;
-    }
-
+    final securityContext = notifier._securityContext();
     await notifier._identityCoordinator.withPrivateKey((privateKey, identity) async {
       for (final target in targets) {
-        final route = routes[target.relayId];
-        final address = route?.relayAddress;
+        // 1. The local network, when the paired identity proves itself there.
+        if (await _connectOverLan(
+          privateKey: privateKey,
+          localRelayId: identity.relayId,
+          remoteRelayId: target.relayId,
+          securityContext: securityContext,
+        )) {
+          continue;
+        }
+
+        // 2. Otherwise the existing authenticated Anywhere route, if there is
+        // one. There is deliberately no third, unauthenticated option: a device
+        // that cannot be authenticated simply stays disconnected.
+        final address = routes[target.relayId]?.relayAddress;
         if (address == null) {
-          // A LAN-only pairing has no stored address to dial. Continuity rides
-          // the Anywhere endpoint today, so such a device simply has nothing to
-          // connect to yet — it is skipped rather than guessed at.
+          continue;
+        }
+        if (notifier._listenerAddress() == null) {
+          _logger.info('continuity has no local route to ${target.relayId} and the Relay listener is not running');
           continue;
         }
         try {
-          await rust.continuityConnectDevice(
+          await notifier._connectOverAnywhere(
             privateKeyPem: privateKey,
             relayId: identity.relayId,
             remoteAddress: address,
@@ -275,6 +485,35 @@ class ContinuityConnectEnabledDevicesAction extends AsyncReduxAction<ContinuityS
       return null;
     });
     return state;
+  }
+
+  /// Tries to reach one paired device over the local network.
+  ///
+  /// Returns whether an authenticated local session was established. A `false`
+  /// here means "not reachable locally right now", never "connect anyway".
+  Future<bool> _connectOverLan({
+    required Uint8List privateKey,
+    required String localRelayId,
+    required String remoteRelayId,
+    required StoredSecurityContext securityContext,
+  }) async {
+    final candidates = notifier._lanCandidates(remoteRelayId);
+    if (candidates.isEmpty) {
+      return false;
+    }
+    try {
+      return await notifier._connectOverLan(
+        privateKeyPem: privateKey,
+        relayId: localRelayId,
+        remoteRelayId: remoteRelayId,
+        clientPrivateKey: securityContext.privateKey,
+        clientCertificate: securityContext.certificate,
+        candidates: candidates,
+      );
+    } catch (error) {
+      _logger.warning('local continuity connect failed for $remoteRelayId: $error');
+      return false;
+    }
   }
 }
 
@@ -447,23 +686,38 @@ class ContinuityRemoteEventAction extends ReduxAction<ContinuityService, RelayCo
 
   @override
   RelayContinuityState reduce() {
-    return switch (event) {
-      rust.RsContinuityEvent_SessionEstablished(:final remoteRelayId, :final directPath) => _log(
+    if (event case rust.RsContinuityEvent_SessionEnded(:final remoteRelayId, :final reason)) {
+      final wasConnected = state.deviceFor(remoteRelayId).connected;
+      final next = _log(
         _update(
           remoteRelayId,
-          (device) => device.copyWith(connected: true, directPath: directPath, clearError: true),
+          // A session that ended is no longer local; the next one re-establishes
+          // what it is rather than inheriting the last answer.
+          (device) => device.copyWith(connected: false, localPath: false, lastError: _endReason(reason)),
+        ),
+        remoteRelayId,
+        ContinuityActivityKind.disconnected,
+      );
+      // Cancellation is the expected result of revocation, shutdown, or a
+      // clean transport replacement. Only an established link that ended on
+      // its own is eligible to start the LAN-first policy again.
+      if (wasConnected && reason != 'cancelled' && reason != 'not_trusted' && reason != 'blocked') {
+        notifier.scheduleTransportReselection(remoteRelayId);
+      }
+      return next;
+    }
+    return switch (event) {
+      rust.RsContinuityEvent_SessionEstablished(:final remoteRelayId, :final directPath, :final localPath) => _log(
+        _update(
+          remoteRelayId,
+          (device) => device.copyWith(connected: true, directPath: directPath, localPath: localPath, clearError: true),
         ),
         remoteRelayId,
         ContinuityActivityKind.connected,
       ),
-      rust.RsContinuityEvent_SessionEnded(:final remoteRelayId, :final reason) => _log(
-        _update(
-          remoteRelayId,
-          (device) => device.copyWith(connected: false, lastError: _endReason(reason)),
-        ),
-        remoteRelayId,
-        ContinuityActivityKind.disconnected,
-      ),
+      // Handled above, where the scheduling side effect is kept adjacent to
+      // the authoritative disconnected-state transition.
+      rust.RsContinuityEvent_SessionEnded() => state,
       rust.RsContinuityEvent_ManifestReceived(:final remoteRelayId, :final manifest) => _update(
         remoteRelayId,
         (device) => device.copyWith(

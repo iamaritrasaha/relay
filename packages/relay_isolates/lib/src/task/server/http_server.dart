@@ -30,6 +30,25 @@ class HttpServerService {
     return _requireServer().revokeRelaySigner();
   }
 
+  /// Starts serving the Relay-only local continuity endpoint.
+  ///
+  /// Until this runs the endpoint is not served at all, so a device with no
+  /// continuity capability enabled never accepts a local session.
+  Future<void> installRelayContinuityAcceptor({
+    required Uint8List privateKey,
+    required String relayId,
+  }) {
+    return _requireServer().installRelayContinuityAcceptor(
+      privateKeyPem: privateKey,
+      relayId: relayId,
+    );
+  }
+
+  /// Stops serving the local continuity endpoint and drops the identity it held.
+  Future<bool> revokeRelayContinuityAcceptor() {
+    return _requireServer().revokeRelayContinuityAcceptor();
+  }
+
   /// Starts the server and returns the stream of server events.
   /// The stream ends when the server is stopped.
   Future<Stream<RsServerEvent>> start({

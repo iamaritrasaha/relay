@@ -16,6 +16,10 @@ use crate::relay::{
     RelayPairingDecision,
 };
 
+/// The protocol token the local continuity upgrade negotiates. It is distinct
+/// from the Anywhere continuity ALPN and from every LocalSend route.
+pub const RELAY_CONTINUITY_PROTOCOL: &str = "relay-continuity/1";
+
 const MAX_PROOF_REQUEST_BODY_BYTES: usize = 256;
 /// Bounds the pairing bodies: a fixed-length proof plus a bounded alias.
 const MAX_PAIR_REQUEST_BODY_BYTES: usize = 1024;
@@ -253,6 +257,122 @@ async fn collect_bounded_to(
     Ok(Bytes::from(bytes))
 }
 
+/// The Relay-only local continuity entry point.
+///
+/// `POST /api/relay/v1/continuity` upgrades the connection to
+/// [`RELAY_CONTINUITY_PROTOCOL`] and then runs the same mutual
+/// `RelayIdentityProofV1` exchange the Anywhere transport uses, bound to the
+/// certificates of *this* TLS connection. What comes out is an
+/// [`crate::relay::AuthenticatedRelaySession`] over a duplex stream — exactly
+/// what `continuity::run_session` already takes, so no continuity protocol,
+/// authorization layer or session state machine is duplicated here.
+///
+/// Three things make this structurally unreachable for compatibility traffic:
+/// the route lives under `/api/relay/v1`, it requires a client certificate the
+/// mTLS handshake verified, and it requires a Relay identity proof afterwards.
+/// A LocalSend peer has none of the three, and the v2 routes never reach here.
+#[cfg(feature = "anywhere")]
+pub(crate) async fn continuity(
+    mut req: Request<Incoming>,
+    state: AppState,
+    client_info: RequestClientInfo,
+) -> Result<Response<BoxedBody>, crate::http::server::common::error::AppError> {
+    let Some(tls_context) = req.extensions().get::<ConnectionTlsCtx>().cloned() else {
+        return Ok(status_response(StatusCode::NOT_FOUND));
+    };
+    // No verified client certificate means no identity to bind a Client-role
+    // proof to, so there is nothing this endpoint could safely do.
+    let Some(peer_cert_fingerprint) = tls_context.peer_cert_fingerprint else {
+        return Ok(status_response(StatusCode::NOT_FOUND));
+    };
+    if !requests_continuity_upgrade(&req) {
+        return Ok(status_response(StatusCode::BAD_REQUEST));
+    }
+    // Absent while the user has enabled nothing: this device does not serve
+    // continuity at all rather than serving it and then refusing.
+    let Some(accept) = state.relay_continuity.config() else {
+        return Ok(status_response(StatusCode::SERVICE_UNAVAILABLE));
+    };
+
+    let path = PathDescriptor::lan(
+        client_info
+            .peer_ip()
+            .map_or_else(String::new, |ip| ip.to_string()),
+        None,
+    );
+    let on_upgrade = hyper::upgrade::on(&mut req);
+
+    tokio::spawn(async move {
+        let upgraded = match on_upgrade.await {
+            Ok(upgraded) => upgraded,
+            Err(err) => {
+                tracing::warn!(?err, "Relay continuity upgrade failed");
+                return;
+            }
+        };
+        let mut stream = hyper_util::rt::TokioIo::new(upgraded);
+
+        // No expected remote: the responder learns who called, and the
+        // continuity session's own trust and capability gates decide whether
+        // that proven identity may do anything.
+        match crate::anywhere::authenticate_server(
+            &mut stream,
+            &accept.identity,
+            tls_context.relay.own_tls_fingerprint(),
+            None,
+            peer_cert_fingerprint,
+            path,
+        )
+        .await
+        {
+            Ok(session) => {
+                let _ = accept
+                    .inbound
+                    .send(crate::http::server::RelayLanContinuityInbound { session, stream })
+                    .await;
+            }
+            Err(err) => {
+                tracing::warn!("Relay continuity proof rejected: {}", err.category());
+            }
+        }
+    });
+
+    let mut response = Response::new(response::empty_body());
+    *response.status_mut() = StatusCode::SWITCHING_PROTOCOLS;
+    response.headers_mut().insert(
+        hyper::header::UPGRADE,
+        hyper::header::HeaderValue::from_static(RELAY_CONTINUITY_PROTOCOL),
+    );
+    response.headers_mut().insert(
+        hyper::header::CONNECTION,
+        hyper::header::HeaderValue::from_static("upgrade"),
+    );
+    Ok(response)
+}
+
+/// Whether the request asks for exactly the Relay continuity protocol.
+///
+/// A request naming any other protocol is refused rather than upgraded, so this
+/// endpoint cannot be turned into a generic tunnel.
+#[cfg(feature = "anywhere")]
+fn requests_continuity_upgrade(req: &Request<Incoming>) -> bool {
+    let names_protocol = req
+        .headers()
+        .get(hyper::header::UPGRADE)
+        .and_then(|value| value.to_str().ok())
+        .is_some_and(|value| value.trim().eq_ignore_ascii_case(RELAY_CONTINUITY_PROTOCOL));
+    let asks_to_upgrade = req
+        .headers()
+        .get(hyper::header::CONNECTION)
+        .and_then(|value| value.to_str().ok())
+        .is_some_and(|value| {
+            value
+                .split(',')
+                .any(|token| token.trim().eq_ignore_ascii_case("upgrade"))
+        });
+    names_protocol && asks_to_upgrade
+}
+
 async fn parse_challenge(
     req: Request<Incoming>,
 ) -> Result<RelayChallengeV1Dto, crate::http::server::common::error::AppError> {
@@ -297,7 +417,7 @@ fn status_response(status: StatusCode) -> Response<BoxedBody> {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use std::fmt;
     use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::Arc;
@@ -320,7 +440,7 @@ mod tests {
     use rustls::pki_types::CertificateDer;
     use tokio::sync::oneshot;
 
-    pub(super) struct CountingSigner {
+    pub(crate) struct CountingSigner {
         identity: RelayIdentity,
         relay_id: String,
         calls: AtomicUsize,
@@ -329,7 +449,7 @@ mod tests {
     }
 
     impl CountingSigner {
-        pub(super) fn new(fail: bool) -> Self {
+        pub(crate) fn new(fail: bool) -> Self {
             let identity = RelayIdentity::generate();
             let relay_id = identity.relay_id().unwrap();
             Self {
@@ -1304,5 +1424,703 @@ mod pairing_tests {
         assert_eq!(response.status(), StatusCode::BAD_REQUEST);
         server.stop().await;
         assert!(prompt.await.unwrap().is_none());
+    }
+}
+
+/// End-to-end coverage of the Relay-only local continuity transport.
+///
+/// These run a real TLS server, a real pinned client, a real HTTP upgrade and
+/// the real mutual proof, then run the real continuity session loop on both
+/// ends. Nothing here is simulated except the two devices being one process.
+#[cfg(all(test, feature = "anywhere"))]
+mod lan_continuity_tests {
+    use std::sync::{Arc, Mutex};
+
+    use tokio::sync::{mpsc, oneshot, RwLock};
+    use tokio_util::sync::CancellationToken;
+
+    use crate::continuity::{
+        capability_entry, clipboard_fingerprint, run_session, session_channel, BatteryState,
+        CapabilityManifest, CapabilityState, ChargingState, ClipboardMode, ClipboardUpdate,
+        ContinuityCapability, ContinuityEvent, ContinuityEventSink, ContinuityHostRequest,
+        ContinuityPayload, ContinuityPermissions, ContinuitySessionConfig, ContinuitySessionEnd,
+        ContinuitySessionHandle, DevicePlatform,
+    };
+    use crate::crypto::cert::{generate_self_signed, SelfSignedCert};
+    use crate::crypto::relay_identity::RelayIdentity;
+    use crate::http::client::{connect_relay_lan_continuity, LsHttpClientVersion};
+    use crate::http::server::v2::ServerEventV2;
+    use crate::http::server::{
+        start_with_port_with_relay_proof_signer, RelayContinuityAcceptConfig,
+        RelayLanContinuityInbound, ServerConfigV2, ServerHandle, TlsConfig,
+    };
+    use crate::http::state::ClientInfo;
+    use crate::model::discovery::ProtocolType;
+    use crate::relay::{
+        AuthenticatedRelaySession, DeviceBinding, MemoryTrustDirectory, PathDescriptor, RelayId,
+        SessionRole, TrustDirectory,
+    };
+    use hyper::StatusCode;
+
+    use super::super::relay::tests::CountingSigner;
+    use crate::relay::RelayProofSigner;
+
+    // ------------------------------------------------------------ harness
+
+    struct LocalDevice {
+        port: u16,
+        certificate_fingerprint: String,
+        identity: RelayIdentity,
+        inbound: mpsc::Receiver<RelayLanContinuityInbound>,
+        stop_tx: oneshot::Sender<()>,
+        handle: ServerHandle,
+    }
+
+    impl LocalDevice {
+        fn relay_id(&self) -> RelayId {
+            RelayId::from_local_identity(&self.identity).unwrap()
+        }
+
+        async fn stop(self) {
+            let _ = self.stop_tx.send(());
+            self.handle.wait_stopped().await;
+        }
+    }
+
+    fn tls_config(certificate: &SelfSignedCert) -> TlsConfig {
+        TlsConfig {
+            cert: certificate.certificate_pem.clone(),
+            private_key: certificate.private_key_pem.clone(),
+        }
+    }
+
+    fn fingerprint_hex(certificate: &SelfSignedCert) -> String {
+        use rustls::pki_types::pem::PemObject as _;
+
+        let der = rustls::pki_types::CertificateDer::from_pem_slice(
+            certificate.certificate_pem.as_bytes(),
+        )
+        .unwrap();
+        crate::crypto::cert::fingerprint_from_cert_der(der.as_ref())
+    }
+
+    /// Starts a device that serves local continuity, i.e. one whose user has
+    /// enabled something. `serving` false models a device with nothing enabled.
+    async fn start_device(serving: bool) -> LocalDevice {
+        let certificate = generate_self_signed().unwrap();
+        let identity = RelayIdentity::generate();
+        let signer = Arc::new(CountingSigner::new(false));
+        let (event_tx, _event_rx) = mpsc::channel(8);
+        let (stop_tx, stop_rx) = oneshot::channel();
+        let handle = start_with_port_with_relay_proof_signer(
+            0,
+            Some(tls_config(&certificate)),
+            ClientInfo {
+                alias: "Workstation".to_owned(),
+                version: "2.2".to_owned(),
+                device_model: None,
+                device_type: None,
+                token: "test".to_owned(),
+            },
+            None,
+            Some(ServerConfigV2 {
+                pin: None,
+                verify_checksums: false,
+                event_tx,
+            }),
+            None,
+            Some(signer as Arc<dyn RelayProofSigner>),
+            stop_rx,
+        )
+        .await
+        .unwrap();
+
+        let (inbound_tx, inbound) = mpsc::channel(4);
+        if serving {
+            assert!(
+                handle.install_relay_continuity_acceptor(RelayContinuityAcceptConfig {
+                    identity: RelayIdentity::from_private_key(
+                        identity.private_key_export().unwrap().as_str()
+                    )
+                    .unwrap(),
+                    inbound: inbound_tx,
+                })
+            );
+        }
+
+        LocalDevice {
+            port: handle.port(),
+            certificate_fingerprint: fingerprint_hex(&certificate),
+            identity,
+            inbound,
+            stop_tx,
+            handle,
+        }
+    }
+
+    /// The initiating device: its own Relay identity plus its own LAN client
+    /// certificate, exactly as the app holds them.
+    struct Initiator {
+        certificate: SelfSignedCert,
+        identity: RelayIdentity,
+    }
+
+    impl Initiator {
+        fn new() -> Self {
+            Self {
+                certificate: generate_self_signed().unwrap(),
+                identity: RelayIdentity::generate(),
+            }
+        }
+
+        fn relay_id(&self) -> RelayId {
+            RelayId::from_local_identity(&self.identity).unwrap()
+        }
+
+        async fn connect(
+            &self,
+            device: &LocalDevice,
+            expected: &RelayId,
+        ) -> Result<
+            crate::http::client::relay::RelayLanContinuityConnection,
+            crate::http::client::relay::RelayLanContinuityError,
+        > {
+            connect_relay_lan_continuity(
+                &self.certificate.private_key_pem,
+                &self.certificate.certificate_pem,
+                LsHttpClientVersion::V2,
+                ProtocolType::Https,
+                "127.0.0.1",
+                device.port,
+                &device.certificate_fingerprint,
+                &self.identity,
+                expected,
+            )
+            .await
+        }
+    }
+
+    // ------------------------------------------------- continuity plumbing
+
+    struct Peer {
+        handle: ContinuitySessionHandle,
+        events: Arc<Mutex<Vec<ContinuityEvent>>>,
+        task: tokio::task::JoinHandle<ContinuitySessionEnd>,
+    }
+
+    fn manifest(label: &str, platform: DevicePlatform) -> CapabilityManifest {
+        CapabilityManifest {
+            device_label: label.to_owned(),
+            platform,
+            entries: vec![
+                capability_entry(ContinuityCapability::Battery, CapabilityState::Available),
+                capability_entry(ContinuityCapability::Clipboard, CapabilityState::Available),
+            ],
+        }
+    }
+
+    fn trusting(remote: &RelayId) -> Arc<dyn TrustDirectory + Send + Sync> {
+        let mut directory = MemoryTrustDirectory::new();
+        directory.insert(DeviceBinding::new(
+            "binding-1",
+            remote.clone(),
+            "Peer",
+            true,
+            false,
+        ));
+        Arc::new(directory)
+    }
+
+    fn untrusting() -> Arc<dyn TrustDirectory + Send + Sync> {
+        Arc::new(MemoryTrustDirectory::new())
+    }
+
+    fn granting(remote_hex: &str) -> ContinuityPermissions {
+        let mut permissions = ContinuityPermissions::new();
+        for capability in [
+            ContinuityCapability::Battery,
+            ContinuityCapability::Clipboard,
+        ] {
+            permissions.set_grant(
+                remote_hex,
+                capability,
+                crate::continuity::CapabilityGrant::Granted,
+            );
+        }
+        permissions.set_clipboard_mode(remote_hex, ClipboardMode::Automatic);
+        permissions
+    }
+
+    fn spawn_peer<S>(
+        stream: S,
+        session: AuthenticatedRelaySession,
+        label: &str,
+        platform: DevicePlatform,
+        trust: Arc<dyn TrustDirectory + Send + Sync>,
+        permissions: ContinuityPermissions,
+        cancel: CancellationToken,
+    ) -> Peer
+    where
+        S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send + 'static,
+    {
+        let events: Arc<Mutex<Vec<ContinuityEvent>>> = Arc::new(Mutex::new(Vec::new()));
+        let sink: ContinuityEventSink = {
+            let events = events.clone();
+            Arc::new(move |event| events.lock().unwrap().push(event))
+        };
+        let (host_tx, host_rx) = mpsc::channel::<ContinuityHostRequest>(16);
+        // Nothing in these tests answers host requests; draining keeps the
+        // session from blocking on a full channel.
+        tokio::spawn(async move {
+            let mut host_rx = host_rx;
+            while host_rx.recv().await.is_some() {}
+        });
+        let (handle, outbound) = session_channel(&session.remote_relay_id().as_hex(), 32);
+        let config = ContinuitySessionConfig {
+            local_manifest: manifest(label, platform),
+            trust,
+            permissions: Arc::new(RwLock::new(permissions)),
+            events: sink,
+            host: host_tx,
+        };
+        let task = tokio::spawn(run_session(stream, session, config, outbound, cancel));
+        Peer {
+            handle,
+            events,
+            task,
+        }
+    }
+
+    async fn wait_for<T>(
+        events: &Arc<Mutex<Vec<ContinuityEvent>>>,
+        mut predicate: impl FnMut(&ContinuityEvent) -> Option<T>,
+    ) -> T {
+        for _ in 0..400 {
+            if let Some(found) = events.lock().unwrap().iter().find_map(&mut predicate) {
+                return found;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+        }
+        panic!("expected continuity event never arrived");
+    }
+
+    // ------------------------------------------------------ entry gating
+
+    #[tokio::test]
+    async fn a_peer_without_a_certificate_cannot_reach_the_continuity_entry() {
+        let device = start_device(true).await;
+        // A LocalSend-compatible peer, a browser, anything that is not running
+        // Relay's client: no client certificate, so the mTLS handshake itself
+        // ends the attempt.
+        let anonymous = crate::reqwest::Client::builder()
+            .use_rustls_tls()
+            .danger_accept_invalid_certs(true)
+            .build()
+            .unwrap();
+
+        let result = anonymous
+            .post(format!(
+                "https://127.0.0.1:{}/api/relay/v1/continuity",
+                device.port
+            ))
+            .header("Connection", "upgrade")
+            .header("Upgrade", super::RELAY_CONTINUITY_PROTOCOL)
+            .send()
+            .await;
+
+        assert!(result.is_err());
+        device.stop().await;
+    }
+
+    #[tokio::test]
+    async fn a_device_with_nothing_enabled_does_not_serve_local_continuity() {
+        let device = start_device(false).await;
+        let initiator = Initiator::new();
+
+        let error = initiator
+            .connect(&device, &device.relay_id())
+            .await
+            .unwrap_err();
+
+        assert_eq!(
+            error,
+            crate::http::client::relay::RelayLanContinuityError::Unsupported
+        );
+        device.stop().await;
+    }
+
+    #[tokio::test]
+    async fn a_request_that_does_not_ask_for_the_relay_protocol_is_refused() {
+        let device = start_device(true).await;
+        let initiator = Initiator::new();
+        let client = crate::http::client::create_reqwest_client(
+            &initiator.certificate.private_key_pem,
+            &initiator.certificate.certificate_pem,
+            Some(device.certificate_fingerprint.clone()),
+            None,
+        )
+        .unwrap();
+
+        // A plain POST, and an upgrade naming somebody else's protocol.
+        for headers in [
+            vec![],
+            vec![("Connection", "upgrade"), ("Upgrade", "websocket")],
+        ] {
+            let mut request = client.post(format!(
+                "https://127.0.0.1:{}/api/relay/v1/continuity",
+                device.port
+            ));
+            for (name, value) in headers {
+                request = request.header(name, value);
+            }
+            let response = request.send().await.unwrap();
+            assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        }
+
+        device.stop().await;
+    }
+
+    // -------------------------------------------------------- identity
+
+    #[tokio::test]
+    async fn a_mutual_proof_yields_an_authenticated_session_on_both_ends() {
+        let device = start_device(true).await;
+        let initiator = Initiator::new();
+
+        let connection = initiator
+            .connect(&device, &device.relay_id())
+            .await
+            .unwrap();
+        let inbound = {
+            let mut device = device;
+            let inbound = device.inbound.recv().await.expect("an inbound session");
+            // The responder proved the caller and learned its real identity.
+            assert_eq!(inbound.session.remote_relay_id(), &initiator.relay_id());
+            assert_eq!(inbound.session.local_relay_id(), &device.relay_id());
+            assert_eq!(inbound.session.local_role(), SessionRole::Responder);
+            assert!(inbound.session.mutual());
+            device.stop().await;
+            inbound
+        };
+
+        // And the initiator proved the responder is the identity it demanded.
+        assert_eq!(
+            connection.session.remote_relay_id(),
+            inbound.session.local_relay_id()
+        );
+        assert_eq!(connection.session.local_role(), SessionRole::Initiator);
+        assert!(matches!(
+            connection.session.path(),
+            PathDescriptor::Lan { .. }
+        ));
+    }
+
+    #[tokio::test]
+    async fn a_device_proving_another_identity_is_rejected() {
+        let device = start_device(true).await;
+        let initiator = Initiator::new();
+        let someone_else = RelayId::from_local_identity(&RelayIdentity::generate()).unwrap();
+
+        let error = initiator.connect(&device, &someone_else).await.unwrap_err();
+
+        assert_eq!(
+            error,
+            crate::http::client::relay::RelayLanContinuityError::AuthenticationFailed
+        );
+        device.stop().await;
+    }
+
+    #[tokio::test]
+    async fn every_connection_re_proves_the_peer() {
+        let device = start_device(true).await;
+        let initiator = Initiator::new();
+
+        // Two separate connections, each with its own nonces and its own proof:
+        // being connected once never lets the next connection skip the check.
+        let first = initiator
+            .connect(&device, &device.relay_id())
+            .await
+            .unwrap();
+        let second = initiator
+            .connect(&device, &device.relay_id())
+            .await
+            .unwrap();
+
+        let mut device = device;
+        let a = device.inbound.recv().await.unwrap();
+        let b = device.inbound.recv().await.unwrap();
+        assert_eq!(a.session.remote_relay_id(), &initiator.relay_id());
+        assert_eq!(b.session.remote_relay_id(), &initiator.relay_id());
+        assert_eq!(
+            first.session.remote_relay_id(),
+            second.session.remote_relay_id()
+        );
+        device.stop().await;
+    }
+
+    // ------------------------------------------------- capabilities over LAN
+
+    /// Connects two real devices and runs the real session loop on both ends of
+    /// the authenticated LAN stream.
+    async fn connected_over_lan(
+        cancel: &CancellationToken,
+        responder_permissions: Option<ContinuityPermissions>,
+        initiator_trusts: bool,
+    ) -> (Peer, Peer, LocalDevice) {
+        let mut device = start_device(true).await;
+        let initiator = Initiator::new();
+        let connection = initiator
+            .connect(&device, &device.relay_id())
+            .await
+            .unwrap();
+        let inbound = device.inbound.recv().await.expect("an inbound session");
+
+        let responder_remote = inbound.session.remote_relay_id().clone();
+        let responder = spawn_peer(
+            inbound.stream,
+            inbound.session,
+            "Workstation",
+            DevicePlatform::Linux,
+            trusting(&responder_remote),
+            responder_permissions.unwrap_or_else(|| granting(&responder_remote.as_hex())),
+            cancel.clone(),
+        );
+
+        let initiator_remote = connection.session.remote_relay_id().clone();
+        let dialer = spawn_peer(
+            connection.stream,
+            connection.session,
+            "Pixel",
+            DevicePlatform::Android,
+            if initiator_trusts {
+                trusting(&initiator_remote)
+            } else {
+                untrusting()
+            },
+            granting(&initiator_remote.as_hex()),
+            cancel.clone(),
+        );
+
+        (dialer, responder, device)
+    }
+
+    #[tokio::test]
+    async fn battery_state_crosses_the_authenticated_lan_session() {
+        let cancel = CancellationToken::new();
+        let (phone, computer, device) = connected_over_lan(&cancel, None, true).await;
+        // Until the computer has subscribed a push is correctly dropped, so the
+        // test waits for the negotiation the session performs on connect.
+        wait_for(&phone.events, |event| {
+            matches!(event, ContinuityEvent::PeerSubscribed { .. }).then_some(())
+        })
+        .await;
+
+        // The phone publishes what the platform reported; the computer receives
+        // it attributed to the proven RelayId, not to an address.
+        assert!(
+            phone
+                .handle
+                .publish(ContinuityPayload::Battery(BatteryState {
+                    percentage: Some(64),
+                    charging: ChargingState::Charging,
+                }))
+                .await
+        );
+
+        let (remote, state) = wait_for(&computer.events, |event| match event {
+            ContinuityEvent::BatteryChanged {
+                remote_relay_id,
+                state,
+            } => Some((remote_relay_id.clone(), state.clone())),
+            _ => None,
+        })
+        .await;
+
+        // The computer attributes the reading to the phone's proven RelayId.
+        assert_eq!(remote, computer.handle.remote_relay_id().to_owned());
+        assert_eq!(state.percentage, Some(64));
+        assert_eq!(state.charging, ChargingState::Charging);
+
+        cancel.cancel();
+        device.stop().await;
+    }
+
+    #[tokio::test]
+    async fn clipboard_content_crosses_the_authenticated_lan_session() {
+        let cancel = CancellationToken::new();
+        let (phone, computer, device) = connected_over_lan(&cancel, None, true).await;
+        wait_for(&phone.events, |event| {
+            matches!(event, ContinuityEvent::PeerSubscribed { .. }).then_some(())
+        })
+        .await;
+
+        let text = "one time code 482731";
+        assert!(
+            phone
+                .handle
+                .publish(ContinuityPayload::ClipboardUpdate(ClipboardUpdate {
+                    text: text.to_owned(),
+                    content_fingerprint: clipboard_fingerprint(text),
+                    origin_relay_id: computer.handle.remote_relay_id().to_owned(),
+                    explicit: true,
+                }))
+                .await
+        );
+
+        let update = wait_for(&computer.events, |event| match event {
+            ContinuityEvent::ClipboardOffered { update, .. } => Some(update.clone()),
+            _ => None,
+        })
+        .await;
+
+        assert_eq!(update.text, text);
+        assert_eq!(update.content_fingerprint, clipboard_fingerprint(text));
+
+        cancel.cancel();
+        device.stop().await;
+    }
+
+    #[tokio::test]
+    async fn clipboard_loop_suppression_survives_the_lan_transport() {
+        let cancel = CancellationToken::new();
+        let (phone, computer, device) = connected_over_lan(&cancel, None, true).await;
+        for events in [&phone.events, &computer.events] {
+            wait_for(events, |event| {
+                matches!(event, ContinuityEvent::PeerSubscribed { .. }).then_some(())
+            })
+            .await;
+        }
+
+        let text = "shared once";
+        let fingerprint = clipboard_fingerprint(text);
+        phone
+            .handle
+            .publish(ContinuityPayload::ClipboardUpdate(ClipboardUpdate {
+                text: text.to_owned(),
+                content_fingerprint: fingerprint.clone(),
+                origin_relay_id: computer.handle.remote_relay_id().to_owned(),
+                explicit: true,
+            }))
+            .await;
+
+        wait_for(&computer.events, |event| match event {
+            ContinuityEvent::ClipboardOffered { update, .. } if update.text == text => Some(()),
+            _ => None,
+        })
+        .await;
+
+        // The computer echoes the content it just received. The session drops
+        // it rather than sending it back, so the two devices cannot ping-pong.
+        computer
+            .handle
+            .publish(ContinuityPayload::ClipboardUpdate(ClipboardUpdate {
+                text: text.to_owned(),
+                content_fingerprint: fingerprint,
+                origin_relay_id: phone.handle.remote_relay_id().to_owned(),
+                explicit: false,
+            }))
+            .await;
+        tokio::time::sleep(std::time::Duration::from_millis(120)).await;
+
+        let echoes = phone
+            .events
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|event| matches!(event, ContinuityEvent::ClipboardOffered { .. }))
+            .count();
+        assert_eq!(echoes, 0);
+
+        cancel.cancel();
+        device.stop().await;
+    }
+
+    // --------------------------------------------------------- gating
+
+    #[tokio::test]
+    async fn an_authenticated_but_untrusted_peer_exchanges_nothing() {
+        let cancel = CancellationToken::new();
+        let mut device = start_device(true).await;
+        let initiator = Initiator::new();
+        let connection = initiator
+            .connect(&device, &device.relay_id())
+            .await
+            .unwrap();
+        let inbound = device.inbound.recv().await.expect("an inbound session");
+        let remote = inbound.session.remote_relay_id().clone();
+
+        // Proven, paired, reachable — and still not trusted. The session ends
+        // instead of carrying anything.
+        let responder = spawn_peer(
+            inbound.stream,
+            inbound.session,
+            "Workstation",
+            DevicePlatform::Linux,
+            untrusting(),
+            granting(&remote.as_hex()),
+            cancel.clone(),
+        );
+
+        let end = responder.task.await.unwrap();
+        assert_eq!(end, ContinuitySessionEnd::NotTrusted);
+
+        drop(connection);
+        cancel.cancel();
+        device.stop().await;
+    }
+
+    #[tokio::test]
+    async fn a_trusted_peer_with_no_capability_granted_shares_nothing() {
+        let cancel = CancellationToken::new();
+        let mut device = start_device(true).await;
+        let initiator = Initiator::new();
+        let connection = initiator
+            .connect(&device, &device.relay_id())
+            .await
+            .unwrap();
+        let inbound = device.inbound.recv().await.expect("an inbound session");
+        let remote = inbound.session.remote_relay_id().clone();
+
+        // Pairing and trust exist; the user enabled nothing.
+        let responder = spawn_peer(
+            inbound.stream,
+            inbound.session,
+            "Workstation",
+            DevicePlatform::Linux,
+            trusting(&remote),
+            ContinuityPermissions::new(),
+            cancel.clone(),
+        );
+        let phone_remote = connection.session.remote_relay_id().clone();
+        let phone = spawn_peer(
+            connection.stream,
+            connection.session,
+            "Pixel",
+            DevicePlatform::Android,
+            trusting(&phone_remote),
+            ContinuityPermissions::new(),
+            cancel.clone(),
+        );
+
+        phone
+            .handle
+            .publish(ContinuityPayload::Battery(BatteryState {
+                percentage: Some(64),
+                charging: ChargingState::Charging,
+            }))
+            .await;
+        tokio::time::sleep(std::time::Duration::from_millis(150)).await;
+
+        let battery_events = responder
+            .events
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|event| matches!(event, ContinuityEvent::BatteryChanged { .. }))
+            .count();
+        assert_eq!(battery_events, 0);
+
+        cancel.cancel();
+        device.stop().await;
     }
 }
