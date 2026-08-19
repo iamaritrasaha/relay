@@ -40,9 +40,12 @@ class AndroidSettingsPage extends StatelessWidget {
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
             children: [
               // Appearance Section
-              Text(
-                'APPEARANCE',
-                style: RelayTypography.sectionHeader(palette.textSecondary),
+              Padding(
+                padding: const EdgeInsets.only(left: 16),
+                child: Text(
+                  'APPEARANCE',
+                  style: RelayTypography.sectionHeader(palette.textSecondary),
+                ),
               ),
               const SizedBox(height: 8),
               Card(
@@ -97,9 +100,12 @@ class AndroidSettingsPage extends StatelessWidget {
               const SizedBox(height: 24),
 
               // Device Identity
-              Text(
-                'DEVICE IDENTITY',
-                style: RelayTypography.sectionHeader(palette.textSecondary),
+              Padding(
+                padding: const EdgeInsets.only(left: 16),
+                child: Text(
+                  'DEVICE IDENTITY',
+                  style: RelayTypography.sectionHeader(palette.textSecondary),
+                ),
               ),
               const SizedBox(height: 8),
               Card(
@@ -159,9 +165,12 @@ class AndroidSettingsPage extends StatelessWidget {
               const SizedBox(height: 24),
 
               // Transfers & Storage
-              Text(
-                'TRANSFERS & STORAGE',
-                style: RelayTypography.sectionHeader(palette.textSecondary),
+              Padding(
+                padding: const EdgeInsets.only(left: 16),
+                child: Text(
+                  'TRANSFERS & STORAGE',
+                  style: RelayTypography.sectionHeader(palette.textSecondary),
+                ),
               ),
               const SizedBox(height: 8),
               Card(
@@ -218,9 +227,12 @@ class AndroidSettingsPage extends StatelessWidget {
               const SizedBox(height: 24),
 
               // About Relay
-              Text(
-                'ABOUT',
-                style: RelayTypography.sectionHeader(palette.textSecondary),
+              Padding(
+                padding: const EdgeInsets.only(left: 16),
+                child: Text(
+                  'ABOUT',
+                  style: RelayTypography.sectionHeader(palette.textSecondary),
+                ),
               ),
               const SizedBox(height: 8),
               Card(

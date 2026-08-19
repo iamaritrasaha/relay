@@ -6,25 +6,26 @@ enum RelayCapability {
   battery,
   messages,
   notifications,
-  phone;
+  phone
+  ;
 
   IconData get icon => switch (this) {
-        RelayCapability.files => Icons.folder_outlined,
-        RelayCapability.clipboard => Icons.content_paste_rounded,
-        RelayCapability.battery => Icons.battery_std_rounded,
-        RelayCapability.messages => Icons.sms_outlined,
-        RelayCapability.notifications => Icons.notifications_none_rounded,
-        RelayCapability.phone => Icons.call_outlined,
-      };
+    RelayCapability.files => Icons.folder_outlined,
+    RelayCapability.clipboard => Icons.content_paste_rounded,
+    RelayCapability.battery => Icons.battery_std_rounded,
+    RelayCapability.messages => Icons.sms_outlined,
+    RelayCapability.notifications => Icons.notifications_none_rounded,
+    RelayCapability.phone => Icons.call_outlined,
+  };
 
   String get title => switch (this) {
-        RelayCapability.files => 'Files',
-        RelayCapability.clipboard => 'Clipboard',
-        RelayCapability.battery => 'Battery',
-        RelayCapability.messages => 'Messages',
-        RelayCapability.notifications => 'Notifications',
-        RelayCapability.phone => 'Phone',
-      };
+    RelayCapability.files => 'Files',
+    RelayCapability.clipboard => 'Clipboard',
+    RelayCapability.battery => 'Battery',
+    RelayCapability.messages => 'Messages',
+    RelayCapability.notifications => 'Notifications',
+    RelayCapability.phone => 'Phone',
+  };
 }
 
 /// What a capability can actually do right now.
@@ -53,26 +54,28 @@ enum RelayConnectionType {
   local,
   direct,
   relayed,
-  unspecified;
+  unspecified
+  ;
 
   String get label => switch (this) {
-        RelayConnectionType.local => 'Local',
-        RelayConnectionType.direct => 'Direct',
-        RelayConnectionType.relayed => 'Relayed',
-        RelayConnectionType.unspecified => 'Network',
-      };
+    RelayConnectionType.local => 'Local',
+    RelayConnectionType.direct => 'Direct',
+    RelayConnectionType.relayed => 'Relayed',
+    RelayConnectionType.unspecified => 'Network',
+  };
 }
 
 enum RelaySecurityState {
   verifiedRelay,
   localSendCompatible,
-  unauthenticated;
+  unauthenticated
+  ;
 
   String get label => switch (this) {
-        RelaySecurityState.verifiedRelay => 'Verified Relay',
-        RelaySecurityState.localSendCompatible => 'LocalSend-compatible',
-        RelaySecurityState.unauthenticated => 'Unverified',
-      };
+    RelaySecurityState.verifiedRelay => 'Verified Relay',
+    RelaySecurityState.localSendCompatible => 'LocalSend-compatible',
+    RelaySecurityState.unauthenticated => 'Unverified',
+  };
 }
 
 @immutable
@@ -134,10 +137,10 @@ class RelayCapabilityInfo {
   bool get isDisabled => status == CapabilityStatus.disabled;
 
   String get statusBadge => switch (status) {
-        CapabilityStatus.available => 'Available',
-        CapabilityStatus.limited => 'Limited',
-        CapabilityStatus.permissionRequired => 'Permission required',
-        CapabilityStatus.disabled => 'Off',
-        CapabilityStatus.unavailable => 'Unavailable',
-      };
+    CapabilityStatus.available => 'Available',
+    CapabilityStatus.limited => 'Limited',
+    CapabilityStatus.permissionRequired => 'Permission required',
+    CapabilityStatus.disabled => 'Off',
+    CapabilityStatus.unavailable => 'Unavailable',
+  };
 }

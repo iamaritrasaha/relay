@@ -10,21 +10,22 @@ library;
 enum ClipboardSharingMode {
   off,
   ask,
-  automatic;
+  automatic
+  ;
 
   static ClipboardSharingMode parse(Object? raw) => switch (raw) {
-        'ask' => ClipboardSharingMode.ask,
-        'automatic' => ClipboardSharingMode.automatic,
-        _ => ClipboardSharingMode.off,
-      };
+    'ask' => ClipboardSharingMode.ask,
+    'automatic' => ClipboardSharingMode.automatic,
+    _ => ClipboardSharingMode.off,
+  };
 
   String get wireName => name;
 
   String get label => switch (this) {
-        ClipboardSharingMode.off => 'Off',
-        ClipboardSharingMode.ask => 'Ask each time',
-        ClipboardSharingMode.automatic => 'Automatic',
-      };
+    ClipboardSharingMode.off => 'Off',
+    ClipboardSharingMode.ask => 'Ask each time',
+    ClipboardSharingMode.automatic => 'Automatic',
+  };
 
   bool get isEnabled => this != ClipboardSharingMode.off;
 }
@@ -35,7 +36,8 @@ enum ContinuityCapabilityKind {
   clipboard,
   notifications,
   messages,
-  phone;
+  phone
+  ;
 
   static ContinuityCapabilityKind? tryParse(Object? raw) {
     for (final value in ContinuityCapabilityKind.values) {
@@ -47,12 +49,12 @@ enum ContinuityCapabilityKind {
   }
 
   String get label => switch (this) {
-        ContinuityCapabilityKind.battery => 'Battery status',
-        ContinuityCapabilityKind.clipboard => 'Clipboard sharing',
-        ContinuityCapabilityKind.notifications => 'Notifications',
-        ContinuityCapabilityKind.messages => 'Messages',
-        ContinuityCapabilityKind.phone => 'Phone',
-      };
+    ContinuityCapabilityKind.battery => 'Battery status',
+    ContinuityCapabilityKind.clipboard => 'Clipboard sharing',
+    ContinuityCapabilityKind.notifications => 'Notifications',
+    ContinuityCapabilityKind.messages => 'Messages',
+    ContinuityCapabilityKind.phone => 'Phone',
+  };
 }
 
 class RelayContinuitySettings {
@@ -115,12 +117,12 @@ class RelayContinuitySettings {
   }
 
   Map<String, Object?> toJson() => {
-        'version': version,
-        'relayId': relayId,
-        'trusted': trusted,
-        'granted': granted.map((capability) => capability.name).toList()..sort(),
-        'clipboardMode': clipboardMode.wireName,
-      };
+    'version': version,
+    'relayId': relayId,
+    'trusted': trusted,
+    'granted': granted.map((capability) => capability.name).toList()..sort(),
+    'clipboardMode': clipboardMode.wireName,
+  };
 
   static RelayContinuitySettings? tryParse(Object? raw) {
     if (raw is! Map) {

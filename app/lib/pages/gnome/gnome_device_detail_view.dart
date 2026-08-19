@@ -228,9 +228,8 @@ class GnomeDeviceDetailView extends StatelessWidget {
                     title: 'Battery',
                     subtitle: switch (device.battery) {
                       // A stale reading is labelled as such rather than shown as live.
-                      final battery when !battery.hasInfo => device.isLocalSend
-                          ? 'LocalSend devices do not share battery status'
-                          : 'Not shared by this device',
+                      final battery when !battery.hasInfo =>
+                        device.isLocalSend ? 'LocalSend devices do not share battery status' : 'Not shared by this device',
                       final battery when battery.isStale => 'Last known before disconnecting',
                       final battery when battery.isFull => 'Charged',
                       final battery when battery.isCharging => 'Charging',

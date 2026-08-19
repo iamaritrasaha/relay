@@ -17,11 +17,11 @@ class RemoteCapabilityState {
   bool get isUsable => isAvailable || isLimited;
 
   String get label => switch (state) {
-        'available' => 'Available',
-        'limited' => 'Limited',
-        'permissionRequired' => 'Permission required',
-        _ => 'Unavailable',
-      };
+    'available' => 'Available',
+    'limited' => 'Limited',
+    'permissionRequired' => 'Permission required',
+    _ => 'Unavailable',
+  };
 }
 
 class RemoteBattery {
@@ -130,26 +130,26 @@ class RemoteCall {
   });
 
   static RemoteCallPhase parsePhase(String raw) => switch (raw) {
-        'ringing' => RemoteCallPhase.ringing,
-        'dialing' => RemoteCallPhase.dialing,
-        'active' => RemoteCallPhase.active,
-        'ended' => RemoteCallPhase.ended,
-        'idle' => RemoteCallPhase.idle,
-        _ => RemoteCallPhase.unknown,
-      };
+    'ringing' => RemoteCallPhase.ringing,
+    'dialing' => RemoteCallPhase.dialing,
+    'active' => RemoteCallPhase.active,
+    'ended' => RemoteCallPhase.ended,
+    'idle' => RemoteCallPhase.idle,
+    _ => RemoteCallPhase.unknown,
+  };
 
   bool get isIdle => phase == RemoteCallPhase.idle || phase == RemoteCallPhase.ended;
 
   String get title => displayName ?? address ?? 'Unknown caller';
 
   String get statusLabel => switch (phase) {
-        RemoteCallPhase.ringing => 'Incoming call',
-        RemoteCallPhase.dialing => 'Calling…',
-        RemoteCallPhase.active => 'On a call',
-        RemoteCallPhase.ended => 'Call ended',
-        RemoteCallPhase.idle => 'No active call',
-        RemoteCallPhase.unknown => 'Call status unknown',
-      };
+    RemoteCallPhase.ringing => 'Incoming call',
+    RemoteCallPhase.dialing => 'Calling…',
+    RemoteCallPhase.active => 'On a call',
+    RemoteCallPhase.ended => 'Call ended',
+    RemoteCallPhase.idle => 'No active call',
+    RemoteCallPhase.unknown => 'Call status unknown',
+  };
 }
 
 /// Clipboard content a peer offered but has not been applied.
@@ -260,11 +260,9 @@ class RelayContinuityState {
     this.backgroundServiceRunning = false,
   });
 
-  RelayContinuitySettings settingsFor(String relayId) =>
-      settings[relayId] ?? RelayContinuitySettings(relayId: relayId);
+  RelayContinuitySettings settingsFor(String relayId) => settings[relayId] ?? RelayContinuitySettings(relayId: relayId);
 
-  DeviceContinuity deviceFor(String relayId) =>
-      devices[relayId] ?? DeviceContinuity(relayId: relayId);
+  DeviceContinuity deviceFor(String relayId) => devices[relayId] ?? DeviceContinuity(relayId: relayId);
 
   /// Whether any device has any capability enabled. Drives whether a background
   /// service should exist at all.

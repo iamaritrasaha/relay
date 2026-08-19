@@ -103,9 +103,7 @@ class GnomeActivityView extends StatelessWidget {
                             IconButton(
                               icon: const Icon(Icons.delete_outline_rounded, size: 18),
                               tooltip: 'Delete',
-                              onPressed: () => ref
-                                  .redux(receiveHistoryProvider)
-                                  .dispatchAsync(RemoveHistoryEntryAction(entry.id)),
+                              onPressed: () => ref.redux(receiveHistoryProvider).dispatchAsync(RemoveHistoryEntryAction(entry.id)),
                             ),
                           ],
                         ),

@@ -111,8 +111,7 @@ class RelayDeviceVm {
     return {
       RelayCapability.files: CapabilityStatus.available,
       for (final capability in RelayCapability.values)
-        if (capability != RelayCapability.files)
-          capability: capabilities[capability] ?? CapabilityStatus.disabled,
+        if (capability != RelayCapability.files) capability: capabilities[capability] ?? CapabilityStatus.disabled,
     };
   }
 }

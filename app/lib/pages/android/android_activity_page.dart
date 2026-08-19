@@ -106,9 +106,7 @@ class AndroidActivityPage extends StatelessWidget {
                         IconButton(
                           icon: const Icon(Icons.delete_outline_rounded, size: 20),
                           tooltip: 'Remove',
-                          onPressed: () => ref
-                              .redux(receiveHistoryProvider)
-                              .dispatchAsync(RemoveHistoryEntryAction(entry.id)),
+                          onPressed: () => ref.redux(receiveHistoryProvider).dispatchAsync(RemoveHistoryEntryAction(entry.id)),
                         ),
                       ],
                     ),

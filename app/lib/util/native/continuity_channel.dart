@@ -47,8 +47,7 @@ class ContinuityChannel {
 
   /// Requests the runtime permissions a capability needs. Notification access
   /// is not a runtime permission and opens Android settings instead.
-  Future<bool> requestPermissions(String capability) async =>
-      await _invoke<bool>('requestPermissions', {'capability': capability}) ?? false;
+  Future<bool> requestPermissions(String capability) async => await _invoke<bool>('requestPermissions', {'capability': capability}) ?? false;
 
   Future<void> openNotificationAccessSettings() => _invoke<void>('openNotificationAccessSettings');
 
@@ -62,8 +61,7 @@ class ContinuityChannel {
     return raw == null ? const PlatformClipboardRead.empty() : PlatformClipboardRead.parse(raw);
   }
 
-  Future<bool> clipboardWrite(String text) async =>
-      await _invoke<bool>('clipboardWrite', {'text': text}) ?? false;
+  Future<bool> clipboardWrite(String text) async => await _invoke<bool>('clipboardWrite', {'text': text}) ?? false;
 
   Future<PlatformConversationsPage> conversations({required int limit, int? beforeMs}) async {
     final raw = await _invoke<Map<Object?, Object?>>('smsConversations', {
@@ -83,9 +81,7 @@ class ContinuityChannel {
       'limit': limit,
       'beforeMs': beforeMs,
     });
-    return raw == null
-        ? PlatformMessagesPage(conversationId: conversationId, messages: const [], hasMore: false)
-        : PlatformMessagesPage.parse(raw);
+    return raw == null ? PlatformMessagesPage(conversationId: conversationId, messages: const [], hasMore: false) : PlatformMessagesPage.parse(raw);
   }
 
   Future<PlatformOutcome> sendSms({required List<String> recipients, required String body}) async {
@@ -113,8 +109,7 @@ class ContinuityChannel {
 
   /// Starts platform observation for exactly the capabilities named. Passing an
   /// empty list stops everything.
-  Future<void> startObserving(List<String> capabilities) =>
-      _invoke<void>('startObserving', {'capabilities': capabilities});
+  Future<void> startObserving(List<String> capabilities) => _invoke<void>('startObserving', {'capabilities': capabilities});
 
   Future<void> stopObserving() => _invoke<void>('stopObserving');
 
@@ -128,12 +123,15 @@ class ContinuityChannel {
     if (!isSupported) {
       return const Stream<PlatformContinuityEvent>.empty();
     }
-    return _events.receiveBroadcastStream().map((raw) {
-      if (raw is Map) {
-        return PlatformContinuityEvent.parse(raw);
-      }
-      return const PlatformContinuityEvent.unknown();
-    }).where((event) => !event.isUnknown);
+    return _events
+        .receiveBroadcastStream()
+        .map((raw) {
+          if (raw is Map) {
+            return PlatformContinuityEvent.parse(raw);
+          }
+          return const PlatformContinuityEvent.unknown();
+        })
+        .where((event) => !event.isUnknown);
   }
 }
 
@@ -144,9 +142,9 @@ class PlatformCapabilityState {
   const PlatformCapabilityState(this.state, this.reason);
 
   static PlatformCapabilityState parse(Map<Object?, Object?> raw) => PlatformCapabilityState(
-        raw['state'] as String? ?? 'unavailable',
-        raw['reason'] as String?,
-      );
+    raw['state'] as String? ?? 'unavailable',
+    raw['reason'] as String?,
+  );
 
   bool get isAvailable => state == 'available' || state == 'limited';
   bool get needsPermission => state == 'permissionRequired';
@@ -159,9 +157,9 @@ class PlatformBattery {
   const PlatformBattery(this.percentage, this.charging);
 
   static PlatformBattery parse(Map<Object?, Object?> raw) => PlatformBattery(
-        (raw['percentage'] as num?)?.toInt(),
-        raw['charging'] as String? ?? 'unknown',
-      );
+    (raw['percentage'] as num?)?.toInt(),
+    raw['charging'] as String? ?? 'unknown',
+  );
 }
 
 class PlatformClipboardRead {
@@ -169,15 +167,13 @@ class PlatformClipboardRead {
   final String? unavailableReason;
 
   const PlatformClipboardRead(this.text, this.unavailableReason);
-  const PlatformClipboardRead.empty()
-      : text = null,
-        unavailableReason = null;
+  const PlatformClipboardRead.empty() : text = null, unavailableReason = null;
 
   static PlatformClipboardRead parse(Map<Object?, Object?> raw) => switch (raw['state']) {
-        'text' => PlatformClipboardRead(raw['text'] as String?, null),
-        'requiresForeground' => PlatformClipboardRead(null, raw['reason'] as String?),
-        _ => const PlatformClipboardRead.empty(),
-      };
+    'text' => PlatformClipboardRead(raw['text'] as String?, null),
+    'requiresForeground' => PlatformClipboardRead(null, raw['reason'] as String?),
+    _ => const PlatformClipboardRead.empty(),
+  };
 }
 
 class PlatformConversation {
@@ -198,13 +194,13 @@ class PlatformConversation {
   });
 
   static PlatformConversation parse(Map<Object?, Object?> raw) => PlatformConversation(
-        conversationId: raw['conversationId'] as String? ?? '',
-        displayName: raw['displayName'] as String?,
-        addresses: (raw['addresses'] as List?)?.whereType<String>().toList() ?? const [],
-        snippet: raw['snippet'] as String?,
-        lastMessageAtMs: (raw['lastMessageAtMs'] as num?)?.toInt() ?? 0,
-        unread: raw['unread'] == true,
-      );
+    conversationId: raw['conversationId'] as String? ?? '',
+    displayName: raw['displayName'] as String?,
+    addresses: (raw['addresses'] as List?)?.whereType<String>().toList() ?? const [],
+    snippet: raw['snippet'] as String?,
+    lastMessageAtMs: (raw['lastMessageAtMs'] as num?)?.toInt() ?? 0,
+    unread: raw['unread'] == true,
+  );
 }
 
 class PlatformConversationsPage {
@@ -212,18 +208,12 @@ class PlatformConversationsPage {
   final bool hasMore;
 
   const PlatformConversationsPage(this.conversations, this.hasMore);
-  const PlatformConversationsPage.empty()
-      : conversations = const [],
-        hasMore = false;
+  const PlatformConversationsPage.empty() : conversations = const [], hasMore = false;
 
   static PlatformConversationsPage parse(Map<Object?, Object?> raw) => PlatformConversationsPage(
-        (raw['conversations'] as List?)
-                ?.whereType<Map>()
-                .map(PlatformConversation.parse)
-                .toList() ??
-            const [],
-        raw['hasMore'] == true,
-      );
+    (raw['conversations'] as List?)?.whereType<Map>().map(PlatformConversation.parse).toList() ?? const [],
+    raw['hasMore'] == true,
+  );
 }
 
 class PlatformMessage {
@@ -246,14 +236,14 @@ class PlatformMessage {
   });
 
   static PlatformMessage parse(Map<Object?, Object?> raw) => PlatformMessage(
-        conversationId: raw['conversationId'] as String? ?? '',
-        messageId: raw['messageId'] as String? ?? '',
-        outgoing: raw['outgoing'] == true,
-        address: raw['address'] as String?,
-        body: raw['body'] as String? ?? '',
-        sentAtMs: (raw['sentAtMs'] as num?)?.toInt() ?? 0,
-        read: raw['read'] == true,
-      );
+    conversationId: raw['conversationId'] as String? ?? '',
+    messageId: raw['messageId'] as String? ?? '',
+    outgoing: raw['outgoing'] == true,
+    address: raw['address'] as String?,
+    body: raw['body'] as String? ?? '',
+    sentAtMs: (raw['sentAtMs'] as num?)?.toInt() ?? 0,
+    read: raw['read'] == true,
+  );
 }
 
 class PlatformMessagesPage {
@@ -268,10 +258,10 @@ class PlatformMessagesPage {
   });
 
   static PlatformMessagesPage parse(Map<Object?, Object?> raw) => PlatformMessagesPage(
-        conversationId: raw['conversationId'] as String? ?? '',
-        messages: (raw['messages'] as List?)?.whereType<Map>().map(PlatformMessage.parse).toList() ?? const [],
-        hasMore: raw['hasMore'] == true,
-      );
+    conversationId: raw['conversationId'] as String? ?? '',
+    messages: (raw['messages'] as List?)?.whereType<Map>().map(PlatformMessage.parse).toList() ?? const [],
+    hasMore: raw['hasMore'] == true,
+  );
 }
 
 class PlatformCall {
@@ -288,11 +278,11 @@ class PlatformCall {
   });
 
   static PlatformCall parse(Map<Object?, Object?> raw) => PlatformCall(
-        phase: raw['phase'] as String? ?? 'unknown',
-        address: raw['address'] as String?,
-        displayName: raw['displayName'] as String?,
-        activeDurationMs: (raw['activeDurationMs'] as num?)?.toInt(),
-      );
+    phase: raw['phase'] as String? ?? 'unknown',
+    address: raw['address'] as String?,
+    displayName: raw['displayName'] as String?,
+    activeDurationMs: (raw['activeDurationMs'] as num?)?.toInt(),
+  );
 }
 
 /// The result of asking the platform to do something.
@@ -319,12 +309,9 @@ class PlatformContinuityEvent {
   final Map<Object?, Object?> data;
 
   const PlatformContinuityEvent(this.kind, this.data);
-  const PlatformContinuityEvent.unknown()
-      : kind = '',
-        data = const {};
+  const PlatformContinuityEvent.unknown() : kind = '', data = const {};
 
   bool get isUnknown => kind.isEmpty;
 
-  static PlatformContinuityEvent parse(Map<Object?, Object?> raw) =>
-      PlatformContinuityEvent(raw['event'] as String? ?? '', raw);
+  static PlatformContinuityEvent parse(Map<Object?, Object?> raw) => PlatformContinuityEvent(raw['event'] as String? ?? '', raw);
 }

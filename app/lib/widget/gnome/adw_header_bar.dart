@@ -40,14 +40,13 @@ class AdwHeaderBar extends StatelessWidget implements PreferredSizeWidget {
       height: 48,
       decoration: BoxDecoration(
         color: bgColor,
-        border: showBorder
-            ? Border(bottom: BorderSide(color: borderColor, width: 1))
-            : null,
+        border: showBorder ? Border(bottom: BorderSide(color: borderColor, width: 1)) : null,
       ),
       padding: const EdgeInsets.symmetric(horizontal: 8),
       child: NavigationToolbar(
         leading: leading,
-        middle: title ??
+        middle:
+            title ??
             (titleText != null
                 ? Column(
                     mainAxisSize: MainAxisSize.min,

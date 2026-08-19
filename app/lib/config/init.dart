@@ -419,9 +419,7 @@ Future<void> postInit(BuildContext context, Ref ref, bool appStart, NetworkBoots
   // actually do. On a fresh install nothing is enabled, so this ends there: no
   // observation, no background service and no connection.
   unawaited(
-    ref
-        .redux(continuityProvider)
-        .dispatchAsync(ContinuityInitAction(deviceLabel: ref.read(settingsProvider).alias)),
+    ref.redux(continuityProvider).dispatchAsync(ContinuityInitAction(deviceLabel: ref.read(settingsProvider).alias)),
   );
 
   // [FOSS_REMOVE_START]

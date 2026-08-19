@@ -58,15 +58,15 @@ class _AndroidShellState extends State<AndroidShell> {
       body: SafeArea(
         child: switch (_currentIndex) {
           0 => AndroidHomePage(
-              vm: widget.vm,
-              onAddDevice: () {
-                if (widget.onPairDevice != null) {
-                  widget.onPairDevice!();
-                } else {
-                  _openPairDialog();
-                }
-              },
-            ),
+            vm: widget.vm,
+            onAddDevice: () {
+              if (widget.onPairDevice != null) {
+                widget.onPairDevice!();
+              } else {
+                _openPairDialog();
+              }
+            },
+          ),
           1 => const AndroidActivityPage(),
           _ => const AndroidSettingsPage(),
         },
