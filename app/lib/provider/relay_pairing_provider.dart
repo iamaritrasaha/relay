@@ -93,9 +93,10 @@ final relayPairingProvider = ReduxProvider<RelayPairingService, RelayPairingStat
       api: const RustRelayLanPairingApi(),
       onPairingSaved: () => ref.notifier(relayPairedRoutesProvider).refresh(),
     ),
-    isolateController: ref.notifier(parentIsolateProvider),
-    continuityService: ref.notifier(continuityProvider),
-    pairedRoutes: ref.notifier(relayPairedRoutesProvider),
+    revokeContinuity: (relayId) => ref.redux(continuityProvider).dispatchAsync(ContinuityForgetDeviceAction(relayId: relayId)),
+    signalPairDecision: (relayId, accepted) =>
+        ref.redux(parentIsolateProvider).dispatch(IsolateHttpServerRelayPairDecisionAction(relayId: relayId, accepted: accepted)),
+    publishRoutes: () => ref.notifier(relayPairedRoutesProvider).refresh(),
     securityContext: () => ref.read(securityProvider),
     localAlias: () => ref.read(settingsProvider).alias,
   );
@@ -104,25 +105,33 @@ final relayPairingProvider = ReduxProvider<RelayPairingService, RelayPairingStat
 class RelayPairingService extends ReduxNotifier<RelayPairingState> {
   final RelayPairedAddressStore _pairedAddressStore;
   final RelayLanPairingService _lanPairingService;
-  final IsolateController _isolateController;
-  final ContinuityService _continuityService;
-  final RelayPairedRoutesNotifier _pairedRoutes;
+
+  /// Withdraws trust, every capability grant and any live session for one
+  /// device. Separate from removing the route, because they are separate facts.
+  final Future<void> Function(String relayId) _revokeContinuity;
+
+  /// Reports the local user's answer to the peer that is waiting on it.
+  final void Function(String relayId, bool accepted) _signalPairDecision;
+
+  /// Republishes the paired-device list so every consumer sees the change.
+  final Future<void> Function() _publishRoutes;
+
   final StoredSecurityContext Function() _securityContext;
   final String Function() _localAlias;
 
   RelayPairingService({
     required RelayPairedAddressStore pairedAddressStore,
     required RelayLanPairingService lanPairingService,
-    required IsolateController isolateController,
-    required ContinuityService continuityService,
-    required RelayPairedRoutesNotifier pairedRoutes,
+    required Future<void> Function(String relayId) revokeContinuity,
+    required void Function(String relayId, bool accepted) signalPairDecision,
+    required Future<void> Function() publishRoutes,
     required StoredSecurityContext Function() securityContext,
     required String Function() localAlias,
   }) : _pairedAddressStore = pairedAddressStore,
        _lanPairingService = lanPairingService,
-       _isolateController = isolateController,
-       _continuityService = continuityService,
-       _pairedRoutes = pairedRoutes,
+       _revokeContinuity = revokeContinuity,
+       _signalPairDecision = signalPairDecision,
+       _publishRoutes = publishRoutes,
        _securityContext = securityContext,
        _localAlias = localAlias;
 
@@ -159,6 +168,13 @@ class RelayIncomingPairRequestAction extends ReduxAction<RelayPairingService, Re
 /// Accepting establishes the relationship and nothing else: the device is not
 /// marked trusted and no continuity capability is enabled. Declining leaves no
 /// record on this device.
+///
+/// An acceptance is committed locally *before* it is reported to the waiting
+/// peer. The peer stores its side of the pairing on the strength of that
+/// answer, so telling it "accepted" while this device failed to write anything
+/// would leave it paired with a device that does not know it. The reverse
+/// asymmetry — this device committed, the answer never arrived — is only a
+/// relationship the peer has to ask for again, so it is the safe way to fail.
 class RelayAnswerIncomingPairAction extends AsyncReduxAction<RelayPairingService, RelayPairingState> {
   final String relayId;
   final bool accepted;
@@ -174,24 +190,37 @@ class RelayAnswerIncomingPairAction extends AsyncReduxAction<RelayPairingService
       return state;
     }
 
-    external(notifier._isolateController).dispatch(
-      IsolateHttpServerRelayPairDecisionAction(relayId: relayId, accepted: accepted),
-    );
+    final committed = accepted && await _commit(pending);
+    if (accepted && !committed) {
+      _logger.warning('Could not store the accepted pairing for $relayId; answering the peer with a rejection');
+    }
 
-    if (accepted) {
+    // Rejection is the answer for a declined request and for a failed write
+    // alike, so the peer never persists a pairing this device does not hold.
+    notifier._signalPairDecision(relayId, committed);
+
+    return state.copyWith(clearIncoming: true);
+  }
+
+  /// Persists the proven relationship and publishes it, reporting whether the
+  /// local side is now genuinely paired.
+  Future<bool> _commit(RelayIncomingPairRequest pending) async {
+    try {
       final saved = await notifier._pairedAddressStore.recordLanPairing(
         authenticatedRelayId: relayId,
         remoteApproved: true,
         displayLabel: pending.alias.isEmpty ? null : pending.alias,
       );
-      if (saved) {
-        await notifier._pairedRoutes.refresh();
-      } else {
-        _logger.warning('Could not store the accepted pairing for $relayId');
+      if (!saved) {
+        return false;
       }
+      await notifier._publishRoutes();
+      return true;
+    } catch (error, stackTrace) {
+      // A storage failure is a local failure, never a reason to report success.
+      _logger.warning('Storing the accepted pairing for $relayId failed', error, stackTrace);
+      return false;
     }
-
-    return state.copyWith(clearIncoming: true);
   }
 }
 
@@ -311,15 +340,13 @@ class RelayForgetDeviceAction extends AsyncReduxAction<RelayPairingService, Rela
   Future<RelayPairingState> reduce() async {
     // Trust and consent first: if anything later fails, the device is left
     // with no privileges rather than with a route and stale grants.
-    await external(notifier._continuityService).dispatchAsync(
-      ContinuityForgetDeviceAction(relayId: relayId),
-    );
+    await notifier._revokeContinuity(relayId);
 
     final removed = await notifier._pairedAddressStore.forget(relayId);
     if (!removed) {
       _logger.info('No stored pairing to remove for $relayId');
     }
-    await notifier._pairedRoutes.refresh();
+    await notifier._publishRoutes();
 
     // A pending prompt from the same device is stale now.
     if (state.incoming?.relayId == relayId) {
