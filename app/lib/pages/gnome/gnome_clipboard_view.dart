@@ -82,18 +82,14 @@ class _ClipboardBody extends StatelessWidget {
           children: [
             AdwPreferencesGroup(
               title: 'Sharing',
-              description: settings.trusted
-                  ? null
-                  : 'Trust $alias for continuity before clipboard sharing can be turned on.',
+              description: settings.trusted ? null : 'Trust $alias for continuity before clipboard sharing can be turned on.',
               children: [
                 for (final mode in ClipboardSharingMode.values)
                   AdwActionRow(
                     leading: Icon(_iconFor(mode)),
                     title: mode.label,
                     subtitle: _descriptionFor(mode, alias),
-                    trailing: settings.clipboardMode == mode
-                        ? Icon(Icons.check_rounded, color: palette.accent)
-                        : null,
+                    trailing: settings.clipboardMode == mode ? Icon(Icons.check_rounded, color: palette.accent) : null,
                     onTap: settings.trusted ? () => _setMode(ref, mode) : null,
                   ),
               ],
@@ -122,7 +118,9 @@ class _ClipboardBody extends StatelessWidget {
                     subtitle: 'Copy this to your clipboard?',
                     trailing: AdwButton(
                       label: 'Copy',
-                      onPressed: () => ref.redux(continuityProvider).dispatchAsync(
+                      onPressed: () => ref
+                          .redux(continuityProvider)
+                          .dispatchAsync(
                             ContinuityAcceptClipboardOfferAction(relayId: relayId),
                           ),
                     ),
@@ -176,25 +174,27 @@ class _ClipboardBody extends StatelessWidget {
     final dispatcher = ref.redux(continuityProvider);
     // Turning the mode on is what grants the capability; there is no separate
     // switch to forget.
-    await dispatcher.dispatchAsync(ContinuitySetCapabilityAction(
-      relayId: relayId,
-      capability: ContinuityCapabilityKind.clipboard,
-      enabled: mode.isEnabled,
-    ));
+    await dispatcher.dispatchAsync(
+      ContinuitySetCapabilityAction(
+        relayId: relayId,
+        capability: ContinuityCapabilityKind.clipboard,
+        enabled: mode.isEnabled,
+      ),
+    );
     await dispatcher.dispatchAsync(ContinuitySetClipboardModeAction(relayId: relayId, mode: mode));
   }
 
   static IconData _iconFor(ClipboardSharingMode mode) => switch (mode) {
-        ClipboardSharingMode.off => Icons.block_rounded,
-        ClipboardSharingMode.ask => Icons.help_outline_rounded,
-        ClipboardSharingMode.automatic => Icons.sync_rounded,
-      };
+    ClipboardSharingMode.off => Icons.block_rounded,
+    ClipboardSharingMode.ask => Icons.help_outline_rounded,
+    ClipboardSharingMode.automatic => Icons.sync_rounded,
+  };
 
   static String _descriptionFor(ClipboardSharingMode mode, String alias) => switch (mode) {
-        ClipboardSharingMode.off => 'Nothing is sent or received.',
-        ClipboardSharingMode.ask => 'Content from $alias waits here until you copy it.',
-        ClipboardSharingMode.automatic => 'Text copied on either device appears on the other.',
-      };
+    ClipboardSharingMode.off => 'Nothing is sent or received.',
+    ClipboardSharingMode.ask => 'Content from $alias waits here until you copy it.',
+    ClipboardSharingMode.automatic => 'Text copied on either device appears on the other.',
+  };
 
   /// A short preview. Clipboard content is shown, never logged.
   static String _preview(String text) {

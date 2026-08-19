@@ -59,8 +59,8 @@ class AndroidHomePage extends StatelessWidget {
                     color: vm.presence == RelayPresence.offline
                         ? palette.textTertiary
                         : vm.presence == RelayPresence.discovering
-                            ? palette.warning
-                            : palette.success,
+                        ? palette.warning
+                        : palette.success,
                   ),
                 ),
                 const SizedBox(width: 12),
@@ -73,9 +73,7 @@ class AndroidHomePage extends StatelessWidget {
                         style: RelayTypography.heading(palette.textPrimary),
                       ),
                       Text(
-                        vm.presence == RelayPresence.offline
-                            ? 'Offline · Not listening'
-                            : 'Listening for nearby devices',
+                        vm.presence == RelayPresence.offline ? 'Offline · Not listening' : 'Listening for nearby devices',
                         style: RelayTypography.caption(palette.textSecondary),
                       ),
                     ],
@@ -236,9 +234,7 @@ class AndroidHomePage extends StatelessWidget {
     }
 
     final relayId = device.relayId ?? (device.key.startsWith('relay:') ? device.key.substring('relay:'.length) : null);
-    final route = relayId == null
-        ? null
-        : ref.read(relayPairedRoutesProvider).where((entry) => entry.relayId == relayId).firstOrNull;
+    final route = relayId == null ? null : ref.read(relayPairedRoutesProvider).where((entry) => entry.relayId == relayId).firstOrNull;
     final verifiedLan = relayId == null ? null : ref.read(relayVerifiedLanDevicesProvider)[relayId];
 
     if (relayId != null && (route != null || verifiedLan != null)) {
@@ -247,9 +243,7 @@ class AndroidHomePage extends StatelessWidget {
             .read(relaySendServiceProvider)
             .sendRelayDevice(
               relayId: relayId,
-              verifiedLanTarget: verifiedLan == null
-                  ? null
-                  : ref.read(nearbyDevicesProvider).allDevices[verifiedLan.device.fingerprint],
+              verifiedLanTarget: verifiedLan == null ? null : ref.read(nearbyDevicesProvider).allDevices[verifiedLan.device.fingerprint],
               pairedRoute: route,
               files: crossFiles,
               background: true,

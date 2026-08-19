@@ -90,14 +90,16 @@ class _GnomePhoneViewState extends State<GnomePhoneView> {
               isPill: true,
               onPressed: settings.trusted
                   ? () => unawaited(
-                        ref.redux(continuityProvider).dispatchAsync(
-                              ContinuitySetCapabilityAction(
-                                relayId: relayId,
-                                capability: ContinuityCapabilityKind.phone,
-                                enabled: true,
-                              ),
+                      ref
+                          .redux(continuityProvider)
+                          .dispatchAsync(
+                            ContinuitySetCapabilityAction(
+                              relayId: relayId,
+                              capability: ContinuityCapabilityKind.phone,
+                              enabled: true,
                             ),
-                      )
+                          ),
+                    )
                   : null,
             ),
           );
@@ -127,9 +129,9 @@ class _GnomePhoneViewState extends State<GnomePhoneView> {
                   subtitle: call?.statusLabel,
                   trailing: switch (call?.activeDuration) {
                     final Duration duration => Text(
-                        _duration(duration),
-                        style: RelayTypography.caption(palette.textSecondary, isGnome: true),
-                      ),
+                      _duration(duration),
+                      style: RelayTypography.caption(palette.textSecondary, isGnome: true),
+                    ),
                     null => null,
                   },
                 ),
@@ -202,15 +204,15 @@ class _GnomePhoneViewState extends State<GnomePhoneView> {
                 AdwActionRow(
                   leading: const Icon(Icons.headset_off_outlined),
                   title: 'Call audio on this computer — not available',
-                  subtitle: remote?.reason ??
+                  subtitle:
+                      remote?.reason ??
                       'Android only allows capturing call audio with a system-only permission, '
                           'so the call stays on the phone.',
                 ),
               ],
             ),
 
-            if (device.lastError != null)
-              Text(device.lastError!, style: RelayTypography.caption(palette.error, isGnome: true)),
+            if (device.lastError != null) Text(device.lastError!, style: RelayTypography.caption(palette.error, isGnome: true)),
           ],
         );
       },
@@ -219,7 +221,9 @@ class _GnomePhoneViewState extends State<GnomePhoneView> {
 
   void _act(WatchableRef ref, String relayId, rust.RsCallAction action) {
     unawaited(
-      ref.redux(continuityProvider).dispatchAsync(
+      ref
+          .redux(continuityProvider)
+          .dispatchAsync(
             ContinuityCallAction(relayId: relayId, action: action),
           ),
     );
@@ -231,7 +235,9 @@ class _GnomePhoneViewState extends State<GnomePhoneView> {
       return;
     }
     unawaited(
-      ref.redux(continuityProvider).dispatchAsync(
+      ref
+          .redux(continuityProvider)
+          .dispatchAsync(
             ContinuityCallAction(relayId: relayId, action: rust.RsCallAction.dial, address: number),
           ),
     );

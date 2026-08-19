@@ -59,9 +59,7 @@ class _GnomeMessagesViewState extends State<GnomeMessagesView> {
                   AdwButton.flat(
                     icon: Icons.arrow_back_rounded,
                     label: _openConversationId == null ? 'Back' : 'Conversations',
-                    onPressed: _openConversationId == null
-                        ? widget.onBack
-                        : () => setState(() => _openConversationId = null),
+                    onPressed: _openConversationId == null ? widget.onBack : () => setState(() => _openConversationId = null),
                   ),
                   const SizedBox(width: 12),
                   Text('Messages', style: RelayTypography.largeTitle(palette.textPrimary, isGnome: true)),
@@ -72,8 +70,7 @@ class _GnomeMessagesViewState extends State<GnomeMessagesView> {
                 AdwStatusPage(
                   icon: Icons.sms_outlined,
                   title: 'Not a Relay device',
-                  description:
-                      '${widget.device.alias} is a LocalSend-compatible peer. Messages need a paired Relay device.',
+                  description: '${widget.device.alias} is a LocalSend-compatible peer. Messages need a paired Relay device.',
                 )
               else
                 _body(context, relayId),
@@ -95,19 +92,20 @@ class _GnomeMessagesViewState extends State<GnomeMessagesView> {
           return AdwStatusPage(
             icon: Icons.sms_outlined,
             title: 'Messages are off',
-            description:
-                'Turn on Messages for ${widget.device.alias} to read and reply to its conversations here.',
+            description: 'Turn on Messages for ${widget.device.alias} to read and reply to its conversations here.',
             action: AdwButton(
               label: settings.trusted ? 'Turn on Messages' : 'Trust this device first',
               isPill: true,
               onPressed: settings.trusted
-                  ? () => ref.redux(continuityProvider).dispatchAsync(
-                        ContinuitySetCapabilityAction(
-                          relayId: relayId,
-                          capability: ContinuityCapabilityKind.messages,
-                          enabled: true,
-                        ),
-                      )
+                  ? () => ref
+                        .redux(continuityProvider)
+                        .dispatchAsync(
+                          ContinuitySetCapabilityAction(
+                            relayId: relayId,
+                            capability: ContinuityCapabilityKind.messages,
+                            enabled: true,
+                          ),
+                        )
                   : null,
             ),
           );
@@ -135,7 +133,9 @@ class _GnomeMessagesViewState extends State<GnomeMessagesView> {
           _requested = true;
           WidgetsBinding.instance.addPostFrameCallback((_) {
             unawaited(
-              ref.redux(continuityProvider).dispatchAsync(
+              ref
+                  .redux(continuityProvider)
+                  .dispatchAsync(
                     ContinuityLoadConversationsAction(relayId: relayId),
                   ),
             );
@@ -177,7 +177,9 @@ class _GnomeMessagesViewState extends State<GnomeMessagesView> {
                 onTap: () {
                   setState(() => _openConversationId = conversation.conversationId);
                   unawaited(
-                    ref.redux(continuityProvider).dispatchAsync(
+                    ref
+                        .redux(continuityProvider)
+                        .dispatchAsync(
                           ContinuityLoadMessagesAction(
                             relayId: relayId,
                             conversationId: conversation.conversationId,
@@ -191,7 +193,9 @@ class _GnomeMessagesViewState extends State<GnomeMessagesView> {
         if (device.conversationsHasMore)
           AdwButton.flat(
             label: 'Load older conversations',
-            onPressed: () => ref.redux(continuityProvider).dispatchAsync(
+            onPressed: () => ref
+                .redux(continuityProvider)
+                .dispatchAsync(
                   ContinuityLoadConversationsAction(
                     relayId: relayId,
                     beforeMs: device.conversations.last.lastMessageAt.millisecondsSinceEpoch,
@@ -211,9 +215,7 @@ class _GnomeMessagesViewState extends State<GnomeMessagesView> {
   ) {
     final palette = Theme.of(context).relayPalette;
     final messages = device.messages[conversationId] ?? const <RemoteMessage>[];
-    final conversation = device.conversations
-        .where((entry) => entry.conversationId == conversationId)
-        .firstOrNull;
+    final conversation = device.conversations.where((entry) => entry.conversationId == conversationId).firstOrNull;
     final recipients = conversation?.addresses ?? const <String>[];
 
     return Column(
@@ -247,7 +249,9 @@ class _GnomeMessagesViewState extends State<GnomeMessagesView> {
         if ((device.messagesHasMore[conversationId] ?? false) && messages.isNotEmpty)
           AdwButton.flat(
             label: 'Load older messages',
-            onPressed: () => ref.redux(continuityProvider).dispatchAsync(
+            onPressed: () => ref
+                .redux(continuityProvider)
+                .dispatchAsync(
                   ContinuityLoadMessagesAction(
                     relayId: relayId,
                     conversationId: conversationId,
@@ -292,7 +296,9 @@ class _GnomeMessagesViewState extends State<GnomeMessagesView> {
       return;
     }
     unawaited(
-      ref.redux(continuityProvider).dispatchAsync(
+      ref
+          .redux(continuityProvider)
+          .dispatchAsync(
             ContinuitySendMessageAction(
               relayId: relayId,
               conversationId: conversationId,
