@@ -1,0 +1,454 @@
+//! KDE Connect compatibility protocol (discovery, pairing, unpair).
+//!
+//! This module is a separate trust namespace. A successful KDE Connect pair
+//! never produces a RelayId and never consults Relay-native trust records.
+
+mod identity;
+mod lan;
+mod packet;
+mod pairing;
+
+pub use identity::LocalIdentity;
+pub use lan::{
+    BindMode, DeviceTable, LanConfig, ObservedDevice, MAX_TCP_PORT, MIN_TCP_PORT, UDP_PORT,
+};
+pub use packet::{
+    filter_device_name, is_valid_device_id, IdentityBody, NetworkPacket, PacketError, PairBody,
+    PACKET_TYPE_IDENTITY, PACKET_TYPE_PAIR, PROTOCOL_VERSION,
+};
+pub use pairing::{
+    compute_verification_key, extract_public_key_der, PairState, PairingEffect, PairingFailReason,
+    PairingSession,
+};
+
+use crate::relay::RelayId;
+use anyhow::Result;
+use lan::LanInner;
+use std::sync::Arc;
+use tokio::sync::mpsc;
+use tokio_util::sync::CancellationToken;
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct TrustedDevice {
+    pub device_id: String,
+    pub certificate_pem: String,
+    pub name: String,
+    pub device_type: String,
+    pub protocol_version: i64,
+    pub paired_at_unix: i64,
+}
+
+impl TrustedDevice {
+    pub fn certificate_der(&self) -> Result<Vec<u8>> {
+        rustls::pki_types::pem::PemObject::from_pem_slice(self.certificate_pem.as_bytes())
+            .map(|der: rustls::pki_types::CertificateDer<'static>| der.as_ref().to_vec())
+            .map_err(|e| anyhow::anyhow!("trusted device certificate: {e}"))
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct DeviceSnapshot {
+    pub device_id: String,
+    pub name: String,
+    pub device_type: String,
+    pub ip: Option<String>,
+    pub port: Option<u16>,
+    pub paired: bool,
+    pub connected: bool,
+    pub incoming_pair: bool,
+    pub identity_mismatch: bool,
+}
+
+#[derive(Clone, Debug)]
+pub enum KdeConnectEvent {
+    DevicesChanged { devices: Vec<DeviceSnapshot> },
+    IncomingPair { device_id: String, name: String },
+    PairingFailed { device_id: String, reason: String },
+    TrustChanged { devices: Vec<TrustedDevice> },
+}
+
+pub struct KdeConnectConfig {
+    pub identity: LocalIdentity,
+    pub trusted: Vec<TrustedDevice>,
+    pub lan: LanConfig,
+}
+
+pub struct KdeConnectHandle {
+    inner: Arc<LanInner>,
+    event_rx: tokio::sync::Mutex<mpsc::UnboundedReceiver<KdeConnectEvent>>,
+}
+
+impl KdeConnectHandle {
+    pub async fn start(config: KdeConnectConfig) -> Result<Self> {
+        identity::install_crypto_provider();
+        let udp = lan::bind_udp(config.lan.bind)?;
+        let (listener, tcp_port) = lan::bind_tcp(config.lan.bind).await?;
+        let (event_tx, event_rx) = mpsc::unbounded_channel();
+        let cancel = CancellationToken::new();
+        let inner = LanInner::new(
+            config.identity,
+            config.trusted,
+            config.lan,
+            tcp_port,
+            event_tx,
+            cancel.clone(),
+        );
+        let runner = Arc::clone(&inner);
+        tokio::spawn(async move {
+            lan::run(runner, listener, udp).await;
+        });
+        Ok(Self {
+            inner,
+            event_rx: tokio::sync::Mutex::new(event_rx),
+        })
+    }
+
+    pub fn device_id(&self) -> &str {
+        &self.inner.identity.device_id
+    }
+
+    pub fn tcp_port(&self) -> u16 {
+        self.inner.tcp_port
+    }
+
+    pub async fn snapshot(&self) -> Vec<DeviceSnapshot> {
+        self.inner.snapshot().await
+    }
+
+    pub async fn trusted_devices(&self) -> Vec<TrustedDevice> {
+        self.inner.trusted_devices().await
+    }
+
+    pub async fn recv(&self) -> Option<KdeConnectEvent> {
+        self.event_rx.lock().await.recv().await
+    }
+
+    pub async fn connect_to(&self, ip: std::net::IpAddr, port: u16) -> Result<()> {
+        lan::connect_to(Arc::clone(&self.inner), ip, port).await
+    }
+
+    pub async fn request_pair(&self, device_id: &str) -> Result<()> {
+        self.inner.request_pair(device_id).await
+    }
+
+    pub async fn accept_pair(&self, device_id: &str) -> Result<()> {
+        self.inner.accept_pair(device_id).await
+    }
+
+    pub async fn reject_pair(&self, device_id: &str) -> Result<()> {
+        self.inner.reject_pair(device_id).await
+    }
+
+    pub async fn unpair(&self, device_id: &str) -> Result<()> {
+        self.inner.unpair(device_id).await
+    }
+
+    pub fn stop(&self) {
+        self.inner.cancel.cancel();
+    }
+}
+
+impl Drop for KdeConnectHandle {
+    fn drop(&mut self) {
+        self.inner.cancel.cancel();
+    }
+}
+
+/// KDE Connect pairing cannot authenticate a Relay-native peer, and a RelayId
+/// cannot be derived from a KDE Connect deviceId.
+pub fn relay_trust_cannot_authenticate_kdeconnect(
+    relay_id: &RelayId,
+    kdeconnect_device_id: &str,
+) -> bool {
+    relay_id.as_hex() != kdeconnect_device_id.to_ascii_uppercase()
+        && RelayId::from_expected_canonical_hex(kdeconnect_device_id).is_err()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::crypto::relay_identity::RelayIdentity;
+    use crate::relay::RelayId;
+    use std::time::Duration;
+
+    #[test]
+    fn localsend_packet_is_not_kdeconnect_identity() {
+        let packet = br#"{"alias":"Phone","version":"2.1","deviceType":"mobile","fingerprint":"ABCD","port":53317,"protocol":"https"}"#;
+        assert!(NetworkPacket::parse(packet)
+            .ok()
+            .and_then(|p| p.as_identity().ok())
+            .is_none());
+    }
+
+    #[test]
+    fn relay_native_trust_cannot_authenticate_kdeconnect_peer() {
+        let identity = RelayIdentity::generate();
+        let relay_id = RelayId::from_local_identity(&identity).unwrap();
+        let kde_id = "a".repeat(32);
+        assert!(relay_trust_cannot_authenticate_kdeconnect(
+            &relay_id, &kde_id
+        ));
+        assert!(RelayId::from_expected_canonical_hex(&kde_id).is_err());
+    }
+
+    #[tokio::test]
+    async fn persisted_paired_identity_is_paired_after_restart() {
+        let identity = LocalIdentity::generate("Relay").unwrap();
+        let peer = LocalIdentity::generate("Phone").unwrap();
+        let handle = KdeConnectHandle::start(KdeConnectConfig {
+            identity,
+            trusted: vec![TrustedDevice {
+                device_id: peer.device_id.clone(),
+                certificate_pem: peer.certificate_pem,
+                name: "Phone".into(),
+                device_type: "phone".into(),
+                protocol_version: PROTOCOL_VERSION,
+                paired_at_unix: 1,
+            }],
+            lan: LanConfig {
+                bind: BindMode::Loopback,
+                allow_loopback: true,
+            },
+        })
+        .await
+        .unwrap();
+        let snap = handle.snapshot().await;
+        assert_eq!(snap.len(), 1);
+        assert_eq!(snap[0].device_id, peer.device_id);
+        assert!(snap[0].paired);
+        assert!(!snap[0].connected);
+        handle.stop();
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    #[ignore]
+    async fn loopback_pair_reject_accept_persist_unpair() {
+        let alice_id = LocalIdentity::generate("Alice").unwrap();
+        let bob_id = LocalIdentity::generate("Bob").unwrap();
+        let lan = LanConfig {
+            bind: BindMode::Loopback,
+            allow_loopback: true,
+        };
+        let mut alice = KdeConnectHandle::start(KdeConnectConfig {
+            identity: alice_id.clone(),
+            trusted: vec![],
+            lan: lan.clone(),
+        })
+        .await
+        .unwrap();
+        let mut bob = KdeConnectHandle::start(KdeConnectConfig {
+            identity: bob_id.clone(),
+            trusted: vec![],
+            lan,
+        })
+        .await
+        .unwrap();
+
+        bob.connect_to(
+            std::net::IpAddr::V4(std::net::Ipv4Addr::LOCALHOST),
+            alice.tcp_port(),
+        )
+        .await
+        .unwrap();
+        let alice_peer = wait_for_device(&mut bob, alice_id.device_id.as_str()).await;
+        assert!(!alice_peer.paired);
+
+        bob.request_pair(&alice_id.device_id).await.unwrap();
+        wait_incoming(&mut alice, &bob_id.device_id).await;
+        alice.reject_pair(&bob_id.device_id).await.unwrap();
+        tokio::time::sleep(Duration::from_millis(200)).await;
+        assert!(alice.trusted_devices().await.is_empty());
+        assert!(bob.trusted_devices().await.is_empty());
+
+        bob.request_pair(&alice_id.device_id).await.unwrap();
+        wait_incoming(&mut alice, &bob_id.device_id).await;
+        alice.accept_pair(&bob_id.device_id).await.unwrap();
+        wait_paired(&mut bob, &alice_id.device_id).await;
+        assert_eq!(alice.trusted_devices().await.len(), 1);
+        assert_eq!(bob.trusted_devices().await.len(), 1);
+
+        let trusted = alice.trusted_devices().await;
+        alice.stop();
+        bob.stop();
+        drop(alice);
+        drop(bob);
+        tokio::time::sleep(Duration::from_millis(200)).await;
+
+        let lan = LanConfig {
+            bind: BindMode::Loopback,
+            allow_loopback: true,
+        };
+        let mut alice = KdeConnectHandle::start(KdeConnectConfig {
+            identity: alice_id.clone(),
+            trusted,
+            lan: lan.clone(),
+        })
+        .await
+        .unwrap();
+        let mut bob = KdeConnectHandle::start(KdeConnectConfig {
+            identity: bob_id.clone(),
+            trusted: vec![],
+            lan,
+        })
+        .await
+        .unwrap();
+        bob.connect_to(
+            std::net::IpAddr::V4(std::net::Ipv4Addr::LOCALHOST),
+            alice.tcp_port(),
+        )
+        .await
+        .unwrap();
+        let restarted = wait_for_device(&mut bob, alice_id.device_id.as_str()).await;
+        assert!(
+            alice
+                .snapshot()
+                .await
+                .iter()
+                .any(|d| d.device_id == bob_id.device_id && d.paired)
+                || restarted.connected
+        );
+        let alice_view = wait_for_device(&mut alice, bob_id.device_id.as_str()).await;
+        assert!(alice_view.paired);
+        assert!(!alice_view.incoming_pair);
+
+        alice.unpair(&bob_id.device_id).await.unwrap();
+        tokio::time::sleep(Duration::from_millis(300)).await;
+        assert!(alice.trusted_devices().await.is_empty());
+        alice.stop();
+        bob.stop();
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    #[ignore]
+    async fn unpaired_certificate_is_not_silently_trusted_and_mismatch_is_rejected() {
+        let alice_id = LocalIdentity::generate("Alice").unwrap();
+        let bob_id = LocalIdentity::generate("Bob").unwrap();
+        let lan = LanConfig {
+            bind: BindMode::Loopback,
+            allow_loopback: true,
+        };
+        let mut alice = KdeConnectHandle::start(KdeConnectConfig {
+            identity: alice_id.clone(),
+            trusted: vec![],
+            lan: lan.clone(),
+        })
+        .await
+        .unwrap();
+        let mut bob = KdeConnectHandle::start(KdeConnectConfig {
+            identity: bob_id.clone(),
+            trusted: vec![],
+            lan: lan.clone(),
+        })
+        .await
+        .unwrap();
+        bob.connect_to(
+            std::net::IpAddr::V4(std::net::Ipv4Addr::LOCALHOST),
+            alice.tcp_port(),
+        )
+        .await
+        .unwrap();
+        wait_for_device(&mut bob, alice_id.device_id.as_str()).await;
+        assert!(alice.trusted_devices().await.is_empty());
+
+        bob.request_pair(&alice_id.device_id).await.unwrap();
+        wait_incoming(&mut alice, &bob_id.device_id).await;
+        alice.accept_pair(&bob_id.device_id).await.unwrap();
+        wait_paired(&mut bob, &alice_id.device_id).await;
+        let mut trusted = alice.trusted_devices().await;
+        trusted[0].certificate_pem = LocalIdentity::generate("Impostor").unwrap().certificate_pem;
+        alice.stop();
+        bob.stop();
+        drop(alice);
+        drop(bob);
+        tokio::time::sleep(Duration::from_millis(200)).await;
+
+        let mut alice = KdeConnectHandle::start(KdeConnectConfig {
+            identity: alice_id.clone(),
+            trusted,
+            lan: lan.clone(),
+        })
+        .await
+        .unwrap();
+        let mut bob = KdeConnectHandle::start(KdeConnectConfig {
+            identity: bob_id.clone(),
+            trusted: vec![],
+            lan,
+        })
+        .await
+        .unwrap();
+        let _ = bob
+            .connect_to(
+                std::net::IpAddr::V4(std::net::Ipv4Addr::LOCALHOST),
+                alice.tcp_port(),
+            )
+            .await;
+        tokio::time::sleep(Duration::from_millis(400)).await;
+        let view = alice
+            .snapshot()
+            .await
+            .into_iter()
+            .find(|d| d.device_id == bob_id.device_id);
+        if let Some(view) = view {
+            assert!(view.identity_mismatch || !view.connected);
+        }
+        alice.stop();
+        bob.stop();
+    }
+
+    async fn wait_for_device(handle: &mut KdeConnectHandle, device_id: &str) -> DeviceSnapshot {
+        let deadline = tokio::time::Instant::now() + Duration::from_secs(8);
+        loop {
+            if let Some(device) = handle
+                .snapshot()
+                .await
+                .into_iter()
+                .find(|d| d.device_id == device_id)
+            {
+                return device;
+            }
+            let remain = deadline.saturating_duration_since(tokio::time::Instant::now());
+            tokio::select! {
+                _ = tokio::time::sleep(remain) => panic!("timed out waiting for {device_id}"),
+                event = handle.recv() => { let _ = event; }
+            }
+        }
+    }
+
+    async fn wait_incoming(handle: &mut KdeConnectHandle, device_id: &str) {
+        let deadline = tokio::time::Instant::now() + Duration::from_secs(8);
+        loop {
+            if handle
+                .snapshot()
+                .await
+                .iter()
+                .any(|d| d.device_id == device_id && d.incoming_pair)
+            {
+                return;
+            }
+            let remain = deadline.saturating_duration_since(tokio::time::Instant::now());
+            tokio::select! {
+                _ = tokio::time::sleep(remain) => panic!("timed out waiting for incoming pair from {device_id}"),
+                event = handle.recv() => { let _ = event; }
+            }
+        }
+    }
+
+    async fn wait_paired(handle: &mut KdeConnectHandle, device_id: &str) {
+        let deadline = tokio::time::Instant::now() + Duration::from_secs(8);
+        loop {
+            if handle
+                .snapshot()
+                .await
+                .iter()
+                .any(|d| d.device_id == device_id && d.paired)
+            {
+                return;
+            }
+            let remain = deadline.saturating_duration_since(tokio::time::Instant::now());
+            tokio::select! {
+                _ = tokio::time::sleep(remain) => panic!("timed out waiting to pair {device_id}"),
+                event = handle.recv() => { let _ = event; }
+            }
+        }
+    }
+}

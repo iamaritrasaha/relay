@@ -111,6 +111,8 @@ const _relayIdentityPublicKeyKey = 'ls_relay_identity_public_key';
 // private key remains exclusively in platform secure storage.
 const _relayPairedAddressesKey = 'ls_relay_paired_addresses_v1';
 const _relayContinuitySettingsKey = 'ls_relay_continuity_settings_v1';
+const _kdeConnectIdentityKey = 'kc_local_identity_v1';
+const _kdeConnectTrustedDevicesKey = 'kc_trusted_devices_v1';
 
 final persistenceProvider = Provider<PersistenceService>((ref) {
   throw Exception('persistenceProvider not initialized');
@@ -682,5 +684,30 @@ class PersistenceService {
 
   Future<void> clear() async {
     await _prefs.clear();
+  }
+
+  Map<String, dynamic>? getKdeConnectIdentity() {
+    final raw = _prefs.getString(_kdeConnectIdentityKey);
+    if (raw == null) {
+      return null;
+    }
+    final decoded = jsonDecode(raw);
+    return decoded is Map<String, dynamic> ? decoded : null;
+  }
+
+  Future<void> setKdeConnectIdentity(Map<String, dynamic> identity) async {
+    await _prefs.setString(_kdeConnectIdentityKey, jsonEncode(identity));
+  }
+
+  List<Map<String, dynamic>> getKdeConnectTrustedDevices() {
+    final raw = _prefs.getStringList(_kdeConnectTrustedDevicesKey) ?? const [];
+    return [
+      for (final item in raw)
+        if (jsonDecode(item) is Map<String, dynamic>) jsonDecode(item) as Map<String, dynamic>,
+    ];
+  }
+
+  Future<void> setKdeConnectTrustedDevices(List<Map<String, dynamic>> devices) async {
+    await _prefs.setStringList(_kdeConnectTrustedDevicesKey, [for (final device in devices) jsonEncode(device)]);
   }
 }

@@ -4,6 +4,7 @@ pub mod crypto;
 pub mod discovery;
 pub mod filename;
 pub mod http;
+pub mod kdeconnect;
 pub mod logging;
 pub mod metadata;
 pub mod model;

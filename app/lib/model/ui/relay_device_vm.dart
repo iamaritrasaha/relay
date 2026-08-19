@@ -14,7 +14,7 @@ enum RelayDevicePhase {
 /// UI target namespace. Nearby observations remain unresolved LAN candidates;
 /// a paired route is keyed by an authenticated RelayId and is never folded
 /// into a Relay compatibility peer.
-enum RelayDeviceTargetKind { unresolvedLan, verifiedRelay, pairedRelay }
+enum RelayDeviceTargetKind { unresolvedLan, verifiedRelay, pairedRelay, kdeConnect }
 
 /// Immutable, presentation-only description of a Relay target device.
 class RelayDeviceVm {
@@ -67,6 +67,7 @@ class RelayDeviceVm {
   });
 
   bool get isCompatibilityPeer => targetKind == RelayDeviceTargetKind.unresolvedLan;
+  bool get isKdeConnect => targetKind == RelayDeviceTargetKind.kdeConnect;
   bool get isVerifiedRelay => targetKind == RelayDeviceTargetKind.verifiedRelay;
   bool get isPairedRelay => targetKind == RelayDeviceTargetKind.pairedRelay;
   bool get isAuthenticatedRelay => isVerifiedRelay || isPairedRelay;
@@ -87,6 +88,15 @@ class RelayDeviceVm {
     if (phase == RelayDevicePhase.success) {
       return 'Transfer complete';
     }
+    if (isKdeConnect) {
+      if (detail == 'Connected') {
+        return 'Connected';
+      }
+      if (detail == 'Paired') {
+        return 'Paired';
+      }
+      return 'Nearby';
+    }
     if (isCompatibilityPeer) {
       return 'LocalSend compatible · Nearby';
     }
@@ -106,6 +116,16 @@ class RelayDeviceVm {
   /// Relay-compatible peers get files and nothing else: continuity never
   /// reaches a peer that cannot prove a RelayId.
   Map<RelayCapability, CapabilityStatus> get capabilityStatuses {
+    if (isKdeConnect) {
+      return const {
+        RelayCapability.files: CapabilityStatus.unavailable,
+        RelayCapability.clipboard: CapabilityStatus.unavailable,
+        RelayCapability.battery: CapabilityStatus.unavailable,
+        RelayCapability.messages: CapabilityStatus.unavailable,
+        RelayCapability.notifications: CapabilityStatus.unavailable,
+        RelayCapability.phone: CapabilityStatus.unavailable,
+      };
+    }
     if (isCompatibilityPeer) {
       return const {
         RelayCapability.files: CapabilityStatus.available,

@@ -14,6 +14,7 @@ import 'package:relay_isolates/rust/api/crypto.dart';
 import 'package:relay_isolates/rust/api/discovery.dart';
 import 'package:relay_isolates/rust/api/filename.dart';
 import 'package:relay_isolates/rust/api/http.dart';
+import 'package:relay_isolates/rust/api/kdeconnect.dart';
 import 'package:relay_isolates/rust/api/logging.dart';
 import 'package:relay_isolates/rust/api/metadata.dart';
 import 'package:relay_isolates/rust/api/model.dart';
@@ -66,6 +67,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   CrossPlatformFinalizerArg get rust_arc_decrement_strong_count_RsHttpServerPtr =>
       wire._rust_arc_decrement_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerRsHttpServerPtr;
 
+  CrossPlatformFinalizerArg get rust_arc_decrement_strong_count_RsKdeConnectPtr =>
+      wire._rust_arc_decrement_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerRsKdeConnectPtr;
+
   @protected
   AnyhowException dco_decode_AnyhowException(dynamic raw);
 
@@ -103,6 +107,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   RsHttpServer dco_decode_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerRsHttpServer(dynamic raw);
 
   @protected
+  RsKdeConnect dco_decode_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerRsKdeConnect(dynamic raw);
+
+  @protected
   Dart2RustStreamSink dco_decode_Auto_RefMut_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerDart2RustStreamSink(dynamic raw);
 
   @protected
@@ -134,6 +141,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   RsHttpServer dco_decode_Auto_Ref_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerRsHttpServer(dynamic raw);
+
+  @protected
+  RsKdeConnect dco_decode_Auto_Ref_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerRsKdeConnect(dynamic raw);
 
   @protected
   FutureOr<void> Function(LsSignalingConnection)
@@ -184,6 +194,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   RsHttpServer dco_decode_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerRsHttpServer(dynamic raw);
 
   @protected
+  RsKdeConnect dco_decode_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerRsKdeConnect(dynamic raw);
+
+  @protected
   Set<String> dco_decode_Set_String_None(dynamic raw);
 
   @protected
@@ -205,6 +218,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   RustStreamSink<RsHashFileEvent> dco_decode_StreamSink_rs_hash_file_event_Sse(dynamic raw);
+
+  @protected
+  RustStreamSink<RsKdeConnectEvent> dco_decode_StreamSink_rs_kde_connect_event_Sse(dynamic raw);
 
   @protected
   RustStreamSink<RsRelayAnywhereEvent> dco_decode_StreamSink_rs_relay_anywhere_event_Sse(dynamic raw);
@@ -302,6 +318,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   RsHttpClientError dco_decode_box_autoadd_rs_http_client_error(dynamic raw);
 
   @protected
+  RsKdeConnectIdentity dco_decode_box_autoadd_rs_kde_connect_identity(dynamic raw);
+
+  @protected
   RsSmsMessage dco_decode_box_autoadd_rs_sms_message(dynamic raw);
 
   @protected
@@ -309,6 +328,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   TlsConfig dco_decode_box_autoadd_tls_config(dynamic raw);
+
+  @protected
+  int dco_decode_box_autoadd_u_16(dynamic raw);
 
   @protected
   int dco_decode_box_autoadd_u_32(dynamic raw);
@@ -353,6 +375,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   int dco_decode_i_32(dynamic raw);
 
   @protected
+  PlatformInt64 dco_decode_i_64(dynamic raw);
+
+  @protected
   PlatformInt64 dco_decode_isize(dynamic raw);
 
   @protected
@@ -387,6 +412,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   List<RsDeviceLog> dco_decode_list_rs_device_log(dynamic raw);
+
+  @protected
+  List<RsKdeConnectDevice> dco_decode_list_rs_kde_connect_device(dynamic raw);
+
+  @protected
+  List<RsKdeConnectTrustedDevice> dco_decode_list_rs_kde_connect_trusted_device(dynamic raw);
 
   @protected
   List<RsLanCandidate> dco_decode_list_rs_lan_candidate(dynamic raw);
@@ -436,6 +467,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   TlsConfig? dco_decode_opt_box_autoadd_tls_config(dynamic raw);
+
+  @protected
+  int? dco_decode_opt_box_autoadd_u_16(dynamic raw);
 
   @protected
   int? dco_decode_opt_box_autoadd_u_32(dynamic raw);
@@ -547,6 +581,18 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   RsHttpClientError dco_decode_rs_http_client_error(dynamic raw);
+
+  @protected
+  RsKdeConnectDevice dco_decode_rs_kde_connect_device(dynamic raw);
+
+  @protected
+  RsKdeConnectEvent dco_decode_rs_kde_connect_event(dynamic raw);
+
+  @protected
+  RsKdeConnectIdentity dco_decode_rs_kde_connect_identity(dynamic raw);
+
+  @protected
+  RsKdeConnectTrustedDevice dco_decode_rs_kde_connect_trusted_device(dynamic raw);
 
   @protected
   RsLanCandidate dco_decode_rs_lan_candidate(dynamic raw);
@@ -696,6 +742,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   RsHttpServer sse_decode_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerRsHttpServer(SseDeserializer deserializer);
 
   @protected
+  RsKdeConnect sse_decode_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerRsKdeConnect(SseDeserializer deserializer);
+
+  @protected
   Dart2RustStreamSink sse_decode_Auto_RefMut_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerDart2RustStreamSink(
     SseDeserializer deserializer,
   );
@@ -737,6 +786,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   RsHttpServer sse_decode_Auto_Ref_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerRsHttpServer(SseDeserializer deserializer);
+
+  @protected
+  RsKdeConnect sse_decode_Auto_Ref_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerRsKdeConnect(SseDeserializer deserializer);
 
   @protected
   Object sse_decode_DartOpaque(SseDeserializer deserializer);
@@ -783,6 +835,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   RsHttpServer sse_decode_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerRsHttpServer(SseDeserializer deserializer);
 
   @protected
+  RsKdeConnect sse_decode_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerRsKdeConnect(SseDeserializer deserializer);
+
+  @protected
   Set<String> sse_decode_Set_String_None(SseDeserializer deserializer);
 
   @protected
@@ -804,6 +859,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   RustStreamSink<RsHashFileEvent> sse_decode_StreamSink_rs_hash_file_event_Sse(SseDeserializer deserializer);
+
+  @protected
+  RustStreamSink<RsKdeConnectEvent> sse_decode_StreamSink_rs_kde_connect_event_Sse(SseDeserializer deserializer);
 
   @protected
   RustStreamSink<RsRelayAnywhereEvent> sse_decode_StreamSink_rs_relay_anywhere_event_Sse(SseDeserializer deserializer);
@@ -901,6 +959,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   RsHttpClientError sse_decode_box_autoadd_rs_http_client_error(SseDeserializer deserializer);
 
   @protected
+  RsKdeConnectIdentity sse_decode_box_autoadd_rs_kde_connect_identity(SseDeserializer deserializer);
+
+  @protected
   RsSmsMessage sse_decode_box_autoadd_rs_sms_message(SseDeserializer deserializer);
 
   @protected
@@ -908,6 +969,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   TlsConfig sse_decode_box_autoadd_tls_config(SseDeserializer deserializer);
+
+  @protected
+  int sse_decode_box_autoadd_u_16(SseDeserializer deserializer);
 
   @protected
   int sse_decode_box_autoadd_u_32(SseDeserializer deserializer);
@@ -952,6 +1016,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   int sse_decode_i_32(SseDeserializer deserializer);
 
   @protected
+  PlatformInt64 sse_decode_i_64(SseDeserializer deserializer);
+
+  @protected
   PlatformInt64 sse_decode_isize(SseDeserializer deserializer);
 
   @protected
@@ -986,6 +1053,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   List<RsDeviceLog> sse_decode_list_rs_device_log(SseDeserializer deserializer);
+
+  @protected
+  List<RsKdeConnectDevice> sse_decode_list_rs_kde_connect_device(SseDeserializer deserializer);
+
+  @protected
+  List<RsKdeConnectTrustedDevice> sse_decode_list_rs_kde_connect_trusted_device(SseDeserializer deserializer);
 
   @protected
   List<RsLanCandidate> sse_decode_list_rs_lan_candidate(SseDeserializer deserializer);
@@ -1037,6 +1110,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   TlsConfig? sse_decode_opt_box_autoadd_tls_config(SseDeserializer deserializer);
+
+  @protected
+  int? sse_decode_opt_box_autoadd_u_16(SseDeserializer deserializer);
 
   @protected
   int? sse_decode_opt_box_autoadd_u_32(SseDeserializer deserializer);
@@ -1148,6 +1224,18 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   RsHttpClientError sse_decode_rs_http_client_error(SseDeserializer deserializer);
+
+  @protected
+  RsKdeConnectDevice sse_decode_rs_kde_connect_device(SseDeserializer deserializer);
+
+  @protected
+  RsKdeConnectEvent sse_decode_rs_kde_connect_event(SseDeserializer deserializer);
+
+  @protected
+  RsKdeConnectIdentity sse_decode_rs_kde_connect_identity(SseDeserializer deserializer);
+
+  @protected
+  RsKdeConnectTrustedDevice sse_decode_rs_kde_connect_trusted_device(SseDeserializer deserializer);
 
   @protected
   RsLanCandidate sse_decode_rs_lan_candidate(SseDeserializer deserializer);
@@ -1309,6 +1397,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   void sse_encode_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerRsHttpServer(RsHttpServer self, SseSerializer serializer);
 
   @protected
+  void sse_encode_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerRsKdeConnect(RsKdeConnect self, SseSerializer serializer);
+
+  @protected
   void sse_encode_Auto_RefMut_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerDart2RustStreamSink(
     Dart2RustStreamSink self,
     SseSerializer serializer,
@@ -1361,6 +1452,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   void sse_encode_Auto_Ref_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerRsHttpServer(RsHttpServer self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_Auto_Ref_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerRsKdeConnect(RsKdeConnect self, SseSerializer serializer);
 
   @protected
   void
@@ -1427,6 +1521,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   void sse_encode_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerRsHttpServer(RsHttpServer self, SseSerializer serializer);
 
   @protected
+  void sse_encode_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerRsKdeConnect(RsKdeConnect self, SseSerializer serializer);
+
+  @protected
   void sse_encode_Set_String_None(Set<String> self, SseSerializer serializer);
 
   @protected
@@ -1449,6 +1546,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   void sse_encode_StreamSink_rs_hash_file_event_Sse(RustStreamSink<RsHashFileEvent> self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_StreamSink_rs_kde_connect_event_Sse(RustStreamSink<RsKdeConnectEvent> self, SseSerializer serializer);
 
   @protected
   void sse_encode_StreamSink_rs_relay_anywhere_event_Sse(RustStreamSink<RsRelayAnywhereEvent> self, SseSerializer serializer);
@@ -1547,6 +1647,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   void sse_encode_box_autoadd_rs_http_client_error(RsHttpClientError self, SseSerializer serializer);
 
   @protected
+  void sse_encode_box_autoadd_rs_kde_connect_identity(RsKdeConnectIdentity self, SseSerializer serializer);
+
+  @protected
   void sse_encode_box_autoadd_rs_sms_message(RsSmsMessage self, SseSerializer serializer);
 
   @protected
@@ -1554,6 +1657,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   void sse_encode_box_autoadd_tls_config(TlsConfig self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_box_autoadd_u_16(int self, SseSerializer serializer);
 
   @protected
   void sse_encode_box_autoadd_u_32(int self, SseSerializer serializer);
@@ -1598,6 +1704,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   void sse_encode_i_32(int self, SseSerializer serializer);
 
   @protected
+  void sse_encode_i_64(PlatformInt64 self, SseSerializer serializer);
+
+  @protected
   void sse_encode_isize(PlatformInt64 self, SseSerializer serializer);
 
   @protected
@@ -1632,6 +1741,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   void sse_encode_list_rs_device_log(List<RsDeviceLog> self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_list_rs_kde_connect_device(List<RsKdeConnectDevice> self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_list_rs_kde_connect_trusted_device(List<RsKdeConnectTrustedDevice> self, SseSerializer serializer);
 
   @protected
   void sse_encode_list_rs_lan_candidate(List<RsLanCandidate> self, SseSerializer serializer);
@@ -1683,6 +1798,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   void sse_encode_opt_box_autoadd_tls_config(TlsConfig? self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_opt_box_autoadd_u_16(int? self, SseSerializer serializer);
 
   @protected
   void sse_encode_opt_box_autoadd_u_32(int? self, SseSerializer serializer);
@@ -1795,6 +1913,18 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   void sse_encode_rs_http_client_error(RsHttpClientError self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_rs_kde_connect_device(RsKdeConnectDevice self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_rs_kde_connect_event(RsKdeConnectEvent self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_rs_kde_connect_identity(RsKdeConnectIdentity self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_rs_kde_connect_trusted_device(RsKdeConnectTrustedDevice self, SseSerializer serializer);
 
   @protected
   void sse_encode_rs_lan_candidate(RsLanCandidate self, SseSerializer serializer);
@@ -2257,5 +2387,37 @@ class RustLibWire implements BaseWire {
       );
   late final _rust_arc_decrement_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerRsHttpServer =
       _rust_arc_decrement_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerRsHttpServerPtr
+          .asFunction<void Function(ffi.Pointer<ffi.Void>)>();
+
+  void rust_arc_increment_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerRsKdeConnect(
+    ffi.Pointer<ffi.Void> ptr,
+  ) {
+    return _rust_arc_increment_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerRsKdeConnect(
+      ptr,
+    );
+  }
+
+  late final _rust_arc_increment_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerRsKdeConnectPtr =
+      _lookup<ffi.NativeFunction<ffi.Void Function(ffi.Pointer<ffi.Void>)>>(
+        'frbgen_relay_isolates_rust_arc_increment_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerRsKdeConnect',
+      );
+  late final _rust_arc_increment_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerRsKdeConnect =
+      _rust_arc_increment_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerRsKdeConnectPtr
+          .asFunction<void Function(ffi.Pointer<ffi.Void>)>();
+
+  void rust_arc_decrement_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerRsKdeConnect(
+    ffi.Pointer<ffi.Void> ptr,
+  ) {
+    return _rust_arc_decrement_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerRsKdeConnect(
+      ptr,
+    );
+  }
+
+  late final _rust_arc_decrement_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerRsKdeConnectPtr =
+      _lookup<ffi.NativeFunction<ffi.Void Function(ffi.Pointer<ffi.Void>)>>(
+        'frbgen_relay_isolates_rust_arc_decrement_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerRsKdeConnect',
+      );
+  late final _rust_arc_decrement_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerRsKdeConnect =
+      _rust_arc_decrement_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerRsKdeConnectPtr
           .asFunction<void Function(ffi.Pointer<ffi.Void>)>();
 }

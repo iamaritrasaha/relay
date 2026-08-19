@@ -15,6 +15,7 @@ import 'package:relay_app/provider/animation_provider.dart';
 import 'package:relay_app/provider/app_arguments_provider.dart';
 import 'package:relay_app/provider/continuity/continuity_provider.dart';
 import 'package:relay_app/provider/device_info_provider.dart';
+import 'package:relay_app/provider/kdeconnect_provider.dart';
 import 'package:relay_app/provider/network/nearby_devices_provider.dart';
 import 'package:relay_app/provider/network/server/server_provider.dart';
 import 'package:relay_app/provider/network/webrtc/signaling_provider.dart';
@@ -293,6 +294,11 @@ NetworkBootstrap createNetworkBootstrap(RefenaContainer container) {
     },
     startDiscoveryListener: () {
       unawaited(container.redux(nearbyDevicesProvider).dispatchAsync(StartDiscoveryListener()));
+      if (checkPlatform([TargetPlatform.linux])) {
+        unawaited(
+          container.redux(kdeConnectProvider).dispatchAsync(KdeConnectStartAction(deviceName: container.read(settingsProvider).alias)),
+        );
+      }
     },
     startRemoteListener: () async {
       await container
