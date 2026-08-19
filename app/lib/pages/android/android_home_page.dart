@@ -133,11 +133,13 @@ class AndroidHomePage extends StatelessWidget {
             _AndroidDeviceCard(
               device: device,
               onTap: () {
-                Navigator.of(context).push(
-                  MaterialPageRoute(
-                    builder: (_) => AndroidDeviceDetailPage(
-                      device: device,
-                      activeTransfer: vm.activeTransfer,
+                unawaited(
+                  Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (_) => AndroidDeviceDetailPage(
+                        device: device,
+                        activeTransfer: vm.activeTransfer,
+                      ),
                     ),
                   ),
                 );
@@ -155,11 +157,13 @@ class AndroidHomePage extends StatelessWidget {
               _AndroidDeviceCard(
                 device: device,
                 onTap: () {
-                  Navigator.of(context).push(
-                    MaterialPageRoute(
-                      builder: (_) => AndroidDeviceDetailPage(
-                        device: device,
-                        activeTransfer: vm.activeTransfer,
+                  unawaited(
+                    Navigator.of(context).push(
+                      MaterialPageRoute(
+                        builder: (_) => AndroidDeviceDetailPage(
+                          device: device,
+                          activeTransfer: vm.activeTransfer,
+                        ),
                       ),
                     ),
                   );

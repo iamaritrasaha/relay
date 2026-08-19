@@ -81,8 +81,8 @@ class _GnomeShellState extends State<GnomeShell> with Refena {
       _selectedDeviceKey = widget.vm.devices.first.key;
     }
 
-    final selectedDevice = widget.vm.devices.firstWhereOrNull((d) => d.key == _selectedDeviceKey) ??
-        (widget.vm.devices.isNotEmpty ? widget.vm.devices.first : null);
+    final selectedDevice =
+        widget.vm.devices.firstWhereOrNull((d) => d.key == _selectedDeviceKey) ?? (widget.vm.devices.isNotEmpty ? widget.vm.devices.first : null);
 
     return Scaffold(
       backgroundColor: palette.canvas,
@@ -199,7 +199,7 @@ class _GnomeShellState extends State<GnomeShell> with Refena {
     return switch (_subView) {
       GnomeSubView.settings => 'Preferences',
       GnomeSubView.activity => 'Activity',
-      GnomeSubView.clipboard => 'Clipboard Sync',
+      GnomeSubView.clipboard => 'Clipboard',
       GnomeSubView.messages => 'Messages',
       GnomeSubView.overview => selectedDevice?.alias ?? 'Relay',
     };
@@ -227,8 +227,8 @@ class _GnomeShellState extends State<GnomeShell> with Refena {
     if (selectedDevice == null) {
       return const AdwStatusPage(
         icon: Icons.devices_other_rounded,
-        title: 'No Device Selected',
-        description: 'Select a device from the sidebar to transfer files, view continuity status, or inspect diagnostics.',
+        title: 'No nearby devices',
+        description: 'When another device is available, select it here to send files.',
       );
     }
 

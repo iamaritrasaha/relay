@@ -42,9 +42,8 @@ class GnomeDeviceDetailView extends StatelessWidget {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final history = context.watch(receiveHistoryProvider);
 
-    final isSending = device.phase == RelayDevicePhase.sending ||
-        device.phase == RelayDevicePhase.waiting ||
-        device.phase == RelayDevicePhase.verifying;
+    final isSending =
+        device.phase == RelayDevicePhase.sending || device.phase == RelayDevicePhase.waiting || device.phase == RelayDevicePhase.verifying;
 
     return SingleChildScrollView(
       padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 28),
@@ -82,20 +81,10 @@ class GnomeDeviceDetailView extends StatelessWidget {
                           style: RelayTypography.largeTitle(palette.textPrimary, isGnome: true),
                         ),
                         const SizedBox(height: 4),
-                        Row(
-                          children: [
-                            _StatusBadge(
-                              label: device.statusSummary,
-                              isAccent: device.isVerifiedRelay,
-                            ),
-                            if (device.battery.hasInfo) ...[
-                              const SizedBox(width: 8),
-                              _StatusBadge(
-                                label: device.battery.displayString,
-                                isAccent: false,
-                              ),
-                            ],
-                          ],
+                        Text(
+                          device.battery.hasInfo ? '${device.statusSummary} · ${device.battery.displayString}' : device.statusSummary,
+                          style: RelayTypography.body(palette.textSecondary, isGnome: true),
+                          overflow: TextOverflow.ellipsis,
                         ),
                       ],
                     ),
@@ -167,41 +156,34 @@ class GnomeDeviceDetailView extends StatelessWidget {
               ],
 
               // Primary Action Buttons
-              Row(
+              Wrap(
+                spacing: 10,
+                runSpacing: 10,
                 children: [
-                  Expanded(
-                    child: AdwButton.suggested(
-                      key: const ValueKey('gnome-send-files-button'),
-                      icon: Icons.file_upload_outlined,
-                      label: 'Send Files',
-                      isPill: true,
-                      onPressed: onSendFiles,
-                    ),
+                  AdwButton.suggested(
+                    key: const ValueKey('gnome-send-files-button'),
+                    icon: Icons.file_upload_outlined,
+                    label: 'Send Files',
+                    isPill: true,
+                    onPressed: onSendFiles,
                   ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: AdwButton(
-                      key: const ValueKey('gnome-send-folder-button'),
-                      icon: Icons.folder_open_outlined,
-                      label: 'Send Folder',
-                      isPill: true,
-                      onPressed: onSendFolder,
-                    ),
-                  ),
-                  const SizedBox(width: 10),
                   AdwButton(
+                    key: const ValueKey('gnome-send-folder-button'),
+                    icon: Icons.folder_open_outlined,
+                    label: 'Send Folder',
+                    isPill: true,
+                    onPressed: onSendFolder,
+                  ),
+                  AdwButton.flat(
                     key: const ValueKey('gnome-clipboard-button'),
                     icon: Icons.content_paste_outlined,
                     label: 'Clipboard',
-                    isPill: true,
                     onPressed: onOpenClipboard,
                   ),
-                  const SizedBox(width: 10),
-                  AdwButton(
+                  AdwButton.flat(
                     key: const ValueKey('gnome-messages-button'),
                     icon: Icons.chat_bubble_outline_rounded,
                     label: 'Messages',
-                    isPill: true,
                     onPressed: onOpenMessages,
                   ),
                 ],
@@ -211,45 +193,30 @@ class GnomeDeviceDetailView extends StatelessWidget {
 
               // Device Information Boxed Group
               AdwPreferencesGroup(
-                title: 'Device Information',
+                title: 'Device',
                 children: [
                   AdwActionRow(
                     leading: const Icon(Icons.wifi_rounded),
                     title: 'Connection',
                     subtitle: device.isLocalSend
-                        ? 'Local network candidate'
+                        ? 'Nearby on your local network'
                         : device.connectionType == RelayConnectionType.direct
-                            ? 'Direct peer-to-peer'
-                            : device.connectionType == RelayConnectionType.relayed
-                                ? 'Relayed via anywhere relay'
-                                : 'Local network (verified)',
-                    trailing: Text(
-                      device.connectionType.label,
-                      style: RelayTypography.body(palette.textSecondary, isGnome: true),
-                    ),
+                        ? 'Direct connection'
+                        : device.connectionType == RelayConnectionType.relayed
+                        ? 'Connected remotely'
+                        : 'Nearby on your local network',
                   ),
                   AdwActionRow(
                     leading: Icon(
                       device.isVerifiedRelay ? Icons.verified_user_rounded : Icons.info_outline_rounded,
                     ),
-                    title: 'Security',
-                    subtitle: device.isVerifiedRelay
-                        ? 'Authenticated Relay device identity'
-                        : 'LocalSend-compatible device (unauthenticated)',
-                    trailing: Text(
-                      device.securityState.label,
-                      style: RelayTypography.body(
-                        device.isVerifiedRelay ? palette.success : palette.textTertiary,
-                        isGnome: true,
-                      ),
-                    ),
+                    title: 'Device verification',
+                    subtitle: device.isVerifiedRelay ? 'Authenticated Relay device identity' : 'LocalSend-compatible device (unauthenticated)',
                   ),
                   AdwActionRow(
                     leading: const Icon(Icons.battery_std_rounded),
                     title: 'Battery',
-                    subtitle: device.battery.hasInfo
-                        ? (device.battery.isCharging ? 'Charging' : 'Discharging')
-                        : 'Not reported by peer',
+                    subtitle: device.battery.hasInfo ? (device.battery.isCharging ? 'Charging' : 'Discharging') : 'Not reported by peer',
                     trailing: Text(
                       device.battery.displayString,
                       style: RelayTypography.body(palette.textSecondary, isGnome: true),
@@ -257,8 +224,8 @@ class GnomeDeviceDetailView extends StatelessWidget {
                   ),
                   AdwNavigationRow(
                     leading: const Icon(Icons.tune_rounded),
-                    title: 'Advanced Diagnostics',
-                    subtitle: 'Fingerprint, connection endpoints, protocol state',
+                    title: 'Security & diagnostics',
+                    subtitle: 'Verify this device and view technical details',
                     onTap: onOpenDiagnostics,
                   ),
                 ],
@@ -322,38 +289,5 @@ class GnomeDeviceDetailView extends StatelessWidget {
     if (diff.inDays < 1) return '${diff.inHours}h ago';
     if (diff.inDays == 1) return 'Yesterday';
     return '${dt.month}/${dt.day}';
-  }
-}
-
-class _StatusBadge extends StatelessWidget {
-  final String label;
-  final bool isAccent;
-
-  const _StatusBadge({
-    required this.label,
-    required this.isAccent,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final palette = Theme.of(context).relayPalette;
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-
-    final bg = isAccent
-        ? (isDark ? palette.accent.withValues(alpha: 0.2) : palette.accent.withValues(alpha: 0.12))
-        : (isDark ? const Color(0x1affffff) : const Color(0x0f000000));
-    final fg = isAccent ? palette.accent : palette.textSecondary;
-
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-      decoration: BoxDecoration(
-        color: bg,
-        borderRadius: BorderRadius.circular(6),
-      ),
-      child: Text(
-        label,
-        style: RelayTypography.caption(fg, isGnome: true),
-      ),
-    );
   }
 }

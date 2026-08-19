@@ -142,22 +142,6 @@ class AndroidDeviceDetailPage extends StatelessWidget {
                       ],
                     ),
                   ),
-                  if (device.isVerifiedRelay)
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                      decoration: BoxDecoration(
-                        color: palette.accentSoft,
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: Text(
-                        'Verified',
-                        style: TextStyle(
-                          fontSize: 11,
-                          fontWeight: FontWeight.w600,
-                          color: palette.accent,
-                        ),
-                      ),
-                    ),
                 ],
               ),
             ),
@@ -240,28 +224,21 @@ class AndroidDeviceDetailPage extends StatelessWidget {
             style: RelayTypography.sectionHeader(palette.textSecondary),
           ),
           const SizedBox(height: 8),
-          Row(
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Expanded(
-                child: FilledButton.icon(
-                  onPressed: () => _pickAndSendFiles(context, ref),
-                  icon: const Icon(Icons.upload_file_rounded),
-                  label: const Text('Send Files'),
-                  style: FilledButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(vertical: 14),
-                  ),
-                ),
+              FilledButton.icon(
+                onPressed: () => _pickAndSendFiles(context, ref),
+                icon: const Icon(Icons.upload_file_rounded),
+                label: const Text('Send Files'),
+                style: FilledButton.styleFrom(padding: const EdgeInsets.symmetric(vertical: 14)),
               ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: FilledButton.tonalIcon(
-                  onPressed: () => _pickAndSendFolder(context, ref),
-                  icon: const Icon(Icons.drive_folder_upload_rounded),
-                  label: const Text('Send Folder'),
-                  style: FilledButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(vertical: 14),
-                  ),
-                ),
+              const SizedBox(height: 8),
+              OutlinedButton.icon(
+                onPressed: () => _pickAndSendFolder(context, ref),
+                icon: const Icon(Icons.drive_folder_upload_rounded),
+                label: const Text('Send Folder'),
+                style: OutlinedButton.styleFrom(padding: const EdgeInsets.symmetric(vertical: 12)),
               ),
             ],
           ),
@@ -269,37 +246,23 @@ class AndroidDeviceDetailPage extends StatelessWidget {
           const SizedBox(height: 10),
 
           // Secondary Continuity Surfaces
-          Row(
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Expanded(
-                child: FilledButton.tonalIcon(
-                  onPressed: () {
-                    unawaited(context.push(() => AndroidMessagesPage(device: device)));
-                  },
-                  icon: const Icon(Icons.chat_bubble_outline_rounded),
-                  label: const Text('Messages'),
-                  style: FilledButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(vertical: 12),
-                  ),
-                ),
+              TextButton.icon(
+                onPressed: () => unawaited(context.push(() => AndroidMessagesPage(device: device))),
+                icon: const Icon(Icons.chat_bubble_outline_rounded),
+                label: const Text('Messages — coming soon'),
               ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: FilledButton.tonalIcon(
-                  onPressed: () {
-                    unawaited(
-                      showModalBottomSheet<void>(
-                        context: context,
-                        builder: (_) => AndroidClipboardSheet(device: device),
-                      ),
-                    );
-                  },
-                  icon: const Icon(Icons.content_paste_outlined),
-                  label: const Text('Clipboard'),
-                  style: FilledButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(vertical: 12),
+              TextButton.icon(
+                onPressed: () => unawaited(
+                  showModalBottomSheet<void>(
+                    context: context,
+                    builder: (_) => AndroidClipboardSheet(device: device),
                   ),
                 ),
+                icon: const Icon(Icons.content_paste_outlined),
+                label: const Text('Clipboard — coming soon'),
               ),
             ],
           ),
@@ -308,7 +271,7 @@ class AndroidDeviceDetailPage extends StatelessWidget {
 
           // Device Information Card
           Text(
-            'DEVICE INFORMATION',
+            'DEVICE DETAILS',
             style: RelayTypography.sectionHeader(palette.textSecondary),
           ),
           const SizedBox(height: 8),
@@ -323,7 +286,7 @@ class AndroidDeviceDetailPage extends StatelessWidget {
               children: [
                 ListTile(
                   leading: const Icon(Icons.devices_rounded),
-                  title: const Text('Device Model / Type'),
+                  title: const Text('Device type'),
                   trailing: Text(
                     '${device.deviceModel ?? 'Unknown'} (${device.deviceType.name})',
                     style: RelayTypography.body(palette.textSecondary),
@@ -332,7 +295,7 @@ class AndroidDeviceDetailPage extends StatelessWidget {
                 const Divider(height: 1),
                 ListTile(
                   leading: const Icon(Icons.link_rounded),
-                  title: const Text('Connection Route'),
+                  title: const Text('Connection'),
                   trailing: Text(
                     device.connectionType.label,
                     style: RelayTypography.body(palette.textSecondary),
@@ -341,7 +304,7 @@ class AndroidDeviceDetailPage extends StatelessWidget {
                 const Divider(height: 1),
                 ListTile(
                   leading: const Icon(Icons.security_rounded),
-                  title: const Text('Trust & Security'),
+                  title: const Text('Device verification'),
                   trailing: Text(
                     device.securityState.label,
                     style: RelayTypography.body(palette.textSecondary),
@@ -449,9 +412,7 @@ class AndroidDeviceDetailPage extends StatelessWidget {
     }
 
     final relayId = device.relayId ?? (device.key.startsWith('relay:') ? device.key.substring('relay:'.length) : null);
-    final route = relayId == null
-        ? null
-        : ref.read(relayPairedRoutesProvider).where((entry) => entry.relayId == relayId).firstOrNull;
+    final route = relayId == null ? null : ref.read(relayPairedRoutesProvider).where((entry) => entry.relayId == relayId).firstOrNull;
     final verifiedLan = relayId == null ? null : ref.read(relayVerifiedLanDevicesProvider)[relayId];
 
     if (relayId != null && (route != null || verifiedLan != null)) {
@@ -460,9 +421,7 @@ class AndroidDeviceDetailPage extends StatelessWidget {
             .read(relaySendServiceProvider)
             .sendRelayDevice(
               relayId: relayId,
-              verifiedLanTarget: verifiedLan == null
-                  ? null
-                  : ref.read(nearbyDevicesProvider).allDevices[verifiedLan.device.fingerprint],
+              verifiedLanTarget: verifiedLan == null ? null : ref.read(nearbyDevicesProvider).allDevices[verifiedLan.device.fingerprint],
               pairedRoute: route,
               files: files,
               background: true,

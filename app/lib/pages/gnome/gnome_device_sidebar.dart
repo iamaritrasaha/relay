@@ -48,8 +48,8 @@ class GnomeDeviceSidebar extends StatelessWidget {
                   color: vm.presence == RelayPresence.offline
                       ? palette.textTertiary
                       : vm.presence == RelayPresence.discovering
-                          ? palette.warning
-                          : palette.success,
+                      ? palette.warning
+                      : palette.success,
                 ),
               ),
               const SizedBox(width: 8),
@@ -66,11 +66,11 @@ class GnomeDeviceSidebar extends StatelessWidget {
 
         const Divider(height: 1, thickness: 1, indent: 12, endIndent: 12),
 
-        // Section header
+        // Nearby device list. Technical route details stay in Diagnostics.
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 12, 16, 6),
           child: Text(
-            'DEVICES',
+            'NEARBY DEVICES',
             style: RelayTypography.sectionHeader(palette.textSecondary, isGnome: true),
           ),
         ),
@@ -94,7 +94,7 @@ class GnomeDeviceSidebar extends StatelessWidget {
                       Padding(
                         padding: const EdgeInsets.fromLTRB(12, 16, 12, 6),
                         child: Text(
-                          'LOCALSEND COMPATIBILITY',
+                          'OTHER DEVICES',
                           style: RelayTypography.sectionHeader(palette.textTertiary, isGnome: true),
                         ),
                       ),
@@ -176,9 +176,7 @@ class _DeviceSidebarItem extends StatelessWidget {
         color: isSelected ? selectedBg : Colors.transparent,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(8),
-          side: isSelected
-              ? BorderSide(color: palette.accent.withValues(alpha: 0.4), width: 1)
-              : BorderSide.none,
+          side: isSelected ? BorderSide(color: palette.accent.withValues(alpha: 0.4), width: 1) : BorderSide.none,
         ),
         clipBehavior: Clip.antiAlias,
         child: InkWell(
@@ -263,15 +261,15 @@ class _EmptySidebarState extends StatelessWidget {
             ),
             const SizedBox(height: 10),
             Text(
-              presence == RelayPresence.offline ? 'Relay Offline' : 'No Devices Found',
+              presence == RelayPresence.offline ? 'Relay is offline' : 'No nearby devices',
               style: RelayTypography.body(palette.textSecondary, isGnome: true, bold: true),
               textAlign: TextAlign.center,
             ),
             const SizedBox(height: 4),
             Text(
               presence == RelayPresence.offline
-                  ? 'Start local service to discover devices'
-                  : 'Devices on your network or paired addresses will appear here',
+                  ? 'Turn on receiving to find devices on your network.'
+                  : 'Devices on your network and paired devices will appear here.',
               style: RelayTypography.caption(palette.textTertiary, isGnome: true),
               textAlign: TextAlign.center,
             ),

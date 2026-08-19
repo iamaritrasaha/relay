@@ -34,42 +34,20 @@ class AndroidClipboardSheet extends StatelessWidget {
               Icon(Icons.content_paste_outlined, color: palette.accent, size: 24),
               const SizedBox(width: 12),
               Text(
-                'Clipboard Sync',
+                'Clipboard',
                 style: RelayTypography.title(palette.textPrimary),
               ),
             ],
           ),
           const SizedBox(height: 16),
-          Card(
-            elevation: 0,
-            color: palette.softSurface,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(16),
-              side: BorderSide(color: palette.hairline),
-            ),
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      Icon(Icons.info_outline_rounded, size: 18, color: palette.accent),
-                      const SizedBox(width: 8),
-                      Text(
-                        'Feature in development',
-                        style: RelayTypography.body(palette.textPrimary, bold: true),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 6),
-                  Text(
-                    'Cross-device clipboard synchronization with ${device.alias} will be available in an upcoming update. No clipboard data is currently monitored or shared.',
-                    style: RelayTypography.caption(palette.textSecondary),
-                  ),
-                ],
-              ),
-            ),
+          Text(
+            'Clipboard sharing is not available yet.',
+            style: RelayTypography.heading(palette.textPrimary),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            'When it is available, you will be able to share clipboard content with ${device.alias}. Relay does not currently read, store, or share clipboard content.',
+            style: RelayTypography.body(palette.textSecondary),
           ),
           const SizedBox(height: 16),
           FilledButton.tonal(

@@ -74,7 +74,7 @@ void main() {
     await tester.pumpAndSettle();
 
     // Verify presence of sidebar and device
-    expect(find.text('DEVICES'), findsOneWidget);
+    expect(find.text('NEARBY DEVICES'), findsOneWidget);
     expect(find.text('Pixel 8 Pro'), findsWidgets);
     expect(find.text('Send Files'), findsOneWidget);
     expect(find.text('Send Folder'), findsOneWidget);
