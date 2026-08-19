@@ -25,6 +25,7 @@ import 'package:relay_app/widget/dialogs/relay_pair_device_dialog.dart';
 import 'package:relay_app/widget/gnome/adw_header_bar.dart';
 import 'package:relay_app/widget/gnome/adw_split_view.dart';
 import 'package:relay_app/widget/gnome/adw_status_page.dart';
+import 'package:relay_app/widget/relay_motion/relay_spatial_scene.dart';
 import 'package:refena_flutter/refena_flutter.dart';
 import 'package:routerino/routerino.dart';
 
@@ -228,10 +229,26 @@ class _GnomeShellState extends State<GnomeShell> with Refena {
     }
 
     if (selectedDevice == null) {
-      return const AdwStatusPage(
-        icon: Icons.devices_other_rounded,
-        title: 'No nearby devices',
-        description: 'When another device is available, select it here to send files.',
+      return ListView(
+        children: [
+          RelaySpatialScene(
+            selfAlias: widget.vm.selfAlias,
+            selfDeviceType: widget.vm.selfDeviceType,
+            presence: widget.vm.presence,
+            devices: widget.vm.devices,
+            selectedDeviceKey: _selectedDeviceKey,
+            animationsEnabled: widget.animationsEnabled,
+            height: 280,
+            onDeviceSelected: (device) {
+              setState(() => _selectedDeviceKey = device?.key);
+            },
+          ),
+          const AdwStatusPage(
+            icon: Icons.devices_other_rounded,
+            title: 'No nearby devices',
+            description: 'When another device is available, select it here to send files.',
+          ),
+        ],
       );
     }
 
@@ -256,16 +273,34 @@ class _GnomeShellState extends State<GnomeShell> with Refena {
       );
     }
 
-    return GnomeDeviceDetailView(
-      device: selectedDevice,
-      activeTransfer: widget.vm.activeTransfer,
-      onSendFiles: () => _pickAndSendFiles(selectedDevice),
-      onSendFolder: () => _pickAndSendFolder(selectedDevice),
-      onOpenClipboard: () => setState(() => _subView = GnomeSubView.clipboard),
-      onOpenMessages: () => setState(() => _subView = GnomeSubView.messages),
-      onOpenPhone: () => setState(() => _subView = GnomeSubView.phone),
-      onOpenDiagnostics: () => _openDiagnostics(selectedDevice),
-      onCancelTransfer: () => _cancelTransfer(),
+    return ListView(
+      children: [
+        RelaySpatialScene(
+          selfAlias: widget.vm.selfAlias,
+          selfDeviceType: widget.vm.selfDeviceType,
+          presence: widget.vm.presence,
+          devices: widget.vm.devices,
+          selectedDeviceKey: _selectedDeviceKey,
+          animationsEnabled: widget.animationsEnabled,
+          height: 280,
+          onDeviceSelected: (device) {
+            setState(() => _selectedDeviceKey = device?.key);
+          },
+          onSendFiles: (device) => _pickAndSendFiles(device),
+          onOpenDetails: (device) => _openDiagnostics(device),
+        ),
+        GnomeDeviceDetailView(
+          device: selectedDevice,
+          activeTransfer: widget.vm.activeTransfer,
+          onSendFiles: () => _pickAndSendFiles(selectedDevice),
+          onSendFolder: () => _pickAndSendFolder(selectedDevice),
+          onOpenClipboard: () => setState(() => _subView = GnomeSubView.clipboard),
+          onOpenMessages: () => setState(() => _subView = GnomeSubView.messages),
+          onOpenPhone: () => setState(() => _subView = GnomeSubView.phone),
+          onOpenDiagnostics: () => _openDiagnostics(selectedDevice),
+          onCancelTransfer: () => _cancelTransfer(),
+        ),
+      ],
     );
   }
 

@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:mockito/mockito.dart';
+import 'package:refena_flutter/refena_flutter.dart';
 import 'package:relay_app/config/theme.dart';
 import 'package:relay_app/model/persistence/color_mode.dart';
 import 'package:relay_app/model/ui/relay_capability_vm.dart';
@@ -8,8 +10,6 @@ import 'package:relay_app/pages/gnome/gnome_shell.dart';
 import 'package:relay_app/pages/relay_home_vm.dart';
 import 'package:relay_app/provider/persistence_provider.dart';
 import 'package:relay_isolates/model/device.dart';
-import 'package:mockito/mockito.dart';
-import 'package:refena_flutter/refena_flutter.dart';
 
 import '../../mocks.mocks.dart';
 
@@ -71,14 +71,15 @@ void main() {
       ),
     );
 
-    await tester.pumpAndSettle();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
 
-    // Verify presence of sidebar and device
+    // Verify presence of sidebar, spatial scene and device details
     expect(find.text('NEARBY DEVICES'), findsOneWidget);
     expect(find.text('Pixel 8 Pro'), findsWidgets);
-    expect(find.text('Send Files'), findsOneWidget);
+    expect(find.text('Send Files'), findsWidgets);
     expect(find.text('Send Folder'), findsOneWidget);
-    expect(find.text('Clipboard'), findsOneWidget);
-    expect(find.text('Messages'), findsOneWidget);
+    expect(find.text('Clipboard'), findsWidgets);
+    expect(find.text('Messages'), findsWidgets);
   });
 }

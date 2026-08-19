@@ -59,6 +59,7 @@ class _AndroidShellState extends State<AndroidShell> {
         child: switch (_currentIndex) {
           0 => AndroidHomePage(
             vm: widget.vm,
+            animationsEnabled: widget.animationsEnabled,
             onAddDevice: () {
               if (widget.onPairDevice != null) {
                 widget.onPairDevice!();

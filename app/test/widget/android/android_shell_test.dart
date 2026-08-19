@@ -49,7 +49,7 @@ void main() {
     activeTransfer: null,
   );
 
-  testWidgets('AndroidShell renders navigation bar and touch-first device cards', (tester) async {
+  testWidgets('AndroidShell renders navigation bar and spatial scene with self node and devices', (tester) async {
     tester.view.physicalSize = const Size(400, 800);
     tester.view.devicePixelRatio = 1.0;
     addTearDown(() => tester.view.resetPhysicalSize());
@@ -71,15 +71,15 @@ void main() {
       ),
     );
 
-    await tester.pumpAndSettle();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
 
     // Verify presence of M3 Navigation Bar and device
     expect(find.text('Devices'), findsOneWidget);
     expect(find.text('Activity'), findsOneWidget);
     expect(find.text('Settings'), findsOneWidget);
-    expect(find.text('YOUR DEVICES'), findsOneWidget);
+    expect(find.text('Pixel Phone'), findsOneWidget);
     expect(find.text('Pixel 8 Pro'), findsWidgets);
-    expect(find.text('Send Files'), findsOneWidget);
-    expect(find.text('Manage'), findsOneWidget);
+    expect(find.text('RECENT ACTIVITY'), findsOneWidget);
   });
 }
