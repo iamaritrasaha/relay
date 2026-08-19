@@ -294,6 +294,31 @@ void relay_on_surface_vanished(GDBusConnection* /*connection*/, const gchar* /*n
   relay_notify_surface(static_cast<RelayShellStatusService*>(user_data), false);
 }
 
+// Reads the bus daemon directly for the bootstrap query. The name-watch
+// callbacks remain the event source, but their initial idle callback may not
+// have run yet when Dart asks whether it should create AppIndicator.
+bool relay_query_surface_owner(RelayShellStatusService* service) {
+  g_autoptr(GError) error = nullptr;
+  g_autoptr(GDBusConnection) connection = g_bus_get_sync(G_BUS_TYPE_SESSION, nullptr, &error);
+  if (connection == nullptr) {
+    g_debug("Querying the Relay shell surface failed: %s", error->message);
+    return service->surface_attached;
+  }
+
+  g_autoptr(GVariant) result = g_dbus_connection_call_sync(
+      connection, "org.freedesktop.DBus", "/org/freedesktop/DBus", "org.freedesktop.DBus", "NameHasOwner",
+      g_variant_new("(s)", kSurfaceBusName), G_VARIANT_TYPE("(b)"), G_DBUS_CALL_FLAGS_NONE, -1, nullptr, &error);
+  if (result == nullptr) {
+    g_debug("Querying the Relay shell surface owner failed: %s", error->message);
+    return service->surface_attached;
+  }
+
+  gboolean attached = FALSE;
+  g_variant_get(result, "(b)", &attached);
+  service->surface_attached = attached;
+  return service->surface_attached;
+}
+
 void relay_shell_status_method_call_handler(FlMethodChannel* /*channel*/, FlMethodCall* method_call, gpointer user_data) {
   auto* service = static_cast<RelayShellStatusService*>(user_data);
   g_autoptr(GError) error = nullptr;
@@ -303,7 +328,7 @@ void relay_shell_status_method_call_handler(FlMethodChannel* /*channel*/, FlMeth
   // The name watch can fire before Dart has a handler installed, so the state
   // is asked for once rather than relying on having caught the notification.
   if (strcmp(name, kMethodSurfaceQuery) == 0) {
-    g_autoptr(FlValue) attached = fl_value_new_bool(service->surface_attached);
+    g_autoptr(FlValue) attached = fl_value_new_bool(relay_query_surface_owner(service));
     g_autoptr(FlMethodResponse) surface_response = FL_METHOD_RESPONSE(fl_method_success_response_new(attached));
     fl_method_call_respond(method_call, surface_response, &error);
     return;

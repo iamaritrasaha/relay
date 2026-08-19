@@ -15,6 +15,7 @@ import {
     hasLiveBattery,
     needsAttention,
     networkIconNames,
+    notificationPulseOpacities,
     normalizePhoneStatus,
     unreadLabel,
 } from '../relay@foresight.app/phoneStatus.js';
@@ -82,9 +83,14 @@ check('every icon chain has a fallback', batteryIconNames(normalizePhoneStatus(c
 print('network');
 check('an absent network stays absent', normalizePhoneStatus(connectedPhone).networkLabel === null);
 check('a reported network survives', normalizePhoneStatus({...connectedPhone, networkKind: 'cellular', networkLabel: '5G'}).networkLabel === '5G');
-check('a signal without a network is dropped', normalizePhoneStatus({...connectedPhone, signalLevel: 3}).signalLevel === null);
+check('a signal without a label still survives', normalizePhoneStatus({...connectedPhone, signalLevel: 3}).signalLevel === 3);
 check('a signal with a network survives', normalizePhoneStatus({...connectedPhone, networkKind: 'cellular', signalLevel: 3}).signalLevel === 3);
 check('an absurd signal is dropped', normalizePhoneStatus({...connectedPhone, networkKind: 'cellular', signalLevel: -1000}).signalLevel === null);
+check('unknown signal uses signal-none', networkIconNames(normalizePhoneStatus(connectedPhone))[0] === 'network-cellular-signal-none-symbolic');
+for (const [level, name] of ['none', 'weak', 'ok', 'good', 'excellent'].entries()) {
+    check(`signal ${level} picks ${name}`, networkIconNames(normalizePhoneStatus({...connectedPhone, signalLevel: level}))[0] ===
+        `network-cellular-signal-${name}-symbolic`);
+}
 check('cellular picks a cellular icon',
     networkIconNames(normalizePhoneStatus({...connectedPhone, networkKind: 'cellular', signalLevel: 4}))[0] === 'network-cellular-signal-excellent-symbolic');
 check('wifi picks a wireless icon',
@@ -109,16 +115,31 @@ check('zero notifications is a real answer', normalizePhoneStatus({...connectedP
 check('a negative notification count is dropped', normalizePhoneStatus({...connectedPhone, notificationCount: -2}).notificationCount === null);
 check('an absent notification count stays absent', normalizePhoneStatus(connectedPhone).notificationCount === null);
 
+print('notification pulse');
+check('zero notifications never pulse', notificationPulseOpacities(0, 0, true).length === 0);
+check('a new notification has three finite pulses', notificationPulseOpacities(0, 1, true).length === 6);
+check('a larger count pulses again', notificationPulseOpacities(1, 3, true).length === 6);
+check('a stable count does not pulse', notificationPulseOpacities(3, 3, true).length === 0);
+check('a cleared count does not pulse', notificationPulseOpacities(3, 0, true).length === 0);
+check('reduced motion disables the pulse', notificationPulseOpacities(0, 1, false).length === 0);
+check('every pulse terminates fully visible', notificationPulseOpacities(0, 100, true).at(-1) === 255);
+
 print('accessible name');
-check('an absent Relay is announced', accessibleName(null, false, identity) === 'Relay, not running');
-check('an absent phone is announced', accessibleName(null, true, identity) === 'Relay, no phone connected');
+check('an absent Relay is announced', accessibleName(null, false, identity) === 'Relay phone, not running');
+check('an absent phone is announced', accessibleName(null, true, identity) === 'Relay phone, no phone connected');
 check('a plain phone announces its name and state',
-    accessibleName(normalizePhoneStatus(connectedPhone), true, identity) === 'Relay, Redmi Note 14 Pro, connected');
+    accessibleName(normalizePhoneStatus(connectedPhone), true, identity) === 'Relay phone, Redmi Note 14 Pro, connected, signal unknown');
 check('an unknown battery is not announced',
     !accessibleName(normalizePhoneStatus(connectedPhone), true, identity).includes('battery'));
 check('a known battery is announced',
     accessibleName(normalizePhoneStatus({...connectedPhone, batteryPercentage: 67, batteryIsCharging: true}), true, identity) ===
-        'Relay, Redmi Note 14 Pro, connected, battery 67 percent, charging');
+        'Relay phone, Redmi Note 14 Pro, connected, signal unknown, battery 67 percent, charging');
+check('zero notifications use plural grammar',
+    accessibleName(normalizePhoneStatus({...connectedPhone, notificationCount: 0}), true, identity).includes('0 notifications'));
+check('one notification uses singular grammar',
+    accessibleName(normalizePhoneStatus({...connectedPhone, notificationCount: 1}), true, identity).includes('1 notification'));
+check('two notifications use plural grammar',
+    accessibleName(normalizePhoneStatus({...connectedPhone, notificationCount: 2}), true, identity).includes('2 notifications'));
 check('unread messages are announced',
     accessibleName(normalizePhoneStatus({...connectedPhone, unreadMessageCount: 2}), true, identity).includes('2 unread messages'));
 check('notifications are announced',

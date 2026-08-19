@@ -63,8 +63,6 @@ export function normalizePhoneStatus(raw) {
     const batteryPercentage = boundedInt(raw.batteryPercentage, 0, 100);
     const networkKind = (field(raw, 'networkKind', 'string') ?? '').trim() || null;
     const networkLabel = (field(raw, 'networkLabel', 'string') ?? '').trim() || null;
-    const hasNetwork = networkKind !== null || networkLabel !== null;
-
     return Object.freeze({
         deviceId,
         displayName: name || 'Phone',
@@ -77,9 +75,10 @@ export function normalizePhoneStatus(raw) {
         batteryIsStale: batteryPercentage === null ? false : field(raw, 'batteryIsStale', 'boolean') ?? false,
         networkKind,
         networkLabel,
-        // A signal bucket with no network to belong to would draw as bars for
-        // nothing, so it only survives alongside the network fields.
-        signalLevel: hasNetwork ? boundedInt(raw.signalLevel, 0, 4) : null,
+        // Signal is independently useful. A future connectivity provider may
+        // know the level before it knows a carrier label, and the panel's
+        // network-first slot can present that honest partial answer.
+        signalLevel: boundedInt(raw.signalLevel, 0, 4),
         unreadMessageCount: boundedInt(raw.unreadMessageCount, 0, Number.MAX_SAFE_INTEGER),
         notificationCount: boundedInt(raw.notificationCount, 0, Number.MAX_SAFE_INTEGER),
         supportsFindDevice: field(raw, 'supportsFindDevice', 'boolean') ?? false,
@@ -114,11 +113,13 @@ export function batteryIconNames(status) {
  */
 export function networkIconNames(status) {
     const bars = ['none', 'weak', 'ok', 'good', 'excellent'];
-    const strength = status.signalLevel === null ? 'good' : bars[status.signalLevel];
-    if (status.networkKind === 'wifi') {
+    // Unknown must look unknown. In particular, never turn a missing reading
+    // into the visually plausible but false "good" state.
+    const strength = status?.signalLevel === null || status?.signalLevel === undefined ? 'none' : bars[status.signalLevel];
+    if (status?.networkKind === 'wifi') {
         return [`network-wireless-signal-${strength}-symbolic`, 'network-wireless-symbolic'];
     }
-    return [`network-cellular-signal-${strength}-symbolic`, 'network-cellular-symbolic'];
+    return [`network-cellular-signal-${strength}-symbolic`, 'network-cellular-symbolic', 'network-offline-symbolic'];
 }
 
 /**
@@ -127,6 +128,26 @@ export function networkIconNames(status) {
  */
 export function unreadLabel(count) {
     return count > MAX_LITERAL_UNREAD ? `${MAX_LITERAL_UNREAD}+` : `${count}`;
+}
+
+/**
+ * Opacity targets for one finite notification-attention event.
+ *
+ * Keeping this policy pure makes the important properties testable without a
+ * running Shell: only an increase pulses, reduced motion has no transitions,
+ * and the final target is always fully visible. The actor owns the timing.
+ *
+ * @param {number|null} previousCount - previous standing count
+ * @param {number|null} currentCount - current standing count
+ * @param {boolean} animations - whether Shell animations are enabled
+ * @returns {number[]} finite opacity targets
+ */
+export function notificationPulseOpacities(previousCount, currentCount, animations) {
+    const previous = previousCount ?? 0;
+    const current = currentCount ?? 0;
+    if (!animations || current <= 0 || current <= previous)
+        return [];
+    return [72, 255, 72, 255, 72, 255];
 }
 
 /**
@@ -170,11 +191,16 @@ export function hasLiveBattery(status) {
 export function accessibleName(status, serviceAvailable, gettext) {
     const _t = gettext;
     if (!serviceAvailable)
-        return _t('Relay, not running');
+        return _t('Relay phone, not running');
     if (status === null)
-        return _t('Relay, no phone connected');
+        return _t('Relay phone, no phone connected');
 
-    const parts = [_t('Relay'), status.displayName, status.connected ? _t('connected') : _t('offline')];
+    const parts = [_t('Relay phone'), status.displayName, status.connected ? _t('connected') : _t('offline')];
+
+    if (status.connected) {
+        const signalNames = [_t('no signal'), _t('weak signal'), _t('fair signal'), _t('good signal'), _t('excellent signal')];
+        parts.push(status.signalLevel === null ? _t('signal unknown') : signalNames[status.signalLevel]);
+    }
 
     if (hasLiveBattery(status)) {
         parts.push(`${_t('battery')} ${status.batteryPercentage} ${_t('percent')}`);
@@ -187,11 +213,11 @@ export function accessibleName(status, serviceAvailable, gettext) {
     if (status.networkLabel !== null)
         parts.push(status.networkLabel);
 
-    if (status.notificationCount !== null && status.notificationCount > 0)
-        parts.push(`${status.notificationCount} ${_t('notifications')}`);
+    if (status.notificationCount !== null)
+        parts.push(status.notificationCount === 1 ? _t('1 notification') : `${status.notificationCount} ${_t('notifications')}`);
 
-    if (status.unreadMessageCount !== null && status.unreadMessageCount > 0)
-        parts.push(`${status.unreadMessageCount} ${_t('unread messages')}`);
+    if (status.unreadMessageCount !== null)
+        parts.push(status.unreadMessageCount === 1 ? _t('1 unread message') : `${status.unreadMessageCount} ${_t('unread messages')}`);
 
     return parts.join(', ');
 }

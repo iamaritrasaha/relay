@@ -6,6 +6,9 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_displaymode/flutter_displaymode.dart';
+import 'package:logging/logging.dart';
+import 'package:refena_flutter/addons.dart';
+import 'package:refena_flutter/refena_flutter.dart';
 import 'package:relay_app/config/refena.dart';
 import 'package:relay_app/config/theme.dart';
 import 'package:relay_app/pages/home_page.dart';
@@ -52,9 +55,6 @@ import 'package:relay_isolates/rust/frb_generated.dart';
 import 'package:relay_isolates/util/logger.dart';
 import 'package:relay_isolates/util/show_instance.dart';
 import 'package:relay_isolates/util/transfer_notification.dart';
-import 'package:logging/logging.dart';
-import 'package:refena_flutter/addons.dart';
-import 'package:refena_flutter/refena_flutter.dart';
 import 'package:routerino/routerino.dart';
 import 'package:share_handler/share_handler.dart';
 import 'package:window_manager/window_manager.dart';
@@ -110,7 +110,10 @@ Future<RefenaContainer> preInit(List<String> args) async {
 
     // initialize tray AFTER i18n has been initialized
     try {
-      await initTray();
+      // The platform bridge already watches ShellSurface before Dart starts.
+      // Query it before creating AppIndicator so Relay never flashes a second
+      // panel entry when the GNOME pill was present first.
+      await initTray(suppressed: await prepareRelayShellSurfaceTraySync());
     } catch (e) {
       _logger.warning('Initializing tray failed: $e');
     }

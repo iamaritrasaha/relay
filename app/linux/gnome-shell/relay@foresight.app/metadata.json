@@ -1,8 +1,8 @@
 {
   "uuid": "relay@foresight.app",
   "name": "Relay",
-  "description": "Shows the status of your primary phone in the top panel: which device Relay is linked to, whether it is connected, and its battery, network and unread messages as Relay learns them. Requires the Relay desktop app.",
+  "description": "Shows network-first phone status, live battery and notification attention in the GNOME top panel. Requires the Relay desktop app.",
   "shell-version": ["46"],
   "url": "https://github.com/iamaritrasaha/relay",
-  "version": 1
+  "version": 2
 }

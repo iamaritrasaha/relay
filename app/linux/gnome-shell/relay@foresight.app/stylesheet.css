@@ -21,6 +21,12 @@
   icon-size: 1.091em;
 }
 
+/* The bell is always allocated but transparent at rest. A notification can
+ * therefore appear or pulse without changing the panel button's width. */
+.relay-notification-slot {
+  min-width: 1.091em;
+}
+
 .relay-header {
   spacing: 12px;
   padding-top: 10px;

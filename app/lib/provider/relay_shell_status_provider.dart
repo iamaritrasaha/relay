@@ -150,6 +150,47 @@ Map<String, int> relayNotificationCounts(Map<String, List<Object?>> notification
   for (final entry in notifications.entries) '$_kdeConnectKeyPrefix${entry.key}': entry.value.length,
 };
 
+/// Reads the platform-side ShellSurface watch before Relay creates its tray.
+///
+/// The native runner starts watching as soon as the Flutter engine exists, so
+/// this query is authoritative even when the extension appeared before Dart's
+/// method handler was installed. Failure safely falls back to the normal tray.
+Future<bool> isRelayShellSurfaceAttached() async {
+  if (defaultTargetPlatform != TargetPlatform.linux) {
+    return false;
+  }
+  try {
+    return await _channel.invokeMethod<bool>(_methodSurfaceQuery) ?? false;
+  } catch (e) {
+    _logger.fine('Querying the initial shell surface failed', e);
+    return false;
+  }
+}
+
+/// Starts the minimal surface/tray handler needed during early application
+/// bootstrap, before Refena and the full phone-status bridge exist.
+///
+/// Installing the handler before querying closes the appear-between-query-and-
+/// tray-create race. [startRelayShellStatusBridge] later replaces this handler
+/// and immediately re-queries the native cached state, so the handoff is also
+/// authoritative.
+Future<bool> prepareRelayShellSurfaceTraySync() async {
+  if (defaultTargetPlatform != TargetPlatform.linux) {
+    return false;
+  }
+  _channel.setMethodCallHandler((call) async {
+    if (call.method == _methodSurfaceChanged) {
+      if (call.arguments == true) {
+        await hideTrayIcon();
+      } else {
+        await restoreTrayIcon();
+      }
+    }
+    return null;
+  });
+  return isRelayShellSurfaceAttached();
+}
+
 /// Starts the shell status bridge for the current desktop session.
 ///
 /// Failure is never fatal: a desktop without the bridge simply has no shell

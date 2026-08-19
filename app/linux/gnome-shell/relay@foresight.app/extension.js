@@ -28,6 +28,7 @@ import {
     hasLiveBattery,
     needsAttention,
     networkIconNames,
+    notificationPulseOpacities,
     normalizePhoneStatus,
     unreadLabel,
 } from './phoneStatus.js';
@@ -44,14 +45,9 @@ const SURFACE_BUS_NAME = 'com.foresight.app.relay.ShellSurface';
 /** Desktop entries to try, in order, when Relay is not running. */
 const DESKTOP_IDS = ['relay.desktop', 'com.foresight.app.relay.desktop'];
 
-/** Panel width budget, as a share of the primary monitor. */
-const PANEL_WIDTH_SHARE = 0.24;
-const MIN_PANEL_WIDTH = 120;
-const MAX_PANEL_WIDTH = 380;
-
 const APPEAR_MS = 180;
-const EXPAND_MS = 220;
 const CHANGE_MS = 140;
+const NOTIFICATION_PULSE_PHASE_MS = 180;
 
 const FULL_OPACITY = 255;
 const MUTED_OPACITY = 155;
@@ -74,74 +70,6 @@ function themedIcon(names) {
 /** @returns {boolean} whether the shell is currently animating anything */
 function animationsEnabled() {
     return St.Settings.get().enable_animations;
-}
-
-/**
- * Brings an actor in by growing the pill out to fit it.
- *
- * Something arriving on the phone should read as the panel making room for it,
- * not as an icon blinking into place, so the width is what animates. With shell
- * animations off it simply appears.
- *
- * @param {Clutter.Actor} actor - the actor to reveal
- */
-function expandActor(actor) {
-    if (actor.visible)
-        return;
-
-    if (!animationsEnabled()) {
-        actor.opacity = FULL_OPACITY;
-        actor.set_width(-1);
-        actor.show();
-        return;
-    }
-
-    actor.remove_all_transitions();
-    actor.show();
-    actor.set_width(-1);
-    const [, natural] = actor.get_preferred_width(-1);
-    actor.opacity = 0;
-    actor.set_width(0);
-    actor.ease({
-        width: natural,
-        opacity: FULL_OPACITY,
-        duration: EXPAND_MS,
-        mode: Clutter.AnimationMode.EASE_OUT_QUAD,
-        // Handing the width back to the layout keeps the segment responsive to
-        // font size and text changes once it has arrived.
-        onComplete: () => actor.set_width(-1),
-    });
-}
-
-/**
- * Takes an actor away by closing the pill back up around it.
- *
- * @param {Clutter.Actor} actor - the actor to hide
- */
-function collapseActor(actor) {
-    if (!actor.visible)
-        return;
-
-    if (!animationsEnabled()) {
-        actor.hide();
-        actor.set_width(-1);
-        return;
-    }
-
-    actor.remove_all_transitions();
-    const [, natural] = actor.get_preferred_width(-1);
-    actor.set_width(natural);
-    actor.ease({
-        width: 0,
-        opacity: 0,
-        duration: EXPAND_MS,
-        mode: Clutter.AnimationMode.EASE_IN_QUAD,
-        onComplete: () => {
-            actor.hide();
-            actor.set_width(-1);
-            actor.opacity = FULL_OPACITY;
-        },
-    });
 }
 
 /**
@@ -199,9 +127,9 @@ class RelayInfoRow extends PopupMenu.PopupBaseMenuItem {
 /**
  * The Relay pill in the top panel, plus the menu behind it.
  *
- * At rest it is a phone and its battery. It only takes more of the panel when
- * the phone has something waiting — a notification or an unread message — and
- * shrinks back once that is dealt with.
+ * Its first visual is always network reception. The notification slot keeps a
+ * fixed footprint, so attention never shifts the clock or neighboring panel
+ * items; a new notification uses a short finite pulse instead.
  */
 const RelayPhoneIndicator = GObject.registerClass(
 class RelayPhoneIndicator extends PanelMenu.Button {
@@ -213,19 +141,24 @@ class RelayPhoneIndicator extends PanelMenu.Button {
         this._serviceAvailable = false;
         this._wasConnected = false;
         this._handlerIds = [];
+        this._previousNotificationCount = 0;
+        this._notificationPulseGeneration = 0;
+        this._destroyed = false;
 
         this.add_style_class_name('relay-pill');
 
         this._box = new St.BoxLayout({style_class: 'relay-pill-box', y_align: Clutter.ActorAlign.CENTER});
         this.add_child(this._box);
 
-        this._deviceIcon = new St.Icon({style_class: 'relay-pill-icon', y_align: Clutter.ActorAlign.CENTER});
-        this._box.add_child(this._deviceIcon);
+        this._signalIcon = new St.Icon({style_class: 'relay-pill-icon relay-signal-icon', y_align: Clutter.ActorAlign.CENTER});
+        this._box.add_child(this._signalIcon);
 
-        this._network = this._buildSegment();
         this._battery = this._buildSegment();
-        this._notifications = this._buildSegment('relay-attention');
-        this._messages = this._buildSegment('relay-attention');
+        this._notifications = this._buildSegment('relay-notification-slot');
+        this._notifications.icon.gicon = themedIcon(['preferences-system-notifications-symbolic', 'user-available-symbolic']);
+        this._notifications.label.hide();
+        this._notifications.box.opacity = 0;
+        this._notifications.box.show();
 
         this._stateLabel = new St.Label({style_class: 'relay-pill-state', y_align: Clutter.ActorAlign.CENTER});
         this._stateLabel.hide();
@@ -233,13 +166,6 @@ class RelayPhoneIndicator extends PanelMenu.Button {
 
         this._buildMenu();
 
-        // The width budget depends on the monitor and the text scale, so it is
-        // recomputed when those change rather than on a timer.
-        this._connectTo(Main.layoutManager, 'monitors-changed', () => this._applyWidthBudget());
-        this._connectTo(St.ThemeContext.get_for_stage(global.stage), 'notify::scale-factor', () => this._applyWidthBudget());
-        // Measuring needs a stage, and the indicator has none until the panel
-        // takes it, so the first budget is applied when it is mapped.
-        this._connectTo(this, 'notify::mapped', () => this._applyWidthBudget());
         this._connectTo(this, 'key-press-event', (actor, event) => this._onKeyPress(actor, event));
 
         this.connect('destroy', () => this._onDestroy());
@@ -351,33 +277,27 @@ class RelayPhoneIndicator extends PanelMenu.Button {
         const status = this._status;
         const connected = status !== null && status.connected;
 
-        // The leading slot is the phone's reception when Relay knows it, and the
-        // phone itself when it does not. Nothing is invented to fill it: the
-        // bars appear on their own the day a Relay capability reports signal.
-        const showsSignal = connected && status.signalLevel !== null;
-        this._deviceIcon.gicon = showsSignal
-            ? themedIcon(networkIconNames(status))
-            : themedIcon(status !== null && status.deviceType !== 'desktop'
-                ? ['phone-symbolic', 'smartphone-symbolic', 'computer-symbolic']
-                : ['computer-symbolic', 'phone-symbolic']);
+        // Network reception is the permanent leading language. Until Relay has
+        // a genuine reading, the native signal-none icon is deliberately muted;
+        // a handset icon is never substituted and no strength is invented.
+        this._signalIcon.gicon = themedIcon(networkIconNames(status));
+        this._signalIcon.opacity = connected && status.signalLevel === null ? SECONDARY_OPACITY : FULL_OPACITY;
 
         if (!connected) {
-            this._network.box.hide();
             this._battery.box.hide();
-            this._notifications.box.hide();
-            this._messages.box.hide();
+            this._clearNotificationAttention();
         } else {
-            this._renderNetwork(status, showsSignal);
             this._renderBattery(status);
             this._renderAttention(status);
         }
 
-        // Offline is stated in words as well as by the pill shrinking, so it
-        // never rests on a shade of grey alone.
+        // With no phone to describe, "Relay" is the only word admitted to the
+        // top bar. A known phone that dropped off is stated as offline.
         const offline = this._serviceAvailable && status !== null && !connected;
-        if (offline)
-            this._stateLabel.text = _('Offline');
-        this._stateLabel.visible = offline;
+        const noPhone = !this._serviceAvailable || status === null;
+        if (offline || noPhone)
+            this._stateLabel.text = offline ? _('Offline') : 'Relay';
+        this._stateLabel.visible = offline || noPhone;
 
         this._box.opacity = connected ? FULL_OPACITY : MUTED_OPACITY;
         if (connected && !this._wasConnected)
@@ -386,7 +306,6 @@ class RelayPhoneIndicator extends PanelMenu.Button {
 
         this.accessible_name = accessibleName(status, this._serviceAvailable, _);
         this._renderMenu();
-        this._applyWidthBudget();
     }
 
     _renderBattery(status) {
@@ -398,58 +317,56 @@ class RelayPhoneIndicator extends PanelMenu.Button {
         }
         this._battery.icon.gicon = themedIcon(batteryIconNames(status));
         setLabelText(this._battery.label, `${status.batteryPercentage}%`);
-        expandActor(this._battery.box);
+        this._battery.box.show();
     }
 
     /**
-     * Draws the network's name beside the bars.
-     *
-     * When the bars are already the pill's leading icon there is no second icon
-     * here — just the label that says which network they belong to.
-     *
-     * @param {object} status - a normalized status
-     * @param {boolean} showsSignal - whether the leading icon is already the bars
-     */
-    _renderNetwork(status, showsSignal) {
-        if (status.networkLabel === null) {
-            this._network.box.hide();
-            return;
-        }
-        this._network.icon.visible = !showsSignal;
-        if (!showsSignal)
-            this._network.icon.gicon = themedIcon(networkIconNames(status));
-        setLabelText(this._network.label, status.networkLabel);
-        expandActor(this._network.box);
-    }
-
-    /**
-     * Draws the counts that make the pill grow.
-     *
-     * Zero is a real answer and the honest way to draw it is to say nothing at
-     * all, so a settled phone leaves the panel exactly as it found it.
+     * Updates the fixed notification slot and starts a finite pulse only when
+     * the standing count increases.
      */
     _renderAttention(status) {
-        const segments = [
-            [this._notifications, status.notificationCount, ['preferences-system-notifications-symbolic', 'user-available-symbolic']],
-            [this._messages, status.unreadMessageCount, ['mail-unread-symbolic', 'user-available-symbolic']],
-        ];
+        const count = status.notificationCount ?? 0;
+        const pulse = notificationPulseOpacities(this._previousNotificationCount, count, animationsEnabled());
+        this._previousNotificationCount = count;
+        this._notificationPulseGeneration += 1;
+        const generation = this._notificationPulseGeneration;
+        this._notifications.box.remove_all_transitions();
 
-        for (const [segment, count, icons] of segments) {
-            // The pill stays open for as long as the count stands, and closes
-            // again only once the user has actually dealt with it.
-            if (count === null || count === 0) {
-                collapseActor(segment.box);
-                continue;
-            }
-            segment.icon.gicon = themedIcon(icons);
-            setLabelText(segment.label, unreadLabel(count));
-            expandActor(segment.box);
+        if (count <= 0) {
+            this._notifications.box.opacity = 0;
+        } else {
+            this._notifications.box.opacity = FULL_OPACITY;
+            if (pulse.length > 0)
+                this._runNotificationPulse(pulse, 0, generation);
         }
 
         if (needsAttention(status))
             this._box.add_style_class_name('relay-attentive');
         else
             this._box.remove_style_class_name('relay-attentive');
+    }
+
+    _runNotificationPulse(opacities, index, generation) {
+        if (this._destroyed || generation !== this._notificationPulseGeneration)
+            return;
+        if (index >= opacities.length) {
+            this._notifications.box.opacity = this._previousNotificationCount > 0 ? FULL_OPACITY : 0;
+            return;
+        }
+        this._notifications.box.ease({
+            opacity: opacities[index],
+            duration: NOTIFICATION_PULSE_PHASE_MS,
+            mode: Clutter.AnimationMode.EASE_IN_OUT_QUAD,
+            onComplete: () => this._runNotificationPulse(opacities, index + 1, generation),
+        });
+    }
+
+    _clearNotificationAttention() {
+        this._previousNotificationCount = 0;
+        this._notificationPulseGeneration += 1;
+        this._notifications.box.remove_all_transitions();
+        this._notifications.box.opacity = 0;
+        this._box.remove_style_class_name('relay-attentive');
     }
 
     _renderMenu() {
@@ -464,7 +381,7 @@ class RelayPhoneIndicator extends PanelMenu.Button {
             this._headerName.text = 'Relay';
             this._headerState.text = _('No phone connected');
         } else {
-            this._headerIcon.gicon = this._deviceIcon.gicon;
+            this._headerIcon.gicon = themedIcon(['phone-symbolic', 'smartphone-symbolic', 'computer-symbolic']);
             this._headerName.text = status.displayName;
             this._headerState.text = status.connected ? _('Connected') : _('Offline');
         }
@@ -542,38 +459,12 @@ class RelayPhoneIndicator extends PanelMenu.Button {
         });
     }
 
-    /**
-     * Keeps the pill inside a share of the panel.
-     *
-     * There is very little to give up by design — the phone's name lives in the
-     * menu, not the panel — so this only sheds the text beside an icon, and
-     * never the icons that say which phone the pill is about.
-     */
-    _applyWidthBudget() {
-        if (!this.is_mapped())
-            return;
-
-        const scale = St.ThemeContext.get_for_stage(global.stage).scale_factor || 1;
-        const monitor = Main.layoutManager.primaryMonitor;
-        const monitorWidth = monitor ? monitor.width / scale : MAX_PANEL_WIDTH;
-        const budget = Math.max(MIN_PANEL_WIDTH, Math.min(MAX_PANEL_WIDTH, Math.round(monitorWidth * PANEL_WIDTH_SHARE)));
-
-        // Reverse importance: the network's label goes before the battery's,
-        // and no icon is ever dropped.
-        const reducers = [
-            () => this._network.label.hide(),
-            () => this._battery.label.hide(),
-        ];
-
-        for (const reduce of reducers) {
-            const [, natural] = this._box.get_preferred_width(-1);
-            if (natural / scale <= budget)
-                return;
-            reduce();
-        }
-    }
-
     _onDestroy() {
+        this._destroyed = true;
+        this._notificationPulseGeneration += 1;
+        this._notifications.box.remove_all_transitions();
+        this._battery.label.remove_all_transitions();
+        this._box.remove_all_transitions();
         for (const [object, handlerId] of this._handlerIds)
             object.disconnect(handlerId);
         this._handlerIds = [];
@@ -582,11 +473,19 @@ class RelayPhoneIndicator extends PanelMenu.Button {
 
 export default class RelayPhonePillExtension extends Extension {
     enable() {
+        console.log('[Relay Pill][S4] enable');
         this._cancellable = new Gio.Cancellable();
         this._proxy = null;
         this._signalId = 0;
+        this._serviceGeneration = 0;
+        this._statusSeen = false;
+
+        // A failed earlier lifecycle must not leave two Relay entries behind.
+        Main.panel.statusArea[this.uuid]?.destroy();
         this._indicator = new RelayPhoneIndicator(this);
+        console.log('[Relay Pill][S5] indicator created');
         Main.panel.addToStatusArea(this.uuid, this._indicator, 0, 'right');
+        console.log('[Relay Pill][S6] added to panel');
 
         // Relay is an ordinary desktop app, not a bus-activated service. The
         // pill therefore follows the name: it comes alive when Relay starts and
@@ -596,19 +495,29 @@ export default class RelayPhonePillExtension extends Extension {
             Gio.BusType.SESSION,
             BUS_NAME,
             Gio.BusNameWatcherFlags.NONE,
-            () => this._connectService(),
-            () => this._disconnectService());
+            () => {
+                console.log('[Relay Pill][S7] Relay service appeared');
+                this._connectService();
+            },
+            () => {
+                console.log('[Relay Pill][S7] Relay service disappeared');
+                this._disconnectService();
+            });
 
         // Owning this name is how Relay knows the panel is presenting it, and
         // therefore that it should not also sit in the notification area.
         this._surfaceOwnerId = Gio.bus_own_name(
             Gio.BusType.SESSION,
             SURFACE_BUS_NAME,
-            Gio.BusNameOwnerFlags.REPLACE,
-            null, null, null);
+            Gio.BusNameOwnerFlags.NONE,
+            null,
+            () => console.log('[Relay Pill][S11] shell surface owned'),
+            () => console.log('[Relay Pill][S11] shell surface released'));
     }
 
     disable() {
+        console.log('[Relay Pill] disable');
+        this._serviceGeneration += 1;
         if (this._watchId) {
             Gio.bus_unwatch_name(this._watchId);
             this._watchId = 0;
@@ -632,6 +541,7 @@ export default class RelayPhonePillExtension extends Extension {
     }
 
     _connectService() {
+        const generation = ++this._serviceGeneration;
         const cancellable = this._cancellable;
         Gio.DBusProxy.new(
             Gio.DBus.session,
@@ -650,23 +560,27 @@ export default class RelayPhonePillExtension extends Extension {
                         console.debug(`Relay: could not reach the status service: ${error.message}`);
                     return;
                 }
-                if (cancellable !== this._cancellable || this._indicator === null)
+                if (cancellable !== this._cancellable || generation !== this._serviceGeneration || this._indicator === null)
                     return;
 
                 this._releaseProxy();
                 this._proxy = proxy;
+                this._statusSeen = false;
+                console.log('[Relay Pill][S8] status proxy ready');
                 this._signalId = proxy.connect('g-signal', (_p, _sender, name, parameters) => {
                     if (name === 'PhoneStatusChanged')
-                        this._applyStatusVariant(parameters);
+                        this._applyStatusVariant(parameters, generation);
                 });
-                this._requestStatus();
+                this._requestStatus(proxy, generation);
             });
     }
 
-    _requestStatus() {
-        this._proxy?.call('GetPhoneStatus', null, Gio.DBusCallFlags.NONE, -1, this._cancellable, (proxy, result) => {
+    _requestStatus(proxy, generation) {
+        proxy.call('GetPhoneStatus', null, Gio.DBusCallFlags.NONE, -1, this._cancellable, (source, result) => {
             try {
-                this._applyStatusVariant(proxy.call_finish(result));
+                const parameters = source.call_finish(result);
+                if (generation === this._serviceGeneration && source === this._proxy)
+                    this._applyStatusVariant(parameters, generation);
             } catch (error) {
                 if (!error.matches(Gio.IOErrorEnum, Gio.IOErrorEnum.CANCELLED))
                     console.debug(`Relay: could not read the phone status: ${error.message}`);
@@ -677,8 +591,8 @@ export default class RelayPhonePillExtension extends Extension {
     /**
      * @param {GLib.Variant} parameters - a `(a{sv})` payload
      */
-    _applyStatusVariant(parameters) {
-        if (this._indicator === null)
+    _applyStatusVariant(parameters, generation) {
+        if (this._indicator === null || generation !== this._serviceGeneration)
             return;
         let status = null;
         try {
@@ -690,10 +604,16 @@ export default class RelayPhonePillExtension extends Extension {
             console.debug(`Relay: ignoring a malformed phone status: ${error.message}`);
             return;
         }
+        if (!this._statusSeen) {
+            this._statusSeen = true;
+            console.log('[Relay Pill][S9] initial status received');
+        }
         this._indicator.setStatus(status, true);
     }
 
     _disconnectService() {
+        this._serviceGeneration += 1;
+        this._statusSeen = false;
         this._releaseProxy();
         this._indicator?.setStatus(null, false);
     }
