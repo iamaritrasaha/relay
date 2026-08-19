@@ -16,6 +16,7 @@ import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
+import org.localsend.localsend_app.continuity.ContinuityPlugin
 
 
 private const val CHANNEL = "org.localsend.localsend_app/localsend"
@@ -33,6 +34,7 @@ class MainActivity : FlutterActivity() {
     private var pendingPermissionResult: MethodChannel.Result? = null
     private lateinit var relayIdentitySecretStore: RelayIdentitySecretStore
     private lateinit var relayRoutingKeySecretStore: RelayRoutingKeySecretStore
+    private var continuityPlugin: ContinuityPlugin? = null
 
     /// share_handler drops share intents arriving via onNewIntent while the Dart side
     /// is not subscribed to its media stream yet, which happens when this singleTask
@@ -75,6 +77,10 @@ class MainActivity : FlutterActivity() {
         super.configureFlutterEngine(flutterEngine)
         relayIdentitySecretStore = RelayIdentitySecretStore(applicationContext)
         relayRoutingKeySecretStore = RelayRoutingKeySecretStore(applicationContext)
+        // Continuity owns its own channels. It starts nothing until Dart reports
+        // that the user enabled a capability.
+        continuityPlugin = ContinuityPlugin(applicationContext, activityProvider = { this })
+            .also { it.attach(flutterEngine.dartExecutor.binaryMessenger) }
         MethodChannel(
             flutterEngine.dartExecutor.binaryMessenger,
             CHANNEL
@@ -170,6 +176,12 @@ class MainActivity : FlutterActivity() {
         }
     }
 
+    override fun onDestroy() {
+        continuityPlugin?.detach()
+        continuityPlugin = null
+        super.onDestroy()
+    }
+
     /// Android 17+ gates local network access behind a runtime permission; older versions grant it implicitly.
     private fun hasLocalNetworkPermission(): Boolean {
         if (Build.VERSION.SDK_INT < API_LEVEL_ANDROID_17) {
@@ -180,6 +192,9 @@ class MainActivity : FlutterActivity() {
 
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (continuityPlugin?.onRequestPermissionsResult(requestCode, grantResults) == true) {
+            return
+        }
         if (requestCode == REQUEST_CODE_LOCAL_NETWORK) {
             pendingPermissionResult?.success(grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED)
             pendingPermissionResult = null

@@ -22,6 +22,45 @@
          FOREGROUND_SERVICE and POST_NOTIFICATIONS come from the flutter_foreground_task manifest. -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
 
+
+    <!-- Relay continuity. Every one of these is inert until the user explicitly
+         enables the matching capability for a specific paired device; pairing
+         alone grants none of them. -->
+
+    <!-- Notification mirroring, through the public NotificationListenerService.
+         The user grants this in Android's own "Notification access" screen. -->
+    <uses-permission android:name="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE"
+        tools:ignore="ProtectedPermissions" />
+
+    <!-- Messages. READ_SMS/RECEIVE_SMS/SEND_SMS are Play "restricted
+         permissions": distribution through Google Play requires either the
+         default SMS role or an approved declaration. Relay deliberately does
+         NOT claim the default SMS role, so Messages ships enabled for sideload
+         and self-distribution and needs a Play policy declaration before a
+         Play release. -->
+    <uses-permission android:name="android.permission.READ_SMS" />
+    <uses-permission android:name="android.permission.RECEIVE_SMS" />
+    <uses-permission android:name="android.permission.SEND_SMS" />
+
+    <!-- Phone. ANSWER_PHONE_CALLS is what makes answer/reject possible without
+         any hidden API; READ_CALL_LOG is the only way Android exposes the other
+         party's number from Android 10 onward. -->
+    <uses-permission android:name="android.permission.READ_PHONE_STATE" />
+    <uses-permission android:name="android.permission.CALL_PHONE" />
+    <uses-permission android:name="android.permission.ANSWER_PHONE_CALLS" />
+    <uses-permission android:name="android.permission.READ_CALL_LOG" />
+
+    <!-- Contact names for conversations and calls. Resolved on the phone; the
+         address book is never exported. -->
+    <uses-permission android:name="android.permission.READ_CONTACTS" />
+
+    <!-- The continuity connection runs as a "connected device" foreground
+         service, and only while a capability is enabled. -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE" />
+
+    <!-- Telephony is optional: Relay still runs on a tablet without it. -->
+    <uses-feature android:name="android.hardware.telephony" android:required="false" />
+
     <!-- Android TV -->
     <uses-feature android:name="android.software.leanback" android:required="false" />
     <uses-feature android:name="android.hardware.touchscreen" android:required="false" />
@@ -93,6 +132,27 @@
         <service
             android:name="com.pravera.flutter_foreground_task.service.ForegroundService"
             android:foregroundServiceType="dataSync"
+            android:exported="false" />
+
+
+        <!-- Relay continuity notification mirror. Android binds this only after
+             the user grants notification access. -->
+        <service
+            android:name=".continuity.RelayNotificationListenerService"
+            android:exported="false"
+            android:label="Relay"
+            android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE">
+            <intent-filter>
+                <action android:name="android.service.notification.NotificationListenerService" />
+            </intent-filter>
+        </service>
+
+        <!-- Keeps the continuity connection alive. Started only when a
+             continuity capability is enabled, so a file-transfer-only install
+             never runs it. -->
+        <service
+            android:name=".continuity.ContinuityForegroundService"
+            android:foregroundServiceType="connectedDevice"
             android:exported="false" />
 
         <!-- Don't delete the meta-data below.
