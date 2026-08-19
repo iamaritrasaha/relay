@@ -165,6 +165,44 @@ class ClipboardOffer {
   });
 }
 
+/// One line of continuity activity.
+///
+/// Deliberately metadata only: what happened, with which device, and when.
+/// Clipboard text, message bodies, notification contents, phone numbers and
+/// contact names are never recorded here, and this feed is never persisted —
+/// it lives for the session and is gone on restart.
+class ContinuityActivityEntry {
+  final String relayId;
+  final String deviceLabel;
+  final ContinuityActivityKind kind;
+  final DateTime at;
+
+  const ContinuityActivityEntry({
+    required this.relayId,
+    required this.deviceLabel,
+    required this.kind,
+    required this.at,
+  });
+
+  String get summary => switch (kind) {
+    ContinuityActivityKind.connected => 'Connected to $deviceLabel',
+    ContinuityActivityKind.disconnected => 'Disconnected from $deviceLabel',
+    ContinuityActivityKind.clipboardShared => 'Clipboard shared with $deviceLabel',
+    ContinuityActivityKind.clipboardReceived => 'Clipboard received from $deviceLabel',
+    ContinuityActivityKind.messageSent => 'Message sent from $deviceLabel',
+    ContinuityActivityKind.callPlaced => 'Call placed on $deviceLabel',
+  };
+}
+
+enum ContinuityActivityKind {
+  connected,
+  disconnected,
+  clipboardShared,
+  clipboardReceived,
+  messageSent,
+  callPlaced,
+}
+
 /// Everything currently known about one paired device's continuity.
 class DeviceContinuity {
   final String relayId;
@@ -253,11 +291,15 @@ class RelayContinuityState {
   /// Whether the Android background connection service is running.
   final bool backgroundServiceRunning;
 
+  /// Recent continuity activity, newest first. Metadata only, never persisted.
+  final List<ContinuityActivityEntry> activity;
+
   const RelayContinuityState({
     this.settings = const {},
     this.devices = const {},
     this.localCapabilities = const {},
     this.backgroundServiceRunning = false,
+    this.activity = const [],
   });
 
   RelayContinuitySettings settingsFor(String relayId) => settings[relayId] ?? RelayContinuitySettings(relayId: relayId);
@@ -273,12 +315,19 @@ class RelayContinuityState {
     Map<String, DeviceContinuity>? devices,
     Map<String, PlatformCapabilityState>? localCapabilities,
     bool? backgroundServiceRunning,
+    List<ContinuityActivityEntry>? activity,
   }) {
     return RelayContinuityState(
       settings: settings ?? this.settings,
       devices: devices ?? this.devices,
       localCapabilities: localCapabilities ?? this.localCapabilities,
       backgroundServiceRunning: backgroundServiceRunning ?? this.backgroundServiceRunning,
+      activity: activity ?? this.activity,
     );
+  }
+
+  /// Appends an activity line, keeping the feed bounded.
+  RelayContinuityState withActivity(ContinuityActivityEntry entry) {
+    return copyWith(activity: [entry, ...activity].take(50).toList());
   }
 }

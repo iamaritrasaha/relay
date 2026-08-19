@@ -163,4 +163,54 @@ void main() {
       expect(state.anyCapabilityEnabled, isTrue);
     });
   });
+
+  _activityPrivacyTests();
+}
+
+/// Activity must be able to describe what happened without recording what was
+/// in it. These strings are what the user sees in the Activity list.
+void _activityPrivacyTests() {
+  group('activity privacy', () {
+    final entry = ContinuityActivityEntry(
+      relayId: _relayId,
+      deviceLabel: 'Pixel',
+      kind: ContinuityActivityKind.clipboardShared,
+      at: DateTime.now(),
+    );
+
+    test('a clipboard line names the device, never the content', () {
+      expect(entry.summary, 'Clipboard shared with Pixel');
+    });
+
+    test('a message line records that one was sent, not its body or recipient', () {
+      final sent = ContinuityActivityEntry(
+        relayId: _relayId,
+        deviceLabel: 'Pixel',
+        kind: ContinuityActivityKind.messageSent,
+        at: DateTime.now(),
+      );
+      expect(sent.summary, 'Message sent from Pixel');
+    });
+
+    test('every activity kind has a content-free summary', () {
+      for (final kind in ContinuityActivityKind.values) {
+        final line = ContinuityActivityEntry(
+          relayId: _relayId,
+          deviceLabel: 'Pixel',
+          kind: kind,
+          at: DateTime.now(),
+        ).summary;
+        expect(line, isNotEmpty);
+        expect(line, contains('Pixel'));
+      }
+    });
+
+    test('the feed stays bounded and is not persisted', () {
+      var state = const RelayContinuityState();
+      for (var index = 0; index < 200; index++) {
+        state = state.withActivity(entry);
+      }
+      expect(state.activity, hasLength(50));
+    });
+  });
 }
