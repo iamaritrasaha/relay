@@ -21,11 +21,41 @@
   icon-size: 1.091em;
 }
 
-/* The bell is always allocated but transparent at rest. A notification can
- * therefore appear or pulse without changing the panel button's width. */
+/* ── Signal bars ────────────────────────────────────────────────────────── */
+
+/* Container for the four ascending signal bars. */
+.relay-signal-bars {
+  spacing: 1px;
+  /* Vertically centres the bar group relative to the panel height. */
+  margin-top: 2px;
+  margin-bottom: 2px;
+}
+
+/* Each individual bar is a rounded rectangle. Heights and widths are set
+ * programmatically; the sheet only owns the corners and the colours that
+ * adapt to the shell theme. */
+.relay-signal-bar {
+  border-radius: 1px;
+  /* Inherits the panel foreground so it tracks light/dark/accent themes. */
+  background-color: currentColor;
+}
+
+/* ── Battery slot ───────────────────────────────────────────────────────── */
+
+/* Fixed minimum width keeps "53%" → "54%" from bouncing the pill. */
+.relay-battery-slot .relay-pill-value {
+  min-width: 2.5em;
+}
+
+/* ── Notification bell ──────────────────────────────────────────────────── */
+
+/* The bell is always allocated so it cannot shift the clock or neighbours.
+ * Its visibility is controlled by opacity, never by allocation. */
 .relay-notification-slot {
   min-width: 1.091em;
 }
+
+/* ── Dropdown menu ──────────────────────────────────────────────────────── */
 
 .relay-header {
   spacing: 12px;

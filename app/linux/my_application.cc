@@ -9,6 +9,7 @@
 #include "flutter/generated_plugin_registrant.h"
 #include "relay_identity_secret_channel.h"
 #include "relay_shell_status_channel.h"
+#include "relay_desktop_notification_channel.h"
 
 #include <stdlib.h>
 #include <string.h>
@@ -98,6 +99,7 @@ static void my_application_activate(GApplication* application) {
   fl_register_plugins(FL_PLUGIN_REGISTRY(view));
   relay_identity_secret_channel_register(fl_engine_get_binary_messenger(fl_view_get_engine(view)));
   relay_shell_status_channel_register(fl_engine_get_binary_messenger(fl_view_get_engine(view)));
+  relay_desktop_notification_channel_register(fl_engine_get_binary_messenger(fl_view_get_engine(view)));
 
   if (!start_hidden) {
     gtk_widget_grab_focus(GTK_WIDGET(view));

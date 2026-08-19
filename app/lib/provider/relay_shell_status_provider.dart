@@ -9,6 +9,7 @@ import 'package:relay_app/model/ui/relay_device_vm.dart';
 import 'package:relay_app/model/ui/relay_phone_shell_status.dart';
 import 'package:relay_app/pages/relay_home_vm.dart';
 import 'package:relay_app/provider/kdeconnect_provider.dart';
+import 'package:relay_app/provider/relay_desktop_notification_service.dart';
 import 'package:relay_app/util/native/tray_helper.dart';
 
 final _logger = Logger('RelayShellStatus');
@@ -43,6 +44,7 @@ class RelayShellStatusBridge {
   final DateTime Function() _now;
 
   final List<StreamSubscription<void>> _subscriptions = [];
+  RelayDesktopNotificationService? _desktopNotificationService;
   RelayPhoneShellStatus? _published;
   bool _hasPublished = false;
 
@@ -118,8 +120,13 @@ class RelayShellStatusBridge {
     }
   }
 
-  void attachTo({required Stream<List<RelayDeviceVm>> devices, required Stream<Map<String, int>> notificationCounts}) {
+  void attachTo({
+    required Stream<List<RelayDeviceVm>> devices,
+    required Stream<Map<String, int>> notificationCounts,
+    RelayDesktopNotificationService? desktopNotificationService,
+  }) {
     unawaited(dispose());
+    _desktopNotificationService = desktopNotificationService;
     _subscriptions.add(
       devices.listen(
         (list) => unawaited(apply(devices: list)),
@@ -139,6 +146,8 @@ class RelayShellStatusBridge {
       await subscription.cancel();
     }
     _subscriptions.clear();
+    await _desktopNotificationService?.dispose();
+    _desktopNotificationService = null;
   }
 }
 
@@ -238,13 +247,18 @@ Future<RelayShellStatusBridge?> startRelayShellStatusBridge(Ref ref) async {
     _logger.fine('Querying the shell surface failed', e);
   }
 
+  final desktopNotificationService = RelayDesktopNotificationService();
+  desktopNotificationService.start(ref.stream(kdeConnectProvider).map((event) => event.next.notifications));
+
   bridge.attachTo(
     devices: ref.stream(relayHomeVmProvider).map((event) => event.next.devices),
     notificationCounts: ref.stream(kdeConnectProvider).map((event) => relayNotificationCounts(event.next.notifications)),
+    desktopNotificationService: desktopNotificationService,
   );
   await bridge.apply(
     devices: ref.read(relayHomeVmProvider).devices,
     notificationCounts: relayNotificationCounts(ref.read(kdeConnectProvider).notifications),
   );
+
   return bridge;
 }

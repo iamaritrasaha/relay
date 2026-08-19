@@ -12,11 +12,15 @@
 import {
     accessibleName,
     batteryIconNames,
+    batterySlotState,
+    bellState,
     hasLiveBattery,
     needsAttention,
     networkIconNames,
     notificationPulseOpacities,
     normalizePhoneStatus,
+    signalBarStates,
+    SIGNAL_BAR_COUNT,
     unreadLabel,
 } from '../relay@foresight.app/phoneStatus.js';
 
@@ -95,6 +99,46 @@ check('cellular picks a cellular icon',
     networkIconNames(normalizePhoneStatus({...connectedPhone, networkKind: 'cellular', signalLevel: 4}))[0] === 'network-cellular-signal-excellent-symbolic');
 check('wifi picks a wireless icon',
     networkIconNames(normalizePhoneStatus({...connectedPhone, networkKind: 'wifi', signalLevel: 2}))[0] === 'network-wireless-signal-ok-symbolic');
+
+print('signal bars');
+check('SIGNAL_BAR_COUNT is 4', SIGNAL_BAR_COUNT === 4);
+check('unknown signal has 4 bars', signalBarStates(null).length === 4);
+check('unknown signal all bars inactive', signalBarStates(null).every(s => s === false));
+check('level 0 has 4 bars', signalBarStates(0).length === 4);
+check('level 0 all bars inactive', signalBarStates(0).every(s => s === false));
+check('level 1 has 4 bars', signalBarStates(1).length === 4);
+check('level 1 bar 1 active', signalBarStates(1)[0] === true);
+check('level 1 bars 2-4 inactive', signalBarStates(1)[1] === false && signalBarStates(1)[2] === false && signalBarStates(1)[3] === false);
+check('level 2 bars 1-2 active', signalBarStates(2)[0] === true && signalBarStates(2)[1] === true);
+check('level 2 bars 3-4 inactive', signalBarStates(2)[2] === false && signalBarStates(2)[3] === false);
+check('level 3 bars 1-3 active', signalBarStates(3)[0] === true && signalBarStates(3)[1] === true && signalBarStates(3)[2] === true);
+check('level 3 bar 4 inactive', signalBarStates(3)[3] === false);
+check('level 4 all active', signalBarStates(4).every(s => s === true));
+check('undefined signal has 4 bars all inactive', signalBarStates(undefined).length === 4 && signalBarStates(undefined).every(s => s === false));
+
+print('battery slot state');
+check('connected with battery: visible', batterySlotState(normalizePhoneStatus({...connectedPhone, batteryPercentage: 53})).visible === true);
+check('connected with battery: not muted', batterySlotState(normalizePhoneStatus({...connectedPhone, batteryPercentage: 53})).muted === false);
+check('connected with battery: label 53%', batterySlotState(normalizePhoneStatus({...connectedPhone, batteryPercentage: 53})).label === '53%');
+check('connected no battery: visible', batterySlotState(normalizePhoneStatus(connectedPhone)).visible === true);
+check('connected no battery: muted', batterySlotState(normalizePhoneStatus(connectedPhone)).muted === true);
+check('connected no battery: label is dash', batterySlotState(normalizePhoneStatus(connectedPhone)).label === '\u2014%');
+check('stale battery: visible and muted', (() => {
+    const s = batterySlotState(normalizePhoneStatus({...connectedPhone, batteryPercentage: 53, batteryIsStale: true}));
+    return s.visible === true && s.muted === true;
+})());
+check('disconnected: not visible', batterySlotState(normalizePhoneStatus({...connectedPhone, connected: false})).visible === false);
+
+print('bell state');
+check('connected 0 notifications: visible', bellState(normalizePhoneStatus({...connectedPhone, notificationCount: 0})).visible === true);
+check('connected 0 notifications: not active', bellState(normalizePhoneStatus({...connectedPhone, notificationCount: 0})).active === false);
+check('connected 1 notification: visible', bellState(normalizePhoneStatus({...connectedPhone, notificationCount: 1})).visible === true);
+check('connected 1 notification: active', bellState(normalizePhoneStatus({...connectedPhone, notificationCount: 1})).active === true);
+check('connected 5 notifications: active', bellState(normalizePhoneStatus({...connectedPhone, notificationCount: 5})).active === true);
+check('connected null notifications: visible', bellState(normalizePhoneStatus(connectedPhone)).visible === true);
+check('connected null notifications: not active', bellState(normalizePhoneStatus(connectedPhone)).active === false);
+check('disconnected: not visible', bellState(normalizePhoneStatus({...connectedPhone, connected: false})).visible === false);
+check('null status: not visible', bellState(null).visible === false);
 
 print('messages');
 check('an absent count stays absent', normalizePhoneStatus(connectedPhone).unreadMessageCount === null);

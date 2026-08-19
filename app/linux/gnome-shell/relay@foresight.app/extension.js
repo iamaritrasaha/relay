@@ -25,11 +25,15 @@ import {Extension, gettext as _} from 'resource:///org/gnome/shell/extensions/ex
 import {
     accessibleName,
     batteryIconNames,
+    batterySlotState,
+    bellState,
     hasLiveBattery,
     needsAttention,
     networkIconNames,
     notificationPulseOpacities,
     normalizePhoneStatus,
+    signalBarStates,
+    SIGNAL_BAR_COUNT,
     unreadLabel,
 } from './phoneStatus.js';
 
@@ -52,6 +56,15 @@ const NOTIFICATION_PULSE_PHASE_MS = 180;
 const FULL_OPACITY = 255;
 const MUTED_OPACITY = 155;
 const SECONDARY_OPACITY = 180;
+const INACTIVE_BAR_OPACITY = 80;
+
+/**
+ * Heights for the four ascending signal bars, in pixels at 1× scale.
+ * Shortest first (▂ ▄ ▆ █).
+ */
+const SIGNAL_BAR_HEIGHTS = [4, 7, 10, 13];
+const SIGNAL_BAR_WIDTH = 3;
+const SIGNAL_BAR_SPACING = 1;
 
 /**
  * A themed icon built from a fallback chain.
@@ -127,9 +140,10 @@ class RelayInfoRow extends PopupMenu.PopupBaseMenuItem {
 /**
  * The Relay pill in the top panel, plus the menu behind it.
  *
- * Its first visual is always network reception. The notification slot keeps a
- * fixed footprint, so attention never shifts the clock or neighboring panel
- * items; a new notification uses a short finite pulse instead.
+ * Three permanent slots — signal bars, battery, notification bell — stay
+ * allocated at all times while a phone is selected. No slot disappears or
+ * shifts position due to normal state changes. The layout is calm and spatially
+ * stable.
  */
 const RelayPhoneIndicator = GObject.registerClass(
 class RelayPhoneIndicator extends PanelMenu.Button {
@@ -150,16 +164,33 @@ class RelayPhoneIndicator extends PanelMenu.Button {
         this._box = new St.BoxLayout({style_class: 'relay-pill-box', y_align: Clutter.ActorAlign.CENTER});
         this.add_child(this._box);
 
-        this._signalIcon = new St.Icon({style_class: 'relay-pill-icon relay-signal-icon', y_align: Clutter.ActorAlign.CENTER});
-        this._box.add_child(this._signalIcon);
+        // ── Slot 1: Signal bars ─────────────────────────────────────────
+        this._signalBox = new St.BoxLayout({
+            style_class: 'relay-signal-bars',
+            y_align: Clutter.ActorAlign.END,
+        });
+        this._signalBars = [];
+        for (let i = 0; i < SIGNAL_BAR_COUNT; i++) {
+            const bar = new St.Widget({
+                style_class: 'relay-signal-bar',
+                width: SIGNAL_BAR_WIDTH,
+                height: SIGNAL_BAR_HEIGHTS[i],
+                opacity: INACTIVE_BAR_OPACITY,
+            });
+            this._signalBars.push(bar);
+            this._signalBox.add_child(bar);
+        }
+        this._box.add_child(this._signalBox);
 
-        this._battery = this._buildSegment();
+        // ── Slot 2: Battery ─────────────────────────────────────────────
+        this._battery = this._buildSegment('relay-battery-slot');
+
+        // ── Slot 3: Notification bell ───────────────────────────────────
         this._notifications = this._buildSegment('relay-notification-slot');
         this._notifications.icon.gicon = themedIcon(['preferences-system-notifications-symbolic', 'user-available-symbolic']);
         this._notifications.label.hide();
-        this._notifications.box.opacity = 0;
-        this._notifications.box.show();
 
+        // ── State label (offline / "Relay") ─────────────────────────────
         this._stateLabel = new St.Label({style_class: 'relay-pill-state', y_align: Clutter.ActorAlign.CENTER});
         this._stateLabel.hide();
         this._box.add_child(this._stateLabel);
@@ -277,19 +308,21 @@ class RelayPhoneIndicator extends PanelMenu.Button {
         const status = this._status;
         const connected = status !== null && status.connected;
 
-        // Network reception is the permanent leading language. Until Relay has
-        // a genuine reading, the native signal-none icon is deliberately muted;
-        // a handset icon is never substituted and no strength is invented.
-        this._signalIcon.gicon = themedIcon(networkIconNames(status));
-        this._signalIcon.opacity = connected && status.signalLevel === null ? SECONDARY_OPACITY : FULL_OPACITY;
+        // ── Slot 1: Signal bars ─────────────────────────────────────────
+        // Custom four-bar actor: all four bars always rendered, only opacity
+        // changes per bar based on signal level. Unknown shows all muted.
+        const barStates = signalBarStates(connected ? status.signalLevel : null);
+        for (let i = 0; i < SIGNAL_BAR_COUNT; i++)
+            this._signalBars[i].opacity = barStates[i] ? FULL_OPACITY : INACTIVE_BAR_OPACITY;
 
-        if (!connected) {
-            this._battery.box.hide();
+        // ── Slot 2: Battery ─────────────────────────────────────────────
+        this._renderBattery(status);
+
+        // ── Slot 3: Notification bell ───────────────────────────────────
+        this._renderBell(status);
+
+        if (!connected)
             this._clearNotificationAttention();
-        } else {
-            this._renderBattery(status);
-            this._renderAttention(status);
-        }
 
         // With no phone to describe, "Relay" is the only word admitted to the
         // top bar. A known phone that dropped off is stated as offline.
@@ -309,36 +342,45 @@ class RelayPhoneIndicator extends PanelMenu.Button {
     }
 
     _renderBattery(status) {
-        // A phone that went away keeps its last reading in the menu, but the
-        // panel stops presenting it as if it were current.
-        if (!hasLiveBattery(status)) {
+        const state = batterySlotState(status);
+
+        if (!state.visible) {
             this._battery.box.hide();
             return;
         }
-        this._battery.icon.gicon = themedIcon(batteryIconNames(status));
-        setLabelText(this._battery.label, `${status.batteryPercentage}%`);
+
+        this._battery.icon.gicon = themedIcon(state.icons);
+        setLabelText(this._battery.label, state.label);
+        this._battery.box.opacity = state.muted ? SECONDARY_OPACITY : FULL_OPACITY;
         this._battery.box.show();
     }
 
     /**
-     * Updates the fixed notification slot and starts a finite pulse only when
-     * the standing count increases.
+     * Renders the notification bell slot. The bell is always visible while a
+     * phone is connected — hollow at zero notifications, filled at 1+.
      */
-    _renderAttention(status) {
-        const count = status.notificationCount ?? 0;
+    _renderBell(status) {
+        const bell = bellState(status);
+
+        if (!bell.visible) {
+            this._notifications.box.hide();
+            return;
+        }
+
+        // Always visible while connected
+        this._notifications.box.show();
+        this._notifications.box.opacity = bell.active ? FULL_OPACITY : SECONDARY_OPACITY;
+
+        // Pulse on count increase
+        const count = bell.count;
         const pulse = notificationPulseOpacities(this._previousNotificationCount, count, animationsEnabled());
         this._previousNotificationCount = count;
         this._notificationPulseGeneration += 1;
         const generation = this._notificationPulseGeneration;
         this._notifications.box.remove_all_transitions();
 
-        if (count <= 0) {
-            this._notifications.box.opacity = 0;
-        } else {
-            this._notifications.box.opacity = FULL_OPACITY;
-            if (pulse.length > 0)
-                this._runNotificationPulse(pulse, 0, generation);
-        }
+        if (pulse.length > 0)
+            this._runNotificationPulse(pulse, 0, generation, bell.active);
 
         if (needsAttention(status))
             this._box.add_style_class_name('relay-attentive');
@@ -346,18 +388,19 @@ class RelayPhoneIndicator extends PanelMenu.Button {
             this._box.remove_style_class_name('relay-attentive');
     }
 
-    _runNotificationPulse(opacities, index, generation) {
+    _runNotificationPulse(opacities, index, generation, active) {
         if (this._destroyed || generation !== this._notificationPulseGeneration)
             return;
         if (index >= opacities.length) {
-            this._notifications.box.opacity = this._previousNotificationCount > 0 ? FULL_OPACITY : 0;
+            // After pulse, settle to the appropriate steady state
+            this._notifications.box.opacity = active ? FULL_OPACITY : SECONDARY_OPACITY;
             return;
         }
         this._notifications.box.ease({
             opacity: opacities[index],
             duration: NOTIFICATION_PULSE_PHASE_MS,
             mode: Clutter.AnimationMode.EASE_IN_OUT_QUAD,
-            onComplete: () => this._runNotificationPulse(opacities, index + 1, generation),
+            onComplete: () => this._runNotificationPulse(opacities, index + 1, generation, active),
         });
     }
 
@@ -365,7 +408,8 @@ class RelayPhoneIndicator extends PanelMenu.Button {
         this._previousNotificationCount = 0;
         this._notificationPulseGeneration += 1;
         this._notifications.box.remove_all_transitions();
-        this._notifications.box.opacity = 0;
+        // Bell stays visible at secondary opacity (hollow) when connected but
+        // count is zero; hidden only when disconnected
         this._box.remove_style_class_name('relay-attentive');
     }
 

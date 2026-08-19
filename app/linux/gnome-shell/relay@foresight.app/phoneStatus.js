@@ -10,6 +10,9 @@
 /** Highest unread count rendered literally; anything above collapses to "99+". */
 const MAX_LITERAL_UNREAD = 99;
 
+/** Number of individual bars in the signal indicator. */
+export const SIGNAL_BAR_COUNT = 4;
+
 /**
  * Reads a field only when it has the expected type.
  *
@@ -120,6 +123,66 @@ export function networkIconNames(status) {
         return [`network-wireless-signal-${strength}-symbolic`, 'network-wireless-symbolic'];
     }
     return [`network-cellular-signal-${strength}-symbolic`, 'network-cellular-symbolic', 'network-offline-symbolic'];
+}
+
+/**
+ * Per-bar active/inactive state for a custom four-bar signal indicator.
+ *
+ * All four geometric bars are always present. This function determines which
+ * ones are drawn at full emphasis ("active") versus muted ("inactive"). The
+ * result always has exactly {@link SIGNAL_BAR_COUNT} entries.
+ *
+ * @param {number|null|undefined} signalLevel - 0–4, or null/undefined for unknown
+ * @returns {boolean[]} per-bar active state, shortest bar first
+ */
+export function signalBarStates(signalLevel) {
+    const level = typeof signalLevel === 'number' && Number.isFinite(signalLevel) && signalLevel >= 0 && signalLevel <= 4
+        ? signalLevel
+        : 0;
+    const states = [];
+    for (let i = 1; i <= SIGNAL_BAR_COUNT; i++)
+        states.push(i <= level);
+    return states;
+}
+
+/**
+ * Presentation state for the battery slot.
+ *
+ * The battery slot is always present while a phone is selected. When the
+ * reading is unavailable, the slot shows a battery outline with a placeholder
+ * label instead of disappearing.
+ *
+ * @param {object|null} status - a normalized status
+ * @returns {object} `{visible, icons, label, muted}` — slot state
+ */
+export function batterySlotState(status) {
+    if (status === null || !status.connected)
+        return {visible: false, icons: ['battery-missing-symbolic', 'battery-symbolic'], label: '', muted: true};
+
+    if (status.batteryPercentage === null)
+        return {visible: true, icons: ['battery-missing-symbolic', 'battery-symbolic'], label: '\u2014%', muted: true};
+
+    if (status.batteryIsStale)
+        return {visible: true, icons: batteryIconNames(status), label: `${status.batteryPercentage}%`, muted: true};
+
+    return {visible: true, icons: batteryIconNames(status), label: `${status.batteryPercentage}%`, muted: false};
+}
+
+/**
+ * Presentation state for the notification bell slot.
+ *
+ * The bell is always visible while a phone is selected: hollow/muted when no
+ * notifications are standing, filled/active when at least one is.
+ *
+ * @param {object|null} status - a normalized status
+ * @returns {object} `{visible, active, count}` — slot state
+ */
+export function bellState(status) {
+    if (status === null || !status.connected)
+        return {visible: false, active: false, count: 0};
+
+    const count = status.notificationCount ?? 0;
+    return {visible: true, active: count > 0, count};
 }
 
 /**
