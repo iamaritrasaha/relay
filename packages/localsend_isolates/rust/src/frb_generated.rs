@@ -3369,7 +3369,6 @@ fn wire__crate__api__continuity__continuity_connect_device_impl(
                 flutter_rust_bridge::for_generated::SseDeserializer::new(message);
             let api_private_key_pem = <Vec<u8>>::sse_decode(&mut deserializer);
             let api_relay_id = <String>::sse_decode(&mut deserializer);
-            let api_routing_key = <Vec<u8>>::sse_decode(&mut deserializer);
             let api_remote_address = <String>::sse_decode(&mut deserializer);
             deserializer.end();
             move |context| async move {
@@ -3378,7 +3377,6 @@ fn wire__crate__api__continuity__continuity_connect_device_impl(
                         let output_ok = crate::api::continuity::continuity_connect_device(
                             api_private_key_pem,
                             api_relay_id,
-                            api_routing_key,
                             api_remote_address,
                         )
                         .await?;

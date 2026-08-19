@@ -307,12 +307,7 @@ abstract class RustLibApi extends BaseApi {
     String? address,
   });
 
-  Future<void> crateApiContinuityContinuityConnectDevice({
-    required List<int> privateKeyPem,
-    required String relayId,
-    required List<int> routingKey,
-    required String remoteAddress,
-  });
+  Future<void> crateApiContinuityContinuityConnectDevice({required List<int> privateKeyPem, required String relayId, required String remoteAddress});
 
   List<String> crateApiContinuityContinuityConnectedDevices();
 
@@ -2297,19 +2292,13 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   );
 
   @override
-  Future<void> crateApiContinuityContinuityConnectDevice({
-    required List<int> privateKeyPem,
-    required String relayId,
-    required List<int> routingKey,
-    required String remoteAddress,
-  }) {
+  Future<void> crateApiContinuityContinuityConnectDevice({required List<int> privateKeyPem, required String relayId, required String remoteAddress}) {
     return handler.executeNormal(
       NormalTask(
         callFfi: (port_) {
           final serializer = SseSerializer(generalizedFrbRustBinding);
           sse_encode_list_prim_u_8_loose(privateKeyPem, serializer);
           sse_encode_String(relayId, serializer);
-          sse_encode_list_prim_u_8_loose(routingKey, serializer);
           sse_encode_String(remoteAddress, serializer);
           pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 58, port: port_);
         },
@@ -2318,7 +2307,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           decodeErrorData: sse_decode_AnyhowException,
         ),
         constMeta: kCrateApiContinuityContinuityConnectDeviceConstMeta,
-        argValues: [privateKeyPem, relayId, routingKey, remoteAddress],
+        argValues: [privateKeyPem, relayId, remoteAddress],
         apiImpl: this,
       ),
     );
@@ -2326,7 +2315,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
 
   TaskConstMeta get kCrateApiContinuityContinuityConnectDeviceConstMeta => const TaskConstMeta(
     debugName: 'continuity_connect_device',
-    argNames: ['privateKeyPem', 'relayId', 'routingKey', 'remoteAddress'],
+    argNames: ['privateKeyPem', 'relayId', 'remoteAddress'],
   );
 
   @override

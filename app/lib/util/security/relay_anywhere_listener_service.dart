@@ -68,6 +68,12 @@ class RelayAnywhereListenerService {
   Future<RelayAnywhereListenerStartResult>? _starting;
   String? _address;
 
+  /// The listener's published Relay address, or `null` while it is not running.
+  ///
+  /// Continuity reads this to know whether there is an endpoint to dial from;
+  /// it is routing metadata and never a trust or identity signal.
+  String? get address => _address;
+
   RelayAnywhereListenerService({
     required RelayIdentityCoordinator identityCoordinator,
     required RelayRoutingKeyCoordinator routingKeyCoordinator,
