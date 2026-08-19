@@ -327,6 +327,65 @@ void main() {
     expect(relayVm.devices.single.continuityConnected, isTrue);
   });
 
+  test('a paired device on a local continuity session reports itself as local', () {
+    const relayId = 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+    final relayVm = RelayHomeVm.fromState(
+      configuredAlias: 'My Linux',
+      selfDeviceType: DeviceType.desktop,
+      server: null,
+      nearby: nearby(null),
+      sendSessions: const {},
+      transfers: FileTransferNotifier(),
+      selectedFiles: const [],
+      pairedRoutes: [
+        RelayPairedAddress(
+          relayId: relayId,
+          displayLabel: 'Pixel',
+          relayAddress: null,
+          pairedAt: DateTime.utc(2026),
+          updatedAt: DateTime.utc(2026),
+          origin: RelayPairedAddress.originLan,
+        ),
+      ],
+      // The path comes from the transport that actually established the
+      // session, not from an address or a past transfer.
+      continuity: const RelayContinuityState(
+        devices: {
+          relayId: DeviceContinuity(relayId: relayId, connected: true, directPath: true, localPath: true),
+        },
+      ),
+    );
+
+    expect(relayVm.devices.single.statusSummary, 'Connected · Local');
+  });
+
+  test('a paired device on a remote continuity session does not claim to be local', () {
+    const relayId = 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+    final relayVm = RelayHomeVm.fromState(
+      configuredAlias: 'My Linux',
+      selfDeviceType: DeviceType.desktop,
+      server: null,
+      nearby: nearby(null),
+      sendSessions: const {},
+      transfers: FileTransferNotifier(),
+      selectedFiles: const [],
+      pairedRoutes: [
+        RelayPairedAddress(
+          relayId: relayId,
+          displayLabel: 'Pixel',
+          relayAddress: 'RELAY1.test',
+          pairedAt: DateTime.utc(2026),
+          updatedAt: DateTime.utc(2026),
+        ),
+      ],
+      continuity: const RelayContinuityState(
+        devices: {relayId: DeviceContinuity(relayId: relayId, connected: true)},
+      ),
+    );
+
+    expect(relayVm.devices.single.statusSummary, 'Connected');
+  });
+
   test('a compatibility peer remains outside authenticated Relay identity', () {
     final relayVm = vm();
 

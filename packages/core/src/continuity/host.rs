@@ -100,6 +100,10 @@ pub enum ContinuityEvent {
         remote_relay_id: String,
         /// Whether the transport chose a direct path. Presentation only.
         direct_path: bool,
+        /// Whether this session runs over the local network rather than through
+        /// the Anywhere transport. Presentation only, and derived from the path
+        /// the transport actually used — never claimed by a peer.
+        local_path: bool,
     },
     SessionEnded {
         remote_relay_id: String,

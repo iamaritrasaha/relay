@@ -375,6 +375,137 @@ fn client_certificate_fingerprint(certificate_pem: &str) -> Option<[u8; 32]> {
         .map(|der| fingerprint_digest_from_cert_der(der.as_ref()))
 }
 
+/// An outbound Relay continuity connection whose peer is already proven.
+///
+/// `Debug` deliberately reports only the proven identity; the stream carries
+/// continuity content and is never rendered.
+#[cfg(feature = "anywhere")]
+pub struct RelayLanContinuityConnection {
+    pub session: crate::relay::AuthenticatedRelaySession,
+    pub stream: reqwest::Upgraded,
+}
+
+#[cfg(feature = "anywhere")]
+impl std::fmt::Debug for RelayLanContinuityConnection {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("RelayLanContinuityConnection")
+            .field("remote_relay_id", &self.session.remote_relay_id().as_hex())
+            .finish_non_exhaustive()
+    }
+}
+
+/// Why a local continuity connection could not be established.
+///
+/// None of these is ever downgraded into an unauthenticated session: a failure
+/// here means the caller falls back to another *authenticated* transport, or to
+/// nothing at all.
+#[cfg(feature = "anywhere")]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum RelayLanContinuityError {
+    /// The peer does not serve local continuity, or has nothing enabled.
+    Unsupported,
+    /// The peer did not prove the identity we demanded.
+    AuthenticationFailed,
+    /// The connection never completed. Nothing may be concluded from it.
+    TransportFailed,
+}
+
+/// Opens an authenticated local continuity connection to a paired device.
+///
+/// `expected_relay_id` is the paired identity, and it is not optional: a device
+/// answering on that address which proves anything else is a failure, never a
+/// new peer. `certificate_fingerprint` pins which socket is spoken to and is a
+/// routing hint only — the proof decides who the peer is.
+///
+/// The returned stream is the upgraded connection, already carried inside the
+/// LAN TLS session both proofs are bound to.
+#[cfg(feature = "anywhere")]
+pub(super) async fn connect_lan_continuity(
+    client: &reqwest::Client,
+    protocol: ProtocolType,
+    ip: &str,
+    port: u16,
+    identity: &RelayIdentity,
+    client_certificate_pem: &str,
+    expected_relay_id: &RelayId,
+) -> Result<RelayLanContinuityConnection, RelayLanContinuityError> {
+    if protocol != ProtocolType::Https {
+        // Both proofs bind to the TLS certificates of this connection, so
+        // there is nothing to bind to without TLS.
+        return Err(RelayLanContinuityError::Unsupported);
+    }
+    let Some(own_cert_fingerprint) = client_certificate_fingerprint(client_certificate_pem) else {
+        return Err(RelayLanContinuityError::AuthenticationFailed);
+    };
+
+    let response = client
+        .post(relay_continuity_url(protocol, ip, port))
+        .header(
+            reqwest::header::CONNECTION,
+            reqwest::header::HeaderValue::from_static("upgrade"),
+        )
+        .header(
+            reqwest::header::UPGRADE,
+            reqwest::header::HeaderValue::from_static(
+                crate::http::server::RELAY_CONTINUITY_PROTOCOL,
+            ),
+        )
+        .send()
+        .await
+        .map_err(|err| {
+            tracing::debug!("Relay continuity upgrade request failed: {err:#}");
+            RelayLanContinuityError::TransportFailed
+        })?;
+
+    match response.status() {
+        StatusCode::SWITCHING_PROTOCOLS => {}
+        StatusCode::NOT_FOUND
+        | StatusCode::METHOD_NOT_ALLOWED
+        | StatusCode::SERVICE_UNAVAILABLE => return Err(RelayLanContinuityError::Unsupported),
+        _ => return Err(RelayLanContinuityError::TransportFailed),
+    }
+
+    // The observed certificate is read from the completed TLS handshake, never
+    // from anything the peer claimed in the response.
+    let observed_server_cert_fingerprint = cert_fingerprint_digest_from_res(&response)
+        .map_err(|_| RelayLanContinuityError::TransportFailed)?;
+
+    let mut stream = response
+        .upgrade()
+        .await
+        .map_err(|_| RelayLanContinuityError::TransportFailed)?;
+
+    let session = crate::anywhere::authenticate_initiator(
+        &mut stream,
+        identity,
+        own_cert_fingerprint,
+        expected_relay_id,
+        observed_server_cert_fingerprint,
+        crate::relay::PathDescriptor::lan(ip, Some(port)),
+    )
+    .await
+    .map_err(|error| {
+        tracing::debug!("Relay continuity proof failed: {}", error.category());
+        RelayLanContinuityError::AuthenticationFailed
+    })?;
+
+    Ok(RelayLanContinuityConnection { session, stream })
+}
+
+#[cfg(feature = "anywhere")]
+fn relay_continuity_url(protocol: ProtocolType, ip: &str, port: u16) -> String {
+    let host = match scoped_host::encode(ip) {
+        Some(encoded) => Cow::Owned(encoded),
+        None if ip.contains(':') => Cow::Owned(format!("[{ip}]")),
+        None => Cow::Borrowed(ip),
+    };
+    format!(
+        "{}://{host}:{port}/api/relay/v1/continuity",
+        protocol.as_str()
+    )
+}
+
 fn relay_pair_url(protocol: ProtocolType, ip: &str, port: u16, step: &str) -> String {
     let host = match scoped_host::encode(ip) {
         Some(encoded) => Cow::Owned(encoded),

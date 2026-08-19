@@ -82,12 +82,23 @@ enum PendingReply {
     CallAction(oneshot::Sender<CallActionOutcome>),
 }
 
+/// A running continuity session and the token that ends it.
+#[frb(ignore)]
+#[derive(Clone)]
+struct LiveLink {
+    handle: ContinuitySessionHandle,
+    cancel: CancellationToken,
+}
+
 #[frb(ignore)]
 struct ContinuityRuntime {
     permissions: SharedPermissions,
     trust: Arc<AppTrustDirectory>,
     manifest: Mutex<CapabilityManifest>,
-    links: Mutex<HashMap<String, ContinuitySessionHandle>>,
+    /// One live link per proven RelayId. The token ends the session it belongs
+    /// to, so adopting a new link for the same peer replaces the old one rather
+    /// than running two that would duplicate every event.
+    links: Mutex<HashMap<String, LiveLink>>,
     dialers: Mutex<HashMap<String, CancellationToken>>,
     events: Mutex<Option<StreamSink<RsContinuityEvent>>>,
     host_sink: Mutex<Option<StreamSink<RsContinuityHostRequest>>>,
@@ -489,6 +500,9 @@ pub enum RsContinuityEvent {
     SessionEstablished {
         remote_relay_id: String,
         direct_path: bool,
+        /// Whether this session runs over the local network. Read from the path
+        /// the transport established, never claimed by the peer.
+        local_path: bool,
     },
     SessionEnded {
         remote_relay_id: String,
@@ -598,9 +612,11 @@ fn map_event(event: ContinuityEvent) -> Option<RsContinuityEvent> {
         ContinuityEvent::SessionEstablished {
             remote_relay_id,
             direct_path,
+            local_path,
         } => RsContinuityEvent::SessionEstablished {
             remote_relay_id,
             direct_path,
+            local_path,
         },
         ContinuityEvent::SessionEnded {
             remote_relay_id,
@@ -760,6 +776,66 @@ fn event_sink() -> ContinuityEventSink {
             }
         }
     })
+}
+
+/// Registers a link as the one live session for its peer, ending any session
+/// that peer already had.
+///
+/// Both transports go through here, so a device can never end up with a local
+/// and an Anywhere session at once.
+#[frb(ignore)]
+fn adopt_link(remote_relay_id: &str, link: LiveLink) {
+    let displaced = runtime()
+        .links
+        .lock()
+        .map(|mut links| links.insert(remote_relay_id.to_owned(), link))
+        .ok()
+        .flatten();
+    if let Some(displaced) = displaced {
+        displaced.cancel.cancel();
+    }
+}
+
+/// Removes a link, but only if it is still the live one for that peer: a
+/// session that was already replaced must not clear its successor.
+#[frb(ignore)]
+fn release_link(remote_relay_id: &str, cancel: &CancellationToken) {
+    let _ = runtime().links.lock().map(|mut links| {
+        let is_current = links
+            .get(remote_relay_id)
+            .is_some_and(|link| link.cancel == *cancel);
+        if is_current {
+            links.remove(remote_relay_id);
+        }
+    });
+}
+
+/// Runs an inbound local continuity session that the HTTP server already
+/// authenticated.
+///
+/// The peer is proven before this is called; trust and per-capability consent
+/// are still enforced inside the session loop.
+#[frb(ignore)]
+pub(crate) fn adopt_inbound_lan_session<S>(
+    session: relay_core::relay::AuthenticatedRelaySession,
+    stream: S,
+) where
+    S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send + 'static,
+{
+    let remote_relay_id = session.remote_relay_id().as_hex();
+    let cancel = CancellationToken::new();
+    let link = spawn_link(stream, session, session_config(), cancel.clone());
+    adopt_link(
+        &remote_relay_id,
+        LiveLink {
+            handle: link.handle().clone(),
+            cancel: cancel.clone(),
+        },
+    );
+    tokio::spawn(async move {
+        let _ = link.shutdown().await;
+        release_link(&remote_relay_id, &cancel);
+    });
 }
 
 fn session_config() -> ContinuitySessionConfig {
@@ -946,20 +1022,18 @@ pub async fn continuity_connect_device(
             match connect_continuity(&endpoint, &remote, &identity, PathPreference::Auto).await {
                 Ok((session, stream)) => {
                     backoff = std::time::Duration::from_secs(2);
-                    let link = spawn_link(stream, session, session_config(), cancel.child_token());
-                    runtime
-                        .links
-                        .lock()
-                        .map(|mut links| {
-                            links.insert(remote_relay_id.clone(), link.handle().clone())
-                        })
-                        .ok();
+                    let link_cancel = cancel.child_token();
+                    let link = spawn_link(stream, session, session_config(), link_cancel.clone());
+                    adopt_link(
+                        &remote_relay_id,
+                        LiveLink {
+                            handle: link.handle().clone(),
+                            cancel: link_cancel.clone(),
+                        },
+                    );
                     let end = link.shutdown().await;
-                    runtime
-                        .links
-                        .lock()
-                        .map(|mut links| links.remove(&remote_relay_id))
-                        .ok();
+                    release_link(&remote_relay_id, &link_cancel);
+                    let _ = &runtime;
                     // A refusal is a decision, not a fault: stop dialing.
                     if matches!(
                         end,
@@ -983,6 +1057,211 @@ pub async fn continuity_connect_device(
         runtime.dialers.lock().map(|mut d| d.remove(&remote_relay_id)).ok();
     });
     Ok(())
+}
+
+
+/// One local network observation a paired device might be reachable at.
+///
+/// This is addressing only. `certificate_fingerprint` selects which socket is
+/// spoken to; it never decides who the peer is, and a candidate that answers
+/// while proving a different RelayId is discarded rather than adopted.
+#[derive(Clone, Debug)]
+pub struct RsLanCandidate {
+    pub ip: String,
+    pub port: u16,
+    pub https: bool,
+    pub certificate_fingerprint: String,
+}
+
+/// How many observations one resolution attempt may dial, so a crowded network
+/// cannot turn into a dial storm.
+const MAX_LAN_CANDIDATES: usize = 6;
+/// How many times the keeper re-dials a peer that dropped before giving up and
+/// letting the app re-resolve (which may choose the Anywhere transport).
+const MAX_LAN_RECONNECT_ROUNDS: u32 = 5;
+
+/// Opens a continuity session to a paired device over the local network.
+///
+/// Returns whether an authenticated local session was established. `false`
+/// means the app should fall back to another *authenticated* transport; there
+/// is deliberately no unauthenticated local path to fall back to.
+///
+/// `remote_relay_id` is the paired identity and is demanded of whichever
+/// candidate answers, so resolution can never bind a pairing to a device that
+/// merely occupies the right address.
+pub async fn continuity_connect_device_lan(
+    mut private_key_pem: Vec<u8>,
+    relay_id: String,
+    remote_relay_id: String,
+    client_private_key: String,
+    client_certificate: String,
+    candidates: Vec<RsLanCandidate>,
+) -> anyhow::Result<bool> {
+    let identity = relay_core::crypto::relay_identity::RelayIdentity::from_private_key(
+        std::str::from_utf8(&private_key_pem).unwrap_or_default(),
+    );
+    private_key_pem.fill(0);
+    let identity = identity?;
+    if identity.relay_id()? != relay_id {
+        anyhow::bail!("the Relay identity does not match this device");
+    }
+    let expected = RelayId::from_expected_canonical_hex(&remote_relay_id)?;
+
+    let candidates: Vec<RsLanCandidate> = candidates
+        .into_iter()
+        .filter(|candidate| candidate.https)
+        .take(MAX_LAN_CANDIDATES)
+        .collect();
+    if candidates.is_empty() {
+        return Ok(false);
+    }
+
+    let Some((connection, candidate)) = dial_lan_candidates(
+        &candidates,
+        &identity,
+        &client_private_key,
+        &client_certificate,
+        &expected,
+    )
+    .await
+    else {
+        return Ok(false);
+    };
+
+    // Registering the dialer cancels whatever transport this peer was using, so
+    // a device never runs a local and an Anywhere session at the same time.
+    let cancel = CancellationToken::new();
+    {
+        let mut dialers = runtime()
+            .dialers
+            .lock()
+            .map_err(|_| anyhow::anyhow!("continuity dialer state is unavailable"))?;
+        if let Some(existing) = dialers.insert(remote_relay_id.clone(), cancel.clone()) {
+            existing.cancel();
+        }
+    }
+
+    tokio::spawn(async move {
+        let mut connection = Some(connection);
+        let mut candidate = candidate;
+        let mut rounds = 0_u32;
+        let mut backoff = std::time::Duration::from_secs(2);
+
+        loop {
+            if cancel.is_cancelled() {
+                break;
+            }
+            let established = match connection.take() {
+                Some(established) => established,
+                None => {
+                    // Re-dial the observation that proved this identity last
+                    // time; the proof still has to succeed again.
+                    match dial_lan_candidates(
+                        std::slice::from_ref(&candidate),
+                        &identity,
+                        &client_private_key,
+                        &client_certificate,
+                        &expected,
+                    )
+                    .await
+                    {
+                        Some((established, proven)) => {
+                            candidate = proven;
+                            rounds = 0;
+                            backoff = std::time::Duration::from_secs(2);
+                            established
+                        }
+                        None => {
+                            rounds += 1;
+                            if rounds >= MAX_LAN_RECONNECT_ROUNDS {
+                                break;
+                            }
+                            tokio::select! {
+                                _ = cancel.cancelled() => break,
+                                _ = tokio::time::sleep(backoff) => {}
+                            }
+                            backoff = (backoff * 2).min(std::time::Duration::from_secs(60));
+                            continue;
+                        }
+                    }
+                }
+            };
+
+            let link_cancel = cancel.child_token();
+            let link = spawn_link(
+                established.stream,
+                established.session,
+                session_config(),
+                link_cancel.clone(),
+            );
+            adopt_link(
+                &remote_relay_id,
+                LiveLink {
+                    handle: link.handle().clone(),
+                    cancel: link_cancel.clone(),
+                },
+            );
+            let end = link.shutdown().await;
+            release_link(&remote_relay_id, &link_cancel);
+
+            // A refusal is a decision, not a fault: stop rather than dialing
+            // against a peer that said no.
+            if matches!(
+                end,
+                ContinuitySessionEnd::NotTrusted
+                    | ContinuitySessionEnd::Blocked
+                    | ContinuitySessionEnd::Cancelled
+            ) {
+                break;
+            }
+        }
+        runtime()
+            .dialers
+            .lock()
+            .map(|mut dialers| dialers.remove(&remote_relay_id))
+            .ok();
+    });
+
+    Ok(true)
+}
+
+/// Tries each observation in turn and returns the first that proves the
+/// expected identity, together with the observation that did.
+#[frb(ignore)]
+async fn dial_lan_candidates(
+    candidates: &[RsLanCandidate],
+    identity: &relay_core::crypto::relay_identity::RelayIdentity,
+    client_private_key: &str,
+    client_certificate: &str,
+    expected: &RelayId,
+) -> Option<(
+    relay_core::http::client::relay::RelayLanContinuityConnection,
+    RsLanCandidate,
+)> {
+    for candidate in candidates {
+        match relay_core::http::client::connect_relay_lan_continuity(
+            client_private_key,
+            client_certificate,
+            relay_core::http::client::LsHttpClientVersion::V2,
+            relay_core::model::discovery::ProtocolType::Https,
+            &candidate.ip,
+            candidate.port,
+            &candidate.certificate_fingerprint,
+            identity,
+            expected,
+        )
+        .await
+        {
+            Ok(connection) => return Some((connection, candidate.clone())),
+            Err(error) => {
+                // A candidate that is not this identity is simply not it. No
+                // observation is remembered as the peer on the strength of
+                // having answered.
+                tracing::debug!(?error, "local continuity candidate did not match");
+            }
+        }
+    }
+    None
 }
 
 /// Stops the continuity link with one device without affecting others.
@@ -1010,7 +1289,7 @@ async fn publish_all(payload: ContinuityPayload) {
     let handles: Vec<ContinuitySessionHandle> = runtime()
         .links
         .lock()
-        .map(|links| links.values().cloned().collect())
+        .map(|links| links.values().map(|link| link.handle.clone()).collect())
         .unwrap_or_default();
     for handle in handles {
         handle.publish(payload.clone()).await;
@@ -1022,7 +1301,7 @@ async fn publish_to(relay_id: &str, payload: ContinuityPayload) -> bool {
         .links
         .lock()
         .ok()
-        .and_then(|links| links.get(relay_id).cloned());
+        .and_then(|links| links.get(relay_id).map(|link| link.handle.clone()));
     match handle {
         Some(handle) => handle.publish(payload).await,
         None => false,
@@ -1340,11 +1619,15 @@ pub(crate) async fn listener_accept_config(
     tokio::spawn(async move {
         while let Some(handle) = links_rx.recv().await {
             let remote = handle.remote_relay_id().to_owned();
-            runtime()
-                .links
-                .lock()
-                .map(|mut links| links.insert(remote, handle))
-                .ok();
+            // The Anywhere listener owns this session's lifetime, so the token
+            // recorded here only marks which link is current.
+            adopt_link(
+                &remote,
+                LiveLink {
+                    handle,
+                    cancel: CancellationToken::new(),
+                },
+            );
         }
     });
     Some(relay_core::anywhere::listener::ContinuityAcceptConfig {

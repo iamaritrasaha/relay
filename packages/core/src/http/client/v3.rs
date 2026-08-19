@@ -49,6 +49,30 @@ impl LsHttpClientV3 {
         super::relay::authenticate_relay_server(&self.client, protocol, ip, port).await
     }
 
+    /// Opens an authenticated local continuity connection to a paired device.
+    #[cfg(feature = "anywhere")]
+    pub async fn connect_lan_continuity(
+        &self,
+        protocol: ProtocolType,
+        ip: &str,
+        port: u16,
+        identity: &crate::crypto::relay_identity::RelayIdentity,
+        client_certificate_pem: &str,
+        expected_relay_id: &crate::relay::RelayId,
+    ) -> Result<super::relay::RelayLanContinuityConnection, super::relay::RelayLanContinuityError>
+    {
+        super::relay::connect_lan_continuity(
+            &self.client,
+            protocol,
+            ip,
+            port,
+            identity,
+            client_certificate_pem,
+            expected_relay_id,
+        )
+        .await
+    }
+
     /// Runs the mutual Relay LAN pairing handshake against another Relay device.
     pub async fn pair_with_relay_server(
         &self,

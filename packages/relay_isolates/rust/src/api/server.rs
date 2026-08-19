@@ -1,7 +1,7 @@
 use crate::frb_generated::StreamSink;
 use flutter_rust_bridge::frb;
 pub use relay_core::http::dto_v2::RegisterDtoV2;
-use relay_core::http::server::ServerConfigV2;
+use relay_core::http::server::{RelayContinuityAcceptConfig, ServerConfigV2};
 pub use relay_core::http::server::TlsConfig;
 use relay_core::http::server::common::save::FileUploadTarget;
 use relay_core::http::server::internal::{InternalConfig, InternalEvent};
@@ -524,6 +524,57 @@ impl RsHttpServer {
                 .is_ok()
             }
         }
+    }
+
+    /// Starts serving the Relay-only local continuity endpoint.
+    ///
+    /// Until this runs, the endpoint reports itself unavailable, so a device
+    /// with no continuity capability enabled never accepts a local session.
+    /// The identity is held only while the acceptor is installed.
+    ///
+    /// Every accepted connection still completes a mutual `RelayIdentityProofV1`
+    /// exchange inside the server before a session exists, and trust plus
+    /// per-capability consent are still enforced by the session itself.
+    pub async fn install_relay_continuity_acceptor(
+        &self,
+        mut private_key_pem: Vec<u8>,
+        relay_id: String,
+    ) -> anyhow::Result<()> {
+        let identity = relay_core::crypto::relay_identity::RelayIdentity::from_private_key(
+            std::str::from_utf8(&private_key_pem).unwrap_or_default(),
+        );
+        private_key_pem.fill(0);
+        let identity = identity?;
+        if identity.relay_id()? != relay_id {
+            anyhow::bail!("the Relay identity does not match this device");
+        }
+
+        let (inbound_tx, mut inbound_rx) = mpsc::channel(4);
+        tokio::spawn(async move {
+            while let Some(inbound) = inbound_rx.recv().await {
+                let relay_core::http::server::RelayLanContinuityInbound { session, stream } =
+                    inbound;
+                crate::api::continuity::adopt_inbound_lan_session(session, stream);
+            }
+        });
+
+        if !self
+            .instance
+            .handle
+            .install_relay_continuity_acceptor(RelayContinuityAcceptConfig {
+                identity,
+                inbound: inbound_tx,
+            })
+        {
+            anyhow::bail!("the Relay continuity acceptor could not be installed");
+        }
+        Ok(())
+    }
+
+    /// Stops serving the local continuity endpoint and drops the identity it
+    /// held. Sessions already running are ended by their own owners.
+    pub async fn revoke_relay_continuity_acceptor(&self) -> bool {
+        self.instance.handle.revoke_relay_continuity_acceptor()
     }
 
     /// Answers the pending [RsServerEvent::RelayPairRequest] event.
