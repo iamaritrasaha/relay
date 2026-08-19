@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:relay_app/model/continuity/continuity_runtime.dart';
 import 'package:relay_app/model/cross_file.dart';
 import 'package:relay_app/model/persistence/relay_paired_address.dart';
 import 'package:relay_app/model/state/nearby_devices_state.dart';
@@ -230,5 +231,88 @@ void main() {
     expect(relayVm.devices.single.key, 'relay:$relayId');
     expect(relayVm.devices.single.targetKind, RelayDeviceTargetKind.verifiedRelay);
     expect(relayVm.devices.single.alias, 'Pixel Relay');
+  });
+
+  test('a paired Relay route remains visible when transient LAN discovery disappears', () {
+    const relayId = 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+    final relayVm = RelayHomeVm.fromState(
+      configuredAlias: 'My Linux',
+      selfDeviceType: DeviceType.desktop,
+      server: null,
+      nearby: nearby(null),
+      sendSessions: const {},
+      transfers: FileTransferNotifier(),
+      selectedFiles: const [],
+      pairedRoutes: [
+        RelayPairedAddress(relayId: relayId, displayLabel: 'Linux', relayAddress: 'RELAY1.test', updatedAt: DateTime.utc(2026)),
+      ],
+    );
+
+    expect(relayVm.devices.single.key, 'relay:$relayId');
+    expect(relayVm.devices.single.isPairedRelay, isTrue);
+  });
+
+  test('a verified LAN Relay device has one RelayId-based identity', () {
+    const relayId = 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+    final relayVm = RelayHomeVm.fromState(
+      configuredAlias: 'My Linux',
+      selfDeviceType: DeviceType.desktop,
+      server: null,
+      nearby: nearby(),
+      sendSessions: const {},
+      transfers: FileTransferNotifier(),
+      selectedFiles: const [],
+      verifiedLanDevices: const {relayId: RelayVerifiedLanDevice(relayId: relayId, device: device)},
+    );
+
+    expect(relayVm.devices, hasLength(1));
+    expect(relayVm.devices.single.key, 'relay:$relayId');
+    expect(relayVm.devices.single.isVerifiedRelay, isTrue);
+  });
+
+  test('reconnecting a verified paired Relay device does not duplicate it', () {
+    const relayId = 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+    final route = RelayPairedAddress(relayId: relayId, displayLabel: 'Linux', relayAddress: 'RELAY1.test', updatedAt: DateTime.utc(2026));
+    final relayVm = RelayHomeVm.fromState(
+      configuredAlias: 'My Linux',
+      selfDeviceType: DeviceType.desktop,
+      server: null,
+      nearby: nearby(),
+      sendSessions: const {},
+      transfers: FileTransferNotifier(),
+      selectedFiles: const [],
+      pairedRoutes: [route, route],
+      verifiedLanDevices: const {relayId: RelayVerifiedLanDevice(relayId: relayId, device: device)},
+    );
+
+    expect(relayVm.devices, hasLength(1));
+    expect(relayVm.devices.single.key, 'relay:$relayId');
+  });
+
+  test('an authenticated continuity connection is reflected in the paired device VM', () {
+    const relayId = 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+    final relayVm = RelayHomeVm.fromState(
+      configuredAlias: 'My Linux',
+      selfDeviceType: DeviceType.desktop,
+      server: null,
+      nearby: nearby(null),
+      sendSessions: const {},
+      transfers: FileTransferNotifier(),
+      selectedFiles: const [],
+      pairedRoutes: [
+        RelayPairedAddress(relayId: relayId, displayLabel: 'Linux', relayAddress: 'RELAY1.test', updatedAt: DateTime.utc(2026)),
+      ],
+      continuity: const RelayContinuityState(devices: {relayId: DeviceContinuity(relayId: relayId, connected: true)}),
+    );
+
+    expect(relayVm.devices.single.continuityConnected, isTrue);
+  });
+
+  test('a compatibility peer remains outside authenticated Relay identity', () {
+    final relayVm = vm();
+
+    expect(relayVm.devices.single.isCompatibilityPeer, isTrue);
+    expect(relayVm.devices.single.isAuthenticatedRelay, isFalse);
+    expect(relayVm.devices.single.relayId, isNull);
   });
 }

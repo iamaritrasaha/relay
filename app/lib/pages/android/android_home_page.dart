@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:refena_flutter/refena_flutter.dart';
 import 'package:relay_app/config/relay_brand.dart';
 import 'package:relay_app/model/ui/relay_device_vm.dart';
 import 'package:relay_app/pages/android/android_device_detail_page.dart';
@@ -14,7 +15,6 @@ import 'package:relay_app/provider/selection/selected_sending_files_provider.dar
 import 'package:relay_app/util/device_type_ext.dart';
 import 'package:relay_app/util/native/file_picker.dart';
 import 'package:relay_isolates/util/file_size_helper.dart';
-import 'package:refena_flutter/refena_flutter.dart';
 
 /// Android Material 3 Devices Page (Home tab).
 class AndroidHomePage extends StatelessWidget {
@@ -33,8 +33,8 @@ class AndroidHomePage extends StatelessWidget {
     final history = context.watch(receiveHistoryProvider);
     final ref = context.ref;
 
-    final relayDevices = vm.devices.where((d) => !d.isRelay).toList();
-    final localSendDevices = vm.devices.where((d) => d.isRelay).toList();
+    final relayDevices = vm.devices.where((d) => d.isAuthenticatedRelay).toList();
+    final localSendDevices = vm.devices.where((d) => d.isCompatibilityPeer).toList();
 
     return ListView(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),

@@ -1,12 +1,14 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
+import 'package:refena_flutter/refena_flutter.dart';
 import 'package:relay_app/pages/relay_qr_scanner_page.dart';
+import 'package:relay_app/provider/continuity/continuity_provider.dart';
 import 'package:relay_app/provider/relay_anywhere_listener_provider.dart';
-import 'package:relay_app/provider/relay_paired_routes_provider.dart';
 import 'package:relay_app/provider/settings_provider.dart';
 import 'package:relay_app/util/security/relay_anywhere_listener_service.dart';
 import 'package:relay_app/util/security/relay_anywhere_pairing_service.dart';
 import 'package:relay_app/widget/relay/relay_pairing_qr.dart';
-import 'package:refena_flutter/refena_flutter.dart';
 
 /// Pairs a pasted Relay address only after the remote device proves its
 /// claimed identity. The address itself is never treated as trust evidence.
@@ -43,7 +45,9 @@ class _RelayPairDeviceDialogState extends State<RelayPairDeviceDialog> with Refe
       return;
     }
     if (result is RelayPairingSucceeded) {
-      await ref.notifier(relayPairedRoutesProvider).refresh();
+      // A newly published authenticated route may complete an already-enabled
+      // continuity target. The event stream updates its connected bit.
+      unawaited(ref.redux(continuityProvider).dispatchAsync(ContinuityConnectEnabledDevicesAction()));
       if (!mounted) {
         return;
       }

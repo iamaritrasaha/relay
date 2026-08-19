@@ -65,14 +65,17 @@ class RelayAnywherePairingService {
   final RelayIdentityCoordinator _identityCoordinator;
   final RelayPairedAddressStore _pairedAddressStore;
   final RelayAnywherePairingApi _api;
+  final Future<void> Function()? _onRouteSaved;
 
   RelayAnywherePairingService({
     required RelayIdentityCoordinator identityCoordinator,
     required RelayPairedAddressStore pairedAddressStore,
     required RelayAnywherePairingApi api,
+    Future<void> Function()? onRouteSaved,
   }) : _identityCoordinator = identityCoordinator,
        _pairedAddressStore = pairedAddressStore,
-       _api = api;
+       _api = api,
+       _onRouteSaved = onRouteSaved;
 
   Future<RelayPairingResult> pair({required String address, String? displayLabel}) async {
     final normalizedAddress = address.trim();
@@ -106,6 +109,12 @@ class RelayAnywherePairingService {
       relayAddress: normalizedAddress,
       displayLabel: normalizedLabel == null || normalizedLabel.isEmpty ? null : normalizedLabel,
     );
+    if (saved) {
+      // Persistence alone is not observable by the product state graph. Publish
+      // this proof-backed route before reporting pairing success so every
+      // consumer resolves the same RelayId-keyed device immediately.
+      await _onRouteSaved?.call();
+    }
     return saved ? RelayPairingSucceeded(provenRelayId) : const RelayPairingAuthenticationFailed();
   }
 
