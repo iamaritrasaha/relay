@@ -30,6 +30,7 @@ class GnomeDeviceSidebar extends StatelessWidget {
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
     final relayDevices = vm.devices.where((d) => d.isAuthenticatedRelay).toList();
+    final kdeConnectDevices = vm.devices.where((d) => d.isKdeConnect).toList();
     final localSendDevices = vm.devices.where((d) => d.isCompatibilityPeer).toList();
 
     return Column(
@@ -82,6 +83,14 @@ class GnomeDeviceSidebar extends StatelessWidget {
               : ListView(
                   padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                   children: [
+                    if (kdeConnectDevices.isNotEmpty) ...[
+                      for (final device in kdeConnectDevices)
+                        _DeviceSidebarItem(
+                          device: device,
+                          isSelected: device.key == selectedDeviceKey,
+                          onTap: () => onSelectDevice(device.key),
+                        ),
+                    ],
                     if (relayDevices.isNotEmpty) ...[
                       for (final device in relayDevices)
                         _DeviceSidebarItem(

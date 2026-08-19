@@ -10,6 +10,8 @@ pub mod crypto;
 pub mod discovery;
 #[cfg(feature = "http")]
 pub mod http;
+#[cfg(feature = "kdeconnect")]
+pub mod kdeconnect;
 pub mod model;
 #[cfg(feature = "multicast")]
 pub mod multicast;

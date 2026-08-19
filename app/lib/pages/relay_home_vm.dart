@@ -13,6 +13,7 @@ import 'package:relay_app/model/ui/relay_device_vm.dart';
 import 'package:relay_app/provider/continuity/continuity_provider.dart';
 import 'package:relay_app/provider/device_info_provider.dart';
 import 'package:relay_app/provider/file_transfer_provider.dart';
+import 'package:relay_app/provider/kdeconnect_provider.dart';
 import 'package:relay_app/provider/network/nearby_devices_provider.dart';
 import 'package:relay_app/provider/network/send_provider.dart';
 import 'package:relay_app/provider/network/server/server_provider.dart';
@@ -24,6 +25,7 @@ import 'package:relay_app/provider/settings_provider.dart';
 import 'package:relay_isolates/model/device.dart';
 import 'package:relay_isolates/model/file_status.dart';
 import 'package:relay_isolates/model/session_status.dart';
+import 'package:relay_isolates/rust/api/kdeconnect.dart';
 
 enum RelayPresence { offline, ready, discovering }
 
@@ -118,6 +120,7 @@ class RelayHomeVm {
     Map<String, RelayRemoteTransfer> remoteTransfers = const {},
     Map<String, RelayVerifiedLanDevice> verifiedLanDevices = const {},
     RelayContinuityState continuity = const RelayContinuityState(),
+    List<RsKdeConnectDevice> kdeConnectDevices = const [],
   }) {
     final selection = RelayPayloadVm(
       fileCount: selectedFiles.length,
@@ -148,6 +151,7 @@ class RelayHomeVm {
               ),
           for (final route in pairedByRelayId.values)
             _pairedDeviceVm(route, remoteTransfers.values.firstWhereOrNull((entry) => entry.relayId == route.relayId), continuity),
+          for (final device in kdeConnectDevices) _kdeConnectDeviceVm(device),
         ]..sort((a, b) {
           final aliasComparison = a.alias.toLowerCase().compareTo(b.alias.toLowerCase());
           return aliasComparison != 0 ? aliasComparison : a.key.compareTo(b.key);
@@ -346,6 +350,33 @@ class RelayHomeVm {
       ip: device.ip,
       port: device.port,
       deviceModel: device.deviceModel,
+    );
+  }
+
+  static RelayDeviceVm _kdeConnectDeviceVm(RsKdeConnectDevice device) {
+    final detail = device.connected && device.paired
+        ? 'Connected'
+        : device.paired
+        ? 'Paired'
+        : 'Nearby';
+    return RelayDeviceVm(
+      key: 'kdeconnect:${device.deviceId}',
+      alias: device.name,
+      deviceType: switch (device.deviceType) {
+        'phone' || 'smartphone' => DeviceType.mobile,
+        'tablet' => DeviceType.mobile,
+        'tv' => DeviceType.desktop,
+        'laptop' => DeviceType.desktop,
+        _ => DeviceType.desktop,
+      },
+      phase: RelayDevicePhase.idle,
+      progress: null,
+      detail: detail,
+      targetKind: RelayDeviceTargetKind.kdeConnect,
+      connectionType: RelayConnectionType.local,
+      securityState: RelaySecurityState.unauthenticated,
+      ip: device.ip,
+      port: device.port,
     );
   }
 
@@ -557,5 +588,6 @@ final relayHomeVmProvider = ViewProvider<RelayHomeVm>((ref) {
     remoteTransfers: ref.watch(relayRemoteTransfersProvider),
     verifiedLanDevices: ref.watch(relayVerifiedLanDevicesProvider),
     continuity: ref.watch(continuityProvider),
+    kdeConnectDevices: ref.watch(kdeConnectProvider.select((state) => state.devices)),
   );
 }, debugLabel: 'relayHomeVmProvider');

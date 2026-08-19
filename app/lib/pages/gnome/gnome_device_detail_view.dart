@@ -1,9 +1,12 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:refena_flutter/refena_flutter.dart';
 import 'package:relay_app/config/relay_brand.dart';
 import 'package:relay_app/model/ui/relay_capability_vm.dart';
 import 'package:relay_app/model/ui/relay_device_vm.dart';
 import 'package:relay_app/pages/relay_home_vm.dart';
+import 'package:relay_app/provider/kdeconnect_provider.dart';
 import 'package:relay_app/provider/receive_history_provider.dart';
 import 'package:relay_app/util/device_type_ext.dart';
 import 'package:relay_app/util/native/open_file.dart';
@@ -158,53 +161,59 @@ class GnomeDeviceDetailView extends StatelessWidget {
                 const SizedBox(height: 24),
               ],
 
-              // Primary Action Buttons
-              Wrap(
-                spacing: 10,
-                runSpacing: 10,
-                children: [
-                  AdwButton.suggested(
-                    key: const ValueKey('gnome-send-files-button'),
-                    icon: Icons.file_upload_outlined,
-                    label: 'Send Files',
-                    isPill: true,
-                    onPressed: onSendFiles,
-                  ),
-                  AdwButton(
-                    key: const ValueKey('gnome-send-folder-button'),
-                    icon: Icons.folder_open_outlined,
-                    label: 'Send Folder',
-                    isPill: true,
-                    onPressed: onSendFolder,
-                  ),
-                  AdwButton.flat(
-                    key: const ValueKey('gnome-clipboard-button'),
-                    icon: Icons.content_paste_outlined,
-                    label: 'Clipboard',
-                    onPressed: onOpenClipboard,
-                  ),
-                  AdwButton.flat(
-                    key: const ValueKey('gnome-messages-button'),
-                    icon: Icons.chat_bubble_outline_rounded,
-                    label: 'Messages',
-                    onPressed: onOpenMessages,
-                  ),
-                  // Phone only makes sense for a device that could have one.
-                  if (!device.isCompatibilityPeer)
-                    AdwButton.flat(
-                      key: const ValueKey('gnome-phone-button'),
-                      icon: Icons.call_outlined,
-                      label: 'Phone',
-                      onPressed: onOpenPhone,
+              if (!device.isKdeConnect)
+                Wrap(
+                  spacing: 10,
+                  runSpacing: 10,
+                  children: [
+                    AdwButton.suggested(
+                      key: const ValueKey('gnome-send-files-button'),
+                      icon: Icons.file_upload_outlined,
+                      label: 'Send Files',
+                      isPill: true,
+                      onPressed: onSendFiles,
                     ),
-                ],
-              ),
+                    AdwButton(
+                      key: const ValueKey('gnome-send-folder-button'),
+                      icon: Icons.folder_open_outlined,
+                      label: 'Send Folder',
+                      isPill: true,
+                      onPressed: onSendFolder,
+                    ),
+                    AdwButton.flat(
+                      key: const ValueKey('gnome-clipboard-button'),
+                      icon: Icons.content_paste_outlined,
+                      label: 'Clipboard',
+                      onPressed: onOpenClipboard,
+                    ),
+                    AdwButton.flat(
+                      key: const ValueKey('gnome-messages-button'),
+                      icon: Icons.chat_bubble_outline_rounded,
+                      label: 'Messages',
+                      onPressed: onOpenMessages,
+                    ),
+                    // Phone only makes sense for a device that could have one.
+                    if (!device.isCompatibilityPeer)
+                      AdwButton.flat(
+                        key: const ValueKey('gnome-phone-button'),
+                        icon: Icons.call_outlined,
+                        label: 'Phone',
+                        onPressed: onOpenPhone,
+                      ),
+                  ],
+                ),
 
               const SizedBox(height: 32),
 
               // The relationship itself: pair, or remove. Trust and capability
               // consent are separate decisions with their own controls.
-              if (!device.isCompatibilityPeer) ...[
+              if (device.isKdeConnect) ...[
+                AdwPreferencesGroup(
+                  title: 'Pairing',
+                  children: [_KdeConnectRelationshipTile(device: device)],
+                ),
+                const SizedBox(height: 32),
+              ] else if (!device.isCompatibilityPeer) ...[
                 AdwPreferencesGroup(
                   title: 'Pairing',
                   children: [RelayDeviceRelationshipTile(device: device)],
@@ -219,7 +228,13 @@ class GnomeDeviceDetailView extends StatelessWidget {
                   AdwActionRow(
                     leading: const Icon(Icons.wifi_rounded),
                     title: 'Connection',
-                    subtitle: device.isCompatibilityPeer
+                    subtitle: device.isKdeConnect
+                        ? device.detail == 'Connected'
+                              ? 'Connected on your local network'
+                              : device.detail == 'Paired'
+                              ? 'Paired'
+                              : 'Nearby on your local network'
+                        : device.isCompatibilityPeer
                         ? 'Nearby on your local network'
                         : device.connectionType == RelayConnectionType.direct
                         ? 'Direct connection'
@@ -232,31 +247,37 @@ class GnomeDeviceDetailView extends StatelessWidget {
                       device.isVerifiedRelay ? Icons.verified_user_rounded : Icons.info_outline_rounded,
                     ),
                     title: 'Device verification',
-                    subtitle: device.isVerifiedRelay ? 'Authenticated Relay device identity' : 'Relay-compatible device (unauthenticated)',
+                    subtitle: device.isKdeConnect
+                        ? 'KDE Connect'
+                        : device.isVerifiedRelay
+                        ? 'Authenticated Relay device identity'
+                        : 'Relay-compatible device (unauthenticated)',
                   ),
-                  AdwActionRow(
-                    leading: const Icon(Icons.battery_std_rounded),
-                    title: 'Battery',
-                    subtitle: switch (device.battery) {
-                      // A stale reading is labelled as such rather than shown as live.
-                      final battery when !battery.hasInfo =>
-                        device.isCompatibilityPeer ? 'LocalSend-compatible devices do not share battery status' : 'Not shared by this device',
-                      final battery when battery.isStale => 'Last known before disconnecting',
-                      final battery when battery.isFull => 'Charged',
-                      final battery when battery.isCharging => 'Charging',
-                      _ => 'On battery',
-                    },
-                    trailing: Text(
-                      device.battery.displayString,
-                      style: RelayTypography.body(palette.textSecondary, isGnome: true),
+                  if (!device.isKdeConnect)
+                    AdwActionRow(
+                      leading: const Icon(Icons.battery_std_rounded),
+                      title: 'Battery',
+                      subtitle: switch (device.battery) {
+                        // A stale reading is labelled as such rather than shown as live.
+                        final battery when !battery.hasInfo =>
+                          device.isCompatibilityPeer ? 'LocalSend-compatible devices do not share battery status' : 'Not shared by this device',
+                        final battery when battery.isStale => 'Last known before disconnecting',
+                        final battery when battery.isFull => 'Charged',
+                        final battery when battery.isCharging => 'Charging',
+                        _ => 'On battery',
+                      },
+                      trailing: Text(
+                        device.battery.displayString,
+                        style: RelayTypography.body(palette.textSecondary, isGnome: true),
+                      ),
                     ),
-                  ),
-                  AdwNavigationRow(
-                    leading: const Icon(Icons.tune_rounded),
-                    title: 'Security & diagnostics',
-                    subtitle: 'Verify this device and view technical details',
-                    onTap: onOpenDiagnostics,
-                  ),
+                  if (!device.isKdeConnect)
+                    AdwNavigationRow(
+                      leading: const Icon(Icons.tune_rounded),
+                      title: 'Security & diagnostics',
+                      subtitle: 'Verify this device and view technical details',
+                      onTap: onOpenDiagnostics,
+                    ),
                 ],
               ),
 
@@ -318,5 +339,34 @@ class GnomeDeviceDetailView extends StatelessWidget {
     if (diff.inDays < 1) return '${diff.inHours}h ago';
     if (diff.inDays == 1) return 'Yesterday';
     return '${dt.month}/${dt.day}';
+  }
+}
+
+class _KdeConnectRelationshipTile extends StatelessWidget {
+  final RelayDeviceVm device;
+
+  const _KdeConnectRelationshipTile({required this.device});
+
+  String get _deviceId => device.key.startsWith('kdeconnect:') ? device.key.substring('kdeconnect:'.length) : device.key;
+
+  @override
+  Widget build(BuildContext context) {
+    final paired = device.detail == 'Paired' || device.detail == 'Connected';
+    if (paired) {
+      return ListTile(
+        key: const ValueKey('kdeconnect-remove-device'),
+        leading: const Icon(Icons.link_off_rounded),
+        title: const Text('Remove Device'),
+        subtitle: const Text('Ends the KDE Connect pairing. The phone can still appear nearby.'),
+        onTap: () => unawaited(context.redux(kdeConnectProvider).dispatchAsync(KdeConnectUnpairAction(_deviceId))),
+      );
+    }
+    return ListTile(
+      key: const ValueKey('kdeconnect-pair-device'),
+      leading: const Icon(Icons.link_rounded),
+      title: const Text('Pair'),
+      subtitle: const Text('Ask the phone to accept a KDE Connect pairing request.'),
+      onTap: () => unawaited(context.redux(kdeConnectProvider).dispatchAsync(KdeConnectRequestPairAction(_deviceId))),
+    );
   }
 }
