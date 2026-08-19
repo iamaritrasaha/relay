@@ -42,6 +42,7 @@ class _Attempts {
 
 void main() {
   late _Attempts attempts;
+  late List<void Function()> scheduledReselections;
 
   ReduxNotifierTester<RelayContinuityState> service({
     required Map<String, RelayContinuitySettings> settings,
@@ -82,6 +83,7 @@ void main() {
           attempts.anywhere.add(remoteAddress);
           attempts.order.add('anywhere:$remoteAddress');
         },
+        scheduleReselection: (_, callback) => scheduledReselections.add(callback),
       ),
       initialState: RelayContinuityState(settings: settings),
     );
@@ -92,7 +94,32 @@ void main() {
     trusted: true,
   ).withCapability(ContinuityCapabilityKind.battery, true);
 
-  setUp(() => attempts = _Attempts());
+  setUp(() {
+    attempts = _Attempts();
+    scheduledReselections = [];
+  });
+
+  void establish(ReduxNotifierTester<RelayContinuityState> it, String relayId, {bool local = true}) {
+    it.dispatch(
+      ContinuityRemoteEventAction(
+        rust.RsContinuityEvent.sessionEstablished(remoteRelayId: relayId, directPath: local, localPath: local),
+      ),
+    );
+  }
+
+  void end(ReduxNotifierTester<RelayContinuityState> it, String relayId, {String reason = 'transport_failed'}) {
+    it.dispatch(ContinuityRemoteEventAction(rust.RsContinuityEvent.sessionEnded(remoteRelayId: relayId, reason: reason)));
+  }
+
+  Future<void> runScheduledReselection() async {
+    final callbacks = List<void Function()>.from(scheduledReselections);
+    scheduledReselections.clear();
+    for (final callback in callbacks) {
+      callback();
+    }
+    await Future<void>.delayed(Duration.zero);
+    await Future<void>.delayed(Duration.zero);
+  }
 
   group('transport selection', () {
     test('an authenticated local session is preferred and stops there', () async {
@@ -222,6 +249,175 @@ void main() {
       await it.dispatchAsync(ContinuityConnectEnabledDevicesAction());
 
       expect(attempts.order, isEmpty);
+    });
+  });
+
+  group('session-loss reselection', () {
+    test('an established LAN loss becomes disconnected and falls back to Anywhere without user action', () async {
+      final it = service(
+        settings: {_phone: enabled(_phone)},
+        routes: [_pairing(_phone, address: 'RELAY1.phone')],
+        candidates: {
+          _phone: [_candidate('192.168.1.24')],
+        },
+      );
+
+      establish(it, _phone);
+      end(it, _phone);
+
+      expect(it.state.deviceFor(_phone).connected, isFalse);
+      expect(it.state.deviceFor(_phone).localPath, isFalse);
+      expect(scheduledReselections, hasLength(1));
+
+      await runScheduledReselection();
+
+      expect(attempts.order, ['lan:$_phone', 'anywhere:RELAY1.phone']);
+    });
+
+    test('a disconnected peer can recover over LAN when it becomes locally available later', () async {
+      final candidates = <String, List<rust.RsLanCandidate>>{};
+      final it = service(
+        settings: {_phone: enabled(_phone)},
+        routes: [_pairing(_phone)],
+        candidates: candidates,
+      );
+
+      establish(it, _phone);
+      end(it, _phone);
+      await runScheduledReselection();
+      expect(attempts.order, isEmpty);
+
+      candidates[_phone] = [_candidate('192.168.1.24')];
+      it.dispatch(ContinuityLocalAvailabilityChangedAction());
+      await runScheduledReselection();
+
+      expect(attempts.order, ['lan:$_phone']);
+    });
+
+    test('no route after a LAN loss stays disconnected', () async {
+      final it = service(
+        settings: {_phone: enabled(_phone)},
+        routes: [_pairing(_phone)],
+        candidates: {
+          _phone: [_candidate('192.168.1.24')],
+        },
+      );
+
+      establish(it, _phone);
+      end(it, _phone);
+      await runScheduledReselection();
+
+      expect(attempts.order, ['lan:$_phone']);
+      expect(it.state.deviceFor(_phone).connected, isFalse);
+    });
+
+    test('duplicate link-loss events schedule only one retry and a healthy peer is not churned', () async {
+      final it = service(
+        settings: {_phone: enabled(_phone)},
+        routes: [_pairing(_phone, address: 'RELAY1.phone')],
+        candidates: {
+          _phone: [_candidate('192.168.1.24')],
+        },
+      );
+
+      establish(it, _phone);
+      end(it, _phone);
+      end(it, _phone);
+      expect(scheduledReselections, hasLength(1));
+
+      await runScheduledReselection();
+      expect(attempts.order, ['lan:$_phone', 'anywhere:RELAY1.phone']);
+
+      establish(it, _phone, local: false);
+      await it.dispatchAsync(ContinuityConnectEnabledDevicesAction(relayIds: {_phone}));
+      expect(attempts.order, ['lan:$_phone', 'anywhere:RELAY1.phone']);
+    });
+
+    test('a forgotten device is not reconnected after its retry was queued', () async {
+      final settings = <String, RelayContinuitySettings>{_phone: enabled(_phone)};
+      final routes = <RelayPairedAddress>[_pairing(_phone, address: 'RELAY1.phone')];
+      final it = service(
+        settings: settings,
+        routes: routes,
+        candidates: {
+          _phone: [_candidate('192.168.1.24')],
+        },
+      );
+
+      establish(it, _phone);
+      end(it, _phone);
+      settings.remove(_phone);
+      routes.clear();
+      await runScheduledReselection();
+
+      expect(attempts.order, isEmpty);
+    });
+
+    test('a trust-revoked device is not reconnected after its retry was queued', () async {
+      final settings = <String, RelayContinuitySettings>{_phone: enabled(_phone)};
+      final it = service(
+        settings: settings,
+        routes: [_pairing(_phone, address: 'RELAY1.phone')],
+        candidates: {
+          _phone: [_candidate('192.168.1.24')],
+        },
+      );
+
+      establish(it, _phone);
+      end(it, _phone);
+      settings[_phone] = const RelayContinuitySettings(relayId: _phone);
+      await runScheduledReselection();
+
+      expect(attempts.order, isEmpty);
+    });
+
+    test('a zero-grant device is not reconnected after its retry was queued', () async {
+      final settings = <String, RelayContinuitySettings>{_phone: enabled(_phone)};
+      final it = service(
+        settings: settings,
+        routes: [_pairing(_phone, address: 'RELAY1.phone')],
+        candidates: {
+          _phone: [_candidate('192.168.1.24')],
+        },
+      );
+
+      establish(it, _phone);
+      end(it, _phone);
+      settings[_phone] = const RelayContinuitySettings(relayId: _phone, trusted: true);
+      await runScheduledReselection();
+
+      expect(attempts.order, isEmpty);
+    });
+
+    test('a compatibility peer without a paired continuity relationship never retries', () {
+      final it = service(settings: const {}, routes: const []);
+
+      establish(it, _phone);
+      end(it, _phone);
+
+      expect(scheduledReselections, isEmpty);
+      expect(attempts.order, isEmpty);
+    });
+
+    test('a loss for one paired device does not reselect another healthy device', () async {
+      final it = service(
+        settings: {_phone: enabled(_phone), _laptop: enabled(_laptop)},
+        routes: [
+          _pairing(_phone, address: 'RELAY1.phone'),
+          _pairing(_laptop, address: 'RELAY1.laptop'),
+        ],
+        candidates: {
+          _phone: [_candidate('192.168.1.24')],
+          _laptop: [_candidate('192.168.1.31')],
+        },
+      );
+
+      establish(it, _phone);
+      establish(it, _laptop);
+      end(it, _phone);
+      await runScheduledReselection();
+
+      expect(attempts.order, ['lan:$_phone', 'anywhere:RELAY1.phone']);
     });
   });
 
