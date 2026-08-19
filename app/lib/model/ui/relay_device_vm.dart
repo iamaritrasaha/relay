@@ -8,6 +8,7 @@ enum RelayDevicePhase {
   sending,
   success,
   failed,
+  cancelled,
 }
 
 /// UI target namespace. Nearby observations remain unresolved LAN candidates;
@@ -79,6 +80,12 @@ class RelayDeviceVm {
     }
     if (phase == RelayDevicePhase.failed) {
       return 'Transfer failed';
+    }
+    if (phase == RelayDevicePhase.cancelled) {
+      return 'Transfer cancelled';
+    }
+    if (phase == RelayDevicePhase.success) {
+      return 'Transfer complete';
     }
     if (isCompatibilityPeer) {
       return 'LocalSend compatible · Nearby';

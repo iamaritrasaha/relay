@@ -70,7 +70,7 @@ class _RelayDeviceTargetState extends State<RelayDeviceTarget> {
       RelayDevicePhase.sending || RelayDevicePhase.waiting || RelayDevicePhase.verifying => palette.accentSoft,
       RelayDevicePhase.success => palette.success,
       RelayDevicePhase.failed => palette.error,
-      RelayDevicePhase.idle => palette.textTertiary,
+      RelayDevicePhase.cancelled || RelayDevicePhase.idle => palette.textTertiary,
     };
 
     return Semantics(

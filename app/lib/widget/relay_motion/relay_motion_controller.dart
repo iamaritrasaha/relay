@@ -2,7 +2,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:relay_app/model/ui/relay_device_vm.dart';
 
-/// Layout coordinates for a device node in the spatial universe.
+/// Layout coordinates and depth metadata for a device node in the spatial universe.
 @immutable
 class SpatialNodePosition {
   final Offset offset;
@@ -10,6 +10,8 @@ class SpatialNodePosition {
   final double opacity;
   final double angle;
   final double distance;
+  final bool isBehindCenter;
+  final bool isTransferring;
 
   const SpatialNodePosition({
     required this.offset,
@@ -17,15 +19,20 @@ class SpatialNodePosition {
     this.opacity = 1.0,
     this.angle = 0.0,
     this.distance = 0.0,
+    this.isBehindCenter = false,
+    this.isTransferring = false,
   });
 }
 
 /// Controller and deterministic math engine for Relay spatial scene positioning,
-/// ambient orbits, and focus transitions.
+/// continuous idle orbits, depth layering, focus transitions, and transfer mechanics.
 class RelaySpatialLayoutEngine {
   /// Base radii for spatial orbital rings (scaled to available canvas size)
-  static const double baseInnerRadiusRatio = 0.32;
-  static const double baseOuterRadiusRatio = 0.44;
+  static const double baseInnerRadiusRatio = 0.42;
+  static const double baseOuterRadiusRatio = 0.70;
+
+  /// Nominal ambient animation duration in seconds for period normalization
+  static const double ambientCycleDuration = 120.0;
 
   /// Deterministic pseudo-random seed from device string key.
   static int _hashKey(String key) {
@@ -46,12 +53,12 @@ class RelaySpatialLayoutEngine {
   }) {
     final isPrimary = device.isAuthenticatedRelay;
     final baseRadius = isPrimary
-        ? (sceneRadius * baseInnerRadiusRatio).clamp(110.0, 145.0)
-        : (sceneRadius * baseOuterRadiusRatio).clamp(160.0, 215.0);
+        ? (sceneRadius * baseInnerRadiusRatio).clamp(115.0, 240.0)
+        : (sceneRadius * baseOuterRadiusRatio).clamp(170.0, 360.0);
 
     final hash = _hashKey(device.key);
-    // Deterministic jitter on radius (+- 6dp)
-    final radiusJitter = ((hash % 13) - 6).toDouble();
+    // Deterministic jitter on radius (+- 8dp)
+    final radiusJitter = ((hash % 17) - 8).toDouble();
     final effectiveRadius = baseRadius + radiusJitter;
 
     // Distribute angles evenly around the ring starting from a deterministic base offset
@@ -61,28 +68,51 @@ class RelaySpatialLayoutEngine {
     return (radius: effectiveRadius, angle: angle);
   }
 
-  /// Computes the layout position of the central self node given scene dimensions and focus state.
+  /// Computes the layout position of the central self node given scene dimensions, focus, and transfer state.
   static SpatialNodePosition computeSelfPosition({
     required Size sceneSize,
     required double focusProgress,
     required bool hasFocusedDevice,
     required double ambientPhase,
+    bool isTransferActive = false,
+    double? epilogueProgress,
   }) {
     final center = Offset(sceneSize.width / 2, sceneSize.height / 2);
 
+    if (isTransferActive) {
+      // During active transfer, self node shifts slightly to provide orbital clearance
+      final transferShift = Offset(-math.min(sceneSize.width * 0.12, 45.0), 0);
+      final activeOffset = center + transferShift;
+
+      if (epilogueProgress != null) {
+        final t = Curves.easeOutCubic.transform(epilogueProgress.clamp(0.0, 1.0));
+        return SpatialNodePosition(
+          offset: Offset.lerp(activeOffset, center, t)!,
+          scale: 1.06 - (0.06 * t),
+          opacity: 1.0,
+        );
+      }
+
+      return SpatialNodePosition(
+        offset: activeOffset,
+        scale: 1.06,
+        opacity: 1.0,
+      );
+    }
+
     if (!hasFocusedDevice || focusProgress == 0.0) {
-      // Resting center with tiny ambient harmonic drift
+      // Resting center with very subtle presence breathing
       final driftX = math.sin(ambientPhase * 2 * math.pi) * 1.5;
       final driftY = math.cos(ambientPhase * 2 * math.pi) * 1.5;
       return SpatialNodePosition(
         offset: center + Offset(driftX, driftY),
-        scale: 1.0,
+        scale: 1.0 + (0.02 * math.sin(ambientPhase * 4 * math.pi)),
         opacity: 1.0,
       );
     }
 
     // When a device is focused, self node shifts to the left anchor of the paired focus line
-    final pairSpacing = math.min(sceneSize.width * 0.24, 90.0);
+    final pairSpacing = math.min(sceneSize.width * 0.28, 110.0);
     final targetOffset = center + Offset(-pairSpacing, 0);
 
     final currentOffset = Offset.lerp(center, targetOffset, focusProgress)!;
@@ -95,8 +125,9 @@ class RelaySpatialLayoutEngine {
     );
   }
 
-  /// Computes layout position for a remote device node given scene dimensions,
-  /// ambient oscillation, and focus transition state.
+  /// Computes layout position, depth, and scale for a remote device node given scene dimensions,
+  /// continuous orbital revolution, ambient oscillation, focus transition state, active transfer state,
+  /// and terminal epilogue settlement.
   static SpatialNodePosition computeRemotePosition({
     required RelayDeviceVm device,
     required int indexInRing,
@@ -105,6 +136,10 @@ class RelaySpatialLayoutEngine {
     required double ambientPhase,
     required String? focusedDeviceKey,
     required double focusProgress,
+    String? transferDeviceKey,
+    double? transferProgress,
+    RelayDevicePhase? transferPhase,
+    double? epilogueProgress,
   }) {
     final center = Offset(sceneSize.width / 2, sceneSize.height / 2);
     final sceneRadius = math.min(sceneSize.width, sceneSize.height) / 2;
@@ -116,70 +151,191 @@ class RelaySpatialLayoutEngine {
       sceneRadius: sceneRadius,
     );
 
-    // Ambient orbital harmonic drift (very slow and calm)
     final hash = _hashKey(device.key);
-    final phaseOffset = (hash % 100) / 100.0;
-    final driftAngle = math.sin((ambientPhase + phaseOffset) * 2 * math.pi) * 0.035;
-    final driftRadius = math.cos((ambientPhase + phaseOffset) * 2 * math.pi) * 3.0;
+    final isPrimary = device.isAuthenticatedRelay;
 
-    final currentAngle = polar.angle + driftAngle;
-    final currentRadius = polar.radius + driftRadius;
+    // --- Continuous Idle Orbit & Depth Calculation ---
+    // Deterministic revolution period:
+    // Inner primary devices: ~26-38 seconds per revolution
+    // Outer compatibility devices: ~40-54 seconds per revolution
+    final periodSeconds = isPrimary ? (26.0 + (hash % 13).toDouble()) : (40.0 + (hash % 15).toDouble());
 
-    final orbitalOffset =
+    // When ambientPhase is non-zero (animations enabled), devices continuously revolve around center
+    final double continuousAngle;
+    if (ambientPhase > 0.0) {
+      final elapsedSeconds = ambientPhase * ambientCycleDuration;
+      final revolutions = elapsedSeconds / periodSeconds;
+      continuousAngle = polar.angle + (revolutions * 2 * math.pi);
+    } else {
+      continuousAngle = polar.angle;
+    }
+
+    // Subtle radial breathing
+    final radialBreathing = ambientPhase > 0.0 ? math.sin((ambientPhase * 4 * math.pi) + ((hash % 100) / 100.0 * 2 * math.pi)) * 3.5 : 0.0;
+    final effectiveRestingRadius = polar.radius + radialBreathing;
+
+    // Front/Back perspective depth for idle orbit:
+    // zDepth: -1.0 (deep rear behind center), +1.0 (front)
+    final idleZDepth = math.sin(continuousAngle);
+    final isIdleBehind = idleZDepth < -0.10;
+    final idleDepthScale = ambientPhase > 0.0 ? (1.0 + (0.08 * idleZDepth)) : 1.0;
+    final idleDepthOpacity = ambientPhase > 0.0 ? (isIdleBehind ? 0.82 : 1.0) : 1.0;
+
+    // Slight elliptical perspective compression on the Y axis
+    final restingOffset =
         center +
         Offset(
-          currentRadius * math.cos(currentAngle),
-          currentRadius * math.sin(currentAngle),
+          effectiveRestingRadius * math.cos(continuousAngle),
+          (effectiveRestingRadius * 0.76) * math.sin(continuousAngle),
         );
 
+    // --- Active Transfer Orbit Handling ---
+    final isThisTransferring =
+        (transferDeviceKey != null && transferDeviceKey == device.key) ||
+        device.phase == RelayDevicePhase.sending ||
+        device.phase == RelayDevicePhase.verifying ||
+        (transferDeviceKey == device.key &&
+            (transferPhase == RelayDevicePhase.success || transferPhase == RelayDevicePhase.failed || transferPhase == RelayDevicePhase.cancelled));
+    final hasAnyTransfer = transferDeviceKey != null || device.phase == RelayDevicePhase.sending;
+
+    if (isThisTransferring) {
+      final isTerminal =
+          transferPhase == RelayDevicePhase.success || transferPhase == RelayDevicePhase.failed || transferPhase == RelayDevicePhase.cancelled;
+      final progressVal = isTerminal ? 1.0 : (transferProgress ?? (ambientPhase % 1.0)).clamp(0.0, 1.0);
+
+      // Signature 3D Perspective Orbit: Generous elliptical path tilted on Y-axis
+      final rx = math.min(sceneSize.width * 0.38, 160.0);
+      final ry = rx * 0.58;
+
+      // Real progress drives the orbital angle progression
+      final startAngle = continuousAngle;
+      final currentOrbitalAngle = startAngle + (progressVal * 1.7 * math.pi);
+
+      // Perspective Depth: z-depth is sin(currentOrbitalAngle)
+      final zDepth = math.sin(currentOrbitalAngle);
+      final isBehind = zDepth < -0.15;
+
+      // Transfer orbit position
+      final transferCenter = center + Offset(-math.min(sceneSize.width * 0.12, 45.0), 0);
+      final orbitOffset = transferCenter + Offset(rx * math.cos(currentOrbitalAngle), ry * math.sin(currentOrbitalAngle));
+
+      // Perspective Scale & Opacity Modulation
+      double depthScale = 1.04 + (0.18 * zDepth); // 0.86x in back, 1.22x in front
+      double depthOpacity = isBehind ? 0.80 : 1.0;
+
+      // Smooth approach / exit transition based on progress
+      Offset effectiveOffset;
+      if (progressVal < 0.10) {
+        final t = progressVal / 0.10;
+        effectiveOffset = Offset.lerp(restingOffset, orbitOffset, Curves.easeOutCubic.transform(t))!;
+      } else if (progressVal > 0.88) {
+        final t = (progressVal - 0.88) / 0.12;
+        final pairedOffset = transferCenter + Offset(rx * 0.95, 0);
+        effectiveOffset = Offset.lerp(orbitOffset, pairedOffset, Curves.easeInOutCubic.transform(t))!;
+      } else {
+        effectiveOffset = orbitOffset;
+      }
+
+      // Epilogue settlement back to resting orbit
+      if (epilogueProgress != null) {
+        final settleT = Curves.easeOutCubic.transform(epilogueProgress.clamp(0.0, 1.0));
+        effectiveOffset = Offset.lerp(effectiveOffset, restingOffset, settleT)!;
+        depthScale = Offset.lerp(Offset(depthScale, 0), Offset(idleDepthScale, 0), settleT)!.dx;
+        depthOpacity = Offset.lerp(Offset(depthOpacity, 0), Offset(idleDepthOpacity, 0), settleT)!.dx;
+      }
+
+      return SpatialNodePosition(
+        offset: effectiveOffset,
+        scale: depthScale,
+        opacity: depthOpacity,
+        angle: currentOrbitalAngle,
+        distance: rx,
+        isBehindCenter: isBehind,
+        isTransferring: true,
+      );
+    }
+
+    if (hasAnyTransfer) {
+      // Unrelated devices recede smoothly while a transfer is active
+      double recededScale = 0.76;
+      double recededOpacity = 0.18;
+      final recededRadius = effectiveRestingRadius + 36.0;
+      Offset recededOffset =
+          center +
+          Offset(
+            recededRadius * math.cos(continuousAngle),
+            (recededRadius * 0.76) * math.sin(continuousAngle),
+          );
+
+      if (epilogueProgress != null) {
+        final settleT = Curves.easeOutCubic.transform(epilogueProgress.clamp(0.0, 1.0));
+        recededScale = 0.76 + ((idleDepthScale - 0.76) * settleT);
+        recededOpacity = 0.18 + ((idleDepthOpacity - 0.18) * settleT);
+        recededOffset = Offset.lerp(recededOffset, restingOffset, settleT)!;
+      }
+
+      return SpatialNodePosition(
+        offset: recededOffset,
+        scale: recededScale,
+        opacity: recededOpacity,
+        angle: continuousAngle,
+        distance: recededRadius,
+        isBehindCenter: isIdleBehind,
+        isTransferring: false,
+      );
+    }
+
+    // --- Device Focus Handling ---
     final isThisFocused = focusedDeviceKey != null && focusedDeviceKey == device.key;
     final hasAnyFocus = focusedDeviceKey != null;
 
     if (!hasAnyFocus || focusProgress == 0.0) {
       return SpatialNodePosition(
-        offset: orbitalOffset,
-        scale: 1.0,
-        opacity: 1.0,
-        angle: currentAngle,
-        distance: currentRadius,
+        offset: restingOffset,
+        scale: idleDepthScale,
+        opacity: idleDepthOpacity,
+        angle: continuousAngle,
+        distance: effectiveRestingRadius,
+        isBehindCenter: isIdleBehind,
       );
     }
 
     if (isThisFocused) {
       // Animate to paired focus position (right anchor of paired focus line)
-      final pairSpacing = math.min(sceneSize.width * 0.24, 90.0);
+      final pairSpacing = math.min(sceneSize.width * 0.28, 110.0);
       final targetFocusOffset = center + Offset(pairSpacing, 0);
 
-      final currentOffset = Offset.lerp(orbitalOffset, targetFocusOffset, focusProgress)!;
-      final currentScale = 1.0 + (0.12 * focusProgress);
+      final currentOffset = Offset.lerp(restingOffset, targetFocusOffset, focusProgress)!;
+      final currentScale = 1.0 + (0.14 * focusProgress);
 
       return SpatialNodePosition(
         offset: currentOffset,
         scale: currentScale,
         opacity: 1.0,
-        angle: currentAngle,
-        distance: currentRadius,
+        angle: continuousAngle,
+        distance: effectiveRestingRadius,
+        isBehindCenter: false,
       );
     }
 
-    // Unrelated device nodes recede/fade slightly
-    final recededScale = 1.0 - (0.15 * focusProgress);
-    final recededOpacity = 1.0 - (0.75 * focusProgress);
-    // Drift slightly outward while receding
-    final recededRadius = currentRadius + (20.0 * focusProgress);
+    // Unrelated device nodes recede/fade slightly during focus
+    final recededScale = idleDepthScale - (0.18 * focusProgress);
+    final recededOpacity = idleDepthOpacity - (0.78 * focusProgress);
+    final recededRadius = effectiveRestingRadius + (24.0 * focusProgress);
     final recededOffset =
         center +
         Offset(
-          recededRadius * math.cos(currentAngle),
-          recededRadius * math.sin(currentAngle),
+          recededRadius * math.cos(continuousAngle),
+          (recededRadius * 0.76) * math.sin(continuousAngle),
         );
 
     return SpatialNodePosition(
-      offset: Offset.lerp(orbitalOffset, recededOffset, focusProgress)!,
+      offset: Offset.lerp(restingOffset, recededOffset, focusProgress)!,
       scale: recededScale,
       opacity: recededOpacity.clamp(0.0, 1.0),
-      angle: currentAngle,
-      distance: currentRadius,
+      angle: continuousAngle,
+      distance: effectiveRestingRadius,
+      isBehindCenter: isIdleBehind,
     );
   }
 }

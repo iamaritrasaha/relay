@@ -1,13 +1,22 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:mockito/mockito.dart';
+import 'package:refena_flutter/refena_flutter.dart';
 import 'package:relay_app/config/theme.dart';
 import 'package:relay_app/model/persistence/color_mode.dart';
+import 'package:relay_app/model/state/nearby_devices_state.dart';
 import 'package:relay_app/model/ui/relay_capability_vm.dart';
 import 'package:relay_app/model/ui/relay_device_vm.dart';
+import 'package:relay_app/pages/android/android_home_page.dart';
 import 'package:relay_app/pages/relay_home_vm.dart';
+import 'package:relay_app/provider/file_transfer_provider.dart';
+import 'package:relay_app/provider/persistence_provider.dart';
 import 'package:relay_app/widget/relay_motion/relay_motion_controller.dart';
 import 'package:relay_app/widget/relay_motion/relay_spatial_scene.dart';
+import 'package:relay_app/widget/relay_motion/relay_transfer_stream.dart';
 import 'package:relay_isolates/model/device.dart';
+
+import '../mocks.mocks.dart';
 
 void main() {
   final darkTheme = getTheme(ColorMode.relay, Colors.teal, Brightness.dark, null);
@@ -49,7 +58,19 @@ void main() {
     },
   );
 
-  group('RelaySpatialLayoutEngine deterministic positions', () {
+  const tabletPeer = RelayDeviceVm(
+    key: 'tablet-key-3',
+    alias: 'Office Tablet',
+    deviceType: DeviceType.mobile,
+    phase: RelayDevicePhase.idle,
+    progress: null,
+    detail: 'Nearby',
+    targetKind: RelayDeviceTargetKind.verifiedRelay,
+    connectionType: RelayConnectionType.local,
+    securityState: RelaySecurityState.verifiedRelay,
+  );
+
+  group('RelaySpatialLayoutEngine Continuous Idle Orbit & Depth', () {
     test('calculates deterministic resting polar coordinates for devices', () {
       final polar1 = RelaySpatialLayoutEngine.calculatePolarResting(
         device: verifiedLaptop,
@@ -65,7 +86,6 @@ void main() {
         sceneRadius: 180,
       );
 
-      // Deterministic: same inputs yield same output
       expect(polar1.radius, equals(polar2.radius));
       expect(polar1.angle, equals(polar2.angle));
     });
@@ -88,34 +108,249 @@ void main() {
       expect(polarVerified.radius, lessThan(polarCompat.radius));
     });
 
-    test('computes self position at center when unfocused and shifted when focused', () {
-      const sceneSize = Size(400, 360);
-      final unfocusedPos = RelaySpatialLayoutEngine.computeSelfPosition(
+    test('deterministic idle orbit advances angular position continuously over time', () {
+      const sceneSize = Size(400, 600);
+
+      final pos1 = RelaySpatialLayoutEngine.computeRemotePosition(
+        device: verifiedLaptop,
+        indexInRing: 0,
+        totalInRing: 1,
         sceneSize: sceneSize,
+        ambientPhase: 0.1,
+        focusedDeviceKey: null,
         focusProgress: 0.0,
-        hasFocusedDevice: false,
-        ambientPhase: 0.0,
       );
 
-      expect(unfocusedPos.offset.dx, closeTo(200.0, 2.0));
-      expect(unfocusedPos.offset.dy, closeTo(180.0, 2.0));
-
-      final focusedPos = RelaySpatialLayoutEngine.computeSelfPosition(
+      final pos2 = RelaySpatialLayoutEngine.computeRemotePosition(
+        device: verifiedLaptop,
+        indexInRing: 0,
+        totalInRing: 1,
         sceneSize: sceneSize,
-        focusProgress: 1.0,
-        hasFocusedDevice: true,
-        ambientPhase: 0.0,
+        ambientPhase: 0.4,
+        focusedDeviceKey: null,
+        focusProgress: 0.0,
       );
 
-      expect(focusedPos.offset.dx, lessThan(200.0)); // Shifted left to form paired line
+      expect(pos1.offset, isNot(equals(pos2.offset)));
+      expect(pos1.angle, isNot(equals(pos2.angle)));
+    });
+
+    test('different devices revolve at distinct deterministic velocities', () {
+      const sceneSize = Size(400, 600);
+
+      final posVerified = RelaySpatialLayoutEngine.computeRemotePosition(
+        device: verifiedLaptop,
+        indexInRing: 0,
+        totalInRing: 1,
+        sceneSize: sceneSize,
+        ambientPhase: 0.25,
+        focusedDeviceKey: null,
+        focusProgress: 0.0,
+      );
+
+      final posCompat = RelaySpatialLayoutEngine.computeRemotePosition(
+        device: compatibilityPhone,
+        indexInRing: 0,
+        totalInRing: 1,
+        sceneSize: sceneSize,
+        ambientPhase: 0.25,
+        focusedDeviceKey: null,
+        focusProgress: 0.0,
+      );
+
+      // Inner primary vs outer compatibility revolve at different speeds
+      expect(posVerified.distance, isNot(equals(posCompat.distance)));
+    });
+
+    test('reduced motion freezes continuous orbital revolution to static polar resting coordinates', () {
+      const sceneSize = Size(400, 600);
+
+      final posReduced = RelaySpatialLayoutEngine.computeRemotePosition(
+        device: verifiedLaptop,
+        indexInRing: 0,
+        totalInRing: 1,
+        sceneSize: sceneSize,
+        ambientPhase: 0.0, // Reduced motion / static phase
+        focusedDeviceKey: null,
+        focusProgress: 0.0,
+      );
+
+      final polar = RelaySpatialLayoutEngine.calculatePolarResting(
+        device: verifiedLaptop,
+        indexInRing: 0,
+        totalInRing: 1,
+        sceneRadius: 200,
+      );
+
+      expect(posReduced.angle, equals(polar.angle));
+      expect(posReduced.scale, equals(1.0));
+      expect(posReduced.opacity, equals(1.0));
+    });
+
+    test('computes depth z-ordering and perspective scale during transfer', () {
+      const sceneSize = Size(400, 600);
+
+      final posFront = RelaySpatialLayoutEngine.computeRemotePosition(
+        device: verifiedLaptop,
+        indexInRing: 0,
+        totalInRing: 1,
+        sceneSize: sceneSize,
+        ambientPhase: 0.0,
+        focusedDeviceKey: null,
+        focusProgress: 0.0,
+        transferDeviceKey: verifiedLaptop.key,
+        transferProgress: 0.5,
+      );
+
+      expect(posFront.isTransferring, isTrue);
+      expect(posFront.scale, isNotNull);
+    });
+
+    test('other devices recede during active transfer', () {
+      const sceneSize = Size(400, 600);
+
+      final bystanderPos = RelaySpatialLayoutEngine.computeRemotePosition(
+        device: tabletPeer,
+        indexInRing: 1,
+        totalInRing: 2,
+        sceneSize: sceneSize,
+        ambientPhase: 0.0,
+        focusedDeviceKey: null,
+        focusProgress: 0.0,
+        transferDeviceKey: verifiedLaptop.key,
+        transferProgress: 0.5,
+      );
+
+      expect(bystanderPos.isTransferring, isFalse);
+      expect(bystanderPos.opacity, lessThan(0.5));
+      expect(bystanderPos.scale, lessThan(1.0));
     });
   });
 
-  group('RelaySpatialScene Widget Tests', () {
-    testWidgets('renders center self device node and remote device nodes', (tester) async {
+  group('RelayTransferStream Curved Trajectory & Direction Geometry', () {
+    test('active transfer path has non-zero curvature when isFocusedPair is true', () {
+      const source = Offset(100, 150);
+      const target = Offset(300, 220);
+      final midPoint = (source + target) / 2;
+
+      final controlPoint = RelayTransferStreamPainter.computeControlPoint(
+        sourceOffset: source,
+        targetOffset: target,
+        isFocusedPair: true,
+      );
+
+      final deflection = (controlPoint - midPoint).distance;
+      expect(deflection, greaterThan(15.0));
+    });
+
+    test('send path departs from source and arrives at target', () {
+      const source = Offset(120, 160);
+      const target = Offset(280, 240);
+
+      const painter = RelayTransferStreamPainter(
+        sourceOffset: source,
+        targetOffset: target,
+        direction: RelayTransferDirection.send,
+        phase: RelayDevicePhase.sending,
+        progress: 0.5,
+        primaryColor: Colors.grey,
+        accentColor: Colors.blue,
+        successColor: Colors.green,
+        errorColor: Colors.red,
+        isFocusedPair: true,
+      );
+
+      expect(painter.direction, equals(RelayTransferDirection.send));
+      expect(painter.sourceOffset, equals(source));
+      expect(painter.targetOffset, equals(target));
+    });
+
+    test('receive path departs from remote target and arrives at center source', () {
+      const source = Offset(120, 160);
+      const target = Offset(280, 240);
+
+      const painter = RelayTransferStreamPainter(
+        sourceOffset: source,
+        targetOffset: target,
+        direction: RelayTransferDirection.receive,
+        phase: RelayDevicePhase.sending,
+        progress: 0.5,
+        primaryColor: Colors.grey,
+        accentColor: Colors.blue,
+        successColor: Colors.green,
+        errorColor: Colors.red,
+        isFocusedPair: true,
+      );
+
+      expect(painter.direction, equals(RelayTransferDirection.receive));
+      expect(painter.sourceOffset, equals(source));
+      expect(painter.targetOffset, equals(target));
+    });
+  });
+
+  group('RelaySpatialScene Full-Page & Terminal State Tests', () {
+    testWidgets('Android home page spatial scene fills available viewport without enclosing Card', (tester) async {
       tester.view.physicalSize = const Size(500, 800);
       tester.view.devicePixelRatio = 1.0;
       addTearDown(() => tester.view.resetPhysicalSize());
+
+      final homeVm = RelayHomeVm.fromState(
+        configuredAlias: 'Linux Workstation',
+        selfDeviceType: DeviceType.desktop,
+        server: null,
+        nearby: const NearbyDevicesState(runningFavoriteScan: false, runningIps: {}, devices: {}, signalingDevices: {}),
+        sendSessions: const {},
+        transfers: FileTransferNotifier(),
+        selectedFiles: const [],
+      );
+
+      final mockPersistence = MockPersistenceService();
+      when(mockPersistence.getReceiveHistory()).thenReturn([]);
+
+      await tester.pumpWidget(
+        RefenaScope(
+          overrides: [
+            persistenceProvider.overrideWithValue(mockPersistence),
+          ],
+          child: MaterialApp(
+            theme: darkTheme,
+            home: Scaffold(
+              body: AndroidHomePage(
+                vm: homeVm,
+                animationsEnabled: true,
+                onAddDevice: () {},
+              ),
+            ),
+          ),
+        ),
+      );
+
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 200));
+
+      // Spatial scene is present and fills the full viewport
+      expect(find.byType(RelaySpatialScene), findsOneWidget);
+      final sceneBox = tester.renderObject<RenderBox>(find.byType(RelaySpatialScene));
+      expect(sceneBox.size.height, equals(800));
+
+      // Floating header is present
+      expect(find.text('Relay'), findsOneWidget);
+      expect(find.byIcon(Icons.add_link_rounded), findsWidgets);
+    });
+
+    testWidgets('renders active SEND transfer from center to remote device', (tester) async {
+      tester.view.physicalSize = const Size(500, 800);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(() => tester.view.resetPhysicalSize());
+
+      const sendTransfer = RelayTransferVm(
+        sessionId: 'test-send-1',
+        targetAlias: 'Arch Laptop',
+        direction: RelayTransferDirection.send,
+        progress: 0.45,
+        deviceKey: 'laptop-key-1',
+        phase: RelayDevicePhase.sending,
+      );
 
       await tester.pumpWidget(
         MaterialApp(
@@ -126,6 +361,7 @@ void main() {
               selfDeviceType: DeviceType.desktop,
               presence: RelayPresence.ready,
               devices: [verifiedLaptop, compatibilityPhone],
+              activeTransfer: sendTransfer,
               animationsEnabled: true,
             ),
           ),
@@ -135,38 +371,38 @@ void main() {
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 500));
 
-      // Check self device node
       expect(find.text('Linux Workstation'), findsOneWidget);
-      expect(find.text('This Device'), findsOneWidget);
-
-      // Check remote device nodes
-      expect(find.text('Arch Laptop'), findsOneWidget);
-      expect(find.text('Guest Phone'), findsOneWidget);
-
-      // Check visual badges: Compatibility peer has 'LS' badge
-      expect(find.text('LS'), findsOneWidget);
-      // Battery on verified laptop
-      expect(find.text('92%'), findsOneWidget);
+      expect(find.text('Arch Laptop'), findsWidgets);
+      expect(find.text('Sending to device…'), findsOneWidget);
+      expect(find.text('45%'), findsOneWidget);
+      expect(find.text('Cancel'), findsOneWidget);
     });
 
-    testWidgets('tapping a remote device focuses it and expands relationship panel', (tester) async {
+    testWidgets('renders active RECEIVE transfer from remote device to center', (tester) async {
       tester.view.physicalSize = const Size(500, 800);
       tester.view.devicePixelRatio = 1.0;
       addTearDown(() => tester.view.resetPhysicalSize());
 
-      RelayDeviceVm? selected;
+      const receiveTransfer = RelayTransferVm(
+        sessionId: 'test-receive-1',
+        targetAlias: 'Arch Laptop',
+        direction: RelayTransferDirection.receive,
+        progress: 0.72,
+        deviceKey: 'laptop-key-1',
+        phase: RelayDevicePhase.sending,
+      );
 
       await tester.pumpWidget(
         MaterialApp(
           theme: darkTheme,
-          home: Scaffold(
+          home: const Scaffold(
             body: RelaySpatialScene(
               selfAlias: 'Linux Workstation',
               selfDeviceType: DeviceType.desktop,
               presence: RelayPresence.ready,
-              devices: const [verifiedLaptop, compatibilityPhone],
+              devices: [verifiedLaptop, compatibilityPhone],
+              activeTransfer: receiveTransfer,
               animationsEnabled: true,
-              onDeviceSelected: (d) => selected = d,
             ),
           ),
         ),
@@ -175,23 +411,315 @@ void main() {
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 500));
 
-      // Tap on Arch Laptop node
-      await tester.tap(find.text('Arch Laptop'));
-      await tester.pump();
-      await tester.pump(const Duration(milliseconds: 500));
-
-      expect(selected?.key, equals(verifiedLaptop.key));
-
-      // Relationship capabilities panel emerges
-      expect(find.text('Send Files'), findsOneWidget);
-      expect(find.text('Files'), findsOneWidget);
-      expect(find.text('Clipboard'), findsOneWidget);
-      expect(find.text('Messages'), findsOneWidget);
-      expect(find.text('Notifications'), findsOneWidget);
-      expect(find.text('Phone'), findsOneWidget);
+      expect(find.text('Receiving from device…'), findsOneWidget);
+      expect(find.text('72%'), findsOneWidget);
+      expect(find.text('Cancel'), findsOneWidget);
     });
 
-    testWidgets('reduced-motion mode renders resting positions cleanly without continuous ticker', (tester) async {
+    testWidgets('completed backend state reaches visual success epilogue', (tester) async {
+      tester.view.physicalSize = const Size(500, 800);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(() => tester.view.resetPhysicalSize());
+
+      const successTransfer = RelayTransferVm(
+        sessionId: 'test-success-1',
+        targetAlias: 'Arch Laptop',
+        direction: RelayTransferDirection.send,
+        progress: 1.0,
+        deviceKey: 'laptop-key-1',
+        phase: RelayDevicePhase.success,
+      );
+
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: darkTheme,
+          home: const Scaffold(
+            body: RelaySpatialScene(
+              selfAlias: 'Linux Workstation',
+              selfDeviceType: DeviceType.desktop,
+              presence: RelayPresence.ready,
+              devices: [verifiedLaptop],
+              activeTransfer: successTransfer,
+              animationsEnabled: true,
+            ),
+          ),
+        ),
+      );
+
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 200));
+
+      expect(find.text('Transfer complete'), findsOneWidget);
+      expect(find.text('100%'), findsOneWidget);
+      expect(find.byType(RelayTransferStream), findsOneWidget);
+
+      final stream = tester.widget<RelayTransferStream>(find.byType(RelayTransferStream));
+      expect(stream.phase, equals(RelayDevicePhase.success));
+    });
+
+    testWidgets('failed backend state reaches failure epilogue', (tester) async {
+      tester.view.physicalSize = const Size(500, 800);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(() => tester.view.resetPhysicalSize());
+
+      const failedTransfer = RelayTransferVm(
+        sessionId: 'test-fail-1',
+        targetAlias: 'Arch Laptop',
+        direction: RelayTransferDirection.send,
+        progress: 0.35,
+        deviceKey: 'laptop-key-1',
+        phase: RelayDevicePhase.failed,
+      );
+
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: darkTheme,
+          home: const Scaffold(
+            body: RelaySpatialScene(
+              selfAlias: 'Linux Workstation',
+              selfDeviceType: DeviceType.desktop,
+              presence: RelayPresence.ready,
+              devices: [verifiedLaptop],
+              activeTransfer: failedTransfer,
+              animationsEnabled: true,
+            ),
+          ),
+        ),
+      );
+
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 200));
+
+      expect(find.text('Transfer failed'), findsOneWidget);
+      expect(find.byType(RelayTransferStream), findsOneWidget);
+
+      final stream = tester.widget<RelayTransferStream>(find.byType(RelayTransferStream));
+      expect(stream.phase, equals(RelayDevicePhase.failed));
+    });
+
+    testWidgets('cancelled backend state reaches distinct cancel epilogue', (tester) async {
+      tester.view.physicalSize = const Size(500, 800);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(() => tester.view.resetPhysicalSize());
+
+      const cancelledTransfer = RelayTransferVm(
+        sessionId: 'test-cancel-1',
+        targetAlias: 'Arch Laptop',
+        direction: RelayTransferDirection.send,
+        progress: 0.40,
+        deviceKey: 'laptop-key-1',
+        phase: RelayDevicePhase.cancelled,
+      );
+
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: darkTheme,
+          home: const Scaffold(
+            body: RelaySpatialScene(
+              selfAlias: 'Linux Workstation',
+              selfDeviceType: DeviceType.desktop,
+              presence: RelayPresence.ready,
+              devices: [verifiedLaptop],
+              activeTransfer: cancelledTransfer,
+              animationsEnabled: true,
+            ),
+          ),
+        ),
+      );
+
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 200));
+
+      expect(find.text('Transfer cancelled'), findsOneWidget);
+      expect(find.byType(RelayTransferStream), findsOneWidget);
+
+      final stream = tester.widget<RelayTransferStream>(find.byType(RelayTransferStream));
+      expect(stream.phase, equals(RelayDevicePhase.cancelled));
+    });
+
+    testWidgets('terminal visual epilogue retains transition when backend clears immediately and settles to idle', (tester) async {
+      tester.view.physicalSize = const Size(500, 800);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(() => tester.view.resetPhysicalSize());
+
+      const nearCompleteTransfer = RelayTransferVm(
+        sessionId: 'test-transient-1',
+        targetAlias: 'Arch Laptop',
+        direction: RelayTransferDirection.send,
+        progress: 0.98,
+        deviceKey: 'laptop-key-1',
+        phase: RelayDevicePhase.sending,
+      );
+
+      // Step 1: In-flight active transfer
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: darkTheme,
+          home: const Scaffold(
+            body: RelaySpatialScene(
+              selfAlias: 'Linux Workstation',
+              selfDeviceType: DeviceType.desktop,
+              presence: RelayPresence.ready,
+              devices: [verifiedLaptop],
+              activeTransfer: nearCompleteTransfer,
+              animationsEnabled: true,
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+      expect(find.text('Sending to device…'), findsOneWidget);
+
+      // Step 2: Backend immediately removes the transfer session (activeTransfer = null)
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: darkTheme,
+          home: const Scaffold(
+            body: RelaySpatialScene(
+              selfAlias: 'Linux Workstation',
+              selfDeviceType: DeviceType.desktop,
+              presence: RelayPresence.ready,
+              devices: [verifiedLaptop],
+              activeTransfer: null, // Removed by backend
+              animationsEnabled: true,
+            ),
+          ),
+        ),
+      );
+
+      // Frame during epilogue (~200ms in): UI transition memory retains success epilogue
+      await tester.pump(const Duration(milliseconds: 200));
+      expect(find.byType(RelayTransferStream), findsOneWidget);
+      final streamDuringEpilogue = tester.widget<RelayTransferStream>(find.byType(RelayTransferStream));
+      expect(streamDuringEpilogue.phase, equals(RelayDevicePhase.success));
+
+      // Step 3: Epilogue duration expires (~900ms total) -> scene settles back to idle
+      await tester.pump(const Duration(milliseconds: 900));
+      expect(find.byType(RelayTransferStream), findsNothing);
+    });
+
+    testWidgets('handles progress states: 0%, 50%, 100%, and unknown/null progress', (tester) async {
+      tester.view.physicalSize = const Size(500, 800);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(() => tester.view.resetPhysicalSize());
+
+      // 1. 0% progress
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: darkTheme,
+          home: const Scaffold(
+            body: RelaySpatialScene(
+              selfAlias: 'Linux Workstation',
+              selfDeviceType: DeviceType.desktop,
+              presence: RelayPresence.ready,
+              devices: [verifiedLaptop],
+              activeTransfer: RelayTransferVm(
+                sessionId: 's-0',
+                targetAlias: 'Arch Laptop',
+                progress: 0.0,
+                deviceKey: 'laptop-key-1',
+                phase: RelayDevicePhase.sending,
+              ),
+              animationsEnabled: true,
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+      expect(find.text('0%'), findsOneWidget);
+
+      // 2. 100% progress
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: darkTheme,
+          home: const Scaffold(
+            body: RelaySpatialScene(
+              selfAlias: 'Linux Workstation',
+              selfDeviceType: DeviceType.desktop,
+              presence: RelayPresence.ready,
+              devices: [verifiedLaptop],
+              activeTransfer: RelayTransferVm(
+                sessionId: 's-100',
+                targetAlias: 'Arch Laptop',
+                progress: 1.0,
+                deviceKey: 'laptop-key-1',
+                phase: RelayDevicePhase.sending,
+              ),
+              animationsEnabled: true,
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+      expect(find.text('100%'), findsOneWidget);
+
+      // 3. Null / unknown progress (preparing state)
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: darkTheme,
+          home: const Scaffold(
+            body: RelaySpatialScene(
+              selfAlias: 'Linux Workstation',
+              selfDeviceType: DeviceType.desktop,
+              presence: RelayPresence.ready,
+              devices: [verifiedLaptop],
+              activeTransfer: RelayTransferVm(
+                sessionId: 's-null',
+                targetAlias: 'Arch Laptop',
+                progress: null,
+                deviceKey: 'laptop-key-1',
+                phase: RelayDevicePhase.verifying,
+              ),
+              animationsEnabled: true,
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+      expect(find.text('Arch Laptop'), findsWidgets);
+    });
+
+    testWidgets('reduced-motion mode renders static transfer view without continuous orbit and bypasses epilogue delays', (tester) async {
+      tester.view.physicalSize = const Size(500, 800);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(() => tester.view.resetPhysicalSize());
+
+      const transfer = RelayTransferVm(
+        sessionId: 'test-rm',
+        targetAlias: 'Arch Laptop',
+        direction: RelayTransferDirection.send,
+        progress: 0.60,
+        deviceKey: 'laptop-key-1',
+        phase: RelayDevicePhase.sending,
+      );
+
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: darkTheme,
+          home: const Scaffold(
+            body: RelaySpatialScene(
+              selfAlias: 'Linux Workstation',
+              selfDeviceType: DeviceType.desktop,
+              presence: RelayPresence.ready,
+              devices: [verifiedLaptop],
+              activeTransfer: transfer,
+              animationsEnabled: false, // Reduced motion
+            ),
+          ),
+        ),
+      );
+
+      await tester.pumpAndSettle();
+
+      expect(find.text('Linux Workstation'), findsOneWidget);
+      expect(find.text('Arch Laptop'), findsWidgets);
+      expect(find.text('60%'), findsOneWidget);
+    });
+
+    testWidgets('compatibility peer remains visually classified with LS badge', (tester) async {
       tester.view.physicalSize = const Size(500, 800);
       tester.view.devicePixelRatio = 1.0;
       addTearDown(() => tester.view.resetPhysicalSize());
@@ -204,17 +732,47 @@ void main() {
               selfAlias: 'Linux Workstation',
               selfDeviceType: DeviceType.desktop,
               presence: RelayPresence.ready,
-              devices: [verifiedLaptop],
-              animationsEnabled: false, // Reduced motion
+              devices: [compatibilityPhone],
+              animationsEnabled: true,
             ),
           ),
         ),
       );
 
-      await tester.pumpAndSettle();
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 500));
 
-      expect(find.text('Linux Workstation'), findsOneWidget);
+      expect(find.text('Guest Phone'), findsOneWidget);
+      expect(find.text('LS'), findsOneWidget);
+    });
+
+    testWidgets('no duplicate source/destination nodes in scene', (tester) async {
+      tester.view.physicalSize = const Size(500, 800);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(() => tester.view.resetPhysicalSize());
+
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: darkTheme,
+          home: const Scaffold(
+            body: RelaySpatialScene(
+              selfAlias: 'Workstation',
+              selfDeviceType: DeviceType.desktop,
+              presence: RelayPresence.ready,
+              devices: [verifiedLaptop, tabletPeer],
+              animationsEnabled: true,
+            ),
+          ),
+        ),
+      );
+
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 500));
+
+      // Each alias should appear exactly once in the spatial universe
+      expect(find.text('Workstation'), findsOneWidget);
       expect(find.text('Arch Laptop'), findsOneWidget);
+      expect(find.text('Office Tablet'), findsOneWidget);
     });
   });
 }
