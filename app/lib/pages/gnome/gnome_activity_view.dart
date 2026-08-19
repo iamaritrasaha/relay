@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:localsend_app/config/relay_brand.dart';
+import 'package:localsend_app/model/continuity/continuity_runtime.dart';
+import 'package:localsend_app/provider/continuity/continuity_provider.dart';
 import 'package:localsend_app/provider/receive_history_provider.dart';
 import 'package:localsend_app/util/native/open_file.dart';
 import 'package:localsend_app/util/native/open_folder.dart';
@@ -21,6 +23,7 @@ class GnomeActivityView extends StatelessWidget {
   Widget build(BuildContext context) {
     final palette = Theme.of(context).relayPalette;
     final history = context.watch(receiveHistoryProvider);
+    final continuityActivity = context.watch(continuityProvider).activity;
     final ref = context.ref;
 
     return SingleChildScrollView(
@@ -68,12 +71,31 @@ class GnomeActivityView extends StatelessWidget {
               ),
               const SizedBox(height: 24),
 
-              if (history.isEmpty)
+              // Continuity activity is metadata only and lives for this session:
+              // no clipboard text, message body, number or contact name is ever
+              // written down.
+              if (continuityActivity.isNotEmpty)
+                AdwPreferencesGroup(
+                  title: 'Continuity',
+                  description: 'What happened, not what was in it. Cleared when Relay closes.',
+                  children: [
+                    for (final entry in continuityActivity)
+                      AdwActionRow(
+                        leading: Icon(_continuityIcon(entry.kind)),
+                        title: entry.summary,
+                        subtitle: _formatDate(entry.at),
+                      ),
+                  ],
+                ),
+
+              if (history.isEmpty && continuityActivity.isEmpty)
                 const AdwStatusPage(
                   icon: Icons.history_rounded,
                   title: 'No Recent Activity',
                   description: 'Files and transfers received from other devices will be listed here.',
                 )
+              else if (history.isEmpty)
+                const SizedBox.shrink()
               else
                 AdwPreferencesGroup(
                   title: 'Transfer History',
@@ -116,6 +138,15 @@ class GnomeActivityView extends StatelessWidget {
       ),
     );
   }
+
+  static IconData _continuityIcon(ContinuityActivityKind kind) => switch (kind) {
+    ContinuityActivityKind.connected => Icons.link_rounded,
+    ContinuityActivityKind.disconnected => Icons.link_off_rounded,
+    ContinuityActivityKind.clipboardShared => Icons.content_paste_go_rounded,
+    ContinuityActivityKind.clipboardReceived => Icons.content_paste_rounded,
+    ContinuityActivityKind.messageSent => Icons.send_rounded,
+    ContinuityActivityKind.callPlaced => Icons.call_made_rounded,
+  };
 
   static String _formatDate(DateTime dt) {
     final now = DateTime.now();

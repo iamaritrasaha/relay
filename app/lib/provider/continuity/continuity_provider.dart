@@ -406,13 +406,21 @@ class ContinuityRemoteEventAction extends ReduxAction<ContinuityService, RelayCo
   @override
   RelayContinuityState reduce() {
     return switch (event) {
-      rust.RsContinuityEvent_SessionEstablished(:final remoteRelayId, :final directPath) => _update(
+      rust.RsContinuityEvent_SessionEstablished(:final remoteRelayId, :final directPath) => _log(
+        _update(
+          remoteRelayId,
+          (device) => device.copyWith(connected: true, directPath: directPath, clearError: true),
+        ),
         remoteRelayId,
-        (device) => device.copyWith(connected: true, directPath: directPath, clearError: true),
+        ContinuityActivityKind.connected,
       ),
-      rust.RsContinuityEvent_SessionEnded(:final remoteRelayId, :final reason) => _update(
+      rust.RsContinuityEvent_SessionEnded(:final remoteRelayId, :final reason) => _log(
+        _update(
+          remoteRelayId,
+          (device) => device.copyWith(connected: false, lastError: _endReason(reason)),
+        ),
         remoteRelayId,
-        (device) => device.copyWith(connected: false, lastError: _endReason(reason)),
+        ContinuityActivityKind.disconnected,
       ),
       rust.RsContinuityEvent_ManifestReceived(:final remoteRelayId, :final manifest) => _update(
         remoteRelayId,
@@ -511,6 +519,18 @@ class ContinuityRemoteEventAction extends ReduxAction<ContinuityService, RelayCo
       ),
       rust.RsContinuityEvent_PeerError(:final remoteRelayId, :final detail) => _update(remoteRelayId, (device) => device.copyWith(lastError: detail)),
     };
+  }
+
+  /// Adds a metadata-only activity line. The event's payload is never read here.
+  RelayContinuityState _log(RelayContinuityState next, String relayId, ContinuityActivityKind kind) {
+    return next.withActivity(
+      ContinuityActivityEntry(
+        relayId: relayId,
+        deviceLabel: next.deviceFor(relayId).remoteLabel ?? 'this device',
+        kind: kind,
+        at: DateTime.now(),
+      ),
+    );
   }
 
   RelayContinuityState _update(String relayId, DeviceContinuity Function(DeviceContinuity) update) {
@@ -758,7 +778,17 @@ class ContinuityShareClipboardAction extends AsyncReduxAction<ContinuityService,
     );
     final devices = Map<String, DeviceContinuity>.from(state.devices);
     devices[relayId] = state.deviceFor(relayId).copyWith(lastClipboardText: text, clearError: true);
-    return state.copyWith(devices: devices);
+    // Metadata only: that a clipboard was shared, never what was in it.
+    return state
+        .copyWith(devices: devices)
+        .withActivity(
+          ContinuityActivityEntry(
+            relayId: relayId,
+            deviceLabel: state.deviceFor(relayId).remoteLabel ?? 'a device',
+            kind: ContinuityActivityKind.clipboardShared,
+            at: DateTime.now(),
+          ),
+        );
   }
 }
 
@@ -857,7 +887,15 @@ class ContinuitySendMessageAction extends AsyncReduxAction<ContinuityService, Re
       recipients: recipients,
       body: body,
     );
-    return state;
+    // The recipient and the body stay out of the record.
+    return state.withActivity(
+      ContinuityActivityEntry(
+        relayId: relayId,
+        deviceLabel: state.deviceFor(relayId).remoteLabel ?? 'a device',
+        kind: ContinuityActivityKind.messageSent,
+        at: DateTime.now(),
+      ),
+    );
   }
 }
 
@@ -876,7 +914,18 @@ class ContinuityCallAction extends AsyncReduxAction<ContinuityService, RelayCont
       action: action,
       address: address,
     );
-    return state;
+    if (action != rust.RsCallAction.dial) {
+      return state;
+    }
+    // The number dialled is never recorded.
+    return state.withActivity(
+      ContinuityActivityEntry(
+        relayId: relayId,
+        deviceLabel: state.deviceFor(relayId).remoteLabel ?? 'a device',
+        kind: ContinuityActivityKind.callPlaced,
+        at: DateTime.now(),
+      ),
+    );
   }
 }
 
