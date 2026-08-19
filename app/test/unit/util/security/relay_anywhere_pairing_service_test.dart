@@ -49,6 +49,34 @@ void main() {
     expect(persistence.entries.single.displayLabel, 'Office laptop');
   });
 
+  test('publishes the authenticated route after persistence succeeds', () async {
+    final persistence = _FakePersistence();
+    var published = false;
+    final api = _FakePairingApi(
+      events: [
+        rust_relay_anywhere.RsRelayAnywhereEvent.peerAuthenticated(remoteRelayId: _relayId),
+        rust_relay_anywhere.RsRelayAnywhereEvent.completed(
+          path: 'direct',
+          bytes: BigInt.zero,
+          localRelayId: _relayId,
+          remoteRelayId: _relayId,
+          durationMs: BigInt.zero,
+        ),
+      ],
+    );
+    final pairing = RelayAnywherePairingService(
+      identityCoordinator: _coordinator(),
+      pairedAddressStore: RelayPairedAddressStore(persistence),
+      api: api,
+      onRouteSaved: () async => published = true,
+    );
+
+    await pairing.pair(address: _address);
+
+    expect(persistence.entries, hasLength(1));
+    expect(published, isTrue);
+  });
+
   test('authentication failure leaves the paired-address store untouched', () async {
     final persistence = _FakePersistence();
     final api = _FakePairingApi(

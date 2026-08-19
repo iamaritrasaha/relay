@@ -65,9 +65,10 @@ class RelayDeviceVm {
     this.deviceModel,
   });
 
-  bool get isVerifiedRelay => targetKind == RelayDeviceTargetKind.verifiedRelay || targetKind == RelayDeviceTargetKind.pairedRelay;
-  bool get isRelay => targetKind == RelayDeviceTargetKind.unresolvedLan;
-  bool get isPaired => targetKind == RelayDeviceTargetKind.pairedRelay;
+  bool get isCompatibilityPeer => targetKind == RelayDeviceTargetKind.unresolvedLan;
+  bool get isVerifiedRelay => targetKind == RelayDeviceTargetKind.verifiedRelay;
+  bool get isPairedRelay => targetKind == RelayDeviceTargetKind.pairedRelay;
+  bool get isAuthenticatedRelay => isVerifiedRelay || isPairedRelay;
 
   String get statusSummary {
     if (phase == RelayDevicePhase.sending) {
@@ -79,15 +80,15 @@ class RelayDeviceVm {
     if (phase == RelayDevicePhase.failed) {
       return 'Transfer failed';
     }
-    if (isRelay) {
-      return 'Relay · Nearby';
+    if (isCompatibilityPeer) {
+      return 'LocalSend compatible · Nearby';
     }
     if (continuityConnected) {
       // "Connected" means an authenticated continuity session is live, which is
       // strictly more than being reachable.
       return connectionType == RelayConnectionType.local ? 'Connected · Local' : 'Connected';
     }
-    if (isPaired && connectionType != RelayConnectionType.local) {
+    if (isPairedRelay && connectionType != RelayConnectionType.local) {
       return 'Paired · Remote';
     }
     return 'Nearby · Local';
@@ -98,7 +99,7 @@ class RelayDeviceVm {
   /// Relay-compatible peers get files and nothing else: continuity never
   /// reaches a peer that cannot prove a RelayId.
   Map<RelayCapability, CapabilityStatus> get capabilityStatuses {
-    if (isRelay) {
+    if (isCompatibilityPeer) {
       return const {
         RelayCapability.files: CapabilityStatus.available,
         RelayCapability.clipboard: CapabilityStatus.unavailable,

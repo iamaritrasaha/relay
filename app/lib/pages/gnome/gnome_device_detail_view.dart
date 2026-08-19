@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:refena_flutter/refena_flutter.dart';
 import 'package:relay_app/config/relay_brand.dart';
 import 'package:relay_app/model/ui/relay_capability_vm.dart';
 import 'package:relay_app/model/ui/relay_device_vm.dart';
@@ -11,7 +12,6 @@ import 'package:relay_app/widget/gnome/adw_action_row.dart';
 import 'package:relay_app/widget/gnome/adw_boxed_list.dart';
 import 'package:relay_app/widget/gnome/adw_button.dart';
 import 'package:relay_isolates/util/file_size_helper.dart';
-import 'package:refena_flutter/refena_flutter.dart';
 
 /// GNOME Device Detail and Overview View.
 class GnomeDeviceDetailView extends StatelessWidget {
@@ -189,7 +189,7 @@ class GnomeDeviceDetailView extends StatelessWidget {
                     onPressed: onOpenMessages,
                   ),
                   // Phone only makes sense for a device that could have one.
-                  if (!device.isRelay)
+                  if (!device.isCompatibilityPeer)
                     AdwButton.flat(
                       key: const ValueKey('gnome-phone-button'),
                       icon: Icons.call_outlined,
@@ -208,7 +208,7 @@ class GnomeDeviceDetailView extends StatelessWidget {
                   AdwActionRow(
                     leading: const Icon(Icons.wifi_rounded),
                     title: 'Connection',
-                    subtitle: device.isRelay
+                    subtitle: device.isCompatibilityPeer
                         ? 'Nearby on your local network'
                         : device.connectionType == RelayConnectionType.direct
                         ? 'Direct connection'
@@ -229,7 +229,7 @@ class GnomeDeviceDetailView extends StatelessWidget {
                     subtitle: switch (device.battery) {
                       // A stale reading is labelled as such rather than shown as live.
                       final battery when !battery.hasInfo =>
-                        device.isRelay ? 'Relay devices do not share battery status' : 'Not shared by this device',
+                        device.isCompatibilityPeer ? 'LocalSend-compatible devices do not share battery status' : 'Not shared by this device',
                       final battery when battery.isStale => 'Last known before disconnecting',
                       final battery when battery.isFull => 'Charged',
                       final battery when battery.isCharging => 'Charging',

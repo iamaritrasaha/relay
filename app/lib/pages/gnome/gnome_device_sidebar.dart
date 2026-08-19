@@ -29,8 +29,8 @@ class GnomeDeviceSidebar extends StatelessWidget {
     final palette = Theme.of(context).relayPalette;
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
-    final relayDevices = vm.devices.where((d) => !d.isRelay).toList();
-    final localSendDevices = vm.devices.where((d) => d.isRelay).toList();
+    final relayDevices = vm.devices.where((d) => d.isAuthenticatedRelay).toList();
+    final localSendDevices = vm.devices.where((d) => d.isCompatibilityPeer).toList();
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -161,7 +161,7 @@ class _DeviceSidebarItem extends StatelessWidget {
       statusDotColor = palette.error;
     } else if (device.phase == RelayDevicePhase.waiting || device.phase == RelayDevicePhase.verifying) {
       statusDotColor = palette.warning;
-    } else if (device.isPaired) {
+    } else if (device.isPairedRelay) {
       statusDotColor = palette.accentSecondary;
     } else {
       statusDotColor = palette.success;
