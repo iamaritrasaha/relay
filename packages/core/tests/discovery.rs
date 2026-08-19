@@ -8,15 +8,15 @@
 //! machine, so these tests skip themselves instead of failing when the
 //! environment does not cooperate.
 
-use localsend::crypto::cert::generate_self_signed;
-use localsend::discovery::{
+use relay_core::crypto::cert::generate_self_signed;
+use relay_core::discovery::{
     self, DeviceIdentity, DiscoveryConfig, DiscoveryEvent, DiscoveryHandle,
 };
-use localsend::http::server::{start_with_port, ServerConfigV2, TlsConfig};
-use localsend::http::state::ClientInfo;
-use localsend::model::discovery::{DeviceType, ProtocolType, PROTOCOL_VERSION_V2};
-use localsend::multicast::MulticastDevice;
-use localsend::util::interface::InterfaceFilter;
+use relay_core::http::server::{start_with_port, ServerConfigV2, TlsConfig};
+use relay_core::http::state::ClientInfo;
+use relay_core::model::discovery::{DeviceType, ProtocolType, PROTOCOL_VERSION_V2};
+use relay_core::multicast::MulticastDevice;
+use relay_core::util::interface::InterfaceFilter;
 use std::net::{Ipv4Addr, Ipv6Addr};
 use std::sync::atomic::{AtomicU16, Ordering};
 use std::time::Duration;
@@ -96,7 +96,7 @@ impl TestInstance {
     async fn next_discovery(
         &mut self,
         fingerprint: &str,
-    ) -> Option<localsend::discovery::DiscoveredDevice> {
+    ) -> Option<relay_core::discovery::DiscoveredDevice> {
         let deadline = tokio::time::Instant::now() + RECEIVE_TIMEOUT;
         loop {
             let event = tokio::time::timeout_at(deadline, self.events.recv())
@@ -129,7 +129,7 @@ async fn start_instance_with_cert(
     alias: &str,
     multicast_port: u16,
     server_port: u16,
-    cert: localsend::crypto::cert::SelfSignedCert,
+    cert: relay_core::crypto::cert::SelfSignedCert,
 ) -> Option<TestInstance> {
     let (event_tx, events) = mpsc::channel(32);
     let (stop_tx, stop_rx) = oneshot::channel();

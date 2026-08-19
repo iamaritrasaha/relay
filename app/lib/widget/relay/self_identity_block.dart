@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
-import 'package:localsend_app/config/relay_brand.dart';
-import 'package:localsend_app/pages/relay_home_vm.dart';
+import 'package:relay_app/config/relay_brand.dart';
+import 'package:relay_app/pages/relay_home_vm.dart';
 
 /// Relay's own presence, sitting quietly beside the wordmark.
 class SelfIdentityBlock extends StatelessWidget {

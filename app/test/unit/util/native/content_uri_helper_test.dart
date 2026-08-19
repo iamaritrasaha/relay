@@ -1,4 +1,4 @@
-import 'package:localsend_isolates/util/content_uri_helper.dart';
+import 'package:relay_isolates/util/content_uri_helper.dart';
 import 'package:test/test.dart';
 
 void main() {
@@ -102,18 +102,18 @@ void main() {
   group('convertTreeUriToDocumentUri', () {
     test('should return the document uri from the tree uri', () {
       expect(
-        ContentUriHelper.convertTreeUriToDocumentUri(treeUri: 'content://com.android.externalstorage.documents/tree/primary%3ALocalSend'),
-        'content://com.android.externalstorage.documents/tree/primary%3ALocalSend/document/primary%3ALocalSend',
+        ContentUriHelper.convertTreeUriToDocumentUri(treeUri: 'content://com.android.externalstorage.documents/tree/primary%3ARelay'),
+        'content://com.android.externalstorage.documents/tree/primary%3ARelay/document/primary%3ARelay',
       );
     });
 
     test('should return the document uri from the tree uri with a folder', () {
       expect(
         ContentUriHelper.convertTreeUriToDocumentUri(
-          treeUri: 'content://com.android.externalstorage.documents/tree/primary%3ALocalSend',
+          treeUri: 'content://com.android.externalstorage.documents/tree/primary%3ARelay',
           suffix: 'subFolder',
         ),
-        'content://com.android.externalstorage.documents/tree/primary%3ALocalSend/document/primary%3ALocalSend%2FsubFolder',
+        'content://com.android.externalstorage.documents/tree/primary%3ARelay/document/primary%3ARelay%2FsubFolder',
       );
     });
   });
@@ -121,15 +121,15 @@ void main() {
   group('encodeTreeUri', () {
     test('should return the encoded tree uri', () {
       expect(
-        ContentUriHelper.encodeTreeUri('content://com.android.externalstorage.documents/tree/primary%3ALocalSend/subFolder'),
-        'content://com.android.externalstorage.documents/tree/primary%3ALocalSend%2FsubFolder',
+        ContentUriHelper.encodeTreeUri('content://com.android.externalstorage.documents/tree/primary%3ARelay/subFolder'),
+        'content://com.android.externalstorage.documents/tree/primary%3ARelay%2FsubFolder',
       );
     });
 
     test('should return the encoded tree uri with a folder in SD card', () {
       expect(
-        ContentUriHelper.encodeTreeUri('content://com.android.externalstorage.documents/tree/1234-5678:LocalSend/subFolder'),
-        'content://com.android.externalstorage.documents/tree/1234-5678%3ALocalSend%2FsubFolder',
+        ContentUriHelper.encodeTreeUri('content://com.android.externalstorage.documents/tree/1234-5678:Relay/subFolder'),
+        'content://com.android.externalstorage.documents/tree/1234-5678%3ARelay%2FsubFolder',
       );
     });
   });

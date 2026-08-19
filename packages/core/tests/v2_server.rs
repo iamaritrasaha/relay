@@ -2,15 +2,15 @@
 
 use bytes::Bytes;
 use futures_util::StreamExt;
-use localsend::crypto::hash::sha256_hex;
-use localsend::http::client::{ClientError, LsHttpClientV2};
-use localsend::http::dto_v2::{PrepareUploadRequestDtoV2, RegisterDtoV2};
-use localsend::http::server::common::save::FileUploadTarget;
-use localsend::http::server::v2::{PrepareUploadDecisionV2, ServerEventV2, SessionEndReasonV2};
-use localsend::http::server::{start_with_port, ServerConfigV2};
-use localsend::http::state::ClientInfo;
-use localsend::model::discovery::ProtocolType;
-use localsend::model::transfer::{FileDto, FileMetadata};
+use relay_core::crypto::hash::sha256_hex;
+use relay_core::http::client::{ClientError, LsHttpClientV2};
+use relay_core::http::dto_v2::{PrepareUploadRequestDtoV2, RegisterDtoV2};
+use relay_core::http::server::common::save::FileUploadTarget;
+use relay_core::http::server::v2::{PrepareUploadDecisionV2, ServerEventV2, SessionEndReasonV2};
+use relay_core::http::server::{start_with_port, ServerConfigV2};
+use relay_core::http::state::ClientInfo;
+use relay_core::model::discovery::ProtocolType;
+use relay_core::model::transfer::{FileDto, FileMetadata};
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -212,7 +212,7 @@ async fn upload_bytes(
     // sent so the progress assertion below still holds.
     let progress = sent.clone();
     let body =
-        localsend::reqwest::Body::wrap_stream(ReceiverStream::new(rx).map(move |chunk: Bytes| {
+        relay_core::reqwest::Body::wrap_stream(ReceiverStream::new(rx).map(move |chunk: Bytes| {
             progress.fetch_add(chunk.len() as u64, Ordering::Relaxed);
             Ok::<Bytes, std::io::Error>(chunk)
         }));
@@ -819,7 +819,7 @@ async fn test_upload_with_invalid_token() {
 async fn test_upload_missing_parameters() {
     let server = start_test_server(None, true, None).await;
 
-    let response = localsend::reqwest::Client::new()
+    let response = relay_core::reqwest::Client::new()
         .post(format!(
             "http://127.0.0.1:{}/api/localsend/v2/upload?sessionId=abc",
             server.port
@@ -1080,7 +1080,7 @@ async fn test_prepare_upload_cancelled_by_session_less_cancel() {
     tokio::time::sleep(Duration::from_millis(200)).await;
 
     let cancel_url = format!("http://127.0.0.1:{port}/api/localsend/v2/cancel");
-    let cancel_client = localsend::reqwest::Client::new();
+    let cancel_client = relay_core::reqwest::Client::new();
 
     // A cancel with a wrong session ID must not cancel the pending request.
     cancel_client
@@ -1172,7 +1172,7 @@ async fn test_prepare_upload_aborted_by_sender_disconnect_tls() {
     let (stop_tx, stop_rx) = oneshot::channel::<()>();
     let handle = start_with_port(
         0,
-        Some(localsend::http::server::TlsConfig {
+        Some(relay_core::http::server::TlsConfig {
             cert: server_cert.pem(),
             private_key: server_key.serialize_pem(),
         }),

@@ -8,7 +8,7 @@
 	<true/>
 	<key>com.apple.security.application-groups</key>
 	<array>
-		<string>group.org.localsend.localsendApp</string>
+		<string>group.com.foresight.app.relay</string>
 	</array>
 </dict>
 </plist>

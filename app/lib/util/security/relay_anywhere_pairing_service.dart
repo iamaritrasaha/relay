@@ -1,8 +1,8 @@
 import 'dart:typed_data';
 
-import 'package:localsend_app/util/security/relay_identity_coordinator.dart';
-import 'package:localsend_app/util/security/relay_paired_address_store.dart';
-import 'package:localsend_isolates/rust/api/relay_anywhere.dart' as rust_relay_anywhere;
+import 'package:relay_app/util/security/relay_identity_coordinator.dart';
+import 'package:relay_app/util/security/relay_paired_address_store.dart';
+import 'package:relay_isolates/rust/api/relay_anywhere.dart' as rust_relay_anywhere;
 
 abstract interface class RelayAnywherePairingApi {
   rust_relay_anywhere.RsRelayAddress parseAddress(String address);

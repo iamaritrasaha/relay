@@ -1,16 +1,16 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
-import 'package:localsend_app/config/relay_brand.dart';
-import 'package:localsend_app/model/continuity/continuity_runtime.dart';
-import 'package:localsend_app/model/persistence/relay_continuity_settings.dart';
-import 'package:localsend_app/model/ui/relay_device_vm.dart';
-import 'package:localsend_app/provider/continuity/continuity_provider.dart';
-import 'package:localsend_app/widget/gnome/adw_action_row.dart';
-import 'package:localsend_app/widget/gnome/adw_boxed_list.dart';
-import 'package:localsend_app/widget/gnome/adw_button.dart';
-import 'package:localsend_app/widget/gnome/adw_status_page.dart';
-import 'package:localsend_isolates/rust/api/continuity.dart' as rust;
+import 'package:relay_app/config/relay_brand.dart';
+import 'package:relay_app/model/continuity/continuity_runtime.dart';
+import 'package:relay_app/model/persistence/relay_continuity_settings.dart';
+import 'package:relay_app/model/ui/relay_device_vm.dart';
+import 'package:relay_app/provider/continuity/continuity_provider.dart';
+import 'package:relay_app/widget/gnome/adw_action_row.dart';
+import 'package:relay_app/widget/gnome/adw_boxed_list.dart';
+import 'package:relay_app/widget/gnome/adw_button.dart';
+import 'package:relay_app/widget/gnome/adw_status_page.dart';
+import 'package:relay_isolates/rust/api/continuity.dart' as rust;
 import 'package:refena_flutter/refena_flutter.dart';
 
 /// GNOME phone continuity surface.
@@ -61,7 +61,7 @@ class _GnomePhoneViewState extends State<GnomePhoneView> {
                 AdwStatusPage(
                   icon: Icons.call_outlined,
                   title: 'Not a Relay device',
-                  description: '${widget.device.alias} is a LocalSend-compatible peer.',
+                  description: '${widget.device.alias} is a Relay-compatible peer.',
                 )
               else
                 _body(relayId),

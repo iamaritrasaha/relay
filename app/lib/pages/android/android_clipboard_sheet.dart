@@ -1,10 +1,10 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
-import 'package:localsend_app/config/relay_brand.dart';
-import 'package:localsend_app/model/persistence/relay_continuity_settings.dart';
-import 'package:localsend_app/model/ui/relay_device_vm.dart';
-import 'package:localsend_app/provider/continuity/continuity_provider.dart';
+import 'package:relay_app/config/relay_brand.dart';
+import 'package:relay_app/model/persistence/relay_continuity_settings.dart';
+import 'package:relay_app/model/ui/relay_device_vm.dart';
+import 'package:relay_app/provider/continuity/continuity_provider.dart';
 import 'package:refena_flutter/refena_flutter.dart';
 
 /// Android clipboard continuity sheet.
@@ -50,7 +50,7 @@ class AndroidClipboardSheet extends StatelessWidget {
           const SizedBox(height: 16),
           if (relayId == null)
             Text(
-              '${device.alias} is a LocalSend-compatible device, so it can only receive files.',
+              '${device.alias} is a Relay-compatible device, so it can only receive files.',
               style: RelayTypography.body(palette.textSecondary),
             )
           else

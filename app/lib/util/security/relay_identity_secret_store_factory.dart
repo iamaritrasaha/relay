@@ -1,7 +1,7 @@
 import 'package:flutter/foundation.dart';
-import 'package:localsend_app/util/security/android_relay_identity_secret_store.dart';
-import 'package:localsend_app/util/security/linux_relay_identity_secret_store.dart';
-import 'package:localsend_app/util/security/relay_identity_secret_store.dart';
+import 'package:relay_app/util/security/android_relay_identity_secret_store.dart';
+import 'package:relay_app/util/security/linux_relay_identity_secret_store.dart';
+import 'package:relay_app/util/security/relay_identity_secret_store.dart';
 
 RelayIdentitySecretStore createRelayIdentitySecretStore() => switch (defaultTargetPlatform) {
   TargetPlatform.android => AndroidRelayIdentitySecretStore(),

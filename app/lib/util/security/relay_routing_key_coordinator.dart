@@ -1,8 +1,8 @@
 import 'dart:typed_data';
 
-import 'package:localsend_app/util/security/relay_identity_secret_store.dart';
-import 'package:localsend_app/util/security/relay_routing_key_secret_store.dart';
-import 'package:localsend_isolates/rust/api/relay_anywhere.dart' as rust_relay_anywhere;
+import 'package:relay_app/util/security/relay_identity_secret_store.dart';
+import 'package:relay_app/util/security/relay_routing_key_secret_store.dart';
+import 'package:relay_isolates/rust/api/relay_anywhere.dart' as rust_relay_anywhere;
 
 /// Minimal Rust boundary for opaque Anywhere routing-key material.
 abstract interface class RelayRoutingKeyApi {

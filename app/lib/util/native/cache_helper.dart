@@ -5,9 +5,9 @@ import 'dart:isolate';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/services.dart';
-import 'package:localsend_app/util/native/platform_check.dart';
-import 'package:localsend_isolates/util/file_path_helper.dart';
-import 'package:localsend_isolates/util/logger.dart';
+import 'package:relay_app/util/native/platform_check.dart';
+import 'package:relay_isolates/util/file_path_helper.dart';
+import 'package:relay_isolates/util/logger.dart';
 import 'package:logging/logging.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:path_provider_foundation/path_provider_foundation.dart';
@@ -48,7 +48,7 @@ Future<void> _clear(RootIsolateToken token) async {
     checkPlatform([TargetPlatform.iOS])
         ? PathProviderFoundation()
               .getContainerPath(
-                appGroupIdentifier: 'group.org.localsend.localsendApp',
+                appGroupIdentifier: 'group.org.relay.relayApp',
               )
               .then((directoryPath) async {
                 if (directoryPath == null) {

@@ -1,15 +1,15 @@
-# LocalSend
+# Relay
 
 [![CI 状态][ci-badge]][ci-workflow]
 [![Translations][translate-badge]][translate-link]
 [![Packaging status][packaging-badge]][packaging-link]
 
-[ci-badge]: https://github.com/localsend/localsend/actions/workflows/ci.yml/badge.svg
-[ci-workflow]: https://github.com/localsend/localsend/actions/workflows/ci.yml
-[translate-badge]: https://hosted.weblate.org/widget/localsend/app/svg-badge.svg
-[translate-link]: https://hosted.weblate.org/engage/localsend/
-[packaging-badge]: https://repology.org/badge/tiny-repos/localsend.svg
-[packaging-link]: https://repology.org/project/localsend/versions
+[ci-badge]: https://github.com/relay/relay/actions/workflows/ci.yml/badge.svg
+[ci-workflow]: https://github.com/relay/relay/actions/workflows/ci.yml
+[translate-badge]: https://hosted.weblate.org/widget/relay/app/svg-badge.svg
+[translate-link]: https://hosted.weblate.org/engage/relay/
+[packaging-badge]: https://repology.org/badge/tiny-repos/relay.svg
+[packaging-link]: https://repology.org/project/relay/versions
 
 [主页][homepage] • [Discord][discord] • [GitHub][github] • [Codeberg][codeberg]
 
@@ -17,12 +17,12 @@
 
 > 注意：中文文档更新可能不够及时，请以英文文档为准。
 
-[homepage]: https://localsend.org
+[homepage]: https://relay.org
 [discord]: https://discord.gg/GSRWmQNP87
-[github]: https://github.com/localsend/localsend
-[codeberg]: https://codeberg.org/localsend/localsend
+[github]: https://github.com/relay/relay
+[codeberg]: https://codeberg.org/relay/relay
 
-LocalSend 是一个自由、开源的应用程序，允许你在本地网络上安全地与附近设备分享文件和消息，无需互联网连接。
+Relay 是一个自由、开源的应用程序，允许你在本地网络上安全地与附近设备分享文件和消息，无需互联网连接。
 
 - [关于](#关于)
 - [截图](#截图)
@@ -42,11 +42,11 @@ LocalSend 是一个自由、开源的应用程序，允许你在本地网络上�
 
 ## 关于
 
-LocalSend 是一个跨平台应用程序，使用 REST API 和 HTTPS 加密实现设备之间的安全通信。与依赖外部服务器的其他消息应用程序不同，LocalSend 不需要互联网连接或第三方服务器，因此成为本地通信的快速可靠解决方案。
+Relay 是一个跨平台应用程序，使用 REST API 和 HTTPS 加密实现设备之间的安全通信。与依赖外部服务器的其他消息应用程序不同，Relay 不需要互联网连接或第三方服务器，因此成为本地通信的快速可靠解决方案。
 
 ## 截图
 
-<img src="https://localsend.org/img/screenshot-iphone.webp" alt="iPhone截图" height="300"/> <img src="https://localsend.org/img/screenshot-pc.webp" alt="PC截图" height="300"/>
+<img src="https://relay.org/img/screenshot-iphone.webp" alt="iPhone截图" height="300"/> <img src="https://relay.org/img/screenshot-pc.webp" alt="PC截图" height="300"/>
 
 ## 下载
 
@@ -66,33 +66,33 @@ LocalSend 是一个跨平台应用程序，使用 REST API 和 HTTPS 加密实�
 了解更多关于[发行渠道][]的信息。
 
 [windows store]: https://www.microsoft.com/store/apps/9NCB4Z0TZ6RR
-[app store]: https://apps.apple.com/us/app/localsend/id1661733229
-[play store]: https://play.google.com/store/apps/details?id=org.localsend.localsend_app
-[f-droid]: https://f-droid.org/packages/org.localsend.localsend_app
+[app store]: https://apps.apple.com/us/app/relay/id1661733229
+[play store]: https://play.google.com/store/apps/details?id=com.foresight.app.relay
+[f-droid]: https://f-droid.org/packages/com.foresight.app.relay
 [amazon]: https://www.amazon.com/dp/B0BW6MP732
-[winget]: https://github.com/microsoft/winget-pkgs/tree/master/manifests/l/LocalSend/LocalSend
-[scoop]: https://scoop.sh/#/apps?s=0&d=1&o=true&q=localsend&id=fb88113be361ca32c0dcac423cb4afdeda0b0c66
-[chocolatey]: https://community.chocolatey.org/packages/localsend
-[homebrew]: https://formulae.brew.sh/cask/localsend
-[flathub]: https://flathub.org/apps/details/org.localsend.localsend_app
-[nixpkgs]: https://search.nixos.org/packages?show=localsend
-[snap]: https://snapcraft.io/localsend
-[aur]: https://aur.archlinux.org/packages/localsend-bin
-[latest]: https://github.com/localsend/localsend/releases/latest
-[发行渠道]: https://github.com/localsend/localsend/blob/main/CONTRIBUTING.md#distribution
+[winget]: https://github.com/microsoft/winget-pkgs/tree/master/manifests/l/Relay/Relay
+[scoop]: https://scoop.sh/#/apps?s=0&d=1&o=true&q=relay&id=fb88113be361ca32c0dcac423cb4afdeda0b0c66
+[chocolatey]: https://community.chocolatey.org/packages/relay
+[homebrew]: https://formulae.brew.sh/cask/relay
+[flathub]: https://flathub.org/apps/details/com.foresight.app.relay
+[nixpkgs]: https://search.nixos.org/packages?show=relay
+[snap]: https://snapcraft.io/relay
+[aur]: https://aur.archlinux.org/packages/relay-bin
+[latest]: https://github.com/relay/relay/releases/latest
+[发行渠道]: https://github.com/relay/relay/blob/main/CONTRIBUTING.md#distribution
 
 **兼容性**
 | 平台    | 最低版本   | 备注   |
 |---------|------------|--------------------------------------------------------------------------------------------------------------------------------|
 |Android  | 5.0        | -                                                                                                                              |
 |iOS      | 12.0       | -                                                                                                                              |
-|macOS    | 11 Big Sur | 请使用 OpenCore Legacy Patcher 2.0.2 （见 [#1005](https://github.com/localsend/localsend/issues/1005#issuecomment-2449899384)） |
+|macOS    | 11 Big Sur | 请使用 OpenCore Legacy Patcher 2.0.2 （见 [#1005](https://github.com/relay/relay/issues/1005#issuecomment-2449899384)） |
 |Windows  | 10         | 最后一个支持 Windows 7 的版本是 v1.15.4 。未来也许会将更新的版本向后移植至兼容 Windows 7 。                                       |
 |Linux    | 不适用     | -                                                                                                                               |
 
 ## 设置
 
-在大多数情况下，LocalSend 应该可以直接使用。但是，如果你在发送或接收文件时遇到问题，可能需要配置防火墙以允许 LocalSend 在你的本地网络上通信。
+在大多数情况下，Relay 应该可以直接使用。但是，如果你在发送或接收文件时遇到问题，可能需要配置防火墙以允许 Relay 在你的本地网络上通信。
 
 | 流量类型 | 协议     | 端口  | 操作 |
 |----------|----------|-------|------|
@@ -114,47 +114,47 @@ LocalSend 是一个跨平台应用程序，使用 REST API 和 HTTPS 加密实�
 
 （更新于 v1.15.0）
 
-使用 `--hidden` 命令行参数隐藏式启动（只在系统托盘里显示）此应用（例如： `localsend_app.exe --hidden`）。
+使用 `--hidden` 命令行参数隐藏式启动（只在系统托盘里显示）此应用（例如： `relay.exe --hidden`）。
 
 在 v1.14.0 或更早的版本中，如果设置了 `autostart` 标志，并且启用了隐藏设置，则应用程序将会隐藏式启动。
 
 ## 工作原理
 
-LocalSend 使用安全通信协议，允许设备通过 REST API 进行通信。所有数据都通过 HTTPS 安全地发送，并且 TLS/SSL 证书会在每台设备上动态生成，确保最大的安全性。
+Relay 使用安全通信协议，允许设备通过 REST API 进行通信。所有数据都通过 HTTPS 安全地发送，并且 TLS/SSL 证书会在每台设备上动态生成，确保最大的安全性。
 
-欲了解更多关于 LocalSend 协议的信息，请参阅[文档](https://github.com/localsend/protocol)。
+欲了解更多关于 Relay 协议的信息，请参阅[文档](https://github.com/relay/protocol)。
 
 ## 开始使用
 
-要从源代码编译 LocalSend，请按照以下步骤进行操作：
+要从源代码编译 Relay，请按照以下步骤进行操作：
 
 1. 安装 [Flutter](https://flutter.dev)。
 2. 安装 [Rust](https://www.rust-lang.org/tools/install)。
-3. 克隆 `LocalSend` 代码库。
+3. 克隆 `Relay` 代码库。
 4. 执行 `cd app` 进入 app 目录。
 5. 运行 `flutter pub get` 下载依赖项。
 6. 运行 `flutter run` 启动应用程序。
 
 > [!NOTE]
-> LocalSend 目前需要老版本的 Flutter （具体见 [.fvmrc](/.fvmrc)）
-> 因而一些构建问题也许是系统安装的 Flutter 版本和 LocalSend 所需的 Flutter 版本不一致导致的。
-> 为了在开发过程中保持一致性，LocalSend 使用 [fvm](https://fvm.app) 来管理此项目的 Flutter 版本。
+> Relay 目前需要老版本的 Flutter （具体见 [.fvmrc](/.fvmrc)）
+> 因而一些构建问题也许是系统安装的 Flutter 版本和 Relay 所需的 Flutter 版本不一致导致的。
+> 为了在开发过程中保持一致性，Relay 使用 [fvm](https://fvm.app) 来管理此项目的 Flutter 版本。
 > 安装 `fvm` 后，请运行 `fvm flutter` 而非 `flutter` 。
 
 ## 贡献
 
-我们欢迎任何有兴趣帮助改进 LocalSend 的人士贡献。如果你想贡献，有几种方式可以参与：
+我们欢迎任何有兴趣帮助改进 Relay 的人士贡献。如果你想贡献，有几种方式可以参与：
 
 ### 翻译
 
-你可以帮助将此应用程序翻译成其他语言。我们使用 [Weblate](https://hosted.weblate.org/projects/localsend/app) 平台来管理翻译。
+你可以帮助将此应用程序翻译成其他语言。我们使用 [Weblate](https://hosted.weblate.org/projects/relay/app) 平台来管理翻译。
 
 另外，你也可以 fork 这个仓库并手动添加翻译。
 
-翻译在 [app/assets/i18n](https://github.com/localsend/localsend/tree/main/app/assets/i18n) 目录。编辑 `_missing_translations_<locale>.json` 或 `strings_<locale>.i18n.json` 文件来添加或更新翻译。
+翻译在 [app/assets/i18n](https://github.com/relay/relay/tree/main/app/assets/i18n) 目录。编辑 `_missing_translations_<locale>.json` 或 `strings_<locale>.i18n.json` 文件来添加或更新翻译。
 
-<a href="https://hosted.weblate.org/engage/localsend/">
-<img src="https://hosted.weblate.org/widget/localsend/app/multi-auto.svg" alt="Translation status" />
+<a href="https://hosted.weblate.org/engage/relay/">
+<img src="https://hosted.weblate.org/widget/relay/app/multi-auto.svg" alt="Translation status" />
 </a>
 
 **_注意：_ 用 `@` 装饰的字段不是用于翻译的；它们在应用程序中没有任何用处，仅仅是关于文件的信息性文本或为翻译者提供上下文。**
@@ -162,9 +162,9 @@ LocalSend 使用安全通信协议，允许设备通过 REST API 进行通信。
 ### Bug 修复和改进
 
 - **Bug 修复：** 如果发现 bug，请创建一个带有清晰描述问题及解决方法的拉取请求。
-- **改进：** 有改进 LocalSend 的想法吗？请先创建一个问题来讨论为什么需要这个改进。
+- **改进：** 有改进 Relay 的想法吗？请先创建一个问题来讨论为什么需要这个改进。
 
-欲了解更多信息，请参阅[贡献指南](https://github.com/localsend/localsend/blob/main/CONTRIBUTING.md)。
+欲了解更多信息，请参阅[贡献指南](https://github.com/relay/relay/blob/main/CONTRIBUTING.md)。
 
 ## 故障排查
 
@@ -178,6 +178,6 @@ LocalSend 使用安全通信协议，允许设备通过 REST API 进行通信。
 
 ## 贡献者
 
-<a href="https://github.com/localsend/localsend/graphs/contributors">
-  <img src="https://contrib.rocks/image?repo=localsend/localsend"  alt="Localsend 贡献者"/>
+<a href="https://github.com/relay/relay/graphs/contributors">
+  <img src="https://contrib.rocks/image?repo=relay/relay"  alt="Relay 贡献者"/>
 </a>

@@ -2,12 +2,12 @@ import 'package:collection/collection.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:local_hero/local_hero.dart';
-import 'package:localsend_app/gen/strings.g.dart';
-import 'package:localsend_app/provider/settings_provider.dart';
-import 'package:localsend_app/widget/dialogs/text_field_tv.dart';
-import 'package:localsend_app/widget/labeled_checkbox.dart';
-import 'package:localsend_app/widget/responsive_list_view.dart';
-import 'package:localsend_isolates/util/network_interfaces.dart';
+import 'package:relay_app/gen/strings.g.dart';
+import 'package:relay_app/provider/settings_provider.dart';
+import 'package:relay_app/widget/dialogs/text_field_tv.dart';
+import 'package:relay_app/widget/labeled_checkbox.dart';
+import 'package:relay_app/widget/responsive_list_view.dart';
+import 'package:relay_isolates/util/network_interfaces.dart';
 import 'package:moform/moform.dart';
 import 'package:refena_flutter/refena_flutter.dart';
 

@@ -837,7 +837,7 @@ async fn authenticate_new_connection_on_existing_endpoints(
 
 #[cfg(test)]
 mod tests {
-    use localsend::crypto::relay_identity_proof::RelayIdentityProofV1;
+    use relay_core::crypto::relay_identity_proof::RelayIdentityProofV1;
 
     use super::*;
     use crate::inner_tls::TestServerProofBehavior;

@@ -1,28 +1,28 @@
-# LocalSend
+# Relay
 
 [![CI status][ci-badge]][ci-workflow]
 [![Translations][translate-badge]][translate-link]
 [![Packaging status][packaging-badge]][packaging-link]
 
-[ci-badge]: https://github.com/localsend/localsend/actions/workflows/ci.yml/badge.svg
-[ci-workflow]: https://github.com/localsend/localsend/actions/workflows/ci.yml
-[translate-badge]: https://hosted.weblate.org/widget/localsend/app/svg-badge.svg
-[translate-link]: https://hosted.weblate.org/engage/localsend/
-[packaging-badge]: https://repology.org/badge/tiny-repos/localsend.svg
-[packaging-link]: https://repology.org/project/localsend/versions
+[ci-badge]: https://github.com/relay/relay/actions/workflows/ci.yml/badge.svg
+[ci-workflow]: https://github.com/relay/relay/actions/workflows/ci.yml
+[translate-badge]: https://hosted.weblate.org/widget/relay/app/svg-badge.svg
+[translate-link]: https://hosted.weblate.org/engage/relay/
+[packaging-badge]: https://repology.org/badge/tiny-repos/relay.svg
+[packaging-link]: https://repology.org/project/relay/versions
 
 [Галоўная старонка][homepage] • [Discord][discord] • [GitHub][github] • [Codeberg][codeberg]
 
 [English (Default)](/README.md) • [Беларуская](README_BE.md) • [Español](README_ES.md) • [فارسی](README_FA.md) • [Filipino](README_PH.md) • [Français](README_FR.md) • [Indonesia](README_ID.md) • [Italiano](README_IT.md) • [日本語](README_JA.md) • [ភាសាខ្មែរ](README_KM.md) • [한국어](README_KO.md) • [Polski](README_PL.md) • [Português Brasil](README_PT_BR.md) • [Русский](README_RU.md) • [ภาษาไทย](README_TH.md) • [Türkçe](README_TR.md) • [Українська](README_UK.md) • [Tiếng Việt](README_VI.md) • [中文](README_ZH.md)
 
-[homepage]: https://localsend.org
+[homepage]: https://relay.org
 [discord]: https://discord.gg/GSRWmQNP87
-[github]: https://github.com/localsend/localsend
-[codeberg]: https://codeberg.org/localsend/localsend
+[github]: https://github.com/relay/relay
+[codeberg]: https://codeberg.org/relay/relay
 
-LocalSend — гэта бясплатная праграма з адкрытым зыходным кодам, якая дазваляе бяспечна абменьвацца файламі і паведамленнямі з прыладамі побач праз лакальную сетку без інтэрнэт-злучэння.
+Relay — гэта бясплатная праграма з адкрытым зыходным кодам, якая дазваляе бяспечна абменьвацца файламі і паведамленнямі з прыладамі побач праз лакальную сетку без інтэрнэт-злучэння.
 
-- [Пра LocalSend](#пра-localsend)
+- [Пра Relay](#пра-relay)
 - [Спонсары](#спонсары)
 - [Здымкі экрана](#здымкі-экрана)
 - [Спампаванне](#спампаванне)
@@ -40,25 +40,25 @@ LocalSend — гэта бясплатная праграма з адкрытым
   - [Windows](#windows)
   - [Linux](#linux)
 
-## Пра LocalSend
+## Пра Relay
 
-LocalSend — гэта кросплатформенная праграма для бяспечнай сувязі паміж прыладамі праз REST API і шыфраванне HTTPS. У адрозненне ад іншых праграм для абмену паведамленнямі, што абапіраюцца на знешнія серверы, LocalSend не патрабуе ні інтэрнэт-злучэння, ні старонніх сервераў, і таму з'яўляецца хуткім і надзейным рашэннем для лакальнай сувязі.
+Relay — гэта кросплатформенная праграма для бяспечнай сувязі паміж прыладамі праз REST API і шыфраванне HTTPS. У адрозненне ад іншых праграм для абмену паведамленнямі, што абапіраюцца на знешнія серверы, Relay не патрабуе ні інтэрнэт-злучэння, ні старонніх сервераў, і таму з'яўляецца хуткім і надзейным рашэннем для лакальнай сувязі.
 
 ## Спонсары
 
 Тэсціраванне ў браўзерах забяспечвае
 
-<a href="https://www.testmuai.com/?utm_medium=sponsor&utm_source=localsend" target="_blank">
-    <img src="https://localsend.org/img/sponsors/tesmu.svg" style="vertical-align: middle;" width="250" height="45" />
+<a href="https://www.testmuai.com/?utm_medium=sponsor&utm_source=relay" target="_blank">
+    <img src="https://relay.org/img/sponsors/tesmu.svg" style="vertical-align: middle;" width="250" height="45" />
 </a>
 
 ## Здымкі экрана
 
-<img src="https://localsend.org/img/screenshot-iphone.webp" alt="iPhone screenshot" height="300"/> <img src="https://localsend.org/img/screenshot-pc.webp" alt="PC screenshot" height="300"/>
+<img src="https://relay.org/img/screenshot-iphone.webp" alt="iPhone screenshot" height="300"/> <img src="https://relay.org/img/screenshot-pc.webp" alt="PC screenshot" height="300"/>
 
 ## Спампаванне
 
-[![Packaging status](https://repology.org/badge/tiny-repos/localsend.svg)](https://repology.org/project/localsend/versions)
+[![Packaging status](https://repology.org/badge/tiny-repos/relay.svg)](https://repology.org/project/relay/versions)
 
 Праграму раім спампоўваць з крамы праграм або праз менеджар пакетаў, бо яна не мае аўтаматычнага абнаўлення.
 
@@ -77,24 +77,24 @@ LocalSend — гэта кросплатформенная праграма дл�
 Двайковыя файлы для Windows падпісаныя. Падрабязней у [палітыцы падпісвання коду][].
 
 > [!CAUTION]
-> **Неафіцыйная зборка MSIX:** зборкі з апошніх камітаў можна паспрабаваць на [localsend.ob-buff.dev](https://localsend.ob-buff.dev/). Стабільнасць не гарантуецца, а ўсе змяненні ў кодзе пералічаны на тым жа сайце.
+> **Неафіцыйная зборка MSIX:** зборкі з апошніх камітаў можна паспрабаваць на [relay.ob-buff.dev](https://relay.ob-buff.dev/). Стабільнасць не гарантуецца, а ўсе змяненні ў кодзе пералічаны на тым жа сайце.
 
 [windows store]: https://www.microsoft.com/store/apps/9NCB4Z0TZ6RR
-[app store]: https://apps.apple.com/us/app/localsend/id1661733229
-[play store]: https://play.google.com/store/apps/details?id=org.localsend.localsend_app
-[f-droid]: https://f-droid.org/packages/org.localsend.localsend_app
+[app store]: https://apps.apple.com/us/app/relay/id1661733229
+[play store]: https://play.google.com/store/apps/details?id=com.foresight.app.relay
+[f-droid]: https://f-droid.org/packages/com.foresight.app.relay
 [amazon]: https://www.amazon.com/dp/B0BW6MP732
-[winget]: https://github.com/microsoft/winget-pkgs/tree/master/manifests/l/LocalSend/LocalSend
-[scoop]: https://scoop.sh/#/apps?s=0&d=1&o=true&q=localsend&id=fb88113be361ca32c0dcac423cb4afdeda0b0c66
-[chocolatey]: https://community.chocolatey.org/packages/localsend
-[homebrew]: https://formulae.brew.sh/cask/localsend
-[flathub]: https://flathub.org/apps/details/org.localsend.localsend_app
-[nixpkgs]: https://search.nixos.org/packages?show=localsend
-[snap]: https://snapcraft.io/localsend
-[aur]: https://aur.archlinux.org/packages/localsend-bin
-[latest]: https://github.com/localsend/localsend/releases/latest
-[каналы распаўсюджвання]: https://github.com/localsend/localsend/blob/main/CONTRIBUTING.md#distribution
-[палітыцы падпісвання коду]: https://github.com/localsend/localsend/blob/main/CODE_SIGNING.md
+[winget]: https://github.com/microsoft/winget-pkgs/tree/master/manifests/l/Relay/Relay
+[scoop]: https://scoop.sh/#/apps?s=0&d=1&o=true&q=relay&id=fb88113be361ca32c0dcac423cb4afdeda0b0c66
+[chocolatey]: https://community.chocolatey.org/packages/relay
+[homebrew]: https://formulae.brew.sh/cask/relay
+[flathub]: https://flathub.org/apps/details/com.foresight.app.relay
+[nixpkgs]: https://search.nixos.org/packages?show=relay
+[snap]: https://snapcraft.io/relay
+[aur]: https://aur.archlinux.org/packages/relay-bin
+[latest]: https://github.com/relay/relay/releases/latest
+[каналы распаўсюджвання]: https://github.com/relay/relay/blob/main/CONTRIBUTING.md#distribution
+[палітыцы падпісвання коду]: https://github.com/relay/relay/blob/main/CODE_SIGNING.md
 
 **Сумяшчальнасць**
 
@@ -102,13 +102,13 @@ LocalSend — гэта кросплатформенная праграма дл�
 |-----------|--------------------|--------------------------------------------------------------------------------------------------------------------------------------------|
 | Android   | 5.0                | -                                                                                                                                        |
 | iOS       | 12.0               | -                                                                                                                                        |
-| macOS     | 11 Big Sur         | Скарыстайцеся OpenCore Legacy Patcher 2.0.2 (гл. [#1005](https://github.com/localsend/localsend/issues/1005#issuecomment-2449899384))    |
+| macOS     | 11 Big Sur         | Скарыстайцеся OpenCore Legacy Patcher 2.0.2 (гл. [#1005](https://github.com/relay/relay/issues/1005#issuecomment-2449899384))    |
 | Windows   | 10                 | Апошняя версія з падтрымкай Windows 7 — v1.15.4. У будучыні магчымы зваротныя порты навейшых версій для Windows 7.                       |
 | Linux     | Н/Д                | Залежнасці: Gnome: `xdg-desktop-portal` і `xdg-desktop-portal-gtk`, KDE: `xdg-desktop-portal` і `xdg-desktop-portal-kde`                 |
 
 ## Наладжванне
 
-У большасці выпадкаў LocalSend працуе адразу пасля ўсталявання. Але калі ў вас узнікаюць цяжкасці з адпраўкай ці атрыманнем файлаў, магчыма, спатрэбіцца наладзіць міжсеткавы экран так, каб LocalSend мог абменьвацца данымі ў вашай лакальнай сетцы.
+У большасці выпадкаў Relay працуе адразу пасля ўсталявання. Але калі ў вас узнікаюць цяжкасці з адпраўкай ці атрыманнем файлаў, магчыма, спатрэбіцца наладзіць міжсеткавы экран так, каб Relay мог абменьвацца данымі ў вашай лакальнай сетцы.
 
 | Тып трафіку | Пратакол | Порт  | Дзеянне   |
 |-------------|----------|-------|-----------|
@@ -130,15 +130,15 @@ LocalSend — гэта кросплатформенная праграма дл�
 
 (абноўлена ў v1.15.0)
 
-Каб запусціць праграму схавана (толькі ў вобласці апавяшчэнняў), скарыстайцеся параметрам `--hidden` (напрыклад: `localsend_app.exe --hidden`).
+Каб запусціць праграму схавана (толькі ў вобласці апавяшчэнняў), скарыстайцеся параметрам `--hidden` (напрыклад: `relay.exe --hidden`).
 
 У версіях v1.14.0 і ранейшых праграма запускаецца схавана, калі зададзены параметр `autostart` і ўключана налада схаванага запуску.
 
 ## Як гэта працуе
 
-LocalSend выкарыстоўвае бяспечны пратакол сувязі, які дазваляе прыладам абменьвацца данымі праз REST API. Усе даныя перадаюцца праз HTTPS, а сертыфікат TLS/SSL ствараецца на ляту на кожнай прыладзе, што забяспечвае максімальную бяспеку.
+Relay выкарыстоўвае бяспечны пратакол сувязі, які дазваляе прыладам абменьвацца данымі праз REST API. Усе даныя перадаюцца праз HTTPS, а сертыфікат TLS/SSL ствараецца на ляту на кожнай прыладзе, што забяспечвае максімальную бяспеку.
 
-Падрабязней пра пратакол LocalSend — у [дакументацыі](https://github.com/localsend/protocol).
+Падрабязней пра пратакол Relay — у [дакументацыі](https://github.com/relay/protocol).
 
 ## Іерархія залежнасцей
 
@@ -146,35 +146,35 @@ LocalSend выкарыстоўвае бяспечны пратакол сувя�
 
 ## Пачатак працы
 
-Каб сабраць LocalSend з зыходнага коду, выканайце наступныя крокі:
+Каб сабраць Relay з зыходнага коду, выканайце наступныя крокі:
 
 1. Усталюйце Flutter [напрамую](https://flutter.dev) або праз [fvm](https://fvm.app) (гл. [патрэбную версію](/.fvmrc))
 2. Усталюйце [Rust](https://www.rust-lang.org/tools/install)
-3. Кланіруйце рэпазіторый `LocalSend`
+3. Кланіруйце рэпазіторый `Relay`
 4. Выканайце `cd app`, каб перайсці ў папку праграмы
 5. Выканайце `flutter pub get`, каб спампаваць залежнасці
 6. Выканайце `flutter run`, каб запусціць праграму
 
 > [!NOTE]
-> Цяпер LocalSend патрабуе старэйшай версіі Flutter (яна ўказана ў [.fvmrc](/.fvmrc)),
+> Цяпер Relay патрабуе старэйшай версіі Flutter (яна ўказана ў [.fvmrc](/.fvmrc)),
 > таму праблемы са зборкай могуць узнікаць з-за неадпаведнасці паміж патрэбнай версіяй і той, што ўсталявана ў сістэме.  
-> Каб распрацоўка была больш прадказальнай, LocalSend кіруе версіяй Flutter праз [fvm](https://fvm.app).
+> Каб распрацоўка была больш прадказальнай, Relay кіруе версіяй Flutter праз [fvm](https://fvm.app).
 > Пасля ўсталявання `fvm` выконвайце `fvm flutter` замест `flutter`.
 
 ## Унёсак у праект
 
-Мы вітаем унёсак ад кожнага, хто хоча дапамагчы палепшыць LocalSend. Далучыцца можна некалькімі спосабамі.
+Мы вітаем унёсак ад кожнага, хто хоча дапамагчы палепшыць Relay. Далучыцца можна некалькімі спосабамі.
 
 ### Пераклад
 
-Вы можаце дапамагчы з перакладам LocalSend на іншыя мовы. Для кіравання перакладамі мы карыстаемся платформай [Weblate](https://hosted.weblate.org/projects/localsend/app).
+Вы можаце дапамагчы з перакладам Relay на іншыя мовы. Для кіравання перакладамі мы карыстаемся платформай [Weblate](https://hosted.weblate.org/projects/relay/app).
 
 Акрамя таго, можна зрабіць развілку (fork) гэтага рэпазіторыя і дадаць пераклады ўручную.
 
-Пераклады знаходзяцца ў папцы [app/assets/i18n](https://github.com/localsend/localsend/tree/main/app/assets/i18n). Каб дадаць ці абнавіць пераклад, рэдагуйце файл `_missing_translations_<locale>.json` або `<locale>.json`.
+Пераклады знаходзяцца ў папцы [app/assets/i18n](https://github.com/relay/relay/tree/main/app/assets/i18n). Каб дадаць ці абнавіць пераклад, рэдагуйце файл `_missing_translations_<locale>.json` або `<locale>.json`.
 
-<a href="https://hosted.weblate.org/engage/localsend/">
-<img src="https://hosted.weblate.org/widget/localsend/app/multi-auto.svg" alt="Translation status" />
+<a href="https://hosted.weblate.org/engage/relay/">
+<img src="https://hosted.weblate.org/widget/relay/app/multi-auto.svg" alt="Translation status" />
 </a>
 
 **_Заўвага:_ палі, пазначаныя `@`, перакладаць не трэба; праграма іх ніяк не выкарыстоўвае, гэта проста звесткі пра файл або кантэкст для перакладчыка.**
@@ -182,9 +182,9 @@ LocalSend выкарыстоўвае бяспечны пратакол сувя�
 ### Выпраўленне памылак і паляпшэнні
 
 - **Выпраўленне памылак:** калі вы знайшлі памылку, стварыце запыт на зліванне (pull request) з выразным апісаннем праблемы і спосабу яе выпраўлення.
-- **Паляпшэнні:** маеце ідэю, як палепшыць LocalSend? Спачатку стварыце паведамленне пра праблему (issue), каб абмеркаваць, навошта гэта паляпшэнне патрэбна.
+- **Паляпшэнні:** маеце ідэю, як палепшыць Relay? Спачатку стварыце паведамленне пра праблему (issue), каб абмеркаваць, навошта гэта паляпшэнне патрэбна.
 
-Падрабязней — у [дапаможніку па ўнёску ў праект](https://github.com/localsend/localsend/blob/main/CONTRIBUTING.md).
+Падрабязней — у [дапаможніку па ўнёску ў праект](https://github.com/relay/relay/blob/main/CONTRIBUTING.md).
 
 ## Выпраўленне непаладак
 
@@ -262,10 +262,10 @@ appimage-builder --recipe AppImageBuilder.yml
 
 **Snap**
 
-Інструкцыі ў [localsend/snap/README.md](https://github.com/localsend/snap/blob/main/README.md)
+Інструкцыі ў [relay/snap/README.md](https://github.com/relay/snap/blob/main/README.md)
 
 ## Суаўтары
 
-<a href="https://github.com/localsend/localsend/graphs/contributors">
-  <img src="https://contrib.rocks/image?repo=localsend/localsend"  alt="Localsend Contributors"/>
+<a href="https://github.com/relay/relay/graphs/contributors">
+  <img src="https://contrib.rocks/image?repo=relay/relay"  alt="Relay Contributors"/>
 </a>

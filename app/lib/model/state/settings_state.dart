@@ -1,9 +1,9 @@
 import 'package:dart_mappable/dart_mappable.dart';
 import 'package:flutter/material.dart';
-import 'package:localsend_app/gen/strings.g.dart';
-import 'package:localsend_app/model/persistence/color_mode.dart';
-import 'package:localsend_app/model/send_mode.dart';
-import 'package:localsend_isolates/model/device.dart';
+import 'package:relay_app/gen/strings.g.dart';
+import 'package:relay_app/model/persistence/color_mode.dart';
+import 'package:relay_app/model/send_mode.dart';
+import 'package:relay_isolates/model/device.dart';
 
 part 'settings_state.mapper.dart';
 

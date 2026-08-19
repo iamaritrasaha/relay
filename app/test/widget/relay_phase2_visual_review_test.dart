@@ -1,18 +1,18 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:localsend_app/config/relay_brand.dart';
-import 'package:localsend_app/config/theme.dart';
-import 'package:localsend_app/model/persistence/color_mode.dart';
-import 'package:localsend_app/model/ui/relay_device_vm.dart';
-import 'package:localsend_app/pages/relay_home_vm.dart';
-import 'package:localsend_app/widget/relay/relay_desktop_metrics.dart';
-import 'package:localsend_app/widget/relay/relay_device_silhouette.dart';
-import 'package:localsend_app/widget/relay/relay_settings_primitives.dart';
-import 'package:localsend_app/widget/relay/relay_shell.dart';
-import 'package:localsend_app/widget/relay/relay_top_bar.dart';
-import 'package:localsend_app/widget/relay_components.dart';
-import 'package:localsend_app/widget/relay_logo.dart';
-import 'package:localsend_isolates/model/device.dart';
+import 'package:relay_app/config/relay_brand.dart';
+import 'package:relay_app/config/theme.dart';
+import 'package:relay_app/model/persistence/color_mode.dart';
+import 'package:relay_app/model/ui/relay_device_vm.dart';
+import 'package:relay_app/pages/relay_home_vm.dart';
+import 'package:relay_app/widget/relay/relay_desktop_metrics.dart';
+import 'package:relay_app/widget/relay/relay_device_silhouette.dart';
+import 'package:relay_app/widget/relay/relay_settings_primitives.dart';
+import 'package:relay_app/widget/relay/relay_shell.dart';
+import 'package:relay_app/widget/relay/relay_top_bar.dart';
+import 'package:relay_app/widget/relay_components.dart';
+import 'package:relay_app/widget/relay_logo.dart';
+import 'package:relay_isolates/model/device.dart';
 
 void main() {
   const desktop = Size(1280, 800);
@@ -77,7 +77,7 @@ void main() {
     addTearDown(tester.view.reset);
     await tester.pumpWidget(
       MaterialApp(
-        theme: getTheme(ColorMode.localsend, Colors.blue, Brightness.dark, null),
+        theme: getTheme(ColorMode.relay, Colors.blue, Brightness.dark, null),
         home: child,
       ),
     );

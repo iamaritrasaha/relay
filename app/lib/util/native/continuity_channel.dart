@@ -9,8 +9,8 @@ import 'package:flutter/services.dart';
 /// On platforms without the channel every call degrades to an honest
 /// "unavailable" rather than throwing.
 class ContinuityChannel {
-  static const _methods = MethodChannel('org.localsend.localsend_app/continuity');
-  static const _events = EventChannel('org.localsend.localsend_app/continuity_events');
+  static const _methods = MethodChannel('com.foresight.app.relay/continuity');
+  static const _events = EventChannel('com.foresight.app.relay/continuity_events');
 
   const ContinuityChannel();
 

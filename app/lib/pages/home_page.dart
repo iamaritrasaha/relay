@@ -2,16 +2,16 @@ import 'dart:io';
 
 import 'package:desktop_drop/desktop_drop.dart';
 import 'package:flutter/material.dart';
-import 'package:localsend_app/config/init.dart';
-import 'package:localsend_app/gen/strings.g.dart';
-import 'package:localsend_app/pages/home_page_controller.dart';
-import 'package:localsend_app/pages/receive_history_page.dart';
-import 'package:localsend_app/pages/relay_home_page.dart';
-import 'package:localsend_app/pages/tabs/receive_tab.dart';
-import 'package:localsend_app/pages/tabs/send_tab.dart';
-import 'package:localsend_app/pages/tabs/settings_tab.dart';
-import 'package:localsend_app/provider/selection/selected_sending_files_provider.dart';
-import 'package:localsend_app/util/native/cross_file_converters.dart';
+import 'package:relay_app/config/init.dart';
+import 'package:relay_app/gen/strings.g.dart';
+import 'package:relay_app/pages/home_page_controller.dart';
+import 'package:relay_app/pages/receive_history_page.dart';
+import 'package:relay_app/pages/relay_home_page.dart';
+import 'package:relay_app/pages/tabs/receive_tab.dart';
+import 'package:relay_app/pages/tabs/send_tab.dart';
+import 'package:relay_app/pages/tabs/settings_tab.dart';
+import 'package:relay_app/provider/selection/selected_sending_files_provider.dart';
+import 'package:relay_app/util/native/cross_file_converters.dart';
 import 'package:refena_flutter/refena_flutter.dart';
 import 'package:routerino/routerino.dart';
 

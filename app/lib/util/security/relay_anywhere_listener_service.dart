@@ -1,10 +1,10 @@
 import 'dart:async';
 import 'dart:typed_data';
 
-import 'package:localsend_app/model/persistence/relay_public_identity.dart';
-import 'package:localsend_app/util/security/relay_identity_coordinator.dart';
-import 'package:localsend_app/util/security/relay_routing_key_coordinator.dart';
-import 'package:localsend_isolates/rust/api/relay_anywhere.dart' as rust_relay_anywhere;
+import 'package:relay_app/model/persistence/relay_public_identity.dart';
+import 'package:relay_app/util/security/relay_identity_coordinator.dart';
+import 'package:relay_app/util/security/relay_routing_key_coordinator.dart';
+import 'package:relay_isolates/rust/api/relay_anywhere.dart' as rust_relay_anywhere;
 
 abstract interface class RelayAnywhereListenerApi {
   Stream<rust_relay_anywhere.RsRelayAnywhereListenerEvent> start({

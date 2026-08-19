@@ -1,5 +1,5 @@
-import 'package:localsend_app/model/persistence/relay_paired_address.dart';
-import 'package:localsend_app/provider/persistence_provider.dart';
+import 'package:relay_app/model/persistence/relay_paired_address.dart';
+import 'package:relay_app/provider/persistence_provider.dart';
 import 'package:refena_flutter/refena_flutter.dart';
 
 /// Reactive view of authenticated routing metadata.

@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
-import 'package:localsend_app/config/relay_brand.dart';
-import 'package:localsend_app/model/ui/relay_device_vm.dart';
-import 'package:localsend_app/widget/relay/nearby_field.dart';
-import 'package:localsend_app/widget/relay/relay_desktop_metrics.dart';
-import 'package:localsend_app/widget/relay/relay_waiting_beacon.dart';
-import 'package:localsend_isolates/model/device.dart';
+import 'package:relay_app/config/relay_brand.dart';
+import 'package:relay_app/model/ui/relay_device_vm.dart';
+import 'package:relay_app/widget/relay/nearby_field.dart';
+import 'package:relay_app/widget/relay/relay_desktop_metrics.dart';
+import 'package:relay_app/widget/relay/relay_waiting_beacon.dart';
+import 'package:relay_isolates/model/device.dart';
 
 /// The nearby field: the region Home is actually about.
 ///

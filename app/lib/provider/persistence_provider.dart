@@ -4,27 +4,27 @@ import 'dart:io';
 import 'package:collection/collection.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:localsend_app/gen/strings.g.dart';
-import 'package:localsend_app/model/persistence/color_mode.dart';
-import 'package:localsend_app/model/persistence/favorite_device.dart';
-import 'package:localsend_app/model/persistence/quick_save_mode.dart';
-import 'package:localsend_app/model/persistence/receive_history_entry.dart';
-import 'package:localsend_app/model/persistence/relay_continuity_settings.dart';
-import 'package:localsend_app/model/persistence/relay_paired_address.dart';
-import 'package:localsend_app/model/persistence/relay_public_identity.dart';
-import 'package:localsend_app/model/send_mode.dart';
-import 'package:localsend_app/provider/window_dimensions_provider.dart';
-import 'package:localsend_app/util/alias_generator.dart';
-import 'package:localsend_app/util/native/autostart_helper.dart';
-import 'package:localsend_app/util/native/context_menu_helper.dart';
-import 'package:localsend_app/util/native/platform_check.dart';
-import 'package:localsend_app/util/security_helper.dart';
-import 'package:localsend_app/util/shared_preferences/shared_preferences_file.dart';
-import 'package:localsend_app/util/shared_preferences/shared_preferences_portable.dart';
-import 'package:localsend_app/util/ui/animations_status.dart';
-import 'package:localsend_isolates/constants.dart';
-import 'package:localsend_isolates/model/device.dart';
-import 'package:localsend_isolates/model/stored_security_context.dart';
+import 'package:relay_app/gen/strings.g.dart';
+import 'package:relay_app/model/persistence/color_mode.dart';
+import 'package:relay_app/model/persistence/favorite_device.dart';
+import 'package:relay_app/model/persistence/quick_save_mode.dart';
+import 'package:relay_app/model/persistence/receive_history_entry.dart';
+import 'package:relay_app/model/persistence/relay_continuity_settings.dart';
+import 'package:relay_app/model/persistence/relay_paired_address.dart';
+import 'package:relay_app/model/persistence/relay_public_identity.dart';
+import 'package:relay_app/model/send_mode.dart';
+import 'package:relay_app/provider/window_dimensions_provider.dart';
+import 'package:relay_app/util/alias_generator.dart';
+import 'package:relay_app/util/native/autostart_helper.dart';
+import 'package:relay_app/util/native/context_menu_helper.dart';
+import 'package:relay_app/util/native/platform_check.dart';
+import 'package:relay_app/util/security_helper.dart';
+import 'package:relay_app/util/shared_preferences/shared_preferences_file.dart';
+import 'package:relay_app/util/shared_preferences/shared_preferences_portable.dart';
+import 'package:relay_app/util/ui/animations_status.dart';
+import 'package:relay_isolates/constants.dart';
+import 'package:relay_isolates/model/device.dart';
+import 'package:relay_isolates/model/stored_security_context.dart';
 import 'package:logging/logging.dart';
 import 'package:refena_flutter/refena_flutter.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -37,12 +37,12 @@ final _logger = Logger('PersistenceService');
 
 String get _windowsFile {
   final appData = Platform.environment['APPDATA'];
-  return '$appData\\LocalSend\\settings.json';
+  return '$appData\\Relay\\settings.json';
 }
 
 String get _windowsLegacyFile {
   final appData = Platform.environment['APPDATA'];
-  return '$appData\\org.localsend\\localsend_app\\shared_preferences.json';
+  return '$appData\\org.relay\\relay_app\\shared_preferences.json';
 }
 
 // Version of the storage
@@ -225,7 +225,7 @@ class PersistenceService {
   static Future<void> _initColorSetting(SharedPreferences prefs, bool supportsDynamicColors) async {
     await prefs.setString(
       _colorKey,
-      checkPlatform([TargetPlatform.android]) && supportsDynamicColors ? ColorMode.system.name : ColorMode.localsend.name,
+      checkPlatform([TargetPlatform.android]) && supportsDynamicColors ? ColorMode.system.name : ColorMode.relay.name,
     );
   }
 

@@ -1,4 +1,4 @@
-import 'package:localsend_isolates/model/device.dart';
+import 'package:relay_isolates/model/device.dart';
 import 'package:refena_flutter/refena_flutter.dart';
 
 /// A live proof-backed association between a RelayId and a LAN observation.

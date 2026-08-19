@@ -1,15 +1,15 @@
 import 'dart:typed_data';
 
-import 'package:localsend_app/model/persistence/relay_paired_address.dart';
-import 'package:localsend_app/model/persistence/relay_public_identity.dart';
-import 'package:localsend_app/util/security/relay_anywhere_pairing_service.dart';
-import 'package:localsend_app/util/security/relay_identity_coordinator.dart';
-import 'package:localsend_app/util/security/relay_identity_metadata_store.dart';
-import 'package:localsend_app/util/security/relay_identity_secret_store.dart';
-import 'package:localsend_app/util/security/relay_paired_address_store.dart';
-import 'package:localsend_app/util/security/relay_server_signer_port.dart';
-import 'package:localsend_isolates/rust/api/crypto.dart';
-import 'package:localsend_isolates/rust/api/relay_anywhere.dart' as rust_relay_anywhere;
+import 'package:relay_app/model/persistence/relay_paired_address.dart';
+import 'package:relay_app/model/persistence/relay_public_identity.dart';
+import 'package:relay_app/util/security/relay_anywhere_pairing_service.dart';
+import 'package:relay_app/util/security/relay_identity_coordinator.dart';
+import 'package:relay_app/util/security/relay_identity_metadata_store.dart';
+import 'package:relay_app/util/security/relay_identity_secret_store.dart';
+import 'package:relay_app/util/security/relay_paired_address_store.dart';
+import 'package:relay_app/util/security/relay_server_signer_port.dart';
+import 'package:relay_isolates/rust/api/crypto.dart';
+import 'package:relay_isolates/rust/api/relay_anywhere.dart' as rust_relay_anywhere;
 import 'package:test/test.dart';
 
 const _relayId = 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';

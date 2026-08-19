@@ -1,11 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:localsend_app/config/relay_brand.dart';
-import 'package:localsend_app/config/theme.dart';
-import 'package:localsend_app/model/persistence/color_mode.dart';
-import 'package:localsend_app/widget/relay_components.dart';
-import 'package:localsend_app/widget/relay_logo.dart';
-import 'package:localsend_app/widget/relay_symbol.dart';
+import 'package:relay_app/config/relay_brand.dart';
+import 'package:relay_app/config/theme.dart';
+import 'package:relay_app/model/persistence/color_mode.dart';
+import 'package:relay_app/widget/relay_components.dart';
+import 'package:relay_app/widget/relay_logo.dart';
+import 'package:relay_app/widget/relay_symbol.dart';
 
 void main() {
   test('Relay product identity retains the required attribution', () {
@@ -28,7 +28,7 @@ void main() {
   testWidgets('the shared logo renders the Relay symbol and wordmark', (tester) async {
     await tester.pumpWidget(
       MaterialApp(
-        theme: getTheme(ColorMode.localsend, Colors.blue, Brightness.dark, null),
+        theme: getTheme(ColorMode.relay, Colors.blue, Brightness.dark, null),
         home: const Scaffold(body: Center(child: RelayLogo(withText: true))),
       ),
     );
@@ -41,7 +41,7 @@ void main() {
   testWidgets('Relay component primitives preserve the compact visual contract', (tester) async {
     await tester.pumpWidget(
       MaterialApp(
-        theme: getTheme(ColorMode.localsend, Colors.blue, Brightness.dark, null),
+        theme: getTheme(ColorMode.relay, Colors.blue, Brightness.dark, null),
         home: Scaffold(
           body: Builder(
             builder: (context) => RelayGroupedSurface(

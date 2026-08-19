@@ -1,8 +1,8 @@
 import 'dart:typed_data';
 
-import 'package:localsend_app/util/security/relay_identity_secret_store.dart';
-import 'package:localsend_app/util/security/relay_routing_key_coordinator.dart';
-import 'package:localsend_app/util/security/relay_routing_key_secret_store.dart';
+import 'package:relay_app/util/security/relay_identity_secret_store.dart';
+import 'package:relay_app/util/security/relay_routing_key_coordinator.dart';
+import 'package:relay_app/util/security/relay_routing_key_secret_store.dart';
 import 'package:test/test.dart';
 
 void main() {

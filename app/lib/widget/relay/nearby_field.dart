@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
-import 'package:localsend_app/model/ui/relay_device_vm.dart';
-import 'package:localsend_app/widget/relay/relay_desktop_metrics.dart';
-import 'package:localsend_app/widget/relay/relay_device_target.dart';
+import 'package:relay_app/model/ui/relay_device_vm.dart';
+import 'package:relay_app/widget/relay/relay_desktop_metrics.dart';
+import 'package:relay_app/widget/relay/relay_device_target.dart';
 
 /// The devices themselves. On desktop they are placed with an alternating
 /// stagger so the field reads as a space rather than a table; the offset comes

@@ -7,7 +7,7 @@ use crate::send_task;
 use crate::ui::Category;
 use crate::util::SpeedMeter;
 use crossterm::event::KeyEvent;
-use localsend::model::transfer::{FileDto, FileMetadata};
+use relay_core::model::transfer::{FileDto, FileMetadata};
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;

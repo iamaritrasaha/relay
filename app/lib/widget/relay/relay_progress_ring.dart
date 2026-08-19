@@ -1,8 +1,8 @@
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
-import 'package:localsend_app/config/relay_motion.dart';
-import 'package:localsend_app/model/ui/relay_device_vm.dart';
+import 'package:relay_app/config/relay_motion.dart';
+import 'package:relay_app/model/ui/relay_device_vm.dart';
 
 class RelayProgressRing extends StatelessWidget {
   final double size;

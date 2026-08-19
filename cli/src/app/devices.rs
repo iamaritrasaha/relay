@@ -7,7 +7,7 @@ use crate::picker::PickerTarget;
 use crate::storage::PairedChannel;
 use crate::ui::Category;
 use crossterm::event::KeyEvent;
-use localsend::discovery::StatefulDevice;
+use relay_core::discovery::StatefulDevice;
 
 impl App {
     pub(super) fn open_device_list(&mut self) {

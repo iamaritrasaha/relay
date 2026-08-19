@@ -1,4 +1,4 @@
-import 'package:localsend_isolates/model/file_status.dart';
+import 'package:relay_isolates/model/file_status.dart';
 import 'package:refena_flutter/refena_flutter.dart';
 
 /// A provider holding the live per-file transfer state (status and progress).

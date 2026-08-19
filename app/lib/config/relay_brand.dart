@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-export 'package:localsend_app/config/relay_typography.dart';
+export 'package:relay_app/config/relay_typography.dart';
 
 abstract final class RelayProduct {
   static const name = 'Relay';

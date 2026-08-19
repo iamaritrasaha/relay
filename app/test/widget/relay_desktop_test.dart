@@ -1,16 +1,16 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:localsend_app/config/relay_brand.dart';
-import 'package:localsend_app/config/theme.dart';
-import 'package:localsend_app/model/persistence/color_mode.dart';
-import 'package:localsend_app/model/ui/relay_device_vm.dart';
-import 'package:localsend_app/pages/changelog_page.dart';
-import 'package:localsend_app/pages/relay_home_vm.dart';
-import 'package:localsend_app/provider/version_provider.dart';
-import 'package:localsend_app/widget/relay/relay_desktop_metrics.dart';
-import 'package:localsend_app/widget/relay/relay_device_target.dart';
-import 'package:localsend_app/widget/relay/relay_waiting_beacon.dart';
-import 'package:localsend_isolates/model/device.dart';
+import 'package:relay_app/config/relay_brand.dart';
+import 'package:relay_app/config/theme.dart';
+import 'package:relay_app/model/persistence/color_mode.dart';
+import 'package:relay_app/model/ui/relay_device_vm.dart';
+import 'package:relay_app/pages/changelog_page.dart';
+import 'package:relay_app/pages/relay_home_vm.dart';
+import 'package:relay_app/provider/version_provider.dart';
+import 'package:relay_app/widget/relay/relay_desktop_metrics.dart';
+import 'package:relay_app/widget/relay/relay_device_target.dart';
+import 'package:relay_app/widget/relay/relay_waiting_beacon.dart';
+import 'package:relay_isolates/model/device.dart';
 
 import 'relay_desktop_fixtures.dart';
 
@@ -33,7 +33,7 @@ void main() {
     addTearDown(tester.view.reset);
     await tester.pumpWidget(
       MaterialApp(
-        theme: getTheme(ColorMode.localsend, Colors.blue, Brightness.dark, null),
+        theme: getTheme(ColorMode.relay, Colors.blue, Brightness.dark, null),
         home: child,
       ),
     );
@@ -187,12 +187,12 @@ void main() {
       expect(find.text('Release notes'), findsOneWidget);
     });
 
-    testWidgets('carries no Donate, Support LocalSend or About LocalSend', (tester) async {
+    testWidgets('carries no Donate, Support Relay or About Relay', (tester) async {
       await pump(tester, RelayDesktopFixtures.settings(), const Size(1440, 900));
 
       expect(find.textContaining('Donate'), findsNothing);
-      expect(find.textContaining('Support LocalSend'), findsNothing);
-      expect(find.text('About LocalSend'), findsNothing);
+      expect(find.textContaining('Support Relay'), findsNothing);
+      expect(find.text('About Relay'), findsNothing);
       expect(find.text('About Relay'), findsOneWidget);
     });
 
@@ -220,11 +220,11 @@ void main() {
       expect(find.text('Acknowledgements'), findsNothing);
     });
 
-    testWidgets('does not co-brand with LocalSend', (tester) async {
+    testWidgets('does not co-brand with Relay', (tester) async {
       await pump(tester, RelayDesktopFixtures.about(), const Size(1440, 900));
 
-      expect(find.text('LocalSend'), findsNothing);
-      expect(find.text('About LocalSend'), findsNothing);
+      expect(find.text('Relay'), findsNothing);
+      expect(find.text('About Relay'), findsNothing);
     });
 
     testWidgets('narrow desktop collapses to one column without overflow', (tester) async {
@@ -275,9 +275,9 @@ Relay's first intentional early release.
       expect(find.text('Relay release notes'), findsOneWidget);
       expect(find.text('0.1.0'), findsOneWidget);
       expect(find.textContaining('Relay'), findsWidgets);
-      expect(find.textContaining('LocalSend 1.'), findsNothing);
+      expect(find.textContaining('Relay 1.'), findsNothing);
       expect(find.textContaining('Donate'), findsNothing);
-      expect(find.textContaining('Support LocalSend'), findsNothing);
+      expect(find.textContaining('Support Relay'), findsNothing);
       expect(tester.takeException(), isNull);
     });
   });

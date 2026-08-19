@@ -50,4 +50,4 @@ JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64 \
 Expected artifacts:
 
 - `app/build/app/outputs/flutter-apk/app-ra2b-release.apk`
-- `app/build/linux/x64/release/bundle/localsend_app`
+- `app/build/linux/x64/release/bundle/relay_app`

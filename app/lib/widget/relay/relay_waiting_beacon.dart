@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
-import 'package:localsend_app/config/relay_brand.dart';
-import 'package:localsend_app/widget/relay/relay_device_silhouette.dart';
-import 'package:localsend_isolates/model/device.dart';
+import 'package:relay_app/config/relay_brand.dart';
+import 'package:relay_app/widget/relay/relay_device_silhouette.dart';
+import 'package:relay_isolates/model/device.dart';
 
 /// The empty-state figure for the nearby field.
 ///

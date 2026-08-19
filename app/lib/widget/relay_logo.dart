@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
-import 'package:localsend_app/config/relay_brand.dart';
-import 'package:localsend_app/widget/relay_symbol.dart';
+import 'package:relay_app/config/relay_brand.dart';
+import 'package:relay_app/widget/relay_symbol.dart';
 
 /// Shared Relay symbol and wordmark treatment for normal product surfaces.
 class RelayLogo extends StatelessWidget {

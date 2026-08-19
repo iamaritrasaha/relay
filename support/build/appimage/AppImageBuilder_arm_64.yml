@@ -7,11 +7,11 @@ script:
 AppDir:
   path: AppDir
   app_info:
-    id: org.localsend.localsend_app
+    id: com.foresight.app.relay
     name: Relay
-    icon: localsend
+    icon: relay
     version: latest
-    exec: localsend_app
+    exec: relay
     exec_args: $@
   apt:
     arch:

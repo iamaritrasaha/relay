@@ -1,20 +1,20 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:localsend_app/model/cross_file.dart';
-import 'package:localsend_app/model/persistence/relay_paired_address.dart';
-import 'package:localsend_app/model/state/nearby_devices_state.dart';
-import 'package:localsend_app/model/state/send/send_session_state.dart';
-import 'package:localsend_app/model/state/send/sending_file.dart';
-import 'package:localsend_app/model/ui/relay_device_vm.dart';
-import 'package:localsend_app/pages/relay_home_vm.dart';
-import 'package:localsend_app/provider/file_transfer_provider.dart';
-import 'package:localsend_app/provider/relay_verified_lan_devices_provider.dart';
-import 'package:localsend_app/widget/relay/relay_shell.dart';
-import 'package:localsend_isolates/model/device.dart';
-import 'package:localsend_isolates/model/dto/file_dto.dart';
-import 'package:localsend_isolates/model/file_status.dart';
-import 'package:localsend_isolates/model/file_type.dart';
-import 'package:localsend_isolates/model/session_status.dart';
+import 'package:relay_app/model/cross_file.dart';
+import 'package:relay_app/model/persistence/relay_paired_address.dart';
+import 'package:relay_app/model/state/nearby_devices_state.dart';
+import 'package:relay_app/model/state/send/send_session_state.dart';
+import 'package:relay_app/model/state/send/sending_file.dart';
+import 'package:relay_app/model/ui/relay_device_vm.dart';
+import 'package:relay_app/pages/relay_home_vm.dart';
+import 'package:relay_app/provider/file_transfer_provider.dart';
+import 'package:relay_app/provider/relay_verified_lan_devices_provider.dart';
+import 'package:relay_app/widget/relay/relay_shell.dart';
+import 'package:relay_isolates/model/device.dart';
+import 'package:relay_isolates/model/dto/file_dto.dart';
+import 'package:relay_isolates/model/file_status.dart';
+import 'package:relay_isolates/model/file_type.dart';
+import 'package:relay_isolates/model/session_status.dart';
 
 void main() {
   const device = Device(

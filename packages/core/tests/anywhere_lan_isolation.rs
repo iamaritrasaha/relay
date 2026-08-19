@@ -1,9 +1,9 @@
 //! LAN HTTP startup must not bind an Iroh endpoint.
 #![cfg(feature = "anywhere")]
 
-use localsend::anywhere::iroh_endpoint_bind_count;
-use localsend::http::server::{start_with_port, ServerHandle};
-use localsend::http::state::ClientInfo;
+use relay_core::anywhere::iroh_endpoint_bind_count;
+use relay_core::http::server::{start_with_port, ServerHandle};
+use relay_core::http::state::ClientInfo;
 use tokio::sync::oneshot;
 
 #[tokio::test]
@@ -37,8 +37,8 @@ async fn lan_server_start_does_not_bind_iroh() {
 /// short of an explicit Anywhere operation may start Iroh.
 #[test]
 fn production_anywhere_setup_does_not_bind_iroh() {
-    use localsend::anywhere::{AnywhereIdentity, AnywhereRuntime, RelayAddressV1};
-    use localsend::crypto::relay_identity::RelayIdentity;
+    use relay_core::anywhere::{AnywhereIdentity, AnywhereRuntime, RelayAddressV1};
+    use relay_core::crypto::relay_identity::RelayIdentity;
 
     let before = iroh_endpoint_bind_count();
 

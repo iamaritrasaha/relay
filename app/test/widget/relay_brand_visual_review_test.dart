@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:localsend_app/config/relay_brand.dart';
-import 'package:localsend_app/config/theme.dart';
-import 'package:localsend_app/model/persistence/color_mode.dart';
-import 'package:localsend_app/widget/relay_components.dart';
-import 'package:localsend_app/widget/relay_logo.dart';
+import 'package:relay_app/config/relay_brand.dart';
+import 'package:relay_app/config/theme.dart';
+import 'package:relay_app/model/persistence/color_mode.dart';
+import 'package:relay_app/widget/relay_components.dart';
+import 'package:relay_app/widget/relay_logo.dart';
 
 void main() {
   Future<void> render(WidgetTester tester, Brightness brightness) async {
@@ -13,8 +13,8 @@ void main() {
     addTearDown(tester.view.reset);
     await tester.pumpWidget(
       MaterialApp(
-        theme: getTheme(ColorMode.localsend, Colors.blue, Brightness.light, null),
-        darkTheme: getTheme(ColorMode.localsend, Colors.blue, Brightness.dark, null),
+        theme: getTheme(ColorMode.relay, Colors.blue, Brightness.light, null),
+        darkTheme: getTheme(ColorMode.relay, Colors.blue, Brightness.dark, null),
         themeMode: brightness == Brightness.dark ? ThemeMode.dark : ThemeMode.light,
         home: const _RelayBrandSample(),
       ),

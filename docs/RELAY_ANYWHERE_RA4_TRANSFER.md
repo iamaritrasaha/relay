@@ -70,7 +70,7 @@ Iroh path
 → authorization
 ```
 
-No filename, file size, MIME type, `FileDto`, folder structure, or payload may be accepted before that sequence completes. Anywhere authentication failure is terminal. There is no downgrade to `LegacyLanInboundSession`, LocalSend, or unverified LAN semantics.
+No filename, file size, MIME type, `FileDto`, folder structure, or payload may be accepted before that sequence completes. Anywhere authentication failure is terminal. There is no downgrade to `LegacyLanInboundSession`, Relay, or unverified LAN semantics.
 
 ## Route restriction
 
@@ -115,7 +115,7 @@ The following are non-negotiable:
 
 - Existing LAN discovery remains unchanged.
 - LAN TCP/HTTPS remains unchanged.
-- LocalSend compatibility remains unchanged.
+- Relay compatibility remains unchanged.
 - LAN-only operation never initializes Iroh.
 - Transfer semantics remain shared.
 - Anywhere authentication failure never downgrades.
@@ -157,7 +157,7 @@ RA4C1 introduces the core-only `RelayDevice`, unresolved legacy-LAN candidate,
 transport candidate, resolver, session-factory, and send-service boundaries.
 LAN discovery remains a routing observation (alias, address, port, protocol,
 fingerprint, compatibility metadata) and does not create a `RelayId`.
-Verified devices are keyed only by proven `RelayId`; LocalSend remains a
+Verified devices are keyed only by proven `RelayId`; Relay remains a
 separate compatibility namespace. A verified device may use an associated LAN
 route only when that outbound route re-proves the expected RelayId; otherwise
 its authenticated Anywhere route is selected.

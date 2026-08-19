@@ -2,11 +2,11 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:localsend_app/config/relay_brand.dart';
-import 'package:localsend_app/model/ui/relay_device_vm.dart';
-import 'package:localsend_app/widget/gnome/adw_action_row.dart';
-import 'package:localsend_app/widget/gnome/adw_boxed_list.dart';
-import 'package:localsend_app/widget/gnome/adw_button.dart';
+import 'package:relay_app/config/relay_brand.dart';
+import 'package:relay_app/model/ui/relay_device_vm.dart';
+import 'package:relay_app/widget/gnome/adw_action_row.dart';
+import 'package:relay_app/widget/gnome/adw_boxed_list.dart';
+import 'package:relay_app/widget/gnome/adw_button.dart';
 
 /// GNOME Advanced Diagnostics modal dialog.
 ///

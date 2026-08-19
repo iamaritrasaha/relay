@@ -1,6 +1,6 @@
 # AGENTS.md
 
-LocalSend disallows AI generated contributions unless:
+Relay disallows AI generated contributions unless:
 
 - they are bug fixes or
 - very small or
@@ -14,18 +14,18 @@ This is a multi-language monorepo: a Flutter app on top of a Rust protocol imple
 
 | Path                           | What it is                                                                                                                                                  |
 |--------------------------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `app/`                         | The Flutter app (`localsend_app`). UI, providers, persistence, platform channels.                                                                           |
-| `packages/localsend_isolates/` | Dart isolate layer + `flutter_rust_bridge` (FRB) bindings. Owns `rust/` (the Flutter plugin crate `rust_lib_localsend_app`) and `rust_builder/` (cargokit). |
-| `packages/core/`               | Rust crate `localsend`: protocol, HTTP server/client, crypto, WebRTC. No Flutter dependency.                                                                |
+| `app/`                         | The Flutter app (`relay_app`). UI, providers, persistence, platform channels.                                                                           |
+| `packages/relay_isolates/` | Dart isolate layer + `flutter_rust_bridge` (FRB) bindings. Owns `rust/` (the Flutter plugin crate `rust_lib_relay_app`) and `rust_builder/` (cargokit). |
+| `packages/core/`               | Rust crate `relay`: protocol, HTTP server/client, crypto, WebRTC. No Flutter dependency.                                                                |
 | `packages/typed_isolates/`     | Small standalone package wrapping Dart `Isolate` with typed send/receive channels.                                                                          |
 | `server/`                      | Axum WebSocket signaling server for WebRTC (`/v1/ws`). Deployed separately, see `server/Dockerfile`.                                                        |
-| `cli/`                         | Rust CLI crate (`localsend-cli`): interactive terminal client on top of `packages/core` (v2 HTTP + multicast).                                              |
+| `cli/`                         | Rust CLI crate (`relay-cli`): interactive terminal client on top of `packages/core` (v2 HTTP + multicast).                                              |
 | `support/scripts/`             | Release/packaging scripts (per-platform builds, MSIX, Inno Setup, FOSS stripping).                                                                          |
 
-The four Rust crates (`packages/core`, `packages/localsend_isolates/rust`, `server`, `cli`) form a single Cargo workspace rooted at the repository root: one shared `Cargo.lock` and `target/`, and `[profile.*]` settings live only in the root `Cargo.toml` (member profiles would be ignored). Cargokit still builds the plugin crate into its own target dir during Flutter builds.
+The four Rust crates (`packages/core`, `packages/relay_isolates/rust`, `server`, `cli`) form a single Cargo workspace rooted at the repository root: one shared `Cargo.lock` and `target/`, and `[profile.*]` settings live only in the root `Cargo.toml` (member profiles would be ignored). Cargokit still builds the plugin crate into its own target dir during Flutter builds.
 
-Dependency direction: `app` → `localsend_isolates` → (`typed_isolates`, `rust_lib_localsend_app` → `localsend` core).
-The app depends on **only** `localsend_isolates` — not on `flutter_rust_bridge`, `typed_isolates`, or the plugin crate directly.
+Dependency direction: `app` → `relay_isolates` → (`typed_isolates`, `rust_lib_relay_app` → `relay` core).
+The app depends on **only** `relay_isolates` — not on `flutter_rust_bridge`, `typed_isolates`, or the plugin crate directly.
 
 ## Flutter version
 
@@ -60,10 +60,10 @@ Rust:
 ```bash
 cargo test --features full       # in packages/core — see "Core crate features" below
 cargo clippy --features full
-cargo check                      # in packages/localsend_isolates/rust, server, cli
+cargo check                      # in packages/relay_isolates/rust, server, cli
 ```
 
-FRB codegen — run from `packages/localsend_isolates/`:
+FRB codegen — run from `packages/relay_isolates/`:
 
 ```bash
 flutter_rust_bridge_codegen generate    # config in flutter_rust_bridge.yaml (dart_format_line_length: 150)
@@ -71,7 +71,7 @@ flutter_rust_bridge_codegen generate    # config in flutter_rust_bridge.yaml (da
 
 Codegen has a habit of rewriting `app/test/mocks.mocks.dart` at 80 columns; revert that file if it shows up in the diff.
 
-`packages/localsend_isolates` has its own `build.yaml`/`pubspec.yaml` and needs its own `pub get` + `build_runner` run when its models change. CI additionally runs `flutter pub get` in `packages/localsend_isolates/rust_builder/cargokit/build_tool`.
+`packages/relay_isolates` has its own `build.yaml`/`pubspec.yaml` and needs its own `pub get` + `build_runner` run when its models change. CI additionally runs `flutter pub get` in `packages/relay_isolates/rust_builder/cargokit/build_tool`.
 
 ## Core crate features
 
@@ -87,7 +87,7 @@ Models are `dart_mappable` (`@MappableClass`, `.mapper.dart` parts) with renamed
 
 ### Isolates
 
-The heavy networking never runs on the main isolate. `packages/localsend_isolates/lib/src/isolate/`:
+The heavy networking never runs on the main isolate. `packages/relay_isolates/lib/src/isolate/`:
 
 - `parent/parent_isolate_provider.dart` — `ParentIsolateState` holds one `IsolateConnector` per child (http scan discovery, multicast discovery, http upload, http server) plus a `SyncState` mirrored into every child. `IsolateSetupAction` spawns them.
 - `parent/actions.dart`, `parent/actions_sync.dart` — the only supported way for the app to talk to the children.
@@ -102,9 +102,9 @@ The HTTP server and client are Rust, not Dart. `packages/core/src/http/server/` 
 
 Integration is channel-based: `start_with_port` takes a `ServerConfigV2 { pin, event_tx, web_send }` and emits `ServerEventV2` events (`Register`, `PrepareUpload` with a `decision_tx` oneshot, `FileUpload` with a byte stream + `result_tx`, `PrepareDownload`, `SessionEnd`, `PrepareUploadAborted`, `CancelReceived`). Only **one upload session is active at a time**; cancellation safety comes from drop guards (`PendingSessionGuard`, `UploadGuard`, `PendingWebSessionGuard`). There is deliberately no `auto_accept` in core — the app auto-accepts by answering `decision_tx` immediately. New server→app interactions should extend `ServerEventV2` rather than adding side channels.
 
-The FRB layer (`packages/localsend_isolates/rust/src/api/server.rs`) exposes `start_server` + an opaque `RsHttpServer` whose `listen` merges the v2, web-send and internal channels into one `RsServerEvent` stream; responder oneshots stay on the Rust side. On the Dart side `child/server_isolate.dart` turns those into `HttpServerEvent`s, which `app/lib/provider/network/server/server_provider.dart` routes to `ReceiveController` / `SendController` — these are **event handlers, not route handlers**.
+The FRB layer (`packages/relay_isolates/rust/src/api/server.rs`) exposes `start_server` + an opaque `RsHttpServer` whose `listen` merges the v2, web-send and internal channels into one `RsServerEvent` stream; responder oneshots stay on the Rust side. On the Dart side `child/server_isolate.dart` turns those into `HttpServerEvent`s, which `app/lib/provider/network/server/server_provider.dart` routes to `ReceiveController` / `SendController` — these are **event handlers, not route handlers**.
 
-Save targets are decided in Dart (`prepareFileSaveTarget`) and written by Rust: a path, or an Android SAF file descriptor obtained through the `org.localsend.localsend_app/localsend` method channel. Gallery saves go through a cache file first.
+Save targets are decided in Dart (`prepareFileSaveTarget`) and written by Rust: a path, or an Android SAF file descriptor obtained through the `com.foresight.app.relay/relay` method channel. Gallery saves go through a cache file first.
 
 Server event `ip`s are `PeerIp` (IP + IPv6 scope): a link-local peer renders as `fe80::1%3`, which the HTTP client accepts back as a host, so event ips stay dialable.
 
@@ -121,7 +121,7 @@ Integration mirrors the HTTP server: `multicast::start` takes a `MulticastConfig
 
 UDP is **announce-only**: responses go back over HTTP as a unicast register request to the announcing device.
 
-One socket is bound per interface IPv4 address (`SO_REUSEPORT`/`SO_REUSEADDR` + `IP_MULTICAST_IF`), because a single socket only sends on one interface. Multicast loopback stays on so that instances on one host see each other; own messages are dropped by fingerprint. IPv6 is a LocalSend extension (group `ff12::fd3a:e420`, `DEFAULT_MULTICAST_GROUP_V6`), enabled by setting `group_v6`: one `IPV6_V6ONLY` socket per interface, joined by interface index. `Discovered` carries the source's scope ID (interface index), which link-local IPv6 sources need for the HTTP answer.
+One socket is bound per interface IPv4 address (`SO_REUSEPORT`/`SO_REUSEADDR` + `IP_MULTICAST_IF`), because a single socket only sends on one interface. Multicast loopback stays on so that instances on one host see each other; own messages are dropped by fingerprint. IPv6 is a Relay extension (group `ff12::fd3a:e420`, `DEFAULT_MULTICAST_GROUP_V6`), enabled by setting `group_v6`: one `IPV6_V6ONLY` socket per interface, joined by interface index. `Discovered` carries the source's scope ID (interface index), which link-local IPv6 sources need for the HTTP answer.
 
 ### i18n
 

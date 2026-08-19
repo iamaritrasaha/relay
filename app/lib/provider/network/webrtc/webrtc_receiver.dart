@@ -1,15 +1,15 @@
 import 'package:dart_mappable/dart_mappable.dart';
-import 'package:localsend_app/model/persistence/favorite_device.dart';
-import 'package:localsend_app/model/state/server/receive_session_state.dart';
-import 'package:localsend_app/model/state/settings_state.dart';
-import 'package:localsend_app/pages/receive_page.dart';
-import 'package:localsend_app/provider/network/webrtc/signaling_provider.dart';
-import 'package:localsend_app/provider/selection/selected_receiving_files_provider.dart';
-import 'package:localsend_isolates/model/dto/file_dto.dart' as dart_model;
-import 'package:localsend_isolates/model/session_status.dart';
-import 'package:localsend_isolates/model/stored_security_context.dart';
-import 'package:localsend_isolates/rust/api/model.dart';
-import 'package:localsend_isolates/rust/api/webrtc.dart';
+import 'package:relay_app/model/persistence/favorite_device.dart';
+import 'package:relay_app/model/state/server/receive_session_state.dart';
+import 'package:relay_app/model/state/settings_state.dart';
+import 'package:relay_app/pages/receive_page.dart';
+import 'package:relay_app/provider/network/webrtc/signaling_provider.dart';
+import 'package:relay_app/provider/selection/selected_receiving_files_provider.dart';
+import 'package:relay_isolates/model/dto/file_dto.dart' as dart_model;
+import 'package:relay_isolates/model/session_status.dart';
+import 'package:relay_isolates/model/stored_security_context.dart';
+import 'package:relay_isolates/rust/api/model.dart';
+import 'package:relay_isolates/rust/api/webrtc.dart';
 import 'package:refena_flutter/refena_flutter.dart';
 import 'package:routerino/routerino.dart';
 

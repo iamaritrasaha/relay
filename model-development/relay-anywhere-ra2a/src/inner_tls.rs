@@ -6,7 +6,7 @@ use std::{
 
 use anyhow::{Context as _, Result, bail};
 use iroh::endpoint::{RecvStream, SendStream};
-use localsend::crypto::{
+use relay_core::crypto::{
     relay_identity::RelayIdentity,
     relay_identity_proof::{
         PROOF_LEN, RelayIdentityProofV1, RelayProofRole, create_relay_identity_proof,

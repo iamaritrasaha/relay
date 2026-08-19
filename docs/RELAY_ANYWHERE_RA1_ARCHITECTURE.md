@@ -25,7 +25,7 @@ The following are invariants, not migration targets:
 
 - Android and Linux LAN discovery and transfer startup remain independent of Internet services.
 - `packages/core` HTTP/TLS server and client behavior remains unchanged.
-- Existing LocalSend/Relay files, folders, large-transfer, progress, cancel, and save-target behavior remains unchanged.
+- Existing Relay/Relay files, folders, large-transfer, progress, cancel, and save-target behavior remains unchanged.
 - The persistent Ed25519 `RelayIdentity`, its secure private-key storage, and `RelayId = SHA-256(canonical SPKI DER)` remain authoritative.
 - `RelayIdentityProofV1` remains unchanged. It signs the role, single-use 32-byte challenge, RelayId digest, and SHA-256 fingerprint of the actual TLS certificate. The transport must supply the observed certificate fingerprint; a network or rendezvous claim is never accepted as that value.
 - Existing LAN TLS, multicast/HTTP discovery, Android/Linux integrations, and the current app state/isolate boundaries are protected.
@@ -414,7 +414,7 @@ server/ or a separate workspace service
   rendezvous/        # tiny TTL control plane
   relay deployment   # pinned iroh-relay configuration, not app logic
 
-packages/localsend_isolates/
+packages/relay_isolates/
   future FRB tasks/events for lifecycle and path state only
 
 app/

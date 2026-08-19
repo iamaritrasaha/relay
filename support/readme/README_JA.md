@@ -1,20 +1,20 @@
-# LocalSend
+# Relay
 
 [![CI ステータス][ci-badge]][ci-workflow]
 
-[ci-badge]: https://github.com/localsend/localsend/actions/workflows/ci.yml/badge.svg
-[ci-workflow]: https://github.com/localsend/localsend/actions/workflows/ci.yml
+[ci-badge]: https://github.com/relay/relay/actions/workflows/ci.yml/badge.svg
+[ci-workflow]: https://github.com/relay/relay/actions/workflows/ci.yml
 
 [ホームページ][homepage] • [Discord][discord] • [GitHub][github] • [Codeberg][codeberg]
 
 [English (Default)](/README.md) • [Español](README_ES.md) • [فارسی](README_FA.md) • [Filipino](README_PH.md) • [Français](README_FR.md) • [Indonesia](README_ID.md) • [Italiano](README_IT.md) • [日本語](README_JA.md) • [ភាសាខ្មែរ](README_KM.md) • [한국어](README_KO.md) • [Polski](README_PL.md) • [Português Brasil](README_PT_BR.md) • [Русский](README_RU.md) • [ภาษาไทย](README_TH.md) • [Turkish](README_TR.md) • [Українська](README_UK.md) • [Tiếng Việt](README_VI.md) • [中文](README_ZH.md)
 
-[homepage]: https://localsend.org
+[homepage]: https://relay.org
 [discord]: https://discord.gg/GSRWmQNP87
-[github]: https://github.com/localsend/localsend
-[codeberg]: https://codeberg.org/localsend/localsend
+[github]: https://github.com/relay/relay
+[codeberg]: https://codeberg.org/relay/relay
 
-LocalSendは、インターネット接続を必要とせずに、ローカルネットワーク上で近くのデバイスとファイルやメッセージを安全に共有できる、無料のオープンソースアプリです。
+Relayは、インターネット接続を必要とせずに、ローカルネットワーク上で近くのデバイスとファイルやメッセージを安全に共有できる、無料のオープンソースアプリです。
 
 - [概要](#概要)
 - [スクリーンショット](#スクリーンショット)
@@ -33,11 +33,11 @@ LocalSendは、インターネット接続を必要とせずに、ローカル�
 
 ## 概要
 
-LocalSendは、REST APIとHTTPS暗号化を使用してデバイス間の安全な通信を可能にするクロスプラットフォームアプリです。他のメッセージングアプリが外部サーバーに依存するのとは異なり、LocalSendはインターネット接続やサードパーティのサーバーを必要とせず、ローカル通信のための迅速で信頼性の高いソリューションとなります。
+Relayは、REST APIとHTTPS暗号化を使用してデバイス間の安全な通信を可能にするクロスプラットフォームアプリです。他のメッセージングアプリが外部サーバーに依存するのとは異なり、Relayはインターネット接続やサードパーティのサーバーを必要とせず、ローカル通信のための迅速で信頼性の高いソリューションとなります。
 
 ## スクリーンショット
 
-<img src="https://localsend.org/img/screenshot-iphone.webp" alt="iPhoneのスクリーンショット" height="300"/> <img src="https://localsend.org/img/screenshot-pc.webp" alt="PCのスクリーンショット" height="300"/>
+<img src="https://relay.org/img/screenshot-iphone.webp" alt="iPhoneのスクリーンショット" height="300"/> <img src="https://relay.org/img/screenshot-pc.webp" alt="PCのスクリーンショット" height="300"/>
 
 ## ダウンロード
 
@@ -56,20 +56,20 @@ LocalSendは、REST APIとHTTPS暗号化を使用してデバイス間の安全�
 [distribution channels]について詳しく読む。
 
 [windows store]: https://www.microsoft.com/store/apps/9NCB4Z0TZ6RR
-[app store]: https://apps.apple.com/us/app/localsend/id1661733229
-[play store]: https://play.google.com/store/apps/details?id=org.localsend.localsend_app
-[f-droid]: https://f-droid.org/packages/org.localsend.localsend_app
+[app store]: https://apps.apple.com/us/app/relay/id1661733229
+[play store]: https://play.google.com/store/apps/details?id=com.foresight.app.relay
+[f-droid]: https://f-droid.org/packages/com.foresight.app.relay
 [amazon]: https://www.amazon.com/dp/B0BW6MP732
-[winget]: https://github.com/microsoft/winget-pkgs/tree/master/manifests/l/LocalSend/LocalSend
-[scoop]: https://scoop.sh/#/apps?s=0&d=1&o=true&q=localsend&id=fb88113be361ca32c0dcac423cb4afdeda0b0c66
-[chocolatey]: https://community.chocolatey.org/packages/localsend
-[homebrew]: https://formulae.brew.sh/cask/localsend
-[flathub]: https://flathub.org/apps/details/org.localsend.localsend_app
-[nixpkgs]: https://search.nixos.org/packages?show=localsend
-[snap]: https://snapcraft.io/localsend
-[aur]: https://aur.archlinux.org/packages/localsend-bin
-[latest]: https://github.com/localsend/localsend/releases/latest
-[distribution channels]: https://github.com/localsend/localsend/blob/main/CONTRIBUTING.md#distribution
+[winget]: https://github.com/microsoft/winget-pkgs/tree/master/manifests/l/Relay/Relay
+[scoop]: https://scoop.sh/#/apps?s=0&d=1&o=true&q=relay&id=fb88113be361ca32c0dcac423cb4afdeda0b0c66
+[chocolatey]: https://community.chocolatey.org/packages/relay
+[homebrew]: https://formulae.brew.sh/cask/relay
+[flathub]: https://flathub.org/apps/details/com.foresight.app.relay
+[nixpkgs]: https://search.nixos.org/packages?show=relay
+[snap]: https://snapcraft.io/relay
+[aur]: https://aur.archlinux.org/packages/relay-bin
+[latest]: https://github.com/relay/relay/releases/latest
+[distribution channels]: https://github.com/relay/relay/blob/main/CONTRIBUTING.md#distribution
 
 **互換性**
 
@@ -77,45 +77,45 @@ LocalSendは、REST APIとHTTPS暗号化を使用してデバイス間の安全�
 |----------|-----------------|-----------------------------------------------------------------------------------------------------------------------------|
 | Android  | 5.0             | -                                                                                                                           |
 | iOS      | 12.0            | -                                                                                                                           |
-| macOS    | 11 Big Sur      | OpenCore Legacy Patcher 2.0.2を使用してください（[#1005](https://github.com/localsend/localsend/issues/1005#issuecomment-2449899384)を参照） |
+| macOS    | 11 Big Sur      | OpenCore Legacy Patcher 2.0.2を使用してください（[#1005](https://github.com/relay/relay/issues/1005#issuecomment-2449899384)を参照） |
 | Windows  | 10              | Windows 7をサポートする最後のバージョンはv1.15.4です。将来、Windows 7用の新しいバージョンのバックポートがある可能性があります。   |
 | Linux    | N.A.            | 依存関係: Gnome: `xdg-desktop-portal` および `xdg-desktop-portal-gtk`, KDE: `xdg-desktop-portal` および `xdg-desktop-portal-kde` |
 
 ## 仕組み
 
-LocalSendは、デバイスがREST APIを使用して通信できる安全な通信プロトコルを使用しています。すべてのデータはHTTPSで安全に送信され、TLS/SSL証明書は各デバイスで動的に生成され、最大限のセキュリティを確保します。
+Relayは、デバイスがREST APIを使用して通信できる安全な通信プロトコルを使用しています。すべてのデータはHTTPSで安全に送信され、TLS/SSL証明書は各デバイスで動的に生成され、最大限のセキュリティを確保します。
 
-LocalSendプロトコルの詳細については、[ドキュメント](https://github.com/localsend/protocol)を参照してください。
+Relayプロトコルの詳細については、[ドキュメント](https://github.com/relay/protocol)を参照してください。
 
 ## 始め方
 
-ソースコードからLocalSendをコンパイルするには、次の手順に従います：
+ソースコードからRelayをコンパイルするには、次の手順に従います：
 
 1. Flutterを[直接](https://flutter.dev)または[fvm](https://fvm.app)を使用してインストールします（[必要なバージョン](.fvmrc)を参照）。
-2. `LocalSend`リポジトリをクローンします。
+2. `Relay`リポジトリをクローンします。
 3. `cd app`を実行してappディレクトリに入ります。
 4. `flutter pub get`を実行して依存関係をダウンロードします。
 5. `flutter run`を実行してアプリを起動します。
 
 > [!NOTE]
-> LocalSendは現在、古いFlutterバージョン（[.fvmrc](.fvmrc)に指定）を必要とし、そのためビルドの問題は必要なバージョンと（システム全体の）インストールされたFlutterバージョンの不一致によって引き起こされる可能性があります。  
-> 開発をより一貫性のあるものにするために、LocalSendは[fvm](https://fvm.app)を使用してプロジェクトのFlutterバージョンを管理します。
+> Relayは現在、古いFlutterバージョン（[.fvmrc](.fvmrc)に指定）を必要とし、そのためビルドの問題は必要なバージョンと（システム全体の）インストールされたFlutterバージョンの不一致によって引き起こされる可能性があります。
+> 開発をより一貫性のあるものにするために、Relayは[fvm](https://fvm.app)を使用してプロジェクトのFlutterバージョンを管理します。
 > `fvm`をインストールした後、`flutter`の代わりに`fvm flutter`を実行します。
 
 ## 貢献
 
-LocalSendの改善に興味のある方からの貢献を歓迎します。貢献したい場合は、いくつかの方法があります：
+Relayの改善に興味のある方からの貢献を歓迎します。貢献したい場合は、いくつかの方法があります：
 
 ### 翻訳
 
-LocalSendを他の言語に翻訳するのをお手伝いください！**推奨される方法**: [Weblate](https://hosted.weblate.org/projects/localsend/app)プラットフォームを使用して翻訳を管理してください。
+Relayを他の言語に翻訳するのをお手伝いください！**推奨される方法**: [Weblate](https://hosted.weblate.org/projects/relay/app)プラットフォームを使用して翻訳を管理してください。
 
 **別の方法**: このリポジトリをフォークして翻訳を手動で追加することもできます。
 
-翻訳は[app/assets/i18n](https://github.com/localsend/localsend/tree/main/app/assets/i18n)ディレクトリにあります。翻訳を追加または更新するには、`_missing_translations_<locale>.json`または`strings_<locale>.i18n.json`ファイルを編集してください。
+翻訳は[app/assets/i18n](https://github.com/relay/relay/tree/main/app/assets/i18n)ディレクトリにあります。翻訳を追加または更新するには、`_missing_translations_<locale>.json`または`strings_<locale>.i18n.json`ファイルを編集してください。
 
-<a href="https://hosted.weblate.org/engage/localsend/">
-<img src="https://hosted.weblate.org/widget/localsend/app/multi-auto.svg" alt="翻訳ステータス" />
+<a href="https://hosted.weblate.org/engage/relay/">
+<img src="https://hosted.weblate.org/widget/relay/app/multi-auto.svg" alt="翻訳ステータス" />
 </a>
 
 **_注意：_ `@`で装飾されたフィールドは翻訳のためのものではありません；それらはアプリで使用されていない情報テキストであり、翻訳者に文脈を提供するためのものです。**
@@ -123,9 +123,9 @@ LocalSendを他の言語に翻訳するのをお手伝いください！**推奨
 ### バグ修正と改善
 
 - **バグ修正：** バグを見つけた場合は、問題の説明と修正方法を明確に記載したプルリクエストを作成してください。
-- **改善：** LocalSendを改善するアイデアがありますか？改善が必要な理由を議論するために、最初に問題を作成してください。
+- **改善：** Relayを改善するアイデアがありますか？改善が必要な理由を議論するために、最初に問題を作成してください。
 
-詳細については、[貢献ガイド](https://github.com/localsend/localsend/blob/main/CONTRIBUTING.md)を参照してください。
+詳細については、[貢献ガイド](https://github.com/relay/relay/blob/main/CONTRIBUTING.md)を参照してください。
 
 ## トラブルシューティング
 
@@ -140,6 +140,6 @@ LocalSendを他の言語に翻訳するのをお手伝いください！**推奨
 
 ## 貢献者
 
-<a href="https://github.com/localsend/localsend/graphs/contributors">
-  <img src="https://contrib.rocks/image?repo=localsend/localsend"  alt="Localsendの貢献者"/>
+<a href="https://github.com/relay/relay/graphs/contributors">
+  <img src="https://contrib.rocks/image?repo=relay/relay"  alt="Relayの貢献者"/>
 </a>

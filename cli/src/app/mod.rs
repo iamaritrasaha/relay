@@ -12,15 +12,15 @@ use crate::slots::Slots;
 use crate::storage;
 use crate::ui::{Category, Ui};
 use crossterm::event::{Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
-use localsend::discovery::{
+use relay_core::discovery::{
     DEFAULT_DISCOVERY_TIMEOUT, DeviceIdentity, DiscoveryConfig, DiscoveryEvent, DiscoveryHandle,
 };
-use localsend::http::server::v2::ServerEventV2;
-use localsend::http::server::web::WebSendEvent;
-use localsend::http::server::{ServerConfigV2, ServerHandle, start_with_port};
-use localsend::model::discovery::ProtocolType;
-use localsend::multicast::{DEFAULT_MULTICAST_GROUP, DEFAULT_MULTICAST_GROUP_V6, DEFAULT_PORT};
-use localsend::util::interface::{InterfaceFilter, local_interface_addresses};
+use relay_core::http::server::v2::ServerEventV2;
+use relay_core::http::server::web::WebSendEvent;
+use relay_core::http::server::{ServerConfigV2, ServerHandle, start_with_port};
+use relay_core::model::discovery::ProtocolType;
+use relay_core::multicast::{DEFAULT_MULTICAST_GROUP, DEFAULT_MULTICAST_GROUP_V6, DEFAULT_PORT};
+use relay_core::util::interface::{InterfaceFilter, local_interface_addresses};
 use receive::{Answer, PendingReceive, ReceiveSession};
 use sending::SendState;
 use std::path::PathBuf;
@@ -130,7 +130,7 @@ pub async fn run(args: Args) -> anyhow::Result<()> {
     let (discovery_tx, mut discovery_rx) = mpsc::channel::<DiscoveryEvent>(16);
     let (discovery_stop_tx, discovery_stop_rx) = oneshot::channel::<()>();
     let discovery = Arc::new(
-        localsend::discovery::start(
+        relay_core::discovery::start(
             DiscoveryConfig {
                 group: DEFAULT_MULTICAST_GROUP,
                 group_v6: Some(DEFAULT_MULTICAST_GROUP_V6),

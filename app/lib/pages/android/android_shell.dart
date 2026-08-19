@@ -1,12 +1,12 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
-import 'package:localsend_app/config/relay_brand.dart';
-import 'package:localsend_app/pages/android/android_activity_page.dart';
-import 'package:localsend_app/pages/android/android_home_page.dart';
-import 'package:localsend_app/pages/android/android_settings_page.dart';
-import 'package:localsend_app/pages/relay_home_vm.dart';
-import 'package:localsend_app/widget/dialogs/relay_pair_device_dialog.dart';
+import 'package:relay_app/config/relay_brand.dart';
+import 'package:relay_app/pages/android/android_activity_page.dart';
+import 'package:relay_app/pages/android/android_home_page.dart';
+import 'package:relay_app/pages/android/android_settings_page.dart';
+import 'package:relay_app/pages/relay_home_vm.dart';
+import 'package:relay_app/widget/dialogs/relay_pair_device_dialog.dart';
 
 /// Android Material 3 root presentation shell.
 class AndroidShell extends StatefulWidget {

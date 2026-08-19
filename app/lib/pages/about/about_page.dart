@@ -1,14 +1,14 @@
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
-import 'package:localsend_app/config/relay_brand.dart';
-import 'package:localsend_app/gen/strings.g.dart';
-import 'package:localsend_app/pages/debug/debug_page.dart';
-import 'package:localsend_app/provider/version_provider.dart';
-import 'package:localsend_app/util/i18n.dart';
-import 'package:localsend_app/widget/relay/relay_desktop_metrics.dart';
-import 'package:localsend_app/widget/relay/relay_top_bar.dart';
-import 'package:localsend_app/widget/relay_symbol.dart';
-import 'package:localsend_app/widget/responsive_list_view.dart';
+import 'package:relay_app/config/relay_brand.dart';
+import 'package:relay_app/gen/strings.g.dart';
+import 'package:relay_app/pages/debug/debug_page.dart';
+import 'package:relay_app/provider/version_provider.dart';
+import 'package:relay_app/util/i18n.dart';
+import 'package:relay_app/widget/relay/relay_desktop_metrics.dart';
+import 'package:relay_app/widget/relay/relay_top_bar.dart';
+import 'package:relay_app/widget/relay_symbol.dart';
+import 'package:relay_app/widget/responsive_list_view.dart';
 import 'package:refena_flutter/refena_flutter.dart';
 import 'package:routerino/routerino.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -52,7 +52,7 @@ class AboutPage extends StatelessWidget {
 /// Relay's identity block: the mark and version on one side, the ownership,
 /// upstream attribution and legal actions on the other, separated by a rule.
 ///
-/// Relay is not co-branded with LocalSend here — the attribution is deliberately
+/// Relay is not co-branded with Relay here — the attribution is deliberately
 /// tertiary and sits with the licence actions it belongs to.
 class RelayAboutIdentity extends StatelessWidget {
   /// Overrides the resolved package version. Only supplied by review renders;
@@ -179,7 +179,7 @@ class _AboutActions extends StatelessWidget {
       _AboutAction(
         label: 'Upstream source',
         icon: Icons.code_rounded,
-        onPressed: () async => launchUrl(Uri.parse('https://github.com/localsend/localsend'), mode: LaunchMode.externalApplication),
+        onPressed: () async => launchUrl(Uri.parse('https://github.com/relay/relay'), mode: LaunchMode.externalApplication),
       ),
       _AboutAction(
         label: 'Apache License 2.0',

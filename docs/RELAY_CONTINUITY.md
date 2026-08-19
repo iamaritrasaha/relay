@@ -10,13 +10,13 @@ platform limits behind every capability that is not simply "available".
 ## Trust boundary
 
 Continuity data is sensitive, so the entry point is narrow by construction.
-`localsend::continuity::run_session` takes an `AuthenticatedRelaySession`, whose
+`relay_core::continuity::run_session` takes an `AuthenticatedRelaySession`, whose
 only constructor is `RelayAuthCoordinator` after a verified
 `RelayIdentityProofV1`. There is no conversion into that type from:
 
 * `LegacyLanInboundSession` — the legacy LAN path, whose peer RelayId is claimed
   rather than proven;
-* `LocalSendPeer` — LocalSend compatibility peers have no RelayId at all;
+* `RelayPeer` — Relay compatibility peers have no RelayId at all;
 * a LAN discovery observation, a display name, an IP, an Iroh `EndpointId`, or a
   stored `RelayAddressV1`.
 

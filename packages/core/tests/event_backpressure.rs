@@ -8,15 +8,15 @@
 //! application to catch up would stall an HTTP request handler, or a scan, for
 //! as long as the application is busy.
 
-use localsend::crypto::cert::generate_self_signed;
-use localsend::discovery::{self, DeviceIdentity, DiscoveryConfig, DiscoveryEvent};
-use localsend::http::client::LsHttpClientV2;
-use localsend::http::dto_v2::RegisterDtoV2;
-use localsend::http::server::v2::ServerEventV2;
-use localsend::http::server::{start_with_port, ServerConfigV2};
-use localsend::http::state::ClientInfo;
-use localsend::model::discovery::{DeviceType, ProtocolType, PROTOCOL_VERSION_V2};
-use localsend::multicast::MulticastDevice;
+use relay_core::crypto::cert::generate_self_signed;
+use relay_core::discovery::{self, DeviceIdentity, DiscoveryConfig, DiscoveryEvent};
+use relay_core::http::client::LsHttpClientV2;
+use relay_core::http::dto_v2::RegisterDtoV2;
+use relay_core::http::server::v2::ServerEventV2;
+use relay_core::http::server::{start_with_port, ServerConfigV2};
+use relay_core::http::state::ClientInfo;
+use relay_core::model::discovery::{DeviceType, ProtocolType, PROTOCOL_VERSION_V2};
+use relay_core::multicast::MulticastDevice;
 use std::net::Ipv4Addr;
 use std::sync::atomic::{AtomicU16, Ordering};
 use std::time::Duration;

@@ -1,20 +1,20 @@
 import 'dart:typed_data';
 
-import 'package:localsend_app/model/cross_file.dart';
-import 'package:localsend_app/model/persistence/relay_paired_address.dart';
-import 'package:localsend_app/provider/http_provider.dart';
-import 'package:localsend_app/provider/network/send_provider.dart';
-import 'package:localsend_app/provider/relay_identity_provider.dart';
-import 'package:localsend_app/provider/relay_remote_transfer_provider.dart';
-import 'package:localsend_app/provider/settings_provider.dart';
-import 'package:localsend_app/util/security/relay_identity_coordinator.dart';
-import 'package:localsend_isolates/model/device.dart';
-import 'package:localsend_isolates/rust/api/cancel.dart' as rust_cancel;
-import 'package:localsend_isolates/rust/api/http.dart' as rust_http;
-import 'package:localsend_isolates/rust/api/relay_anywhere.dart' as rust_relay_anywhere;
-import 'package:localsend_isolates/util/android_channel.dart' show getFileDescriptorAndroid;
-import 'package:localsend_isolates/util/file_hash.dart';
-import 'package:localsend_isolates/util/rust.dart';
+import 'package:relay_app/model/cross_file.dart';
+import 'package:relay_app/model/persistence/relay_paired_address.dart';
+import 'package:relay_app/provider/http_provider.dart';
+import 'package:relay_app/provider/network/send_provider.dart';
+import 'package:relay_app/provider/relay_identity_provider.dart';
+import 'package:relay_app/provider/relay_remote_transfer_provider.dart';
+import 'package:relay_app/provider/settings_provider.dart';
+import 'package:relay_app/util/security/relay_identity_coordinator.dart';
+import 'package:relay_isolates/model/device.dart';
+import 'package:relay_isolates/rust/api/cancel.dart' as rust_cancel;
+import 'package:relay_isolates/rust/api/http.dart' as rust_http;
+import 'package:relay_isolates/rust/api/relay_anywhere.dart' as rust_relay_anywhere;
+import 'package:relay_isolates/util/android_channel.dart' show getFileDescriptorAndroid;
+import 'package:relay_isolates/util/file_hash.dart';
+import 'package:relay_isolates/util/rust.dart';
 import 'package:refena_flutter/refena_flutter.dart';
 
 /// Product send entrypoint used by Relay Home.

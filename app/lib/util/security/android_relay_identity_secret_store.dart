@@ -1,7 +1,7 @@
 import 'dart:typed_data';
 
-import 'package:localsend_app/util/native/channel/android_channel.dart';
-import 'package:localsend_app/util/security/relay_identity_secret_store.dart';
+import 'package:relay_app/util/native/channel/android_channel.dart';
+import 'package:relay_app/util/security/relay_identity_secret_store.dart';
 
 /// Android implementation backed by the app-owned native MethodChannel.
 class AndroidRelayIdentitySecretStore implements RelayIdentitySecretStore {

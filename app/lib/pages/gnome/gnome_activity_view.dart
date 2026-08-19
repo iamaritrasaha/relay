@@ -1,16 +1,16 @@
 import 'package:flutter/material.dart';
-import 'package:localsend_app/config/relay_brand.dart';
-import 'package:localsend_app/model/continuity/continuity_runtime.dart';
-import 'package:localsend_app/provider/continuity/continuity_provider.dart';
-import 'package:localsend_app/provider/receive_history_provider.dart';
-import 'package:localsend_app/util/native/open_file.dart';
-import 'package:localsend_app/util/native/open_folder.dart';
-import 'package:localsend_app/widget/dialogs/history_clear_dialog.dart';
-import 'package:localsend_app/widget/gnome/adw_action_row.dart';
-import 'package:localsend_app/widget/gnome/adw_boxed_list.dart';
-import 'package:localsend_app/widget/gnome/adw_button.dart';
-import 'package:localsend_app/widget/gnome/adw_status_page.dart';
-import 'package:localsend_isolates/util/file_size_helper.dart';
+import 'package:relay_app/config/relay_brand.dart';
+import 'package:relay_app/model/continuity/continuity_runtime.dart';
+import 'package:relay_app/provider/continuity/continuity_provider.dart';
+import 'package:relay_app/provider/receive_history_provider.dart';
+import 'package:relay_app/util/native/open_file.dart';
+import 'package:relay_app/util/native/open_folder.dart';
+import 'package:relay_app/widget/dialogs/history_clear_dialog.dart';
+import 'package:relay_app/widget/gnome/adw_action_row.dart';
+import 'package:relay_app/widget/gnome/adw_boxed_list.dart';
+import 'package:relay_app/widget/gnome/adw_button.dart';
+import 'package:relay_app/widget/gnome/adw_status_page.dart';
+import 'package:relay_isolates/util/file_size_helper.dart';
 import 'package:refena_flutter/refena_flutter.dart';
 
 /// GNOME dedicated Activity view.

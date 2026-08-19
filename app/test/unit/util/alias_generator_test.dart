@@ -1,5 +1,5 @@
 import 'package:flutter/foundation.dart';
-import 'package:localsend_app/util/alias_generator.dart';
+import 'package:relay_app/util/alias_generator.dart';
 import 'package:test/test.dart';
 
 void main() {

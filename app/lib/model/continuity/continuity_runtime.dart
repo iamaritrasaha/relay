@@ -1,5 +1,5 @@
-import 'package:localsend_app/model/persistence/relay_continuity_settings.dart';
-import 'package:localsend_app/util/native/continuity_channel.dart';
+import 'package:relay_app/model/persistence/relay_continuity_settings.dart';
+import 'package:relay_app/util/native/continuity_channel.dart';
 
 /// Live, presentation-facing continuity state. Nothing here is persisted, and
 /// nothing here is authorization: it only describes what is currently true.

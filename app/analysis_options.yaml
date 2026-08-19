@@ -19,7 +19,7 @@ analyzer:
     - submodules/**
     # RA2B development harness. It compiles only in the harness bridge
     # configuration (rust feature `ra2b-harness` plus a regeneration with
-    # packages/localsend_isolates/flutter_rust_bridge.ra2b.yaml). The production
+    # packages/relay_isolates/flutter_rust_bridge.ra2b.yaml). The production
     # app never reaches these files. Removed entirely in RA4C3.
     - lib/main_ra2b.dart
     - lib/pages/ra2b_proof_page.dart

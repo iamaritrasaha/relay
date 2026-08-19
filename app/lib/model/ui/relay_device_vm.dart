@@ -1,5 +1,5 @@
-import 'package:localsend_app/model/ui/relay_capability_vm.dart';
-import 'package:localsend_isolates/model/device.dart';
+import 'package:relay_app/model/ui/relay_capability_vm.dart';
+import 'package:relay_isolates/model/device.dart';
 
 enum RelayDevicePhase {
   idle,
@@ -12,7 +12,7 @@ enum RelayDevicePhase {
 
 /// UI target namespace. Nearby observations remain unresolved LAN candidates;
 /// a paired route is keyed by an authenticated RelayId and is never folded
-/// into a LocalSend compatibility peer.
+/// into a Relay compatibility peer.
 enum RelayDeviceTargetKind { unresolvedLan, verifiedRelay, pairedRelay }
 
 /// Immutable, presentation-only description of a Relay target device.
@@ -66,7 +66,7 @@ class RelayDeviceVm {
   });
 
   bool get isVerifiedRelay => targetKind == RelayDeviceTargetKind.verifiedRelay || targetKind == RelayDeviceTargetKind.pairedRelay;
-  bool get isLocalSend => targetKind == RelayDeviceTargetKind.unresolvedLan;
+  bool get isRelay => targetKind == RelayDeviceTargetKind.unresolvedLan;
   bool get isPaired => targetKind == RelayDeviceTargetKind.pairedRelay;
 
   String get statusSummary {
@@ -79,8 +79,8 @@ class RelayDeviceVm {
     if (phase == RelayDevicePhase.failed) {
       return 'Transfer failed';
     }
-    if (isLocalSend) {
-      return 'LocalSend · Nearby';
+    if (isRelay) {
+      return 'Relay · Nearby';
     }
     if (continuityConnected) {
       // "Connected" means an authenticated continuity session is live, which is
@@ -95,10 +95,10 @@ class RelayDeviceVm {
 
   /// Capability states for display.
   ///
-  /// LocalSend-compatible peers get files and nothing else: continuity never
+  /// Relay-compatible peers get files and nothing else: continuity never
   /// reaches a peer that cannot prove a RelayId.
   Map<RelayCapability, CapabilityStatus> get capabilityStatuses {
-    if (isLocalSend) {
+    if (isRelay) {
       return const {
         RelayCapability.files: CapabilityStatus.available,
         RelayCapability.clipboard: CapabilityStatus.unavailable,

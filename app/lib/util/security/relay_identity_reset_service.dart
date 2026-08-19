@@ -1,4 +1,4 @@
-import 'package:localsend_app/util/security/relay_identity_coordinator.dart';
+import 'package:relay_app/util/security/relay_identity_coordinator.dart';
 
 /// Retries a signer-protected identity reset once after the server has been
 /// completely stopped. UI wiring can use this narrow service without deleting

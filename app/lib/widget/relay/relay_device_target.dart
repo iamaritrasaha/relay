@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
-import 'package:localsend_app/config/relay_brand.dart';
-import 'package:localsend_app/config/relay_motion.dart';
-import 'package:localsend_app/model/ui/relay_device_vm.dart';
-import 'package:localsend_app/widget/relay/relay_desktop_metrics.dart';
-import 'package:localsend_app/widget/relay/relay_device_silhouette.dart';
-import 'package:localsend_app/widget/relay/relay_progress_ring.dart';
+import 'package:relay_app/config/relay_brand.dart';
+import 'package:relay_app/config/relay_motion.dart';
+import 'package:relay_app/model/ui/relay_device_vm.dart';
+import 'package:relay_app/widget/relay/relay_desktop_metrics.dart';
+import 'package:relay_app/widget/relay/relay_device_silhouette.dart';
+import 'package:relay_app/widget/relay/relay_progress_ring.dart';
 
 /// A nearby device, drawn as a restrained dimensional medallion.
 ///
