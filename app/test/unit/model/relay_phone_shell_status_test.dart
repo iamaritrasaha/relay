@@ -28,6 +28,8 @@ RsKdeConnectDevice kdeDevice({
   identityMismatch: false,
   batteryPercentage: batteryPercentage,
   batteryIsCharging: batteryIsCharging,
+  incomingCapabilities: const [],
+  outgoingCapabilities: const [],
 );
 
 List<RelayDeviceVm> devicesFor(List<RsKdeConnectDevice> kdeConnectDevices) => RelayHomeVm.fromState(
@@ -245,8 +247,15 @@ void main() {
       expect(snapshot.toBridgeMap()['networkKind'], 'cellular');
     });
 
-    test('a signal without a network is not presentable', () {
-      expect(status(signalLevel: 3).signalLevel, isNull);
+    test('a signal without a network label is still presentable', () {
+      expect(status(signalLevel: 3).signalLevel, 3);
+      expect(status(signalLevel: 3).toBridgeMap()['signalLevel'], 3);
+    });
+
+    test('every normalized signal level survives exactly', () {
+      for (var level = 0; level <= 4; level++) {
+        expect(status(signalLevel: level).signalLevel, level);
+      }
     });
 
     test('an absurd signal is dropped', () {

@@ -137,9 +137,10 @@ class RelayPhoneShellStatus {
       batteryIsStale: battery == null ? false : batteryIsStale,
       networkKind: network,
       networkLabel: label,
-      // A signal bucket without a network to attach it to would render as a
-      // free-floating set of bars, so it travels with the network fields.
-      signalLevel: network == null || signalLevel == null || signalLevel < 0 || signalLevel > 4 ? null : signalLevel,
+      // Signal is independently useful. A connectivity provider may know the
+      // level before a carrier label, and the shell can present that honest
+      // partial answer without inventing a network kind.
+      signalLevel: signalLevel == null || signalLevel < 0 || signalLevel > 4 ? null : signalLevel,
       unreadMessageCount: unreadMessageCount == null || unreadMessageCount < 0 ? null : unreadMessageCount,
       notificationCount: notificationCount == null || notificationCount < 0 ? null : notificationCount,
       supportsFindDevice: supportsFindDevice,

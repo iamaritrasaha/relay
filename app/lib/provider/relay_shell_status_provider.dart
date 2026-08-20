@@ -9,6 +9,7 @@ import 'package:relay_app/model/ui/relay_device_vm.dart';
 import 'package:relay_app/model/ui/relay_phone_shell_status.dart';
 import 'package:relay_app/pages/relay_home_vm.dart';
 import 'package:relay_app/provider/kdeconnect_provider.dart';
+import 'package:relay_app/provider/relay_desktop_notification_service.dart';
 import 'package:relay_app/util/native/tray_helper.dart';
 
 final _logger = Logger('RelayShellStatus');
@@ -43,6 +44,7 @@ class RelayShellStatusBridge {
   final DateTime Function() _now;
 
   final List<StreamSubscription<void>> _subscriptions = [];
+  RelayDesktopNotificationService? _desktopNotificationService;
   RelayPhoneShellStatus? _published;
   bool _hasPublished = false;
 
@@ -118,8 +120,13 @@ class RelayShellStatusBridge {
     }
   }
 
-  void attachTo({required Stream<List<RelayDeviceVm>> devices, required Stream<Map<String, int>> notificationCounts}) {
+  void attachTo({
+    required Stream<List<RelayDeviceVm>> devices,
+    required Stream<Map<String, int>> notificationCounts,
+    RelayDesktopNotificationService? desktopNotificationService,
+  }) {
     unawaited(dispose());
+    _desktopNotificationService = desktopNotificationService;
     _subscriptions.add(
       devices.listen(
         (list) => unawaited(apply(devices: list)),
@@ -139,6 +146,8 @@ class RelayShellStatusBridge {
       await subscription.cancel();
     }
     _subscriptions.clear();
+    await _desktopNotificationService?.dispose();
+    _desktopNotificationService = null;
   }
 }
 
@@ -149,6 +158,47 @@ class RelayShellStatusBridge {
 Map<String, int> relayNotificationCounts(Map<String, List<Object?>> notifications) => {
   for (final entry in notifications.entries) '$_kdeConnectKeyPrefix${entry.key}': entry.value.length,
 };
+
+/// Reads the platform-side ShellSurface watch before Relay creates its tray.
+///
+/// The native runner starts watching as soon as the Flutter engine exists, so
+/// this query is authoritative even when the extension appeared before Dart's
+/// method handler was installed. Failure safely falls back to the normal tray.
+Future<bool> isRelayShellSurfaceAttached() async {
+  if (defaultTargetPlatform != TargetPlatform.linux) {
+    return false;
+  }
+  try {
+    return await _channel.invokeMethod<bool>(_methodSurfaceQuery) ?? false;
+  } catch (e) {
+    _logger.fine('Querying the initial shell surface failed', e);
+    return false;
+  }
+}
+
+/// Starts the minimal surface/tray handler needed during early application
+/// bootstrap, before Refena and the full phone-status bridge exist.
+///
+/// Installing the handler before querying closes the appear-between-query-and-
+/// tray-create race. [startRelayShellStatusBridge] later replaces this handler
+/// and immediately re-queries the native cached state, so the handoff is also
+/// authoritative.
+Future<bool> prepareRelayShellSurfaceTraySync() async {
+  if (defaultTargetPlatform != TargetPlatform.linux) {
+    return false;
+  }
+  _channel.setMethodCallHandler((call) async {
+    if (call.method == _methodSurfaceChanged) {
+      if (call.arguments == true) {
+        await hideTrayIcon();
+      } else {
+        await restoreTrayIcon();
+      }
+    }
+    return null;
+  });
+  return isRelayShellSurfaceAttached();
+}
 
 /// Starts the shell status bridge for the current desktop session.
 ///
@@ -197,13 +247,18 @@ Future<RelayShellStatusBridge?> startRelayShellStatusBridge(Ref ref) async {
     _logger.fine('Querying the shell surface failed', e);
   }
 
+  final desktopNotificationService = RelayDesktopNotificationService();
+  desktopNotificationService.start(ref.stream(kdeConnectProvider).map((event) => event.next.notifications));
+
   bridge.attachTo(
     devices: ref.stream(relayHomeVmProvider).map((event) => event.next.devices),
     notificationCounts: ref.stream(kdeConnectProvider).map((event) => relayNotificationCounts(event.next.notifications)),
+    desktopNotificationService: desktopNotificationService,
   );
   await bridge.apply(
     devices: ref.read(relayHomeVmProvider).devices,
     notificationCounts: relayNotificationCounts(ref.read(kdeConnectProvider).notifications),
   );
+
   return bridge;
 }

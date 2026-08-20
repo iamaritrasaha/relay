@@ -3,23 +3,61 @@
  * The shell theme already draws panel buttons as capsules, with hover, focus
  * and open states, the right padding for the current panel height, and the
  * session's own font. This sheet deliberately sets neither font nor colour: it
- * only spaces the pill's groups so they read as groups, and sizes icons in em
- * so the pill grows with the user's text size.
+ * only gives the permanent status slots a shared rhythm and deliberately
+ * sizes their symbolic artwork.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
 
 .relay-pill-box {
-  spacing: 8px;
+  spacing: 0;
+  padding-left: 9px;
+  padding-right: 9px;
 }
 
 .relay-pill-segment {
   spacing: 4px;
 }
 
-.relay-pill-icon {
-  icon-size: 1.091em;
+/* The outer slot establishes the rhythm. Each icon has its own intrinsic
+ * padding, so optical offsets belong on individual slots in JS when needed. */
+.relay-status-icon-slot {
+  width: 20px;
+  height: 20px;
+  min-width: 20px;
+  min-height: 20px;
 }
+
+.relay-status-icon-slot .relay-pill-icon {
+  width: 18px;
+  height: 18px;
+  icon-size: 18px;
+}
+
+/* ── Signal bars ────────────────────────────────────────────────────────── */
+
+/* Fixed wrapper for the one Cairo surface that paints all four bars. */
+.relay-signal-slot {
+  min-width: 20px;
+  min-height: 20px;
+}
+
+/* ── Battery slot ───────────────────────────────────────────────────────── */
+
+/* Fixed minimum width keeps "53%" → "54%" from bouncing the pill. */
+.relay-battery-slot .relay-pill-value {
+  min-width: 2.2em;
+}
+
+/* ── Notification bell ──────────────────────────────────────────────────── */
+
+/* The bell is always allocated so it cannot shift the clock or neighbours.
+ * Its visibility is controlled by opacity, never by allocation. */
+.relay-notification-slot {
+  min-width: 20px;
+}
+
+/* ── Dropdown menu ──────────────────────────────────────────────────────── */
 
 .relay-header {
   spacing: 12px;

@@ -1,12 +1,12 @@
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
+import 'package:logging/logging.dart';
+import 'package:refena_flutter/refena_flutter.dart';
 import 'package:relay_app/config/relay_brand.dart';
 import 'package:relay_app/gen/strings.g.dart';
 import 'package:relay_app/provider/animation_provider.dart';
 import 'package:relay_app/util/native/platform_check.dart';
-import 'package:logging/logging.dart';
-import 'package:refena_flutter/refena_flutter.dart';
 import 'package:tray_manager/tray_manager.dart' as tm;
 import 'package:window_manager/window_manager.dart';
 
@@ -17,8 +17,12 @@ enum TrayEntry {
   close,
 }
 
-Future<void> initTray() async {
+Future<void> initTray({bool suppressed = false}) async {
   if (!checkPlatformHasTray()) {
+    return;
+  }
+  if (suppressed) {
+    _trayIconHidden = true;
     return;
   }
   try {
@@ -57,8 +61,10 @@ Future<void> initTray() async {
     if (!checkPlatform([TargetPlatform.linux])) {
       await tm.trayManager.setToolTip(RelayProduct.name);
     }
+    _trayIconHidden = false;
   } catch (e) {
     _logger.warning('Failed to init tray', e);
+    rethrow;
   }
 }
 
@@ -126,6 +132,12 @@ Future<void> restoreTrayIcon() async {
   if (!checkPlatformHasTray() || !_trayIconHidden) {
     return;
   }
-  _trayIconHidden = false;
-  await initTray();
+  try {
+    // tray_manager's Linux destroy() sets AppIndicator PASSIVE, while setIcon()
+    // explicitly sets the same indicator ACTIVE again. Re-running initTray is
+    // therefore the supported re-registration path; no Relay restart is needed.
+    await initTray();
+  } catch (e) {
+    _logger.warning('Failed to restore the tray icon', e);
+  }
 }

@@ -11,11 +11,19 @@
 
 import {
     accessibleName,
+    ACTIVE_SIGNAL_ALPHA,
     batteryIconNames,
+    batterySlotState,
+    bellState,
     hasLiveBattery,
     needsAttention,
     networkIconNames,
+    notificationPulseOpacities,
     normalizePhoneStatus,
+    signalBarStates,
+    SIGNAL_BAR_COUNT,
+    SIGNAL_BAR_HEIGHTS,
+    signalBarRectangles,
     unreadLabel,
 } from '../relay@foresight.app/phoneStatus.js';
 
@@ -82,13 +90,71 @@ check('every icon chain has a fallback', batteryIconNames(normalizePhoneStatus(c
 print('network');
 check('an absent network stays absent', normalizePhoneStatus(connectedPhone).networkLabel === null);
 check('a reported network survives', normalizePhoneStatus({...connectedPhone, networkKind: 'cellular', networkLabel: '5G'}).networkLabel === '5G');
-check('a signal without a network is dropped', normalizePhoneStatus({...connectedPhone, signalLevel: 3}).signalLevel === null);
+check('a signal without a label still survives', normalizePhoneStatus({...connectedPhone, signalLevel: 3}).signalLevel === 3);
 check('a signal with a network survives', normalizePhoneStatus({...connectedPhone, networkKind: 'cellular', signalLevel: 3}).signalLevel === 3);
 check('an absurd signal is dropped', normalizePhoneStatus({...connectedPhone, networkKind: 'cellular', signalLevel: -1000}).signalLevel === null);
+check('unknown signal uses signal-none', networkIconNames(normalizePhoneStatus(connectedPhone))[0] === 'network-cellular-signal-none-symbolic');
+for (const [level, name] of ['none', 'weak', 'ok', 'good', 'excellent'].entries()) {
+    check(`signal ${level} picks ${name}`, networkIconNames(normalizePhoneStatus({...connectedPhone, signalLevel: level}))[0] ===
+        `network-cellular-signal-${name}-symbolic`);
+}
 check('cellular picks a cellular icon',
     networkIconNames(normalizePhoneStatus({...connectedPhone, networkKind: 'cellular', signalLevel: 4}))[0] === 'network-cellular-signal-excellent-symbolic');
 check('wifi picks a wireless icon',
     networkIconNames(normalizePhoneStatus({...connectedPhone, networkKind: 'wifi', signalLevel: 2}))[0] === 'network-wireless-signal-ok-symbolic');
+
+print('signal bars');
+check('SIGNAL_BAR_COUNT is 4', SIGNAL_BAR_COUNT === 4);
+check('unknown signal has 4 bars', signalBarStates(null).length === 4);
+check('unknown signal all bars inactive', signalBarStates(null).every(s => s === false));
+check('level 0 has 4 bars', signalBarStates(0).length === 4);
+check('level 0 all bars inactive', signalBarStates(0).every(s => s === false));
+check('level 1 has 4 bars', signalBarStates(1).length === 4);
+check('level 1 bar 1 active', signalBarStates(1)[0] === true);
+check('level 1 bars 2-4 inactive', signalBarStates(1)[1] === false && signalBarStates(1)[2] === false && signalBarStates(1)[3] === false);
+check('level 2 bars 1-2 active', signalBarStates(2)[0] === true && signalBarStates(2)[1] === true);
+check('level 2 bars 3-4 inactive', signalBarStates(2)[2] === false && signalBarStates(2)[3] === false);
+check('level 3 bars 1-3 active', signalBarStates(3)[0] === true && signalBarStates(3)[1] === true && signalBarStates(3)[2] === true);
+check('level 3 bar 4 inactive', signalBarStates(3)[3] === false);
+check('level 4 all active', signalBarStates(4).every(s => s === true));
+check('undefined signal has 4 bars all inactive', signalBarStates(undefined).length === 4 && signalBarStates(undefined).every(s => s === false));
+
+print('signal bar drawing model');
+const unknownBars = signalBarRectangles(20, 20, null);
+check('drawing surface is the shared 20 by 20 slot', 20 > 0 && 20 > 0);
+check('drawing model generates four rectangles', unknownBars.length === 4);
+check('rectangles are centred in the shared slot', unknownBars[0].x === 2 && unknownBars.at(-1).x + unknownBars.at(-1).width === 17);
+check('rectangles use ascending 5, 8, 11, 14 heights', unknownBars.map(bar => bar.height).every((height, index) => height === SIGNAL_BAR_HEIGHTS[index]));
+check('unknown signal draws all four muted', unknownBars.every(bar => bar.alpha > 0 && bar.alpha < ACTIVE_SIGNAL_ALPHA));
+check('zero signal draws all four muted', signalBarRectangles(20, 20, 0).every(bar => bar.alpha < ACTIVE_SIGNAL_ALPHA));
+for (let level = 1; level <= 4; level++) {
+    check(`level ${level} draws ${level} active bars`,
+        signalBarRectangles(20, 20, level).filter(bar => bar.alpha === ACTIVE_SIGNAL_ALPHA).length === level);
+}
+
+print('battery slot state');
+check('connected with battery: visible', batterySlotState(normalizePhoneStatus({...connectedPhone, batteryPercentage: 53})).visible === true);
+check('connected with battery: not muted', batterySlotState(normalizePhoneStatus({...connectedPhone, batteryPercentage: 53})).muted === false);
+check('connected with battery: label 53%', batterySlotState(normalizePhoneStatus({...connectedPhone, batteryPercentage: 53})).label === '53%');
+check('connected no battery: visible', batterySlotState(normalizePhoneStatus(connectedPhone)).visible === true);
+check('connected no battery: muted', batterySlotState(normalizePhoneStatus(connectedPhone)).muted === true);
+check('connected no battery: label is dash', batterySlotState(normalizePhoneStatus(connectedPhone)).label === '\u2014%');
+check('stale battery: visible and muted', (() => {
+    const s = batterySlotState(normalizePhoneStatus({...connectedPhone, batteryPercentage: 53, batteryIsStale: true}));
+    return s.visible === true && s.muted === true;
+})());
+check('disconnected: not visible', batterySlotState(normalizePhoneStatus({...connectedPhone, connected: false})).visible === false);
+
+print('bell state');
+check('connected 0 notifications: visible', bellState(normalizePhoneStatus({...connectedPhone, notificationCount: 0})).visible === true);
+check('connected 0 notifications: not active', bellState(normalizePhoneStatus({...connectedPhone, notificationCount: 0})).active === false);
+check('connected 1 notification: visible', bellState(normalizePhoneStatus({...connectedPhone, notificationCount: 1})).visible === true);
+check('connected 1 notification: active', bellState(normalizePhoneStatus({...connectedPhone, notificationCount: 1})).active === true);
+check('connected 5 notifications: active', bellState(normalizePhoneStatus({...connectedPhone, notificationCount: 5})).active === true);
+check('connected null notifications: visible', bellState(normalizePhoneStatus(connectedPhone)).visible === true);
+check('connected null notifications: not active', bellState(normalizePhoneStatus(connectedPhone)).active === false);
+check('disconnected: not visible', bellState(normalizePhoneStatus({...connectedPhone, connected: false})).visible === false);
+check('null status: not visible', bellState(null).visible === false);
 
 print('messages');
 check('an absent count stays absent', normalizePhoneStatus(connectedPhone).unreadMessageCount === null);
@@ -109,16 +175,31 @@ check('zero notifications is a real answer', normalizePhoneStatus({...connectedP
 check('a negative notification count is dropped', normalizePhoneStatus({...connectedPhone, notificationCount: -2}).notificationCount === null);
 check('an absent notification count stays absent', normalizePhoneStatus(connectedPhone).notificationCount === null);
 
+print('notification pulse');
+check('zero notifications never pulse', notificationPulseOpacities(0, 0, true).length === 0);
+check('a new notification has three finite pulses', notificationPulseOpacities(0, 1, true).length === 6);
+check('a larger count pulses again', notificationPulseOpacities(1, 3, true).length === 6);
+check('a stable count does not pulse', notificationPulseOpacities(3, 3, true).length === 0);
+check('a cleared count does not pulse', notificationPulseOpacities(3, 0, true).length === 0);
+check('reduced motion disables the pulse', notificationPulseOpacities(0, 1, false).length === 0);
+check('every pulse terminates fully visible', notificationPulseOpacities(0, 100, true).at(-1) === 255);
+
 print('accessible name');
-check('an absent Relay is announced', accessibleName(null, false, identity) === 'Relay, not running');
-check('an absent phone is announced', accessibleName(null, true, identity) === 'Relay, no phone connected');
+check('an absent Relay is announced', accessibleName(null, false, identity) === 'Relay phone, not running');
+check('an absent phone is announced', accessibleName(null, true, identity) === 'Relay phone, no phone connected');
 check('a plain phone announces its name and state',
-    accessibleName(normalizePhoneStatus(connectedPhone), true, identity) === 'Relay, Redmi Note 14 Pro, connected');
+    accessibleName(normalizePhoneStatus(connectedPhone), true, identity) === 'Relay phone, Redmi Note 14 Pro, connected, signal unknown');
 check('an unknown battery is not announced',
     !accessibleName(normalizePhoneStatus(connectedPhone), true, identity).includes('battery'));
 check('a known battery is announced',
     accessibleName(normalizePhoneStatus({...connectedPhone, batteryPercentage: 67, batteryIsCharging: true}), true, identity) ===
-        'Relay, Redmi Note 14 Pro, connected, battery 67 percent, charging');
+        'Relay phone, Redmi Note 14 Pro, connected, signal unknown, battery 67 percent, charging');
+check('zero notifications use plural grammar',
+    accessibleName(normalizePhoneStatus({...connectedPhone, notificationCount: 0}), true, identity).includes('0 notifications'));
+check('one notification uses singular grammar',
+    accessibleName(normalizePhoneStatus({...connectedPhone, notificationCount: 1}), true, identity).includes('1 notification'));
+check('two notifications use plural grammar',
+    accessibleName(normalizePhoneStatus({...connectedPhone, notificationCount: 2}), true, identity).includes('2 notifications'));
 check('unread messages are announced',
     accessibleName(normalizePhoneStatus({...connectedPhone, unreadMessageCount: 2}), true, identity).includes('2 unread messages'));
 check('notifications are announced',

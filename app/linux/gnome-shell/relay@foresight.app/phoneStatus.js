@@ -10,6 +10,15 @@
 /** Highest unread count rendered literally; anything above collapses to "99+". */
 const MAX_LITERAL_UNREAD = 99;
 
+/** Number of individual bars in the signal indicator. */
+export const SIGNAL_BAR_COUNT = 4;
+export const SIGNAL_BAR_HEIGHTS = [5, 8, 11, 14];
+export const SIGNAL_BAR_WIDTH = 3;
+export const SIGNAL_BAR_GAP = 1;
+export const SIGNAL_BAR_BOTTOM_INSET = 2;
+export const ACTIVE_SIGNAL_ALPHA = 1.0;
+export const INACTIVE_SIGNAL_ALPHA = 0.42;
+
 /**
  * Reads a field only when it has the expected type.
  *
@@ -63,8 +72,6 @@ export function normalizePhoneStatus(raw) {
     const batteryPercentage = boundedInt(raw.batteryPercentage, 0, 100);
     const networkKind = (field(raw, 'networkKind', 'string') ?? '').trim() || null;
     const networkLabel = (field(raw, 'networkLabel', 'string') ?? '').trim() || null;
-    const hasNetwork = networkKind !== null || networkLabel !== null;
-
     return Object.freeze({
         deviceId,
         displayName: name || 'Phone',
@@ -77,9 +84,10 @@ export function normalizePhoneStatus(raw) {
         batteryIsStale: batteryPercentage === null ? false : field(raw, 'batteryIsStale', 'boolean') ?? false,
         networkKind,
         networkLabel,
-        // A signal bucket with no network to belong to would draw as bars for
-        // nothing, so it only survives alongside the network fields.
-        signalLevel: hasNetwork ? boundedInt(raw.signalLevel, 0, 4) : null,
+        // Signal is independently useful. A future connectivity provider may
+        // know the level before it knows a carrier label, and the panel's
+        // network-first slot can present that honest partial answer.
+        signalLevel: boundedInt(raw.signalLevel, 0, 4),
         unreadMessageCount: boundedInt(raw.unreadMessageCount, 0, Number.MAX_SAFE_INTEGER),
         notificationCount: boundedInt(raw.notificationCount, 0, Number.MAX_SAFE_INTEGER),
         supportsFindDevice: field(raw, 'supportsFindDevice', 'boolean') ?? false,
@@ -114,11 +122,97 @@ export function batteryIconNames(status) {
  */
 export function networkIconNames(status) {
     const bars = ['none', 'weak', 'ok', 'good', 'excellent'];
-    const strength = status.signalLevel === null ? 'good' : bars[status.signalLevel];
-    if (status.networkKind === 'wifi') {
+    // Unknown must look unknown. In particular, never turn a missing reading
+    // into the visually plausible but false "good" state.
+    const strength = status?.signalLevel === null || status?.signalLevel === undefined ? 'none' : bars[status.signalLevel];
+    if (status?.networkKind === 'wifi') {
         return [`network-wireless-signal-${strength}-symbolic`, 'network-wireless-symbolic'];
     }
-    return [`network-cellular-signal-${strength}-symbolic`, 'network-cellular-symbolic'];
+    return [`network-cellular-signal-${strength}-symbolic`, 'network-cellular-symbolic', 'network-offline-symbolic'];
+}
+
+/**
+ * Per-bar active/inactive state for a custom four-bar signal indicator.
+ *
+ * All four geometric bars are always present. This function determines which
+ * ones are drawn at full emphasis ("active") versus muted ("inactive"). The
+ * result always has exactly {@link SIGNAL_BAR_COUNT} entries.
+ *
+ * @param {number|null|undefined} signalLevel - 0–4, or null/undefined for unknown
+ * @returns {boolean[]} per-bar active state, shortest bar first
+ */
+export function signalBarStates(signalLevel) {
+    const level = typeof signalLevel === 'number' && Number.isFinite(signalLevel) && signalLevel >= 0 && signalLevel <= 4
+        ? signalLevel
+        : 0;
+    const states = [];
+    for (let i = 1; i <= SIGNAL_BAR_COUNT; i++)
+        states.push(i <= level);
+    return states;
+}
+
+/**
+ * Generates the Cairo rectangles for the one signal DrawingArea.
+ *
+ * @param {number} surfaceWidth - allocated Cairo surface width
+ * @param {number} surfaceHeight - allocated Cairo surface height
+ * @param {number|null|undefined} signalLevel - 0–4, or unknown
+ * @returns {object[]} rectangles and alpha values, shortest bar first
+ */
+export function signalBarRectangles(surfaceWidth, surfaceHeight, signalLevel) {
+    if (surfaceWidth <= 0 || surfaceHeight <= 0)
+        return [];
+
+    const states = signalBarStates(signalLevel);
+    const barsWidth = SIGNAL_BAR_COUNT * SIGNAL_BAR_WIDTH + (SIGNAL_BAR_COUNT - 1) * SIGNAL_BAR_GAP;
+    const xOffset = Math.max(0, Math.floor((surfaceWidth - barsWidth) / 2));
+    return SIGNAL_BAR_HEIGHTS.map((height, index) => ({
+        x: xOffset + index * (SIGNAL_BAR_WIDTH + SIGNAL_BAR_GAP),
+        y: surfaceHeight - SIGNAL_BAR_BOTTOM_INSET - height,
+        width: SIGNAL_BAR_WIDTH,
+        height,
+        alpha: states[index] ? ACTIVE_SIGNAL_ALPHA : INACTIVE_SIGNAL_ALPHA,
+    }));
+}
+
+/**
+ * Presentation state for the battery slot.
+ *
+ * The battery slot is always present while a phone is selected. When the
+ * reading is unavailable, the slot shows a battery outline with a placeholder
+ * label instead of disappearing.
+ *
+ * @param {object|null} status - a normalized status
+ * @returns {object} `{visible, icons, label, muted}` — slot state
+ */
+export function batterySlotState(status) {
+    if (status === null || !status.connected)
+        return {visible: false, icons: ['battery-missing-symbolic', 'battery-symbolic'], label: '', muted: true};
+
+    if (status.batteryPercentage === null)
+        return {visible: true, icons: ['battery-missing-symbolic', 'battery-symbolic'], label: '\u2014%', muted: true};
+
+    if (status.batteryIsStale)
+        return {visible: true, icons: batteryIconNames(status), label: `${status.batteryPercentage}%`, muted: true};
+
+    return {visible: true, icons: batteryIconNames(status), label: `${status.batteryPercentage}%`, muted: false};
+}
+
+/**
+ * Presentation state for the notification bell slot.
+ *
+ * The bell is always visible while a phone is selected: hollow/muted when no
+ * notifications are standing, filled/active when at least one is.
+ *
+ * @param {object|null} status - a normalized status
+ * @returns {object} `{visible, active, count}` — slot state
+ */
+export function bellState(status) {
+    if (status === null || !status.connected)
+        return {visible: false, active: false, count: 0};
+
+    const count = status.notificationCount ?? 0;
+    return {visible: true, active: count > 0, count};
 }
 
 /**
@@ -127,6 +221,26 @@ export function networkIconNames(status) {
  */
 export function unreadLabel(count) {
     return count > MAX_LITERAL_UNREAD ? `${MAX_LITERAL_UNREAD}+` : `${count}`;
+}
+
+/**
+ * Opacity targets for one finite notification-attention event.
+ *
+ * Keeping this policy pure makes the important properties testable without a
+ * running Shell: only an increase pulses, reduced motion has no transitions,
+ * and the final target is always fully visible. The actor owns the timing.
+ *
+ * @param {number|null} previousCount - previous standing count
+ * @param {number|null} currentCount - current standing count
+ * @param {boolean} animations - whether Shell animations are enabled
+ * @returns {number[]} finite opacity targets
+ */
+export function notificationPulseOpacities(previousCount, currentCount, animations) {
+    const previous = previousCount ?? 0;
+    const current = currentCount ?? 0;
+    if (!animations || current <= 0 || current <= previous)
+        return [];
+    return [72, 255, 72, 255, 72, 255];
 }
 
 /**
@@ -170,11 +284,16 @@ export function hasLiveBattery(status) {
 export function accessibleName(status, serviceAvailable, gettext) {
     const _t = gettext;
     if (!serviceAvailable)
-        return _t('Relay, not running');
+        return _t('Relay phone, not running');
     if (status === null)
-        return _t('Relay, no phone connected');
+        return _t('Relay phone, no phone connected');
 
-    const parts = [_t('Relay'), status.displayName, status.connected ? _t('connected') : _t('offline')];
+    const parts = [_t('Relay phone'), status.displayName, status.connected ? _t('connected') : _t('offline')];
+
+    if (status.connected) {
+        const signalNames = [_t('no signal'), _t('weak signal'), _t('fair signal'), _t('good signal'), _t('excellent signal')];
+        parts.push(status.signalLevel === null ? _t('signal unknown') : signalNames[status.signalLevel]);
+    }
 
     if (hasLiveBattery(status)) {
         parts.push(`${_t('battery')} ${status.batteryPercentage} ${_t('percent')}`);
@@ -187,11 +306,11 @@ export function accessibleName(status, serviceAvailable, gettext) {
     if (status.networkLabel !== null)
         parts.push(status.networkLabel);
 
-    if (status.notificationCount !== null && status.notificationCount > 0)
-        parts.push(`${status.notificationCount} ${_t('notifications')}`);
+    if (status.notificationCount !== null)
+        parts.push(status.notificationCount === 1 ? _t('1 notification') : `${status.notificationCount} ${_t('notifications')}`);
 
-    if (status.unreadMessageCount !== null && status.unreadMessageCount > 0)
-        parts.push(`${status.unreadMessageCount} ${_t('unread messages')}`);
+    if (status.unreadMessageCount !== null)
+        parts.push(status.unreadMessageCount === 1 ? _t('1 unread message') : `${status.unreadMessageCount} ${_t('unread messages')}`);
 
     return parts.join(', ');
 }
