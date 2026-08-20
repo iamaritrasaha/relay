@@ -32,8 +32,7 @@ import {
     networkIconNames,
     notificationPulseOpacities,
     normalizePhoneStatus,
-    signalBarStates,
-    SIGNAL_BAR_COUNT,
+    signalBarRectangles,
     unreadLabel,
 } from './phoneStatus.js';
 
@@ -56,15 +55,15 @@ const NOTIFICATION_PULSE_PHASE_MS = 180;
 const FULL_OPACITY = 255;
 const MUTED_OPACITY = 155;
 const SECONDARY_OPACITY = 180;
-const INACTIVE_BAR_OPACITY = 80;
-
-/**
- * Heights for the four ascending signal bars, in pixels at 1× scale.
- * Shortest first (▂ ▄ ▆ █).
- */
-const SIGNAL_BAR_HEIGHTS = [4, 7, 10, 13];
-const SIGNAL_BAR_WIDTH = 3;
-const SIGNAL_BAR_SPACING = 1;
+const INACTIVE_BELL_OPACITY = 191;
+// Every permanent status pictogram lives in the same 18 px slot.  The art
+// itself is intentionally a little smaller, so the panel reads as one calm
+// cluster instead of three differently-sized actors.
+const STATUS_SLOT_SIZE = 20;
+const SIGNAL_AREA_WIDTH = STATUS_SLOT_SIZE;
+const SIGNAL_AREA_HEIGHT = STATUS_SLOT_SIZE;
+const GROUP_GAP = 8;
+const SIGNAL_BAR_RADIUS = 1;
 
 /**
  * A themed icon built from a fallback chain.
@@ -83,6 +82,17 @@ function themedIcon(names) {
 /** @returns {boolean} whether the shell is currently animating anything */
 function animationsEnabled() {
     return St.Settings.get().enable_animations;
+}
+
+/** Draws a compact rounded rectangle without turning the 2 px bars into dots. */
+function roundedRectangle(cr, x, y, width, height, radius) {
+    const corner = Math.min(radius, width / 2, height / 2);
+    cr.newSubPath();
+    cr.arc(x + width - corner, y + corner, corner, -Math.PI / 2, 0);
+    cr.arc(x + width - corner, y + height - corner, corner, 0, Math.PI / 2);
+    cr.arc(x + corner, y + height - corner, corner, Math.PI / 2, Math.PI);
+    cr.arc(x + corner, y + corner, corner, Math.PI, Math.PI * 1.5);
+    cr.closePath();
 }
 
 /**
@@ -158,6 +168,7 @@ class RelayPhoneIndicator extends PanelMenu.Button {
         this._previousNotificationCount = 0;
         this._notificationPulseGeneration = 0;
         this._destroyed = false;
+        this._signalLevel = null;
 
         this.add_style_class_name('relay-pill');
 
@@ -165,28 +176,37 @@ class RelayPhoneIndicator extends PanelMenu.Button {
         this.add_child(this._box);
 
         // ── Slot 1: Signal bars ─────────────────────────────────────────
-        this._signalBox = new St.BoxLayout({
-            style_class: 'relay-signal-bars',
-            y_align: Clutter.ActorAlign.END,
+        this._signalBox = new St.Bin({
+            style_class: 'relay-status-icon-slot relay-signal-slot',
+            width: STATUS_SLOT_SIZE,
+            height: STATUS_SLOT_SIZE,
+            y_align: Clutter.ActorAlign.CENTER,
+            // Bars rise from one baseline, which makes a mathematically
+            // centred surface look low next to symbolic icons.
+            translation_y: 0,
         });
-        this._signalBars = [];
-        for (let i = 0; i < SIGNAL_BAR_COUNT; i++) {
-            const bar = new St.Widget({
-                style_class: 'relay-signal-bar',
-                width: SIGNAL_BAR_WIDTH,
-                height: SIGNAL_BAR_HEIGHTS[i],
-                opacity: INACTIVE_BAR_OPACITY,
-            });
-            this._signalBars.push(bar);
-            this._signalBox.add_child(bar);
-        }
+        this._signalArea = new St.DrawingArea({
+            style_class: 'relay-signal-area',
+            width: SIGNAL_AREA_WIDTH,
+            height: SIGNAL_AREA_HEIGHT,
+            y_align: Clutter.ActorAlign.CENTER,
+        });
+        this._signalArea.connect('repaint', area => this._paintSignalBars(area));
+        this._signalBox.set_child(this._signalArea);
         this._box.add_child(this._signalBox);
+        this._signalArea.queue_repaint();
+
+        this._box.add_child(this._buildSpacer(GROUP_GAP));
 
         // ── Slot 2: Battery ─────────────────────────────────────────────
-        this._battery = this._buildSegment('relay-battery-slot');
+        this._battery = this._buildSegment('relay-battery-slot', 'relay-battery-icon-slot');
+        this._box.add_child(this._battery.box);
+
+        this._box.add_child(this._buildSpacer(GROUP_GAP));
 
         // ── Slot 3: Notification bell ───────────────────────────────────
-        this._notifications = this._buildSegment('relay-notification-slot');
+        this._notifications = this._buildSegment('relay-notification-slot', 'relay-bell-icon-slot');
+        this._box.add_child(this._notifications.box);
         this._notifications.icon.gicon = themedIcon(['preferences-system-notifications-symbolic', 'user-available-symbolic']);
         this._notifications.label.hide();
 
@@ -229,20 +249,31 @@ class RelayPhoneIndicator extends PanelMenu.Button {
 
     /**
      * @param {string} [styleClass] - extra style class for the group
+     * @param {string} [iconSlotClass] - extra style class for the icon slot
      * @returns {object} the icon and label of a status segment
      */
-    _buildSegment(styleClass) {
+    _buildSegment(styleClass, iconSlotClass) {
         const box = new St.BoxLayout({
             style_class: styleClass ? `relay-pill-segment ${styleClass}` : 'relay-pill-segment',
             y_align: Clutter.ActorAlign.CENTER,
         });
         const icon = new St.Icon({style_class: 'relay-pill-icon', y_align: Clutter.ActorAlign.CENTER});
+        const iconSlot = new St.Bin({
+            style_class: iconSlotClass ? `relay-status-icon-slot ${iconSlotClass}` : 'relay-status-icon-slot',
+            width: STATUS_SLOT_SIZE,
+            height: STATUS_SLOT_SIZE,
+            y_align: Clutter.ActorAlign.CENTER,
+        });
         const label = new St.Label({style_class: 'relay-pill-value', y_align: Clutter.ActorAlign.CENTER});
-        box.add_child(icon);
+        iconSlot.set_child(icon);
+        box.add_child(iconSlot);
         box.add_child(label);
         box.hide();
-        this._box.add_child(box);
-        return {box, icon, label};
+        return {box, icon, iconSlot, label};
+    }
+
+    _buildSpacer(width) {
+        return new St.Widget({style_class: 'relay-pill-group-gap', width, height: STATUS_SLOT_SIZE, y_align: Clutter.ActorAlign.CENTER});
     }
 
     _buildMenu() {
@@ -309,11 +340,9 @@ class RelayPhoneIndicator extends PanelMenu.Button {
         const connected = status !== null && status.connected;
 
         // ── Slot 1: Signal bars ─────────────────────────────────────────
-        // Custom four-bar actor: all four bars always rendered, only opacity
-        // changes per bar based on signal level. Unknown shows all muted.
-        const barStates = signalBarStates(connected ? status.signalLevel : null);
-        for (let i = 0; i < SIGNAL_BAR_COUNT; i++)
-            this._signalBars[i].opacity = barStates[i] ? FULL_OPACITY : INACTIVE_BAR_OPACITY;
+        // One Cairo surface owns all four bars. Unknown and offline remain
+        // deliberately muted rather than inventing a signal level.
+        this._setSignalLevel(connected ? status.signalLevel : null);
 
         // ── Slot 2: Battery ─────────────────────────────────────────────
         this._renderBattery(status);
@@ -339,6 +368,36 @@ class RelayPhoneIndicator extends PanelMenu.Button {
 
         this.accessible_name = accessibleName(status, this._serviceAvailable, _);
         this._renderMenu();
+    }
+
+    _setSignalLevel(signalLevel) {
+        if (this._signalLevel === signalLevel)
+            return;
+        this._signalLevel = signalLevel;
+        this._signalArea.queue_repaint();
+    }
+
+    _paintSignalBars(area) {
+        const [width, height] = area.get_surface_size();
+        const cr = area.get_context();
+        try {
+            if (width <= 0 || height <= 0)
+                return;
+
+            const foreground = this.get_theme_node().get_foreground_color();
+            for (const rect of signalBarRectangles(width, height, this._signalLevel)) {
+                cr.setSourceColor(new Clutter.Color({
+                    red: foreground.red,
+                    green: foreground.green,
+                    blue: foreground.blue,
+                    alpha: Math.round(foreground.alpha * rect.alpha),
+                }));
+                roundedRectangle(cr, rect.x, rect.y, rect.width, rect.height, SIGNAL_BAR_RADIUS);
+                cr.fill();
+            }
+        } finally {
+            cr.$dispose();
+        }
     }
 
     _renderBattery(status) {
@@ -369,7 +428,7 @@ class RelayPhoneIndicator extends PanelMenu.Button {
 
         // Always visible while connected
         this._notifications.box.show();
-        this._notifications.box.opacity = bell.active ? FULL_OPACITY : SECONDARY_OPACITY;
+        this._notifications.box.opacity = bell.active ? FULL_OPACITY : INACTIVE_BELL_OPACITY;
 
         // Pulse on count increase
         const count = bell.count;
@@ -393,7 +452,7 @@ class RelayPhoneIndicator extends PanelMenu.Button {
             return;
         if (index >= opacities.length) {
             // After pulse, settle to the appropriate steady state
-            this._notifications.box.opacity = active ? FULL_OPACITY : SECONDARY_OPACITY;
+            this._notifications.box.opacity = active ? FULL_OPACITY : INACTIVE_BELL_OPACITY;
             return;
         }
         this._notifications.box.ease({

@@ -12,6 +12,12 @@ const MAX_LITERAL_UNREAD = 99;
 
 /** Number of individual bars in the signal indicator. */
 export const SIGNAL_BAR_COUNT = 4;
+export const SIGNAL_BAR_HEIGHTS = [5, 8, 11, 14];
+export const SIGNAL_BAR_WIDTH = 3;
+export const SIGNAL_BAR_GAP = 1;
+export const SIGNAL_BAR_BOTTOM_INSET = 2;
+export const ACTIVE_SIGNAL_ALPHA = 1.0;
+export const INACTIVE_SIGNAL_ALPHA = 0.42;
 
 /**
  * Reads a field only when it has the expected type.
@@ -143,6 +149,30 @@ export function signalBarStates(signalLevel) {
     for (let i = 1; i <= SIGNAL_BAR_COUNT; i++)
         states.push(i <= level);
     return states;
+}
+
+/**
+ * Generates the Cairo rectangles for the one signal DrawingArea.
+ *
+ * @param {number} surfaceWidth - allocated Cairo surface width
+ * @param {number} surfaceHeight - allocated Cairo surface height
+ * @param {number|null|undefined} signalLevel - 0–4, or unknown
+ * @returns {object[]} rectangles and alpha values, shortest bar first
+ */
+export function signalBarRectangles(surfaceWidth, surfaceHeight, signalLevel) {
+    if (surfaceWidth <= 0 || surfaceHeight <= 0)
+        return [];
+
+    const states = signalBarStates(signalLevel);
+    const barsWidth = SIGNAL_BAR_COUNT * SIGNAL_BAR_WIDTH + (SIGNAL_BAR_COUNT - 1) * SIGNAL_BAR_GAP;
+    const xOffset = Math.max(0, Math.floor((surfaceWidth - barsWidth) / 2));
+    return SIGNAL_BAR_HEIGHTS.map((height, index) => ({
+        x: xOffset + index * (SIGNAL_BAR_WIDTH + SIGNAL_BAR_GAP),
+        y: surfaceHeight - SIGNAL_BAR_BOTTOM_INSET - height,
+        width: SIGNAL_BAR_WIDTH,
+        height,
+        alpha: states[index] ? ACTIVE_SIGNAL_ALPHA : INACTIVE_SIGNAL_ALPHA,
+    }));
 }
 
 /**

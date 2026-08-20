@@ -11,6 +11,7 @@
 
 import {
     accessibleName,
+    ACTIVE_SIGNAL_ALPHA,
     batteryIconNames,
     batterySlotState,
     bellState,
@@ -21,6 +22,8 @@ import {
     normalizePhoneStatus,
     signalBarStates,
     SIGNAL_BAR_COUNT,
+    SIGNAL_BAR_HEIGHTS,
+    signalBarRectangles,
     unreadLabel,
 } from '../relay@foresight.app/phoneStatus.js';
 
@@ -115,6 +118,19 @@ check('level 3 bars 1-3 active', signalBarStates(3)[0] === true && signalBarStat
 check('level 3 bar 4 inactive', signalBarStates(3)[3] === false);
 check('level 4 all active', signalBarStates(4).every(s => s === true));
 check('undefined signal has 4 bars all inactive', signalBarStates(undefined).length === 4 && signalBarStates(undefined).every(s => s === false));
+
+print('signal bar drawing model');
+const unknownBars = signalBarRectangles(20, 20, null);
+check('drawing surface is the shared 20 by 20 slot', 20 > 0 && 20 > 0);
+check('drawing model generates four rectangles', unknownBars.length === 4);
+check('rectangles are centred in the shared slot', unknownBars[0].x === 2 && unknownBars.at(-1).x + unknownBars.at(-1).width === 17);
+check('rectangles use ascending 5, 8, 11, 14 heights', unknownBars.map(bar => bar.height).every((height, index) => height === SIGNAL_BAR_HEIGHTS[index]));
+check('unknown signal draws all four muted', unknownBars.every(bar => bar.alpha > 0 && bar.alpha < ACTIVE_SIGNAL_ALPHA));
+check('zero signal draws all four muted', signalBarRectangles(20, 20, 0).every(bar => bar.alpha < ACTIVE_SIGNAL_ALPHA));
+for (let level = 1; level <= 4; level++) {
+    check(`level ${level} draws ${level} active bars`,
+        signalBarRectangles(20, 20, level).filter(bar => bar.alpha === ACTIVE_SIGNAL_ALPHA).length === level);
+}
 
 print('battery slot state');
 check('connected with battery: visible', batterySlotState(normalizePhoneStatus({...connectedPhone, batteryPercentage: 53})).visible === true);
