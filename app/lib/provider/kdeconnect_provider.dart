@@ -151,7 +151,7 @@ class KdeConnectRequestPairAction extends AsyncReduxAction<KdeConnectService, Kd
   Future<KdeConnectState> reduce() async {
     try {
       await notifier._runtime?.requestPair(deviceId: deviceId);
-    } catch (error, stack) {
+    } on AnyhowException catch (error, stack) {
       _logger.warning('Pair request failed for device $deviceId', error, stack);
     }
     return state;
@@ -167,7 +167,7 @@ class KdeConnectAcceptPairAction extends AsyncReduxAction<KdeConnectService, Kde
   Future<KdeConnectState> reduce() async {
     try {
       await notifier._runtime?.acceptPair(deviceId: deviceId);
-    } catch (error, stack) {
+    } on AnyhowException catch (error, stack) {
       _logger.warning('Accept pair failed for device $deviceId', error, stack);
     }
     return state.copyWith(clearIncoming: true);
@@ -183,7 +183,7 @@ class KdeConnectRejectPairAction extends AsyncReduxAction<KdeConnectService, Kde
   Future<KdeConnectState> reduce() async {
     try {
       await notifier._runtime?.rejectPair(deviceId: deviceId);
-    } catch (error, stack) {
+    } on AnyhowException catch (error, stack) {
       _logger.warning('Reject pair failed for device $deviceId', error, stack);
     }
     return state.copyWith(clearIncoming: true);
@@ -199,7 +199,7 @@ class KdeConnectUnpairAction extends AsyncReduxAction<KdeConnectService, KdeConn
   Future<KdeConnectState> reduce() async {
     try {
       await notifier._runtime?.unpair(deviceId: deviceId);
-    } catch (error, stack) {
+    } on AnyhowException catch (error, stack) {
       _logger.warning('Unpair failed for device $deviceId', error, stack);
     }
     return state.copyWith(clearIncoming: true);
@@ -216,7 +216,7 @@ class KdeConnectPingAction extends AsyncReduxAction<KdeConnectService, KdeConnec
   Future<KdeConnectState> reduce() async {
     try {
       await notifier._runtime?.sendPing(deviceId: deviceId, message: message);
-    } catch (error, stack) {
+    } on AnyhowException catch (error, stack) {
       _logger.warning('Send ping failed for device $deviceId', error, stack);
     }
     return state;
@@ -232,8 +232,8 @@ class KdeConnectFindPhoneAction extends AsyncReduxAction<KdeConnectService, KdeC
   Future<KdeConnectState> reduce() async {
     try {
       await notifier._runtime?.findPhone(deviceId: deviceId);
-    } catch (error, stack) {
-      _logger.warning('Find phone failed for device $deviceId', error, stack);
+    } on AnyhowException catch (error, stack) {
+        _logger.warning('Find phone failed for device $deviceId', error, stack);
     }
     return state;
   }
@@ -252,7 +252,7 @@ class KdeConnectSendClipboardAction extends AsyncReduxAction<KdeConnectService, 
           content: content,
           timestampMs: DateTime.now().millisecondsSinceEpoch,
         );
-      } catch (error, stack) {
+      } on AnyhowException catch (error, stack) {
         _logger.warning('Send clipboard failed', error, stack);
       }
     }

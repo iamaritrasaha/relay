@@ -7,6 +7,8 @@ import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 import 'package:freezed_annotation/freezed_annotation.dart' hide protected;
 import 'package:relay_isolates/rust/frb_generated.dart';
 
+export 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart' show AnyhowException;
+
 part 'kdeconnect.freezed.dart';
 
 // These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `from`, `from`, `from`, `from`, `from`, `from`, `try_from`
