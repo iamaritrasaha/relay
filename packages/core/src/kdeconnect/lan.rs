@@ -8,13 +8,14 @@ use crate::kdeconnect::identity::{
     certificate_common_name, install_crypto_provider, LocalIdentity,
 };
 use crate::kdeconnect::packet::{
-    is_valid_device_id, NetworkPacket, PairBody, MAX_IDENTITY_PACKET_BYTES, MAX_PACKET_BYTES,
+    is_valid_device_id, ClipboardBody, ConnectivityReportBody, FindMyPhoneBody, NetworkPacket,
+    NotificationBody, PairBody, PingBody, MAX_IDENTITY_PACKET_BYTES, MAX_PACKET_BYTES,
     PROTOCOL_VERSION,
 };
 use crate::kdeconnect::pairing::{
     now_unix, PairState, PairingEffect, PairingFailReason, PairingSession, PAIRING_TIMEOUT_SECS,
 };
-use crate::kdeconnect::{DeviceSnapshot, KdeConnectEvent, TrustedDevice};
+use crate::kdeconnect::{DeviceSnapshot, KdeConnectEvent, KdeNotification, TrustedDevice};
 use anyhow::{Context, Result};
 use rustls::client::danger::{HandshakeSignatureValid, ServerCertVerified, ServerCertVerifier};
 use rustls::crypto::{
@@ -127,6 +128,19 @@ impl TrustStore {
     }
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct BatteryState {
+    pub current_charge: i32,
+    pub is_charging: bool,
+    pub threshold_event: Option<i32>,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct ConnectivityState {
+    pub report: ConnectivityReportBody,
+    pub stale: bool,
+}
+
 struct Conn {
     packets: mpsc::Sender<Vec<u8>>,
     peer_cert_der: Vec<u8>,
@@ -143,6 +157,11 @@ pub(crate) struct LanInner {
     trust: Mutex<TrustStore>,
     pairing: Mutex<HashMap<String, PairingSession>>,
     connections: Mutex<HashMap<String, Conn>>,
+    battery: Mutex<HashMap<String, BatteryState>>,
+    connectivity: Mutex<HashMap<String, ConnectivityState>>,
+    clipboard: Mutex<HashMap<String, i64>>,
+    notifications: Mutex<HashMap<String, Vec<KdeNotification>>>,
+    peer_capabilities: Mutex<HashMap<String, (Vec<String>, Vec<String>)>>,
     last_connect: Mutex<HashMap<String, Instant>>,
     mismatches: Mutex<std::collections::HashSet<String>>,
     incoming: Mutex<std::collections::HashSet<String>>,
@@ -171,6 +190,11 @@ impl LanInner {
             trust: Mutex::new(TrustStore::from_list(trusted)),
             pairing: Mutex::new(pairing),
             connections: Mutex::new(HashMap::new()),
+            battery: Mutex::new(HashMap::new()),
+            connectivity: Mutex::new(HashMap::new()),
+            clipboard: Mutex::new(HashMap::new()),
+            notifications: Mutex::new(HashMap::new()),
+            peer_capabilities: Mutex::new(HashMap::new()),
             last_connect: Mutex::new(HashMap::new()),
             mismatches: Mutex::new(std::collections::HashSet::new()),
             incoming: Mutex::new(std::collections::HashSet::new()),
@@ -186,11 +210,21 @@ impl LanInner {
         let pairing = self.pairing.lock().await;
         let mismatches = self.mismatches.lock().await;
         let incoming = self.incoming.lock().await;
+        let battery_map = self.battery.lock().await;
+        let connectivity_map = self.connectivity.lock().await;
+        let caps_map = self.peer_capabilities.lock().await;
         let mut out = Vec::new();
         let mut seen = std::collections::HashSet::new();
         for observed in devices.iter() {
             seen.insert(observed.device_id.clone());
             let paired = trust.get(&observed.device_id).is_some();
+            let b = battery_map.get(&observed.device_id);
+            let connectivity = connectivity_map.get(&observed.device_id);
+            let selected = connectivity.and_then(|state| state.report.selected_signal().map(|(_, signal)| signal));
+            let (inc, out_caps) = caps_map
+                .get(&observed.device_id)
+                .cloned()
+                .unwrap_or_default();
             out.push(DeviceSnapshot {
                 device_id: observed.device_id.clone(),
                 name: observed.name.clone(),
@@ -201,12 +235,26 @@ impl LanInner {
                 connected: connections.contains_key(&observed.device_id),
                 incoming_pair: incoming.contains(&observed.device_id),
                 identity_mismatch: mismatches.contains(&observed.device_id),
+                battery_percentage: b.map(|s| s.current_charge),
+                battery_is_charging: b.map(|s| s.is_charging),
+                network_type: selected.map(|signal| signal.network_type.clone()),
+                signal_level: selected.map(|signal| signal.signal_strength as i32),
+                connectivity_stale: connectivity.is_some_and(|state| state.stale),
+                incoming_capabilities: inc,
+                outgoing_capabilities: out_caps,
             });
         }
         for trusted in trust.snapshot() {
             if seen.contains(&trusted.device_id) {
                 continue;
             }
+            let b = battery_map.get(&trusted.device_id);
+            let connectivity = connectivity_map.get(&trusted.device_id);
+            let selected = connectivity.and_then(|state| state.report.selected_signal().map(|(_, signal)| signal));
+            let (inc, out_caps) = caps_map
+                .get(&trusted.device_id)
+                .cloned()
+                .unwrap_or_default();
             out.push(DeviceSnapshot {
                 device_id: trusted.device_id.clone(),
                 name: trusted.name.clone(),
@@ -219,6 +267,13 @@ impl LanInner {
                     .get(&trusted.device_id)
                     .is_some_and(|s| s.state == PairState::RequestedByPeer),
                 identity_mismatch: mismatches.contains(&trusted.device_id),
+                battery_percentage: b.map(|s| s.current_charge),
+                battery_is_charging: b.map(|s| s.is_charging),
+                network_type: selected.map(|signal| signal.network_type.clone()),
+                signal_level: selected.map(|signal| signal.signal_strength as i32),
+                connectivity_stale: connectivity.is_some_and(|state| state.stale),
+                incoming_capabilities: inc,
+                outgoing_capabilities: out_caps,
             });
         }
         out.sort_by(|a, b| {
@@ -258,7 +313,9 @@ impl LanInner {
             .or_insert_with(|| PairingSession::new(false));
         if session.state == PairState::RequestedByPeer {
             drop(pairing);
-            tracing::info!("[KDE Connect] Pairing already requested by peer {device_id}, auto-accepting");
+            tracing::info!(
+                "[KDE Connect] Pairing already requested by peer {device_id}, auto-accepting"
+            );
             return self.accept_pair(device_id).await;
         }
         let body = session
@@ -326,12 +383,120 @@ impl LanInner {
         }
         self.incoming.lock().await.remove(device_id);
         self.trust.lock().await.remove(device_id);
+        self.battery.lock().await.remove(device_id);
+        self.connectivity.lock().await.remove(device_id);
+        self.clipboard.lock().await.remove(device_id);
+        self.notifications.lock().await.remove(device_id);
+        self.peer_capabilities.lock().await.remove(device_id);
+        let _ = self.event_tx.send(KdeConnectEvent::NotificationsChanged {
+            device_id: device_id.to_string(),
+            notifications: Vec::new(),
+        });
         let _ = self
             .send_packet(device_id, &PairBody::unpair().serialize())
             .await;
         self.emit_trust().await;
         self.emit_devices().await;
         Ok(())
+    }
+
+    pub async fn send_ping(&self, device_id: &str, message: Option<String>) -> Result<()> {
+        let is_paired = self.trust.lock().await.get(device_id).is_some();
+        if !is_paired {
+            anyhow::bail!("device not paired");
+        }
+        self.ensure_peer_accepts(device_id, crate::kdeconnect::PACKET_TYPE_PING)
+            .await?;
+        let pkt = PingBody::new(message).serialize();
+        self.send_packet(device_id, &pkt).await
+    }
+
+    pub async fn find_phone(&self, device_id: &str) -> Result<()> {
+        let is_paired = self.trust.lock().await.get(device_id).is_some();
+        if !is_paired {
+            anyhow::bail!("device not paired");
+        }
+        self.ensure_peer_accepts(device_id, crate::kdeconnect::PACKET_TYPE_FINDMYPHONE_REQUEST)
+            .await?;
+        let pkt = FindMyPhoneBody::request().serialize();
+        self.send_packet(device_id, &pkt).await
+    }
+
+    pub async fn send_clipboard(
+        &self,
+        device_id: &str,
+        content: &str,
+        timestamp_ms: i64,
+    ) -> Result<()> {
+        let is_paired = self.trust.lock().await.get(device_id).is_some();
+        if !is_paired {
+            anyhow::bail!("device not paired");
+        }
+        self.ensure_peer_accepts(device_id, crate::kdeconnect::PACKET_TYPE_CLIPBOARD_CONNECT)
+            .await?;
+        self.clipboard
+            .lock()
+            .await
+            .insert(device_id.to_string(), timestamp_ms);
+        let pkt = ClipboardBody::connect(content, timestamp_ms).serialize();
+        self.send_packet(device_id, &pkt).await
+    }
+
+    pub async fn send_clipboard_to_all_paired(
+        &self,
+        content: &str,
+        timestamp_ms: i64,
+    ) -> Result<()> {
+        let trusted = self.trust.lock().await.snapshot();
+        let pkt = ClipboardBody::connect(content, timestamp_ms).serialize();
+        let connections = self.connections.lock().await;
+        let peer_capabilities = self.peer_capabilities.lock().await;
+        for t in trusted {
+            let peer_accepts_clipboard = peer_capabilities
+                .get(&t.device_id)
+                .is_some_and(|(incoming, _)| incoming.iter().any(|capability| capability == crate::kdeconnect::PACKET_TYPE_CLIPBOARD_CONNECT));
+            if peer_accepts_clipboard {
+                if let Some(conn) = connections.get(&t.device_id) {
+                    let _ = conn.packets.send(pkt.clone()).await;
+                    self.clipboard
+                        .lock()
+                        .await
+                        .insert(t.device_id, timestamp_ms);
+                }
+            }
+        }
+        Ok(())
+    }
+
+    pub async fn request_notifications(&self, device_id: &str) -> Result<()> {
+        let is_paired = self.trust.lock().await.get(device_id).is_some();
+        if !is_paired {
+            anyhow::bail!("device not paired");
+        }
+        self.ensure_peer_accepts(device_id, crate::kdeconnect::PACKET_TYPE_NOTIFICATION_REQUEST)
+            .await?;
+        let pkt = NotificationBody::request().serialize();
+        self.send_packet(device_id, &pkt).await
+    }
+
+    async fn ensure_peer_accepts(&self, device_id: &str, packet_type: &str) -> Result<()> {
+        let peer_capabilities = self.peer_capabilities.lock().await;
+        let peer_accepts = peer_capabilities
+            .get(device_id)
+            .is_some_and(|(incoming, _)| incoming.iter().any(|capability| capability == packet_type));
+        if !peer_accepts {
+            anyhow::bail!("peer does not advertise support for {packet_type}");
+        }
+        Ok(())
+    }
+
+    pub async fn get_notifications(&self, device_id: &str) -> Vec<KdeNotification> {
+        self.notifications
+            .lock()
+            .await
+            .get(device_id)
+            .cloned()
+            .unwrap_or_default()
     }
 
     async fn remember_trust(
@@ -699,16 +864,25 @@ async fn outbound_connect(
     tracing::info!("[KDE Connect] [D] Starting TLS as TLS server with peer {ip}:{tcp_port}");
     let tls = match start_tls_as_server(&inner.identity, stream, trusted.as_deref()).await {
         Ok(t) => {
-            tracing::info!("[KDE Connect] [E] TLS handshake as server succeeded with {ip}:{tcp_port}");
+            tracing::info!(
+                "[KDE Connect] [E] TLS handshake as server succeeded with {ip}:{tcp_port}"
+            );
             t
         }
         Err(e) => {
-            tracing::warn!("[KDE Connect] [E] TLS handshake as server failed with {ip}:{tcp_port}: {e:#}");
+            tracing::warn!(
+                "[KDE Connect] [E] TLS handshake as server failed with {ip}:{tcp_port}: {e:#}"
+            );
             return Err(e);
         }
     };
     let expected_ver = match &expected_id {
-        Some(id) => inner.devices.lock().await.get(id).map(|d| d.protocol_version),
+        Some(id) => inner
+            .devices
+            .lock()
+            .await
+            .get(id)
+            .map(|d| d.protocol_version),
         None => None,
     };
     finish_secure_link(inner, tls, ip, expected_id, expected_ver).await
@@ -724,14 +898,19 @@ async fn inbound_tcp(inner: Arc<LanInner>, mut stream: TcpStream, addr: SocketAd
         Duration::from_secs(5),
         read_line_bounded(&mut stream, MAX_IDENTITY_PACKET_BYTES),
     )
-    .await {
+    .await
+    {
         Ok(Ok(l)) => l,
         Ok(Err(e)) => {
-            tracing::warn!("[KDE Connect] [G] Failed to read plaintext identity from {addr}: {e:#}");
+            tracing::warn!(
+                "[KDE Connect] [G] Failed to read plaintext identity from {addr}: {e:#}"
+            );
             return Err(e.into());
         }
         Err(_) => {
-            tracing::warn!("[KDE Connect] [G] Timed out waiting for plaintext identity from {addr}");
+            tracing::warn!(
+                "[KDE Connect] [G] Timed out waiting for plaintext identity from {addr}"
+            );
             anyhow::bail!("timed out waiting for plaintext identity");
         }
     };
@@ -794,7 +973,14 @@ async fn inbound_tcp(inner: Arc<LanInner>, mut stream: TcpStream, addr: SocketAd
             return Err(err);
         }
     };
-    finish_secure_link(inner, tls, addr.ip(), Some(identity.device_id), Some(identity.protocol_version)).await
+    finish_secure_link(
+        inner,
+        tls,
+        addr.ip(),
+        Some(identity.device_id),
+        Some(identity.protocol_version),
+    )
+    .await
 }
 
 async fn finish_secure_link(
@@ -814,7 +1000,13 @@ async fn finish_secure_link(
         anyhow::bail!("peer certificate CN is not a deviceId: {cert_cn}");
     }
     // G1: Write local secure identity without transient routing fields
-    let my_identity = inner.identity.identity_packet(None).to_packet().serialize();
+    let my_identity_body = inner.identity.identity_packet(None);
+    tracing::info!(
+        "[KDE Connect][CAPS][TX] incoming={:?} outgoing={:?}",
+        my_identity_body.incoming_capabilities,
+        my_identity_body.outgoing_capabilities
+    );
+    let my_identity = my_identity_body.to_packet().serialize();
     tls.write_all(&my_identity).await?;
     tracing::info!("[KDE Connect] [G1] secure local identity written");
 
@@ -835,6 +1027,19 @@ async fn finish_secure_link(
         "[KDE Connect] [G3] secure remote identity received: device_id={}, protocol_version={}",
         secure.device_id,
         secure.protocol_version
+    );
+    tracing::info!(
+        "[KDE Connect][CAPS][RX] incoming={:?} outgoing={:?}",
+        secure.incoming_capabilities,
+        secure.outgoing_capabilities
+    );
+
+    inner.peer_capabilities.lock().await.insert(
+        secure.device_id.clone(),
+        (
+            secure.incoming_capabilities.clone(),
+            secure.outgoing_capabilities.clone(),
+        ),
     );
 
     // G4: Validate deviceId
@@ -894,7 +1099,7 @@ async fn finish_secure_link(
         connections.insert(
             secure.device_id.clone(),
             Conn {
-                packets: tx,
+                packets: tx.clone(),
                 peer_cert_der: peer_cert.clone(),
                 name: secure.device_name.clone(),
                 device_type: secure.device_type.clone(),
@@ -902,8 +1107,22 @@ async fn finish_secure_link(
             },
         );
     }
-    tracing::info!("[KDE Connect] [G6] secure link established with {}", secure.device_id);
+    tracing::info!(
+        "[KDE Connect] [G6] secure link established with {}",
+        secure.device_id
+    );
     inner.emit_devices().await;
+
+    // If paired on connect, request notifications once
+    if inner.trust.lock().await.get(&secure.device_id).is_some()
+        && inner
+            .ensure_peer_accepts(&secure.device_id, crate::kdeconnect::PACKET_TYPE_NOTIFICATION_REQUEST)
+            .await
+            .is_ok()
+    {
+        let _ = tx.send(NotificationBody::request().serialize()).await;
+    }
+
     let device_id = secure.device_id.clone();
     let writer_cancel = inner.cancel.clone();
     tokio::spawn(async move {
@@ -930,6 +1149,7 @@ async fn finish_secure_link(
             match read_line_bounded(&mut reader, MAX_PACKET_BYTES).await {
                 Ok(line) => {
                     if let Ok(packet) = NetworkPacket::parse(&line) {
+                        tracing::info!("[KDE Connect][RX] type={}", packet.packet_type);
                         if let Ok(pair) = packet.as_pair() {
                             tracing::info!(
                                 "[KDE Connect] [I] Received pair packet from {read_id}: pair={}, timestamp={:?}",
@@ -953,6 +1173,106 @@ async fn finish_secure_link(
                                     effect,
                                 )
                                 .await;
+                        } else if let Ok(battery) = packet.as_battery() {
+                            tracing::info!(
+                                "[KDE Connect][RX] type=kdeconnect.battery currentCharge={} isCharging={} thresholdEvent={:?}",
+                                battery.current_charge,
+                                battery.is_charging,
+                                battery.threshold_event
+                            );
+                            read_inner.battery.lock().await.insert(
+                                read_id.clone(),
+                                BatteryState {
+                                    current_charge: battery.current_charge,
+                                    is_charging: battery.is_charging,
+                                    threshold_event: battery.threshold_event,
+                                },
+                            );
+                            read_inner.emit_devices().await;
+                        } else if let Ok(report) = packet.as_connectivity_report() {
+                            let selected = report.selected_signal().map(|(_, signal)| (signal.network_type.clone(), signal.signal_strength));
+                            tracing::info!(
+                                "[KDE Connectivity] device={} signals={} selectedType={} selectedLevel={}",
+                                read_id,
+                                report.signal_strengths.len(),
+                                selected.as_ref().map(|(kind, _)| kind.as_str()).unwrap_or("Unknown"),
+                                selected.as_ref().map(|(_, level)| level.to_string()).unwrap_or_else(|| "unknown".to_string()),
+                            );
+                            read_inner.connectivity.lock().await.insert(
+                                read_id.clone(),
+                                ConnectivityState { report, stale: false },
+                            );
+                            read_inner.emit_devices().await;
+                        } else if let Ok(clipboard) = packet.as_clipboard() {
+                            let now_ms = std::time::SystemTime::now()
+                                .duration_since(std::time::UNIX_EPOCH)
+                                .map(|d| d.as_millis() as i64)
+                                .unwrap_or(0);
+                            let ts = clipboard.timestamp.unwrap_or(now_ms);
+                            let mut cb_map = read_inner.clipboard.lock().await;
+                            let prev_ts = cb_map.get(&read_id).copied().unwrap_or(0);
+                            if ts >= prev_ts {
+                                cb_map.insert(read_id.clone(), ts);
+                                drop(cb_map);
+                                let _ =
+                                    read_inner
+                                        .event_tx
+                                        .send(KdeConnectEvent::ClipboardReceived {
+                                            device_id: read_id.clone(),
+                                            content: clipboard.content,
+                                            timestamp_ms: ts,
+                                        });
+                            }
+                        } else if let Ok(ping) = packet.as_ping() {
+                            tracing::info!("[KDE Connect] Received ping from {read_id}");
+                            let _ = read_inner.event_tx.send(KdeConnectEvent::PingReceived {
+                                device_id: read_id.clone(),
+                                message: ping.message,
+                            });
+                        } else if let Ok(notif) = packet.as_notification() {
+                            let mut notifs_map = read_inner.notifications.lock().await;
+                            let list = notifs_map.entry(read_id.clone()).or_default();
+                            if notif.is_cancel {
+                                list.retain(|n| n.id != notif.id);
+                            } else {
+                                if let Some(existing) = list.iter_mut().find(|n| n.id == notif.id) {
+                                    existing.app_name =
+                                        notif.app_name.or(existing.app_name.clone());
+                                    existing.title = notif.title.or(existing.title.clone());
+                                    existing.text = notif.text.or(existing.text.clone());
+                                    existing.time = notif.time.or(existing.time.clone());
+                                    if let Some(c) = notif.is_clearable {
+                                        existing.is_clearable = c;
+                                    }
+                                    if let Some(s) = notif.silent {
+                                        existing.silent = s;
+                                    }
+                                } else {
+                                    list.push(KdeNotification {
+                                        id: notif.id,
+                                        app_name: notif.app_name,
+                                        title: notif.title,
+                                        text: notif.text,
+                                        time: notif.time,
+                                        is_clearable: notif.is_clearable.unwrap_or(true),
+                                        silent: notif.silent.unwrap_or(false),
+                                    });
+                                }
+                            }
+                            let current_notifs = list.clone();
+                            drop(notifs_map);
+                            let _ =
+                                read_inner
+                                    .event_tx
+                                    .send(KdeConnectEvent::NotificationsChanged {
+                                        device_id: read_id.clone(),
+                                        notifications: current_notifs,
+                                    });
+                        } else {
+                            tracing::debug!(
+                                "[KDE Connect] Ignored unhandled packet type: {}",
+                                packet.packet_type
+                            );
                         }
                     }
                 }
@@ -963,6 +1283,9 @@ async fn finish_secure_link(
             }
         }
         read_inner.connections.lock().await.remove(&read_id);
+        if let Some(state) = read_inner.connectivity.lock().await.get_mut(&read_id) {
+            state.stale = true;
+        }
         read_inner.emit_devices().await;
     });
     Ok(())
@@ -1201,6 +1524,7 @@ async fn read_line_bounded<R: AsyncReadExt + Unpin>(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::kdeconnect::BatteryBody;
     use std::net::Ipv4Addr;
 
     #[test]
@@ -1347,15 +1671,20 @@ mod tests {
 
         let relay_inner_clone = Arc::clone(&relay_inner);
         let relay_task = tokio::spawn(async move {
-            let (stream, peer_addr) = tokio::time::timeout(Duration::from_secs(2), listener.accept())
-                .await
-                .expect("R0: accept timeout")
-                .unwrap();
-            tokio::time::timeout(Duration::from_secs(2), inbound_tcp(relay_inner_clone, stream, peer_addr))
-                .await
-                .expect("Relay inbound_tcp timeout")
+            let (stream, peer_addr) =
+                tokio::time::timeout(Duration::from_secs(2), listener.accept())
+                    .await
+                    .expect("R0: accept timeout")
+                    .unwrap();
+            tokio::time::timeout(
+                Duration::from_secs(2),
+                inbound_tcp(relay_inner_clone, stream, peer_addr),
+            )
+            .await
+            .expect("Relay inbound_tcp timeout")
         });
 
+        let (close_tx, close_rx) = tokio::sync::oneshot::channel();
         let phone_identity_clone = phone_identity.clone();
         let phone_task = tokio::spawn(async move {
             let mut stream = tokio::time::timeout(Duration::from_secs(2), TcpStream::connect(addr))
@@ -1363,19 +1692,28 @@ mod tests {
                 .expect("K0: connect timeout")
                 .unwrap();
             // Pre-TLS identity
-            let pre_tls = phone_identity_clone.identity_packet(Some(1716)).to_packet().serialize();
+            let pre_tls = phone_identity_clone
+                .identity_packet(Some(1716))
+                .to_packet()
+                .serialize();
             stream.write_all(&pre_tls).await.unwrap();
             stream.flush().await.unwrap();
             // TLS server
             eprintln!("[TEST] K1 TLS start as server");
-            let mut tls = tokio::time::timeout(Duration::from_secs(2), start_tls_as_server(&phone_identity_clone, stream, None))
-                .await
-                .expect("K1: TLS handshake timeout")
-                .unwrap();
+            let mut tls = tokio::time::timeout(
+                Duration::from_secs(2),
+                start_tls_as_server(&phone_identity_clone, stream, None),
+            )
+            .await
+            .expect("K1: TLS handshake timeout")
+            .unwrap();
             eprintln!("[TEST] K1 TLS complete");
 
             eprintln!("[TEST] K2 secure identity serialize");
-            let secure_id = phone_identity_clone.identity_packet(None).to_packet().serialize();
+            let secure_id = phone_identity_clone
+                .identity_packet(None)
+                .to_packet()
+                .serialize();
 
             eprintln!("[TEST] K3 secure identity write start");
             tls.write_all(&secure_id).await.unwrap();
@@ -1385,23 +1723,29 @@ mod tests {
             eprintln!("[TEST] K5 flush complete");
 
             eprintln!("[TEST] K6 read Relay secure identity start");
-            let line = tokio::time::timeout(Duration::from_secs(2), read_line_bounded(&mut tls, MAX_IDENTITY_PACKET_BYTES))
-                .await
-                .expect("K6: read Relay secure identity timeout")
-                .unwrap();
+            let line = tokio::time::timeout(
+                Duration::from_secs(2),
+                read_line_bounded(&mut tls, MAX_IDENTITY_PACKET_BYTES),
+            )
+            .await
+            .expect("K6: read Relay secure identity timeout")
+            .unwrap();
             eprintln!("[TEST] K7 read Relay secure identity complete");
 
             let remote_id = NetworkPacket::parse(&line).unwrap().as_identity().unwrap();
             assert_eq!(remote_id.device_id, relay_id);
             assert_eq!(remote_id.protocol_version, PROTOCOL_VERSION);
+            let _ = close_rx.await;
             Ok::<(), anyhow::Error>(())
         });
 
-        let (relay_res, phone_res) = tokio::join!(relay_task, phone_task);
-        assert!(relay_res.unwrap().is_ok());
-        assert!(phone_res.unwrap().is_ok());
+        let relay_res = relay_task.await.unwrap();
+        assert!(relay_res.is_ok());
 
         assert!(relay_inner.connections.lock().await.contains_key(&phone_id));
+        let _ = close_tx.send(());
+        let phone_res = phone_task.await.unwrap();
+        assert!(phone_res.is_ok());
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -1414,6 +1758,7 @@ mod tests {
         let phone_id = phone_identity.device_id.clone();
         let relay_id = relay_identity.device_id.clone();
 
+        let (close_tx, close_rx) = tokio::sync::oneshot::channel();
         let phone_identity_clone = phone_identity.clone();
         let phone_id_clone = phone_id.clone();
         let phone_task = tokio::spawn(async move {
@@ -1422,22 +1767,31 @@ mod tests {
                 .expect("K0: accept timeout")
                 .unwrap();
             // Read pre-TLS identity from Relay
-            let line = tokio::time::timeout(Duration::from_secs(2), read_line_bounded(&mut stream, MAX_IDENTITY_PACKET_BYTES))
-                .await
-                .expect("K0: read pre-TLS line timeout")
-                .unwrap();
+            let line = tokio::time::timeout(
+                Duration::from_secs(2),
+                read_line_bounded(&mut stream, MAX_IDENTITY_PACKET_BYTES),
+            )
+            .await
+            .expect("K0: read pre-TLS line timeout")
+            .unwrap();
             let _relay_pre = NetworkPacket::parse(&line).unwrap().as_identity().unwrap();
 
             // Phone is TCP server -> acts as TLS client
             eprintln!("[TEST] K1 TLS start as client");
-            let mut tls = tokio::time::timeout(Duration::from_secs(2), start_tls_as_client(&phone_identity_clone, stream, &relay_id, None))
-                .await
-                .expect("K1: TLS client handshake timeout")
-                .unwrap();
+            let mut tls = tokio::time::timeout(
+                Duration::from_secs(2),
+                start_tls_as_client(&phone_identity_clone, stream, &relay_id, None),
+            )
+            .await
+            .expect("K1: TLS client handshake timeout")
+            .unwrap();
             eprintln!("[TEST] K1 TLS complete");
 
             eprintln!("[TEST] K2 secure identity serialize");
-            let secure_id = phone_identity_clone.identity_packet(None).to_packet().serialize();
+            let secure_id = phone_identity_clone
+                .identity_packet(None)
+                .to_packet()
+                .serialize();
 
             eprintln!("[TEST] K3 secure identity write start");
             tls.write_all(&secure_id).await.unwrap();
@@ -1447,15 +1801,19 @@ mod tests {
             eprintln!("[TEST] K5 flush complete");
 
             eprintln!("[TEST] K6 read Relay secure identity start");
-            let line = tokio::time::timeout(Duration::from_secs(2), read_line_bounded(&mut tls, MAX_IDENTITY_PACKET_BYTES))
-                .await
-                .expect("K6: read Relay secure identity timeout")
-                .unwrap();
+            let line = tokio::time::timeout(
+                Duration::from_secs(2),
+                read_line_bounded(&mut tls, MAX_IDENTITY_PACKET_BYTES),
+            )
+            .await
+            .expect("K6: read Relay secure identity timeout")
+            .unwrap();
             eprintln!("[TEST] K7 read Relay secure identity complete");
 
             let remote_id = NetworkPacket::parse(&line).unwrap().as_identity().unwrap();
             assert_eq!(remote_id.device_id, relay_id);
             assert_eq!(remote_id.protocol_version, PROTOCOL_VERSION);
+            let _ = close_rx.await;
             Ok::<(), anyhow::Error>(())
         });
 
@@ -1480,9 +1838,11 @@ mod tests {
             .expect("Relay outbound_connect timeout")
         });
 
-        let (phone_res, relay_res) = tokio::join!(phone_task, relay_task);
-        assert!(phone_res.unwrap().is_ok());
-        assert!(relay_res.unwrap().is_ok());
+        let relay_res = relay_task.await.unwrap();
+        assert!(relay_res.is_ok());
+        let _ = close_tx.send(());
+        let phone_res = phone_task.await.unwrap();
+        assert!(phone_res.is_ok());
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -1512,18 +1872,567 @@ mod tests {
 
         let phone_task = tokio::spawn(async move {
             let mut stream = TcpStream::connect(addr).await.unwrap();
-            let pre_tls = phone_identity.identity_packet(Some(1716)).to_packet().serialize();
+            let pre_tls = phone_identity
+                .identity_packet(Some(1716))
+                .to_packet()
+                .serialize();
             stream.write_all(&pre_tls).await.unwrap();
             stream.flush().await.unwrap();
-            let mut tls = start_tls_as_server(&phone_identity, stream, None).await.unwrap();
+            let mut tls = start_tls_as_server(&phone_identity, stream, None)
+                .await
+                .unwrap();
             // Send mismatching protocol version post-TLS
             let mut bad_body = phone_identity.identity_packet(None);
             bad_body.protocol_version = 7; // Downgrade
-            tls.write_all(&bad_body.to_packet().serialize()).await.unwrap();
+            tls.write_all(&bad_body.to_packet().serialize())
+                .await
+                .unwrap();
             tls.flush().await.unwrap();
         });
 
         let (relay_res, _) = tokio::join!(relay_task, phone_task);
         assert!(relay_res.unwrap().is_err());
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn paired_secure_session_updates_battery_and_stale_on_disconnect() {
+        let relay_identity = crate::kdeconnect::LocalIdentity::generate("Relay").unwrap();
+        let phone_identity = crate::kdeconnect::LocalIdentity::generate("Phone").unwrap();
+
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let phone_id = phone_identity.device_id.clone();
+
+        let (event_tx, _event_rx) = tokio::sync::mpsc::unbounded_channel();
+        let relay_inner = LanInner::new(
+            relay_identity.clone(),
+            vec![crate::kdeconnect::TrustedDevice {
+                device_id: phone_identity.device_id.clone(),
+                certificate_pem: phone_identity.certificate_pem.clone(),
+                name: phone_identity.device_name.clone(),
+                device_type: phone_identity.device_type.clone(),
+                protocol_version: PROTOCOL_VERSION,
+                paired_at_unix: 123456,
+            }],
+            LanConfig {
+                bind: BindMode::Any,
+                allow_loopback: true,
+            },
+            1716,
+            event_tx,
+            tokio_util::sync::CancellationToken::new(),
+        );
+
+        let relay_inner_clone = Arc::clone(&relay_inner);
+        let relay_task = tokio::spawn(async move {
+            let (stream, peer_addr) =
+                tokio::time::timeout(Duration::from_secs(2), listener.accept())
+                    .await
+                    .expect("accept timeout")
+                    .unwrap();
+            inbound_tcp(relay_inner_clone, stream, peer_addr).await
+        });
+
+        let phone_identity_clone = phone_identity.clone();
+        let (close_tx, close_rx) = tokio::sync::oneshot::channel();
+        let phone_task = tokio::spawn(async move {
+            let mut stream = tokio::time::timeout(Duration::from_secs(2), TcpStream::connect(addr))
+                .await
+                .expect("connect timeout")
+                .unwrap();
+            let pre_tls = phone_identity_clone
+                .identity_packet(Some(1716))
+                .to_packet()
+                .serialize();
+            stream.write_all(&pre_tls).await.unwrap();
+            stream.flush().await.unwrap();
+
+            let mut tls = tokio::time::timeout(
+                Duration::from_secs(2),
+                start_tls_as_server(&phone_identity_clone, stream, None),
+            )
+            .await
+            .expect("TLS handshake timeout")
+            .unwrap();
+
+            let secure_id = phone_identity_clone
+                .identity_packet(None)
+                .to_packet()
+                .serialize();
+            tls.write_all(&secure_id).await.unwrap();
+            tls.flush().await.unwrap();
+
+            let line = tokio::time::timeout(
+                Duration::from_secs(2),
+                read_line_bounded(&mut tls, MAX_IDENTITY_PACKET_BYTES),
+            )
+            .await
+            .expect("read identity timeout")
+            .unwrap();
+            let _ = NetworkPacket::parse(&line).unwrap().as_identity().unwrap();
+
+            // Send battery packet
+            let battery_pkt = BatteryBody::new(85, true, None).to_packet().serialize();
+            tls.write_all(&battery_pkt).await.unwrap();
+            tls.flush().await.unwrap();
+
+            // Wait for signal to disconnect
+            let _ = close_rx.await;
+            drop(tls);
+            Ok::<(), anyhow::Error>(())
+        });
+
+        let relay_res = relay_task.await.unwrap();
+        assert!(relay_res.is_ok());
+
+        // Wait for battery update in snapshot
+        let mut got_battery = false;
+        for _ in 0..20 {
+            tokio::time::sleep(Duration::from_millis(50)).await;
+            let snapshot = relay_inner.snapshot().await;
+            if let Some(dev) = snapshot.iter().find(|d| d.device_id == phone_id) {
+                if dev.connected
+                    && dev.battery_percentage == Some(85)
+                    && dev.battery_is_charging == Some(true)
+                {
+                    got_battery = true;
+                    break;
+                }
+            }
+        }
+        assert!(
+            got_battery,
+            "Expected live battery state (85%, charging=true)"
+        );
+
+        // Now trigger disconnect
+        let _ = close_tx.send(());
+        let _ = phone_task.await;
+
+        // Verify that after disconnect, device is not connected, but last known battery percentage is retained
+        let mut got_disconnected = false;
+        for _ in 0..20 {
+            tokio::time::sleep(Duration::from_millis(50)).await;
+            let snapshot = relay_inner.snapshot().await;
+            if let Some(dev) = snapshot.iter().find(|d| d.device_id == phone_id) {
+                if !dev.connected && dev.battery_percentage == Some(85) {
+                    got_disconnected = true;
+                    break;
+                }
+            }
+        }
+        assert!(
+            got_disconnected,
+            "Expected disconnected state retaining last known battery"
+        );
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn malformed_battery_packet_ignored_and_valid_packet_applied() {
+        let relay_identity = crate::kdeconnect::LocalIdentity::generate("Relay").unwrap();
+        let phone_identity = crate::kdeconnect::LocalIdentity::generate("Phone").unwrap();
+
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let phone_id = phone_identity.device_id.clone();
+
+        let (event_tx, _event_rx) = tokio::sync::mpsc::unbounded_channel();
+        let relay_inner = LanInner::new(
+            relay_identity.clone(),
+            vec![crate::kdeconnect::TrustedDevice {
+                device_id: phone_identity.device_id.clone(),
+                certificate_pem: phone_identity.certificate_pem.clone(),
+                name: phone_identity.device_name.clone(),
+                device_type: phone_identity.device_type.clone(),
+                protocol_version: PROTOCOL_VERSION,
+                paired_at_unix: 123456,
+            }],
+            LanConfig {
+                bind: BindMode::Any,
+                allow_loopback: true,
+            },
+            1716,
+            event_tx,
+            tokio_util::sync::CancellationToken::new(),
+        );
+
+        let relay_inner_clone = Arc::clone(&relay_inner);
+        let relay_task = tokio::spawn(async move {
+            let (stream, peer_addr) =
+                tokio::time::timeout(Duration::from_secs(2), listener.accept())
+                    .await
+                    .expect("accept timeout")
+                    .unwrap();
+            inbound_tcp(relay_inner_clone, stream, peer_addr).await
+        });
+
+        let phone_identity_clone = phone_identity.clone();
+        let phone_task = tokio::spawn(async move {
+            let mut stream = tokio::time::timeout(Duration::from_secs(2), TcpStream::connect(addr))
+                .await
+                .expect("connect timeout")
+                .unwrap();
+            let pre_tls = phone_identity_clone
+                .identity_packet(Some(1716))
+                .to_packet()
+                .serialize();
+            stream.write_all(&pre_tls).await.unwrap();
+            stream.flush().await.unwrap();
+
+            let mut tls = tokio::time::timeout(
+                Duration::from_secs(2),
+                start_tls_as_server(&phone_identity_clone, stream, None),
+            )
+            .await
+            .expect("TLS handshake timeout")
+            .unwrap();
+
+            let secure_id = phone_identity_clone
+                .identity_packet(None)
+                .to_packet()
+                .serialize();
+            tls.write_all(&secure_id).await.unwrap();
+            tls.flush().await.unwrap();
+
+            let line = tokio::time::timeout(
+                Duration::from_secs(2),
+                read_line_bounded(&mut tls, MAX_IDENTITY_PACKET_BYTES),
+            )
+            .await
+            .expect("read identity timeout")
+            .unwrap();
+            let _ = NetworkPacket::parse(&line).unwrap().as_identity().unwrap();
+
+            // 1. Send malformed battery packet (e.g. out of range 200%)
+            let bad_battery = br#"{"id":1,"type":"kdeconnect.battery","body":{"currentCharge":200,"isCharging":false}}"#;
+            let mut bad_with_newline = bad_battery.to_vec();
+            bad_with_newline.push(b'\n');
+            tls.write_all(&bad_with_newline).await.unwrap();
+            tls.flush().await.unwrap();
+
+            tokio::time::sleep(Duration::from_millis(50)).await;
+
+            // 2. Send valid battery packet (42%)
+            let valid_battery = BatteryBody::new(42, false, None).to_packet().serialize();
+            tls.write_all(&valid_battery).await.unwrap();
+            tls.flush().await.unwrap();
+
+            tokio::time::sleep(Duration::from_millis(100)).await;
+            Ok::<(), anyhow::Error>(())
+        });
+
+        let relay_res = relay_task.await.unwrap();
+        assert!(relay_res.is_ok());
+        let _ = phone_task.await;
+
+        let snapshot = relay_inner.snapshot().await;
+        let dev = snapshot.iter().find(|d| d.device_id == phone_id).unwrap();
+        assert_eq!(dev.battery_percentage, Some(42));
+        assert_eq!(dev.battery_is_charging, Some(false));
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn unpair_clears_battery_state() {
+        let relay_identity = crate::kdeconnect::LocalIdentity::generate("Relay").unwrap();
+        let phone_identity = crate::kdeconnect::LocalIdentity::generate("Phone").unwrap();
+        let phone_id = phone_identity.device_id.clone();
+
+        let (event_tx, _event_rx) = tokio::sync::mpsc::unbounded_channel();
+        let relay_inner = LanInner::new(
+            relay_identity.clone(),
+            vec![crate::kdeconnect::TrustedDevice {
+                device_id: phone_id.clone(),
+                certificate_pem: phone_identity.certificate_pem.clone(),
+                name: phone_identity.device_name.clone(),
+                device_type: phone_identity.device_type.clone(),
+                protocol_version: PROTOCOL_VERSION,
+                paired_at_unix: 123456,
+            }],
+            LanConfig {
+                bind: BindMode::Any,
+                allow_loopback: true,
+            },
+            1716,
+            event_tx,
+            tokio_util::sync::CancellationToken::new(),
+        );
+
+        // Manually insert a battery state for this paired device
+        relay_inner.battery.lock().await.insert(
+            phone_id.clone(),
+            BatteryState {
+                current_charge: 90,
+                is_charging: true,
+                threshold_event: None,
+            },
+        );
+
+        let snap_before = relay_inner.snapshot().await;
+        assert_eq!(
+            snap_before
+                .iter()
+                .find(|d| d.device_id == phone_id)
+                .unwrap()
+                .battery_percentage,
+            Some(90)
+        );
+
+        // Unpair
+        relay_inner.unpair(&phone_id).await.unwrap();
+
+        let snap_after = relay_inner.snapshot().await;
+        if let Some(dev) = snap_after.iter().find(|d| d.device_id == phone_id) {
+            assert_eq!(dev.battery_percentage, None);
+        }
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn paired_secure_session_ping_and_find_phone() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+
+        let relay_identity = crate::kdeconnect::LocalIdentity::generate("Relay").unwrap();
+        let phone_identity = crate::kdeconnect::LocalIdentity::generate("Phone").unwrap();
+        let phone_id = phone_identity.device_id.clone();
+
+        let (event_tx, mut event_rx) = tokio::sync::mpsc::unbounded_channel();
+        let relay_inner = LanInner::new(
+            relay_identity.clone(),
+            vec![crate::kdeconnect::TrustedDevice {
+                device_id: phone_id.clone(),
+                certificate_pem: phone_identity.certificate_pem.clone(),
+                name: phone_identity.device_name.clone(),
+                device_type: phone_identity.device_type.clone(),
+                protocol_version: PROTOCOL_VERSION,
+                paired_at_unix: 123456,
+            }],
+            LanConfig {
+                bind: BindMode::Any,
+                allow_loopback: true,
+            },
+            port,
+            event_tx,
+            tokio_util::sync::CancellationToken::new(),
+        );
+
+        let relay_inner_clone = Arc::clone(&relay_inner);
+        let relay_task = tokio::spawn(async move {
+            let (stream, addr) = listener.accept().await.unwrap();
+            inbound_tcp(relay_inner_clone, stream, addr).await
+        });
+
+        let phone_identity_clone = phone_identity.clone();
+        let phone_task = tokio::spawn(async move {
+            let mut stream = TcpStream::connect(SocketAddr::from(([127, 0, 0, 1], port)))
+                .await
+                .unwrap();
+
+            let pre_tls = phone_identity_clone
+                .identity_packet(Some(1716))
+                .to_packet()
+                .serialize();
+            stream.write_all(&pre_tls).await.unwrap();
+            stream.flush().await.unwrap();
+
+            let mut tls = tokio::time::timeout(
+                Duration::from_secs(2),
+                start_tls_as_server(&phone_identity_clone, stream, None),
+            )
+            .await
+            .expect("TLS handshake timeout")
+            .unwrap();
+
+            let mut secure_identity = phone_identity_clone.identity_packet(None);
+            // This test peer acts as Android, which accepts these desktop
+            // requests; LocalIdentity itself models a Relay desktop.
+            secure_identity
+                .incoming_capabilities
+                .push(crate::kdeconnect::PACKET_TYPE_FINDMYPHONE_REQUEST.to_string());
+            let secure_id = secure_identity.to_packet().serialize();
+            tls.write_all(&secure_id).await.unwrap();
+            tls.flush().await.unwrap();
+
+            let line = tokio::time::timeout(
+                Duration::from_secs(2),
+                read_line_bounded(&mut tls, MAX_IDENTITY_PACKET_BYTES),
+            )
+            .await
+            .expect("read identity timeout")
+            .unwrap();
+            let _ = NetworkPacket::parse(&line).unwrap().as_identity().unwrap();
+
+            // 1. Phone sends Ping packet to Relay
+            let ping_pkt = PingBody::new(Some("Hello Ping".into())).serialize();
+            tls.write_all(&ping_pkt).await.unwrap();
+            tls.flush().await.unwrap();
+
+            // 2. Read packet sent from Relay (notification request on connect, or find phone / ping from Relay)
+            let mut found_find_phone = false;
+            for _ in 0..5 {
+                if let Ok(Ok(l)) = tokio::time::timeout(
+                    Duration::from_millis(500),
+                    read_line_bounded(&mut tls, MAX_PACKET_BYTES),
+                )
+                .await
+                {
+                    if let Ok(pkt) = NetworkPacket::parse(&l) {
+                        if pkt.packet_type == crate::kdeconnect::PACKET_TYPE_FINDMYPHONE_REQUEST {
+                            found_find_phone = true;
+                            break;
+                        }
+                    }
+                }
+            }
+            assert!(found_find_phone);
+            Ok::<(), anyhow::Error>(())
+        });
+
+        // Wait for connection to establish
+        tokio::time::sleep(Duration::from_millis(200)).await;
+
+        // Relay sends Find Phone to Phone
+        relay_inner.find_phone(&phone_id).await.unwrap();
+
+        // Check if Relay received Ping event
+        let mut got_ping = false;
+        while let Ok(event) = event_rx.try_recv() {
+            if let KdeConnectEvent::PingReceived { device_id, message } = event {
+                if device_id == phone_id && message.as_deref() == Some("Hello Ping") {
+                    got_ping = true;
+                }
+            }
+        }
+        assert!(got_ping);
+
+        let _ = relay_task.await;
+        let _ = phone_task.await;
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn paired_secure_session_clipboard_and_notifications() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+
+        let relay_identity = crate::kdeconnect::LocalIdentity::generate("Relay").unwrap();
+        let phone_identity = crate::kdeconnect::LocalIdentity::generate("Phone").unwrap();
+        let phone_id = phone_identity.device_id.clone();
+
+        let (event_tx, mut event_rx) = tokio::sync::mpsc::unbounded_channel();
+        let relay_inner = LanInner::new(
+            relay_identity.clone(),
+            vec![crate::kdeconnect::TrustedDevice {
+                device_id: phone_id.clone(),
+                certificate_pem: phone_identity.certificate_pem.clone(),
+                name: phone_identity.device_name.clone(),
+                device_type: phone_identity.device_type.clone(),
+                protocol_version: PROTOCOL_VERSION,
+                paired_at_unix: 123456,
+            }],
+            LanConfig {
+                bind: BindMode::Any,
+                allow_loopback: true,
+            },
+            port,
+            event_tx,
+            tokio_util::sync::CancellationToken::new(),
+        );
+
+        let relay_inner_clone = Arc::clone(&relay_inner);
+        let relay_task = tokio::spawn(async move {
+            let (stream, addr) = listener.accept().await.unwrap();
+            inbound_tcp(relay_inner_clone, stream, addr).await
+        });
+
+        let phone_identity_clone = phone_identity.clone();
+        let phone_task = tokio::spawn(async move {
+            let mut stream = TcpStream::connect(SocketAddr::from(([127, 0, 0, 1], port)))
+                .await
+                .unwrap();
+
+            let pre_tls = phone_identity_clone
+                .identity_packet(Some(1716))
+                .to_packet()
+                .serialize();
+            stream.write_all(&pre_tls).await.unwrap();
+            stream.flush().await.unwrap();
+
+            let mut tls = tokio::time::timeout(
+                Duration::from_secs(2),
+                start_tls_as_server(&phone_identity_clone, stream, None),
+            )
+            .await
+            .expect("TLS handshake timeout")
+            .unwrap();
+
+            let mut secure_identity = phone_identity_clone.identity_packet(None);
+            secure_identity
+                .incoming_capabilities
+                .push(crate::kdeconnect::PACKET_TYPE_NOTIFICATION_REQUEST.to_string());
+            let secure_id = secure_identity.to_packet().serialize();
+            tls.write_all(&secure_id).await.unwrap();
+            tls.flush().await.unwrap();
+
+            let line = tokio::time::timeout(
+                Duration::from_secs(2),
+                read_line_bounded(&mut tls, MAX_IDENTITY_PACKET_BYTES),
+            )
+            .await
+            .expect("read identity timeout")
+            .unwrap();
+            let _ = NetworkPacket::parse(&line).unwrap().as_identity().unwrap();
+
+            // 1. Phone sends Clipboard packet
+            let cb_pkt =
+                ClipboardBody::connect("Relay clipboard test 123", 2_000_000_000_000).serialize();
+            tls.write_all(&cb_pkt).await.unwrap();
+            tls.flush().await.unwrap();
+
+            // 2. Phone sends Notification packet
+            let notif_json = br#"{"id":100,"type":"kdeconnect.notification","body":{"id":"msg1","appName":"Messages","title":"Mom","text":"Dinner ready"}}"#;
+            let mut notif_line = notif_json.to_vec();
+            notif_line.push(b'\n');
+            tls.write_all(&notif_line).await.unwrap();
+            tls.flush().await.unwrap();
+
+            tokio::time::sleep(Duration::from_millis(100)).await;
+
+            // 3. Phone cancels Notification
+            let cancel_json = br#"{"id":101,"type":"kdeconnect.notification","body":{"id":"msg1","isCancel":true}}"#;
+            let mut cancel_line = cancel_json.to_vec();
+            cancel_line.push(b'\n');
+            tls.write_all(&cancel_line).await.unwrap();
+            tls.flush().await.unwrap();
+
+            tokio::time::sleep(Duration::from_millis(100)).await;
+            Ok::<(), anyhow::Error>(())
+        });
+
+        // Wait for connection to establish and packets to process
+        tokio::time::sleep(Duration::from_millis(400)).await;
+
+        let mut got_clipboard = false;
+        while let Ok(event) = event_rx.try_recv() {
+            if let KdeConnectEvent::ClipboardReceived {
+                device_id,
+                content,
+                timestamp_ms,
+            } = event
+            {
+                if device_id == phone_id
+                    && content == "Relay clipboard test 123"
+                    && timestamp_ms == 2_000_000_000_000
+                {
+                    got_clipboard = true;
+                }
+            }
+        }
+        assert!(got_clipboard);
+
+        let notifs = relay_inner.get_notifications(&phone_id).await;
+        // Notification msg1 was added then cancelled, so notifs should be empty
+        assert!(notifs.is_empty());
+
+        let _ = relay_task.await;
+        let _ = phone_task.await;
     }
 }

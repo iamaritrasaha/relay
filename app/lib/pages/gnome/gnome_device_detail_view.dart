@@ -253,24 +253,59 @@ class GnomeDeviceDetailView extends StatelessWidget {
                         ? 'Authenticated Relay device identity'
                         : 'Relay-compatible device (unauthenticated)',
                   ),
-                  if (!device.isKdeConnect)
+                  AdwActionRow(
+                    leading: const Icon(Icons.battery_std_rounded),
+                    title: 'Battery',
+                    subtitle: switch (device.battery) {
+                      // A stale reading is labelled as such rather than shown as live.
+                      final battery when !battery.hasInfo =>
+                        device.isKdeConnect
+                            ? 'Waiting for battery status'
+                            : device.isCompatibilityPeer
+                            ? 'LocalSend-compatible devices do not share battery status'
+                            : 'Not shared by this device',
+                      final battery when battery.isStale => 'Last known before disconnecting',
+                      final battery when battery.isFull => 'Charged',
+                      final battery when battery.isCharging => 'Charging',
+                      _ => 'On battery',
+                    },
+                    trailing: Text(
+                      device.battery.hasInfo ? '${device.battery.percentage}%' : '—',
+                      style: RelayTypography.body(palette.textSecondary, isGnome: true),
+                    ),
+                  ),
+                  if (device.isKdeConnect && device.isPaired) ...[
                     AdwActionRow(
-                      leading: const Icon(Icons.battery_std_rounded),
-                      title: 'Battery',
-                      subtitle: switch (device.battery) {
-                        // A stale reading is labelled as such rather than shown as live.
-                        final battery when !battery.hasInfo =>
-                          device.isCompatibilityPeer ? 'LocalSend-compatible devices do not share battery status' : 'Not shared by this device',
-                        final battery when battery.isStale => 'Last known before disconnecting',
-                        final battery when battery.isFull => 'Charged',
-                        final battery when battery.isCharging => 'Charging',
-                        _ => 'On battery',
-                      },
-                      trailing: Text(
-                        device.battery.displayString,
-                        style: RelayTypography.body(palette.textSecondary, isGnome: true),
+                      leading: const Icon(Icons.notifications_active_outlined),
+                      title: 'Ping device',
+                      subtitle: device.continuityConnected ? 'Send a test ping to this phone' : 'Phone is currently disconnected',
+                      trailing: AdwButton(
+                        isPill: true,
+                        label: 'Ping',
+                        onPressed: device.canPing
+                            ? () {
+                                final rawId = device.key.replaceFirst('kdeconnect:', '');
+                                context.ref.redux(kdeConnectProvider).dispatchAsync(KdeConnectPingAction(rawId));
+                              }
+                            : null,
                       ),
                     ),
+                    AdwActionRow(
+                      leading: const Icon(Icons.ring_volume_rounded),
+                      title: 'Find device',
+                      subtitle: device.continuityConnected ? 'Ring this phone at full volume' : 'Phone is currently disconnected',
+                      trailing: AdwButton(
+                        isPill: true,
+                        label: 'Ring',
+                        onPressed: device.canFindDevice
+                            ? () {
+                                final rawId = device.key.replaceFirst('kdeconnect:', '');
+                                context.ref.redux(kdeConnectProvider).dispatchAsync(KdeConnectFindPhoneAction(rawId));
+                              }
+                            : null,
+                      ),
+                    ),
+                  ],
                   if (!device.isKdeConnect)
                     AdwNavigationRow(
                       leading: const Icon(Icons.tune_rounded),
@@ -280,6 +315,42 @@ class GnomeDeviceDetailView extends StatelessWidget {
                     ),
                 ],
               ),
+
+              if (device.isKdeConnect && device.isPaired) ...[
+                Builder(
+                  builder: (context) {
+                    final rawId = device.key.replaceFirst('kdeconnect:', '');
+                    final notifs = context.watch(kdeConnectProvider.select((s) => s.notifications[rawId] ?? const []));
+                    return AdwPreferencesGroup(
+                      title: 'Notifications',
+                      children: notifs.isEmpty
+                          ? [
+                              Padding(
+                                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 20),
+                                child: Center(
+                                  child: Text(
+                                    'No notifications from this phone\n(Enable notification access in KDE Connect on your phone if needed)',
+                                    textAlign: TextAlign.center,
+                                    style: RelayTypography.body(palette.textTertiary, isGnome: true),
+                                  ),
+                                ),
+                              ),
+                            ]
+                          : [
+                              for (final n in notifs)
+                                AdwActionRow(
+                                  leading: const Icon(Icons.notifications_outlined),
+                                  title: n.title?.isNotEmpty == true ? n.title! : (n.appName ?? 'Notification'),
+                                  subtitle: [
+                                    if (n.appName != null && n.title?.isNotEmpty == true) n.appName!,
+                                    if (n.text != null && n.text!.isNotEmpty) n.text!,
+                                  ].join(' · '),
+                                ),
+                            ],
+                    );
+                  },
+                ),
+              ],
 
               // Recent Activity Boxed Group
               AdwPreferencesGroup(

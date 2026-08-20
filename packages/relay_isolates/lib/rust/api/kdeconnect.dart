@@ -7,9 +7,11 @@ import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 import 'package:freezed_annotation/freezed_annotation.dart' hide protected;
 import 'package:relay_isolates/rust/frb_generated.dart';
 
+export 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart' show AnyhowException;
+
 part 'kdeconnect.freezed.dart';
 
-// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `from`, `from`, `from`, `from`, `from`, `try_from`
+// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `from`, `from`, `from`, `from`, `from`, `from`, `try_from`
 // These functions are ignored (category: IgnoreBecauseExplicitAttribute): `_keep_frb_imports`
 
 Future<RsKdeConnectIdentity> kdeconnectGenerateIdentity({required String deviceName}) =>
@@ -22,11 +24,23 @@ Future<RsKdeConnect> startKdeconnect({required RsKdeConnectIdentity identity, re
 abstract class RsKdeConnect implements RustOpaqueInterface {
   Future<void> acceptPair({required String deviceId});
 
+  Future<void> findPhone({required String deviceId});
+
+  Future<List<RsKdeNotification>> getNotifications({required String deviceId});
+
   Stream<RsKdeConnectEvent> listen();
 
   Future<void> rejectPair({required String deviceId});
 
+  Future<void> requestNotifications({required String deviceId});
+
   Future<void> requestPair({required String deviceId});
+
+  Future<void> sendClipboard({required String deviceId, required String content, required PlatformInt64 timestampMs});
+
+  Future<void> sendClipboardToAllPaired({required String content, required PlatformInt64 timestampMs});
+
+  Future<void> sendPing({required String deviceId, String? message});
 
   Future<List<RsKdeConnectDevice>> snapshot();
 
@@ -45,6 +59,13 @@ class RsKdeConnectDevice {
   final bool connected;
   final bool incomingPair;
   final bool identityMismatch;
+  final int? batteryPercentage;
+  final bool? batteryIsCharging;
+  final String? networkType;
+  final int? signalLevel;
+  final bool connectivityStale;
+  final List<String> incomingCapabilities;
+  final List<String> outgoingCapabilities;
 
   const RsKdeConnectDevice({
     required this.deviceId,
@@ -56,6 +77,13 @@ class RsKdeConnectDevice {
     required this.connected,
     required this.incomingPair,
     required this.identityMismatch,
+    this.batteryPercentage,
+    this.batteryIsCharging,
+    this.networkType,
+    this.signalLevel,
+    required this.connectivityStale,
+    required this.incomingCapabilities,
+    required this.outgoingCapabilities,
   });
 
   @override
@@ -68,7 +96,14 @@ class RsKdeConnectDevice {
       paired.hashCode ^
       connected.hashCode ^
       incomingPair.hashCode ^
-      identityMismatch.hashCode;
+      identityMismatch.hashCode ^
+      batteryPercentage.hashCode ^
+      batteryIsCharging.hashCode ^
+      networkType.hashCode ^
+      signalLevel.hashCode ^
+      connectivityStale.hashCode ^
+      incomingCapabilities.hashCode ^
+      outgoingCapabilities.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -83,7 +118,14 @@ class RsKdeConnectDevice {
           paired == other.paired &&
           connected == other.connected &&
           incomingPair == other.incomingPair &&
-          identityMismatch == other.identityMismatch;
+          identityMismatch == other.identityMismatch &&
+          batteryPercentage == other.batteryPercentage &&
+          batteryIsCharging == other.batteryIsCharging &&
+          networkType == other.networkType &&
+          signalLevel == other.signalLevel &&
+          connectivityStale == other.connectivityStale &&
+          incomingCapabilities == other.incomingCapabilities &&
+          outgoingCapabilities == other.outgoingCapabilities;
 }
 
 @freezed
@@ -104,6 +146,19 @@ sealed class RsKdeConnectEvent with _$RsKdeConnectEvent {
   const factory RsKdeConnectEvent.trustChanged({
     required List<RsKdeConnectTrustedDevice> devices,
   }) = RsKdeConnectEvent_TrustChanged;
+  const factory RsKdeConnectEvent.pingReceived({
+    required String deviceId,
+    String? message,
+  }) = RsKdeConnectEvent_PingReceived;
+  const factory RsKdeConnectEvent.clipboardReceived({
+    required String deviceId,
+    required String content,
+    required PlatformInt64 timestampMs,
+  }) = RsKdeConnectEvent_ClipboardReceived;
+  const factory RsKdeConnectEvent.notificationsChanged({
+    required String deviceId,
+    required List<RsKdeNotification> notifications,
+  }) = RsKdeConnectEvent_NotificationsChanged;
 }
 
 class RsKdeConnectIdentity {
@@ -165,4 +220,40 @@ class RsKdeConnectTrustedDevice {
           deviceType == other.deviceType &&
           protocolVersion == other.protocolVersion &&
           pairedAtUnix == other.pairedAtUnix;
+}
+
+class RsKdeNotification {
+  final String id;
+  final String? appName;
+  final String? title;
+  final String? text;
+  final String? time;
+  final bool isClearable;
+  final bool silent;
+
+  const RsKdeNotification({
+    required this.id,
+    this.appName,
+    this.title,
+    this.text,
+    this.time,
+    required this.isClearable,
+    required this.silent,
+  });
+
+  @override
+  int get hashCode => id.hashCode ^ appName.hashCode ^ title.hashCode ^ text.hashCode ^ time.hashCode ^ isClearable.hashCode ^ silent.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is RsKdeNotification &&
+          runtimeType == other.runtimeType &&
+          id == other.id &&
+          appName == other.appName &&
+          title == other.title &&
+          text == other.text &&
+          time == other.time &&
+          isClearable == other.isClearable &&
+          silent == other.silent;
 }

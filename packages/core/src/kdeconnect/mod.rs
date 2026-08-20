@@ -3,18 +3,29 @@
 //! This module is a separate trust namespace. A successful KDE Connect pair
 //! never produces a RelayId and never consults Relay-native trust records.
 
+mod capabilities;
 mod identity;
 mod lan;
 mod packet;
 mod pairing;
 
+pub use capabilities::{
+    canonical_incoming_capabilities, canonical_outgoing_capabilities, PACKET_TYPE_BATTERY,
+    PACKET_TYPE_CONNECTIVITY_REPORT,
+    PACKET_TYPE_CLIPBOARD, PACKET_TYPE_CLIPBOARD_CONNECT, PACKET_TYPE_FINDMYPHONE_REQUEST,
+    PACKET_TYPE_IDENTITY, PACKET_TYPE_NOTIFICATION, PACKET_TYPE_NOTIFICATION_REQUEST,
+    PACKET_TYPE_PAIR, PACKET_TYPE_PING,
+};
 pub use identity::LocalIdentity;
 pub use lan::{
-    BindMode, DeviceTable, LanConfig, ObservedDevice, MAX_TCP_PORT, MIN_TCP_PORT, UDP_PORT,
+    BatteryState, BindMode, ConnectivityState, DeviceTable, LanConfig, ObservedDevice, MAX_TCP_PORT, MIN_TCP_PORT,
+    UDP_PORT,
 };
 pub use packet::{
-    filter_device_name, is_valid_device_id, IdentityBody, NetworkPacket, PacketError, PairBody,
-    PACKET_TYPE_IDENTITY, PACKET_TYPE_PAIR, PROTOCOL_VERSION,
+    filter_device_name, is_valid_device_id, BatteryBody, ClipboardBody, FindMyPhoneBody,
+    ConnectivityReportBody, ConnectivitySignal,
+    IdentityBody, NetworkPacket, NotificationBody, PacketError, PairBody, PingBody,
+    PROTOCOL_VERSION,
 };
 pub use pairing::{
     compute_verification_key, extract_public_key_der, PairState, PairingEffect, PairingFailReason,
@@ -57,14 +68,55 @@ pub struct DeviceSnapshot {
     pub connected: bool,
     pub incoming_pair: bool,
     pub identity_mismatch: bool,
+    pub battery_percentage: Option<i32>,
+    pub battery_is_charging: Option<bool>,
+    pub network_type: Option<String>,
+    pub signal_level: Option<i32>,
+    pub connectivity_stale: bool,
+    pub incoming_capabilities: Vec<String>,
+    pub outgoing_capabilities: Vec<String>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct KdeNotification {
+    pub id: String,
+    pub app_name: Option<String>,
+    pub title: Option<String>,
+    pub text: Option<String>,
+    pub time: Option<String>,
+    pub is_clearable: bool,
+    pub silent: bool,
 }
 
 #[derive(Clone, Debug)]
 pub enum KdeConnectEvent {
-    DevicesChanged { devices: Vec<DeviceSnapshot> },
-    IncomingPair { device_id: String, name: String },
-    PairingFailed { device_id: String, reason: String },
-    TrustChanged { devices: Vec<TrustedDevice> },
+    DevicesChanged {
+        devices: Vec<DeviceSnapshot>,
+    },
+    IncomingPair {
+        device_id: String,
+        name: String,
+    },
+    PairingFailed {
+        device_id: String,
+        reason: String,
+    },
+    TrustChanged {
+        devices: Vec<TrustedDevice>,
+    },
+    PingReceived {
+        device_id: String,
+        message: Option<String>,
+    },
+    ClipboardReceived {
+        device_id: String,
+        content: String,
+        timestamp_ms: i64,
+    },
+    NotificationsChanged {
+        device_id: String,
+        notifications: Vec<KdeNotification>,
+    },
 }
 
 pub struct KdeConnectConfig {
@@ -141,6 +193,43 @@ impl KdeConnectHandle {
 
     pub async fn unpair(&self, device_id: &str) -> Result<()> {
         self.inner.unpair(device_id).await
+    }
+
+    pub async fn send_ping(&self, device_id: &str, message: Option<String>) -> Result<()> {
+        self.inner.send_ping(device_id, message).await
+    }
+
+    pub async fn find_phone(&self, device_id: &str) -> Result<()> {
+        self.inner.find_phone(device_id).await
+    }
+
+    pub async fn send_clipboard(
+        &self,
+        device_id: &str,
+        content: &str,
+        timestamp_ms: i64,
+    ) -> Result<()> {
+        self.inner
+            .send_clipboard(device_id, content, timestamp_ms)
+            .await
+    }
+
+    pub async fn send_clipboard_to_all_paired(
+        &self,
+        content: &str,
+        timestamp_ms: i64,
+    ) -> Result<()> {
+        self.inner
+            .send_clipboard_to_all_paired(content, timestamp_ms)
+            .await
+    }
+
+    pub async fn request_notifications(&self, device_id: &str) -> Result<()> {
+        self.inner.request_notifications(device_id).await
+    }
+
+    pub async fn get_notifications(&self, device_id: &str) -> Vec<KdeNotification> {
+        self.inner.get_notifications(device_id).await
     }
 
     pub fn stop(&self) {

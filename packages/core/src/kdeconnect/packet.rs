@@ -5,10 +5,14 @@
 //! callers rather than executed.
 
 use serde_json::{Map, Value};
+use std::collections::BTreeMap;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-pub const PACKET_TYPE_IDENTITY: &str = "kdeconnect.identity";
-pub const PACKET_TYPE_PAIR: &str = "kdeconnect.pair";
+pub use super::capabilities::{
+    PACKET_TYPE_BATTERY, PACKET_TYPE_CLIPBOARD, PACKET_TYPE_CLIPBOARD_CONNECT,
+    PACKET_TYPE_CONNECTIVITY_REPORT, PACKET_TYPE_FINDMYPHONE_REQUEST, PACKET_TYPE_IDENTITY,
+    PACKET_TYPE_NOTIFICATION, PACKET_TYPE_NOTIFICATION_REQUEST, PACKET_TYPE_PAIR, PACKET_TYPE_PING,
+};
 pub const PROTOCOL_VERSION: i64 = 8;
 
 pub const MAX_IDENTITY_PACKET_BYTES: usize = 8192;
@@ -42,6 +46,51 @@ pub struct IdentityBody {
 pub struct PairBody {
     pub pair: bool,
     pub timestamp: Option<i64>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct BatteryBody {
+    pub current_charge: i32,
+    pub is_charging: bool,
+    pub threshold_event: Option<i32>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ConnectivitySignal {
+    pub network_type: String,
+    pub signal_strength: u8,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct ConnectivityReportBody {
+    pub signal_strengths: BTreeMap<String, ConnectivitySignal>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ClipboardBody {
+    pub content: String,
+    pub timestamp: Option<i64>, // milliseconds since Unix epoch
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PingBody {
+    pub message: Option<String>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct FindMyPhoneBody;
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct NotificationBody {
+    pub id: String,
+    pub app_name: Option<String>,
+    pub title: Option<String>,
+    pub text: Option<String>,
+    pub ticker: Option<String>,
+    pub time: Option<String>,
+    pub is_clearable: Option<bool>,
+    pub silent: Option<bool>,
+    pub is_cancel: bool,
 }
 
 #[derive(Debug)]
@@ -116,6 +165,57 @@ impl NetworkPacket {
             return Err(PacketError("not a pair packet".into()));
         }
         PairBody::from_map(&self.body)
+    }
+
+    pub fn as_battery(&self) -> Result<BatteryBody, PacketError> {
+        if self.packet_type != PACKET_TYPE_BATTERY {
+            return Err(PacketError("not a battery packet".into()));
+        }
+        BatteryBody::from_map(&self.body)
+    }
+
+    pub fn as_connectivity_report(&self) -> Result<ConnectivityReportBody, PacketError> {
+        if self.packet_type != PACKET_TYPE_CONNECTIVITY_REPORT {
+            return Err(PacketError("not a connectivity report packet".into()));
+        }
+        ConnectivityReportBody::from_map(&self.body)
+    }
+
+    pub fn as_clipboard(&self) -> Result<ClipboardBody, PacketError> {
+        if self.packet_type != PACKET_TYPE_CLIPBOARD
+            && self.packet_type != PACKET_TYPE_CLIPBOARD_CONNECT
+        {
+            return Err(PacketError("not a clipboard packet".into()));
+        }
+        ClipboardBody::from_map(&self.body)
+    }
+
+    pub fn as_ping(&self) -> Result<PingBody, PacketError> {
+        if self.packet_type != PACKET_TYPE_PING {
+            return Err(PacketError("not a ping packet".into()));
+        }
+        PingBody::from_map(&self.body)
+    }
+
+    pub fn as_findmyphone_request(&self) -> Result<(), PacketError> {
+        if self.packet_type != PACKET_TYPE_FINDMYPHONE_REQUEST {
+            return Err(PacketError("not a findmyphone request packet".into()));
+        }
+        Ok(())
+    }
+
+    pub fn as_notification(&self) -> Result<NotificationBody, PacketError> {
+        if self.packet_type != PACKET_TYPE_NOTIFICATION {
+            return Err(PacketError("not a notification packet".into()));
+        }
+        NotificationBody::from_map(&self.body)
+    }
+
+    pub fn as_notification_request(&self) -> Result<(), PacketError> {
+        if self.packet_type != PACKET_TYPE_NOTIFICATION_REQUEST {
+            return Err(PacketError("not a notification request packet".into()));
+        }
+        Ok(())
     }
 }
 
@@ -226,6 +326,221 @@ impl PairBody {
             Some(_) => return Err(PacketError("timestamp must be a number".into())),
         };
         Ok(Self { pair, timestamp })
+    }
+}
+
+impl BatteryBody {
+    pub fn new(current_charge: i32, is_charging: bool, threshold_event: Option<i32>) -> Self {
+        Self {
+            current_charge,
+            is_charging,
+            threshold_event,
+        }
+    }
+
+    pub fn to_packet(&self) -> NetworkPacket {
+        let mut body = Map::new();
+        body.insert(
+            "currentCharge".into(),
+            Value::Number((self.current_charge as i64).into()),
+        );
+        body.insert("isCharging".into(), Value::Bool(self.is_charging));
+        if let Some(threshold) = self.threshold_event {
+            body.insert(
+                "thresholdEvent".into(),
+                Value::Number((threshold as i64).into()),
+            );
+        }
+        NetworkPacket::new(PACKET_TYPE_BATTERY, body)
+    }
+
+    fn from_map(body: &Map<String, Value>) -> Result<Self, PacketError> {
+        let current_charge = match body.get("currentCharge") {
+            Some(Value::Number(n)) => {
+                let val = n
+                    .as_i64()
+                    .ok_or_else(|| PacketError("currentCharge must be an integer".into()))?;
+                if !(0..=100).contains(&val) {
+                    return Err(PacketError(format!("currentCharge out of range: {val}")));
+                }
+                val as i32
+            }
+            Some(_) => return Err(PacketError("currentCharge must be an integer".into())),
+            None => return Err(PacketError("missing currentCharge".into())),
+        };
+        let is_charging = match body.get("isCharging") {
+            Some(Value::Bool(b)) => *b,
+            Some(_) => return Err(PacketError("isCharging must be a boolean".into())),
+            None => return Err(PacketError("missing isCharging".into())),
+        };
+        let threshold_event = match body.get("thresholdEvent") {
+            None => None,
+            Some(Value::Number(n)) => {
+                let val = n
+                    .as_i64()
+                    .ok_or_else(|| PacketError("thresholdEvent must be an integer".into()))?;
+                Some(val as i32)
+            }
+            Some(_) => return Err(PacketError("thresholdEvent must be an integer".into())),
+        };
+        Ok(Self {
+            current_charge,
+            is_charging,
+            threshold_event,
+        })
+    }
+}
+
+impl ConnectivityReportBody {
+    fn from_map(body: &Map<String, Value>) -> Result<Self, PacketError> {
+        let Some(Value::Object(entries)) = body.get("signalStrengths") else {
+            return Err(PacketError("missing or invalid signalStrengths".into()));
+        };
+        let mut signal_strengths = BTreeMap::new();
+        for (key, value) in entries {
+            let Some(entry) = value.as_object() else {
+                continue;
+            };
+            let Some(network_type) = entry.get("networkType").and_then(Value::as_str) else {
+                continue;
+            };
+            let Some(strength) = entry.get("signalStrength").and_then(Value::as_i64) else {
+                continue;
+            };
+            if !(0..=4).contains(&strength) {
+                continue;
+            }
+            signal_strengths.insert(
+                key.clone(),
+                ConnectivitySignal {
+                    network_type: normalized_network_type(network_type),
+                    signal_strength: strength as u8,
+                },
+            );
+        }
+        Ok(Self { signal_strengths })
+    }
+
+    /// The protocol does not identify a primary subscription. Relay therefore
+    /// presents the best reported cellular connection, deterministically.
+    pub fn selected_signal(&self) -> Option<(&str, &ConnectivitySignal)> {
+        self.signal_strengths
+            .iter()
+            .max_by(|(left_key, left), (right_key, right)| {
+                left.signal_strength
+                    .cmp(&right.signal_strength)
+                    .then_with(|| {
+                        network_priority(&left.network_type)
+                            .cmp(&network_priority(&right.network_type))
+                    })
+                    .then_with(|| right_key.cmp(left_key))
+            })
+            .map(|(key, signal)| (key.as_str(), signal))
+    }
+}
+
+fn normalized_network_type(value: &str) -> String {
+    match value {
+        "GSM" | "CDMA" | "iDEN" | "UMTS" | "CDMA2000" | "EDGE" | "GPRS" | "HSPA" | "LTE" | "5G"
+        | "Unknown" => value.to_string(),
+        _ => "Unknown".to_string(),
+    }
+}
+
+fn network_priority(value: &str) -> u8 {
+    match value {
+        "5G" => 8,
+        "LTE" => 7,
+        "HSPA" => 6,
+        "UMTS" => 5,
+        "EDGE" => 4,
+        "GPRS" => 3,
+        "GSM" => 2,
+        _ => 1,
+    }
+}
+
+impl ClipboardBody {
+    pub fn text(content: impl Into<String>) -> NetworkPacket {
+        let mut body = Map::new();
+        body.insert("content".into(), Value::String(content.into()));
+        NetworkPacket::new(PACKET_TYPE_CLIPBOARD, body)
+    }
+
+    pub fn connect(content: impl Into<String>, timestamp_ms: i64) -> NetworkPacket {
+        let mut body = Map::new();
+        body.insert("content".into(), Value::String(content.into()));
+        body.insert("timestamp".into(), Value::Number(timestamp_ms.into()));
+        NetworkPacket::new(PACKET_TYPE_CLIPBOARD_CONNECT, body)
+    }
+
+    fn from_map(body: &Map<String, Value>) -> Result<Self, PacketError> {
+        let content = required_string(body, "content")?;
+        let timestamp = optional_i64(body, "timestamp");
+        Ok(Self { content, timestamp })
+    }
+}
+
+impl PingBody {
+    pub fn new(message: Option<String>) -> NetworkPacket {
+        let mut body = Map::new();
+        if let Some(msg) = message {
+            body.insert("message".into(), Value::String(msg));
+        }
+        NetworkPacket::new(PACKET_TYPE_PING, body)
+    }
+
+    fn from_map(body: &Map<String, Value>) -> Result<Self, PacketError> {
+        let message = optional_string(body, "message");
+        Ok(Self { message })
+    }
+}
+
+impl FindMyPhoneBody {
+    pub fn request() -> NetworkPacket {
+        NetworkPacket::new(PACKET_TYPE_FINDMYPHONE_REQUEST, Map::new())
+    }
+}
+
+impl NotificationBody {
+    pub fn request() -> NetworkPacket {
+        let mut body = Map::new();
+        body.insert("request".into(), Value::Bool(true));
+        NetworkPacket::new(PACKET_TYPE_NOTIFICATION_REQUEST, body)
+    }
+
+    fn from_map(body: &Map<String, Value>) -> Result<Self, PacketError> {
+        let id = match body.get("id") {
+            Some(Value::String(s)) => s.clone(),
+            Some(Value::Number(n)) => n.to_string(),
+            _ => return Err(PacketError("missing or invalid id".into())),
+        };
+        let app_name = optional_string(body, "appName");
+        let title = optional_string(body, "title");
+        let text = optional_string(body, "text");
+        let ticker = optional_string(body, "ticker");
+        let time = match body.get("time") {
+            Some(Value::String(s)) => Some(s.clone()),
+            Some(Value::Number(n)) => Some(n.to_string()),
+            _ => None,
+        };
+        let is_clearable = body.get("isClearable").and_then(Value::as_bool);
+        let silent = body.get("silent").and_then(Value::as_bool);
+        let is_cancel = body
+            .get("isCancel")
+            .and_then(Value::as_bool)
+            .unwrap_or(false);
+        Ok(Self {
+            id,
+            app_name,
+            title,
+            text,
+            ticker,
+            time,
+            is_clearable,
+            silent,
+            is_cancel,
+        })
     }
 }
 
@@ -362,5 +677,260 @@ mod tests {
         let bytes = identity().to_packet().serialize();
         assert_eq!(*bytes.last().unwrap(), b'\n');
         assert!(std::str::from_utf8(&bytes).unwrap().starts_with('{'));
+    }
+
+    #[test]
+    fn battery_valid_packet_parses() {
+        let body = BatteryBody::new(76, false, None);
+        let packet = body.to_packet();
+        let parsed = NetworkPacket::parse(&packet.serialize())
+            .unwrap()
+            .as_battery()
+            .unwrap();
+        assert_eq!(parsed.current_charge, 76);
+        assert!(!parsed.is_charging);
+        assert_eq!(parsed.threshold_event, None);
+    }
+
+    #[test]
+    fn battery_current_charge_boundary_values() {
+        let min_body = BatteryBody::new(0, false, None);
+        let parsed_min = NetworkPacket::parse(&min_body.to_packet().serialize())
+            .unwrap()
+            .as_battery()
+            .unwrap();
+        assert_eq!(parsed_min.current_charge, 0);
+
+        let max_body = BatteryBody::new(100, true, None);
+        let parsed_max = NetworkPacket::parse(&max_body.to_packet().serialize())
+            .unwrap()
+            .as_battery()
+            .unwrap();
+        assert_eq!(parsed_max.current_charge, 100);
+        assert!(parsed_max.is_charging);
+    }
+
+    #[test]
+    fn battery_out_of_range_charge_rejected() {
+        let json_negative = br#"{"id":1,"type":"kdeconnect.battery","body":{"currentCharge":-1,"isCharging":false}}"#;
+        let pkt_neg = NetworkPacket::parse(json_negative).unwrap();
+        assert!(pkt_neg.as_battery().is_err());
+
+        let json_over = br#"{"id":1,"type":"kdeconnect.battery","body":{"currentCharge":101,"isCharging":false}}"#;
+        let pkt_over = NetworkPacket::parse(json_over).unwrap();
+        assert!(pkt_over.as_battery().is_err());
+    }
+
+    #[test]
+    fn battery_non_integer_charge_rejected() {
+        let json_str = br#"{"id":1,"type":"kdeconnect.battery","body":{"currentCharge":"50","isCharging":false}}"#;
+        assert!(NetworkPacket::parse(json_str)
+            .unwrap()
+            .as_battery()
+            .is_err());
+
+        let json_float = br#"{"id":1,"type":"kdeconnect.battery","body":{"currentCharge":50.5,"isCharging":false}}"#;
+        assert!(NetworkPacket::parse(json_float)
+            .unwrap()
+            .as_battery()
+            .is_err());
+    }
+
+    #[test]
+    fn battery_charging_boolean_states() {
+        let charging = BatteryBody::new(50, true, None);
+        assert!(
+            NetworkPacket::parse(&charging.to_packet().serialize())
+                .unwrap()
+                .as_battery()
+                .unwrap()
+                .is_charging
+        );
+
+        let not_charging = BatteryBody::new(50, false, None);
+        assert!(
+            !NetworkPacket::parse(&not_charging.to_packet().serialize())
+                .unwrap()
+                .as_battery()
+                .unwrap()
+                .is_charging
+        );
+    }
+
+    #[test]
+    fn battery_malformed_boolean_rejected() {
+        let json_str = br#"{"id":1,"type":"kdeconnect.battery","body":{"currentCharge":50,"isCharging":"true"}}"#;
+        assert!(NetworkPacket::parse(json_str)
+            .unwrap()
+            .as_battery()
+            .is_err());
+
+        let json_num =
+            br#"{"id":1,"type":"kdeconnect.battery","body":{"currentCharge":50,"isCharging":1}}"#;
+        assert!(NetworkPacket::parse(json_num)
+            .unwrap()
+            .as_battery()
+            .is_err());
+    }
+
+    #[test]
+    fn battery_threshold_event_parsed_safely() {
+        let with_event = BatteryBody::new(15, false, Some(1));
+        let parsed = NetworkPacket::parse(&with_event.to_packet().serialize())
+            .unwrap()
+            .as_battery()
+            .unwrap();
+        assert_eq!(parsed.threshold_event, Some(1));
+
+        let json_bad_event = br#"{"id":1,"type":"kdeconnect.battery","body":{"currentCharge":50,"isCharging":false,"thresholdEvent":"low"}}"#;
+        assert!(NetworkPacket::parse(json_bad_event)
+            .unwrap()
+            .as_battery()
+            .is_err());
+    }
+
+    #[test]
+    fn battery_unrelated_packet_rejected_as_battery() {
+        let pair_pkt = PairBody::accept();
+        assert!(pair_pkt.as_battery().is_err());
+
+        let id_pkt = identity().to_packet();
+        assert!(id_pkt.as_battery().is_err());
+    }
+
+    #[test]
+    fn connectivity_report_parses_valid_entries_and_selects_best_connection() {
+        let json = br#"{"id":1,"type":"kdeconnect.connectivity_report","body":{"signalStrengths":{"sim-b":{"networkType":"LTE","signalStrength":3},"sim-a":{"networkType":"5G","signalStrength":3},"weak":{"networkType":"GSM","signalStrength":1}}}}"#;
+        let report = NetworkPacket::parse(json)
+            .unwrap()
+            .as_connectivity_report()
+            .unwrap();
+        assert_eq!(report.signal_strengths.len(), 3);
+        let (key, selected) = report.selected_signal().unwrap();
+        assert_eq!(key, "sim-a");
+        assert_eq!(selected.network_type, "5G");
+        assert_eq!(selected.signal_strength, 3);
+    }
+
+    #[test]
+    fn connectivity_report_keeps_empty_reports_and_ignores_bad_entries() {
+        let empty =
+            br#"{"id":1,"type":"kdeconnect.connectivity_report","body":{"signalStrengths":{}}}"#;
+        assert!(NetworkPacket::parse(empty)
+            .unwrap()
+            .as_connectivity_report()
+            .unwrap()
+            .selected_signal()
+            .is_none());
+
+        let mixed = br#"{"id":1,"type":"kdeconnect.connectivity_report","body":{"signalStrengths":{"negative":{"networkType":"LTE","signalStrength":-1},"large":{"networkType":"LTE","signalStrength":5},"malformed":{"networkType":3},"unknown":{"networkType":"Satellite","signalStrength":4}}}}"#;
+        let report = NetworkPacket::parse(mixed)
+            .unwrap()
+            .as_connectivity_report()
+            .unwrap();
+        assert_eq!(report.signal_strengths.len(), 1);
+        let (_, selected) = report.selected_signal().unwrap();
+        assert_eq!(selected.network_type, "Unknown");
+        assert_eq!(selected.signal_strength, 4);
+    }
+
+    #[test]
+    fn clipboard_plain_and_connect_roundtrip() {
+        let plain = ClipboardBody::text("Hello Linux");
+        let parsed = NetworkPacket::parse(&plain.serialize())
+            .unwrap()
+            .as_clipboard()
+            .unwrap();
+        assert_eq!(parsed.content, "Hello Linux");
+        assert_eq!(parsed.timestamp, None);
+
+        let connect = ClipboardBody::connect("Sync text 123", 1_700_000_123_456);
+        let parsed_conn = NetworkPacket::parse(&connect.serialize())
+            .unwrap()
+            .as_clipboard()
+            .unwrap();
+        assert_eq!(parsed_conn.content, "Sync text 123");
+        assert_eq!(parsed_conn.timestamp, Some(1_700_000_123_456));
+    }
+
+    #[test]
+    fn clipboard_unicode_and_large_text() {
+        let unicode = "Hello 🚀 🦀 測試";
+        let parsed = NetworkPacket::parse(&ClipboardBody::text(unicode).serialize())
+            .unwrap()
+            .as_clipboard()
+            .unwrap();
+        assert_eq!(parsed.content, unicode);
+
+        let large = "a".repeat(4096);
+        let parsed_large = NetworkPacket::parse(&ClipboardBody::text(&large).serialize())
+            .unwrap()
+            .as_clipboard()
+            .unwrap();
+        assert_eq!(parsed_large.content, large);
+    }
+
+    #[test]
+    fn clipboard_malformed_rejected() {
+        let bad = br#"{"id":1,"type":"kdeconnect.clipboard","body":{"noContent":123}}"#;
+        assert!(NetworkPacket::parse(bad).unwrap().as_clipboard().is_err());
+    }
+
+    #[test]
+    fn ping_roundtrip_with_and_without_message() {
+        let ping_no_msg = PingBody::new(None);
+        let parsed = NetworkPacket::parse(&ping_no_msg.serialize())
+            .unwrap()
+            .as_ping()
+            .unwrap();
+        assert_eq!(parsed.message, None);
+
+        let ping_msg = PingBody::new(Some("Ping test".into()));
+        let parsed_msg = NetworkPacket::parse(&ping_msg.serialize())
+            .unwrap()
+            .as_ping()
+            .unwrap();
+        assert_eq!(parsed_msg.message, Some("Ping test".into()));
+    }
+
+    #[test]
+    fn findmyphone_request_roundtrip() {
+        let req = FindMyPhoneBody::request();
+        assert_eq!(req.packet_type, PACKET_TYPE_FINDMYPHONE_REQUEST);
+        let parsed = NetworkPacket::parse(&req.serialize()).unwrap();
+        assert!(parsed.as_findmyphone_request().is_ok());
+    }
+
+    #[test]
+    fn notification_create_and_cancel_roundtrip() {
+        let notif_json = br#"{"id":1,"type":"kdeconnect.notification","body":{"id":"123","appName":"WhatsApp","title":"Alice","text":"Hey","time":"1700000","isClearable":true,"silent":false,"isCancel":false}}"#;
+        let parsed = NetworkPacket::parse(notif_json)
+            .unwrap()
+            .as_notification()
+            .unwrap();
+        assert_eq!(parsed.id, "123");
+        assert_eq!(parsed.app_name, Some("WhatsApp".into()));
+        assert_eq!(parsed.title, Some("Alice".into()));
+        assert_eq!(parsed.text, Some("Hey".into()));
+        assert_eq!(parsed.is_clearable, Some(true));
+        assert_eq!(parsed.silent, Some(false));
+        assert!(!parsed.is_cancel);
+
+        let cancel_json =
+            br#"{"id":2,"type":"kdeconnect.notification","body":{"id":"123","isCancel":true}}"#;
+        let parsed_cancel = NetworkPacket::parse(cancel_json)
+            .unwrap()
+            .as_notification()
+            .unwrap();
+        assert_eq!(parsed_cancel.id, "123");
+        assert!(parsed_cancel.is_cancel);
+    }
+
+    #[test]
+    fn notification_request_roundtrip() {
+        let req = NotificationBody::request();
+        assert_eq!(req.packet_type, PACKET_TYPE_NOTIFICATION_REQUEST);
+        let parsed = NetworkPacket::parse(&req.serialize()).unwrap();
+        assert!(parsed.as_notification_request().is_ok());
     }
 }

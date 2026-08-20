@@ -30,6 +30,11 @@ class RelayDeviceVm {
   final RelayConnectionType connectionType;
   final RelaySecurityState securityState;
   final RelayBatteryVm battery;
+  final String? networkType;
+  final int? signalLevel;
+  final bool connectivityStale;
+  final bool canPing;
+  final bool canFindDevice;
 
   /// Continuity capability states for this device, already folded together from
   /// what the user enabled, what this device can do and what the peer
@@ -59,6 +64,11 @@ class RelayDeviceVm {
     this.connectionType = RelayConnectionType.local,
     this.securityState = RelaySecurityState.verifiedRelay,
     this.battery = const RelayBatteryVm(),
+    this.networkType,
+    this.signalLevel,
+    this.connectivityStale = false,
+    this.canPing = false,
+    this.canFindDevice = false,
     this.capabilities = const {},
     this.continuityConnected = false,
     this.ip,
@@ -70,6 +80,7 @@ class RelayDeviceVm {
   bool get isKdeConnect => targetKind == RelayDeviceTargetKind.kdeConnect;
   bool get isVerifiedRelay => targetKind == RelayDeviceTargetKind.verifiedRelay;
   bool get isPairedRelay => targetKind == RelayDeviceTargetKind.pairedRelay;
+  bool get isPaired => isPairedRelay || (isKdeConnect && (detail == 'Paired' || detail == 'Connected'));
   bool get isAuthenticatedRelay => isVerifiedRelay || isPairedRelay;
 
   String get statusSummary {
@@ -117,13 +128,13 @@ class RelayDeviceVm {
   /// reaches a peer that cannot prove a RelayId.
   Map<RelayCapability, CapabilityStatus> get capabilityStatuses {
     if (isKdeConnect) {
-      return const {
+      return {
         RelayCapability.files: CapabilityStatus.unavailable,
-        RelayCapability.clipboard: CapabilityStatus.unavailable,
-        RelayCapability.battery: CapabilityStatus.unavailable,
+        RelayCapability.clipboard: capabilities[RelayCapability.clipboard] ?? CapabilityStatus.unavailable,
+        RelayCapability.battery: capabilities[RelayCapability.battery] ?? CapabilityStatus.unavailable,
         RelayCapability.messages: CapabilityStatus.unavailable,
-        RelayCapability.notifications: CapabilityStatus.unavailable,
-        RelayCapability.phone: CapabilityStatus.unavailable,
+        RelayCapability.notifications: capabilities[RelayCapability.notifications] ?? CapabilityStatus.unavailable,
+        RelayCapability.phone: capabilities[RelayCapability.phone] ?? CapabilityStatus.unavailable,
       };
     }
     if (isCompatibilityPeer) {

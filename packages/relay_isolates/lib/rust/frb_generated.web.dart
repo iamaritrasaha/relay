@@ -269,6 +269,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  bool dco_decode_box_autoadd_bool(dynamic raw);
+
+  @protected
   ClientInfo dco_decode_box_autoadd_client_info(dynamic raw);
 
   @protected
@@ -422,6 +425,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   List<RsKdeConnectTrustedDevice> dco_decode_list_rs_kde_connect_trusted_device(dynamic raw);
 
   @protected
+  List<RsKdeNotification> dco_decode_list_rs_kde_notification(dynamic raw);
+
+  @protected
   List<RsLanCandidate> dco_decode_list_rs_lan_candidate(dynamic raw);
 
   @protected
@@ -448,6 +454,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   Dart2RustStreamReceiver?
   dco_decode_opt_box_autoadd_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerDart2RustStreamReceiver(dynamic raw);
+
+  @protected
+  bool? dco_decode_opt_box_autoadd_bool(dynamic raw);
 
   @protected
   DeviceType? dco_decode_opt_box_autoadd_device_type(dynamic raw);
@@ -595,6 +604,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   RsKdeConnectTrustedDevice dco_decode_rs_kde_connect_trusted_device(dynamic raw);
+
+  @protected
+  RsKdeNotification dco_decode_rs_kde_notification(dynamic raw);
 
   @protected
   RsLanCandidate dco_decode_rs_lan_candidate(dynamic raw);
@@ -910,6 +922,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  bool sse_decode_box_autoadd_bool(SseDeserializer deserializer);
+
+  @protected
   ClientInfo sse_decode_box_autoadd_client_info(SseDeserializer deserializer);
 
   @protected
@@ -1063,6 +1078,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   List<RsKdeConnectTrustedDevice> sse_decode_list_rs_kde_connect_trusted_device(SseDeserializer deserializer);
 
   @protected
+  List<RsKdeNotification> sse_decode_list_rs_kde_notification(SseDeserializer deserializer);
+
+  @protected
   List<RsLanCandidate> sse_decode_list_rs_lan_candidate(SseDeserializer deserializer);
 
   @protected
@@ -1091,6 +1109,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   sse_decode_opt_box_autoadd_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerDart2RustStreamReceiver(
     SseDeserializer deserializer,
   );
+
+  @protected
+  bool? sse_decode_opt_box_autoadd_bool(SseDeserializer deserializer);
 
   @protected
   DeviceType? sse_decode_opt_box_autoadd_device_type(SseDeserializer deserializer);
@@ -1238,6 +1259,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   RsKdeConnectTrustedDevice sse_decode_rs_kde_connect_trusted_device(SseDeserializer deserializer);
+
+  @protected
+  RsKdeNotification sse_decode_rs_kde_notification(SseDeserializer deserializer);
 
   @protected
   RsLanCandidate sse_decode_rs_lan_candidate(SseDeserializer deserializer);
@@ -1598,6 +1622,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_box_autoadd_bool(bool self, SseSerializer serializer);
+
+  @protected
   void sse_encode_box_autoadd_client_info(ClientInfo self, SseSerializer serializer);
 
   @protected
@@ -1751,6 +1778,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   void sse_encode_list_rs_kde_connect_trusted_device(List<RsKdeConnectTrustedDevice> self, SseSerializer serializer);
 
   @protected
+  void sse_encode_list_rs_kde_notification(List<RsKdeNotification> self, SseSerializer serializer);
+
+  @protected
   void sse_encode_list_rs_lan_candidate(List<RsLanCandidate> self, SseSerializer serializer);
 
   @protected
@@ -1779,6 +1809,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
     Dart2RustStreamReceiver? self,
     SseSerializer serializer,
   );
+
+  @protected
+  void sse_encode_opt_box_autoadd_bool(bool? self, SseSerializer serializer);
 
   @protected
   void sse_encode_opt_box_autoadd_device_type(DeviceType? self, SseSerializer serializer);
@@ -1927,6 +1960,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   void sse_encode_rs_kde_connect_trusted_device(RsKdeConnectTrustedDevice self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_rs_kde_notification(RsKdeNotification self, SseSerializer serializer);
 
   @protected
   void sse_encode_rs_lan_candidate(RsLanCandidate self, SseSerializer serializer);
