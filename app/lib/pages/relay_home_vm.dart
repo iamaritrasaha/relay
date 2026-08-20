@@ -375,10 +375,34 @@ class RelayHomeVm {
       targetKind: RelayDeviceTargetKind.kdeConnect,
       connectionType: RelayConnectionType.local,
       securityState: RelaySecurityState.unauthenticated,
+      battery: RelayBatteryVm(
+        percentage: device.batteryPercentage,
+        isCharging: device.batteryIsCharging ?? false,
+        isFull: device.batteryPercentage == 100 && (device.batteryIsCharging ?? false),
+        isStale: !device.connected && device.batteryPercentage != null,
+      ),
+      networkType: device.networkType,
+      signalLevel: device.signalLevel,
+      connectivityStale: device.connectivityStale,
+      canPing: _kdePeerAccepts(device, 'kdeconnect.ping'),
+      canFindDevice: _kdePeerAccepts(device, 'kdeconnect.findmyphone.request'),
+      capabilities: {
+        RelayCapability.files: CapabilityStatus.unavailable,
+        RelayCapability.clipboard: device.paired ? CapabilityStatus.available : CapabilityStatus.unavailable,
+        RelayCapability.battery: device.paired ? CapabilityStatus.available : CapabilityStatus.unavailable,
+        RelayCapability.messages: CapabilityStatus.unavailable,
+        RelayCapability.notifications: device.paired ? CapabilityStatus.available : CapabilityStatus.unavailable,
+        RelayCapability.phone: _kdePeerAccepts(device, 'kdeconnect.findmyphone.request')
+            ? CapabilityStatus.available
+            : CapabilityStatus.unavailable,
+      },
       ip: device.ip,
       port: device.port,
     );
   }
+
+  static bool _kdePeerAccepts(RsKdeConnectDevice device, String packetType) =>
+      device.paired && device.connected && device.incomingCapabilities.contains(packetType);
 
   static RelayDeviceVm _idle(Device device) => RelayDeviceVm(
     key: device.fingerprint,

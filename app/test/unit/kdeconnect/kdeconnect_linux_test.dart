@@ -15,6 +15,11 @@ RsKdeConnectDevice kdeDevice({
   bool paired = false,
   bool connected = false,
   bool incomingPair = false,
+  int? batteryPercentage,
+  bool? batteryIsCharging,
+  String? networkType,
+  int? signalLevel,
+  bool connectivityStale = false,
 }) => RsKdeConnectDevice(
   deviceId: id,
   name: name,
@@ -25,6 +30,22 @@ RsKdeConnectDevice kdeDevice({
   connected: connected,
   incomingPair: incomingPair,
   identityMismatch: false,
+  batteryPercentage: batteryPercentage,
+  batteryIsCharging: batteryIsCharging,
+  networkType: networkType,
+  signalLevel: signalLevel,
+  connectivityStale: connectivityStale,
+  incomingCapabilities: const [
+    'kdeconnect.clipboard.connect',
+    'kdeconnect.ping',
+    'kdeconnect.findmyphone.request',
+    'kdeconnect.notification.request',
+  ],
+  outgoingCapabilities: const [
+    'kdeconnect.battery',
+    'kdeconnect.clipboard.connect',
+    'kdeconnect.notification',
+  ],
 );
 
 const _phoneId = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
@@ -179,5 +200,132 @@ void main() {
     expect(kde.alias, 'Pixel');
     expect(kde.detail, 'Paired');
     expect(localSend.key, isNot(kde.key));
+  });
+
+  test('KDE phone with no battery packet shows unavailable/waiting state', () {
+    final vm = homeVm(
+      kdeConnectDevices: [kdeDevice(id: _phoneId, name: 'Pixel', paired: true, connected: true)],
+    );
+    final kde = vm.devices.singleWhere((d) => d.isKdeConnect);
+    expect(kde.battery.hasInfo, isFalse);
+    expect(kde.battery.percentage, isNull);
+    expect(kde.battery.isCharging, isFalse);
+    expect(kde.battery.isStale, isFalse);
+  });
+
+  test('KDE phone battery percentage and unplugged state renders', () {
+    final vm = homeVm(
+      kdeConnectDevices: [
+        kdeDevice(
+          id: _phoneId,
+          name: 'Pixel',
+          paired: true,
+          connected: true,
+          batteryPercentage: 76,
+          batteryIsCharging: false,
+        ),
+      ],
+    );
+    final kde = vm.devices.singleWhere((d) => d.isKdeConnect);
+    expect(kde.battery.hasInfo, isTrue);
+    expect(kde.battery.percentage, 76);
+    expect(kde.battery.isCharging, isFalse);
+    expect(kde.battery.isStale, isFalse);
+    expect(kde.battery.displayString, '76%');
+  });
+
+  test('KDE phone charging state renders', () {
+    final vm = homeVm(
+      kdeConnectDevices: [
+        kdeDevice(
+          id: _phoneId,
+          name: 'Pixel',
+          paired: true,
+          connected: true,
+          batteryPercentage: 76,
+          batteryIsCharging: true,
+        ),
+      ],
+    );
+    final kde = vm.devices.singleWhere((d) => d.isKdeConnect);
+    expect(kde.battery.hasInfo, isTrue);
+    expect(kde.battery.percentage, 76);
+    expect(kde.battery.isCharging, isTrue);
+    expect(kde.battery.isStale, isFalse);
+    expect(kde.battery.displayString, '76% · Charging');
+  });
+
+  test('KDE phone disconnect marks battery stale', () {
+    final vm = homeVm(
+      kdeConnectDevices: [
+        kdeDevice(
+          id: _phoneId,
+          name: 'Pixel',
+          paired: true,
+          connected: false,
+          batteryPercentage: 76,
+          batteryIsCharging: false,
+        ),
+      ],
+    );
+    final kde = vm.devices.singleWhere((d) => d.isKdeConnect);
+    expect(kde.battery.hasInfo, isTrue);
+    expect(kde.battery.percentage, 76);
+    expect(kde.battery.isStale, isTrue);
+    expect(kde.battery.displayString, '76% · last known');
+  });
+
+  test('connectivity report propagates LTE level 3 into the KDE phone VM', () {
+    final vm = homeVm(
+      kdeConnectDevices: [
+        kdeDevice(id: _phoneId, name: 'Pixel', paired: true, connected: true, networkType: 'LTE', signalLevel: 3),
+      ],
+    );
+    final kde = vm.devices.singleWhere((d) => d.isKdeConnect);
+    expect(kde.networkType, 'LTE');
+    expect(kde.signalLevel, 3);
+    expect(kde.connectivityStale, isFalse);
+  });
+
+  test('PingReceived event updates state', () {
+    final it = service();
+    it.dispatch(
+      KdeConnectApplyEventAction(
+        const RsKdeConnectEvent.pingReceived(deviceId: _phoneId, message: 'Ping test'),
+      ),
+    );
+    expect(it.state.lastPingMessage, 'Ping test');
+    expect(it.state.lastPingTimestamp, greaterThan(0));
+  });
+
+  test('NotificationsChanged event updates state', () {
+    final it = service();
+    it.dispatch(
+      KdeConnectApplyEventAction(
+        const RsKdeConnectEvent.notificationsChanged(
+          deviceId: _phoneId,
+          notifications: [
+            RsKdeNotification(
+              id: 'n1',
+              appName: 'Signal',
+              title: 'Bob',
+              text: 'Hey',
+              time: null,
+              isClearable: true,
+              silent: false,
+            ),
+          ],
+        ),
+      ),
+    );
+    expect(it.state.notifications[_phoneId]?.single.title, 'Bob');
+  });
+
+  test('Actions when runtime is disconnected throw no uncaught exception', () async {
+    final it = service();
+    await expectLater(it.dispatchAsync(KdeConnectPingAction(_phoneId)), completes);
+    await expectLater(it.dispatchAsync(KdeConnectFindPhoneAction(_phoneId)), completes);
+    await expectLater(it.dispatchAsync(KdeConnectSendClipboardAction('test')), completes);
+    await expectLater(it.dispatchAsync(KdeConnectRequestPairAction(_phoneId)), completes);
   });
 }

@@ -16,6 +16,9 @@ RsKdeConnectDevice kdeDevice({
   bool connected = true,
   int? batteryPercentage,
   bool? batteryIsCharging,
+  String? networkType,
+  int? signalLevel,
+  bool connectivityStale = false,
 }) => RsKdeConnectDevice(
   deviceId: id,
   name: name,
@@ -28,8 +31,20 @@ RsKdeConnectDevice kdeDevice({
   identityMismatch: false,
   batteryPercentage: batteryPercentage,
   batteryIsCharging: batteryIsCharging,
-  incomingCapabilities: const [],
-  outgoingCapabilities: const [],
+  networkType: networkType,
+  signalLevel: signalLevel,
+  connectivityStale: connectivityStale,
+  incomingCapabilities: const [
+    'kdeconnect.clipboard.connect',
+    'kdeconnect.ping',
+    'kdeconnect.findmyphone.request',
+    'kdeconnect.notification.request',
+  ],
+  outgoingCapabilities: const [
+    'kdeconnect.battery',
+    'kdeconnect.clipboard.connect',
+    'kdeconnect.notification',
+  ],
 );
 
 List<RelayDeviceVm> devicesFor(List<RsKdeConnectDevice> kdeConnectDevices) => RelayHomeVm.fromState(
@@ -178,6 +193,13 @@ void main() {
       );
       expect(snapshot!.deviceId, 'kdeconnect:$_secondPhoneId');
     });
+  });
+
+  test('KDE connectivity reaches the shell status unchanged', () {
+    final snapshot = statusFor([kdeDevice(id: _phoneId, name: 'Redmi', networkType: 'LTE', signalLevel: 3)]);
+    expect(snapshot!.networkKind, 'cellular');
+    expect(snapshot.networkLabel, 'LTE');
+    expect(snapshot.signalLevel, 3);
   });
 
   group('battery', () {

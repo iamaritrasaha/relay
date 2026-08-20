@@ -222,9 +222,12 @@ class RelayPhoneShellStatus {
       batteryIsCharging: battery.isCharging,
       batteryIsFull: battery.isFull,
       batteryIsStale: battery.isStale || (battery.percentage != null && !connected),
+      networkKind: device.networkType == null ? null : 'cellular',
+      networkLabel: device.networkType,
+      signalLevel: device.connectivityStale ? null : device.signalLevel,
       // Ringing a phone needs a live link to carry the request, so the action is
       // only advertised while one exists.
-      supportsFindDevice: device.isKdeConnect && device.isPaired && connected,
+      supportsFindDevice: device.isKdeConnect && device.canFindDevice && connected,
       supportsClipboard: _isUsable(capabilities[RelayCapability.clipboard]),
       supportsMessages: _isUsable(capabilities[RelayCapability.messages]),
       supportsNotifications: notifications,

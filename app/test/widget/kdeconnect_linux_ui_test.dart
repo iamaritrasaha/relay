@@ -6,6 +6,7 @@ import 'package:relay_app/config/theme.dart';
 import 'package:relay_app/model/persistence/color_mode.dart';
 import 'package:relay_app/model/persistence/quick_save_mode.dart';
 import 'package:relay_app/model/persistence/relay_paired_address.dart';
+import 'package:relay_app/model/ui/relay_capability_vm.dart';
 import 'package:relay_app/model/ui/relay_device_vm.dart';
 import 'package:relay_app/pages/gnome/gnome_shell.dart';
 import 'package:relay_app/pages/relay_home_vm.dart';
@@ -112,6 +113,50 @@ void main() {
     targetKind: RelayDeviceTargetKind.kdeConnect,
   );
 
+  const pairedPhoneNoBattery = RelayDeviceVm(
+    key: 'kdeconnect:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+    alias: 'Pixel',
+    deviceType: DeviceType.mobile,
+    phase: RelayDevicePhase.idle,
+    progress: null,
+    detail: 'Connected',
+    targetKind: RelayDeviceTargetKind.kdeConnect,
+    battery: RelayBatteryVm(percentage: null, isCharging: false, isFull: false, isStale: false),
+  );
+
+  const pairedPhoneCharging = RelayDeviceVm(
+    key: 'kdeconnect:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+    alias: 'Pixel',
+    deviceType: DeviceType.mobile,
+    phase: RelayDevicePhase.idle,
+    progress: null,
+    detail: 'Connected',
+    targetKind: RelayDeviceTargetKind.kdeConnect,
+    battery: RelayBatteryVm(percentage: 76, isCharging: true, isFull: false, isStale: false),
+  );
+
+  const pairedPhoneUnplugged = RelayDeviceVm(
+    key: 'kdeconnect:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+    alias: 'Pixel',
+    deviceType: DeviceType.mobile,
+    phase: RelayDevicePhase.idle,
+    progress: null,
+    detail: 'Connected',
+    targetKind: RelayDeviceTargetKind.kdeConnect,
+    battery: RelayBatteryVm(percentage: 76, isCharging: false, isFull: false, isStale: false),
+  );
+
+  const pairedPhoneStale = RelayDeviceVm(
+    key: 'kdeconnect:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+    alias: 'Pixel',
+    deviceType: DeviceType.mobile,
+    phase: RelayDevicePhase.idle,
+    progress: null,
+    detail: 'Paired',
+    targetKind: RelayDeviceTargetKind.kdeConnect,
+    battery: RelayBatteryVm(percentage: 76, isCharging: false, isFull: false, isStale: true),
+  );
+
   const relayDevice = RelayDeviceVm(
     key: 'relay:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA',
     alias: 'Redmi',
@@ -195,5 +240,45 @@ void main() {
     await tester.tap(find.text('Redmi').first);
     await tester.pump();
     expect(find.text('Send Files'), findsWidgets);
+  });
+
+  testWidgets('paired KDE Connect phone with no battery shows Waiting for battery status', (tester) async {
+    await pumpShell(tester, vm([pairedPhoneNoBattery]));
+    expect(find.text('Pixel'), findsWidgets);
+    expect(find.text('Battery'), findsOneWidget);
+    expect(find.text('Waiting for battery status'), findsOneWidget);
+    expect(find.text('—'), findsOneWidget);
+  });
+
+  testWidgets('paired KDE Connect phone with charging battery shows percentage and Charging', (tester) async {
+    await pumpShell(tester, vm([pairedPhoneCharging]));
+    expect(find.text('Pixel'), findsWidgets);
+    expect(find.text('Battery'), findsOneWidget);
+    expect(find.text('76%'), findsWidgets);
+    expect(find.text('Charging'), findsOneWidget);
+  });
+
+  testWidgets('paired KDE Connect phone with unplugged battery shows percentage and On battery', (tester) async {
+    await pumpShell(tester, vm([pairedPhoneUnplugged]));
+    expect(find.text('Pixel'), findsWidgets);
+    expect(find.text('Battery'), findsOneWidget);
+    expect(find.text('76%'), findsWidgets);
+    expect(find.text('On battery'), findsOneWidget);
+  });
+
+  testWidgets('disconnected KDE Connect phone shows stale battery subtitle', (tester) async {
+    await pumpShell(tester, vm([pairedPhoneStale]));
+    expect(find.text('Pixel'), findsWidgets);
+    expect(find.text('Battery'), findsOneWidget);
+    expect(find.text('76%'), findsWidgets);
+    expect(find.text('Last known before disconnecting'), findsOneWidget);
+  });
+
+  testWidgets('paired KDE Connect phone shows Ping device and Find device', (tester) async {
+    await pumpShell(tester, vm([pairedPhoneCharging]));
+    expect(find.text('Ping device'), findsOneWidget);
+    expect(find.text('Find device'), findsOneWidget);
+    expect(find.text('Ping'), findsOneWidget);
+    expect(find.text('Ring'), findsOneWidget);
   });
 }

@@ -181,8 +181,8 @@ pub fn compute_verification_key(
 }
 
 pub fn extract_public_key_der(cert_der: &[u8]) -> Result<Vec<u8>> {
-    let (_, cert) = x509_parser::certificate::X509Certificate::from_der(cert_der)
-        .context("parse x509 cert")?;
+    let (_, cert) =
+        x509_parser::certificate::X509Certificate::from_der(cert_der).context("parse x509 cert")?;
     Ok(cert.tbs_certificate.subject_pki.raw.to_vec())
 }
 
@@ -194,7 +194,10 @@ mod tests {
     fn outgoing_initial_request_contains_pair_true_and_seconds_timestamp() {
         let mut session = PairingSession::new(false);
         let now = now_unix();
-        assert!(now > 1_700_000_000 && now < 2_500_000_000, "timestamp must be seconds-scale, not milliseconds");
+        assert!(
+            now > 1_700_000_000 && now < 2_500_000_000,
+            "timestamp must be seconds-scale, not milliseconds"
+        );
         let body = session.begin_request(now).unwrap();
         assert!(body.pair);
         assert_eq!(body.timestamp, Some(now));
@@ -203,7 +206,10 @@ mod tests {
 
         let packet = PairBody::request(body.timestamp.unwrap());
         let serialized = packet.serialize();
-        let parsed = crate::kdeconnect::NetworkPacket::parse(&serialized).unwrap().as_pair().unwrap();
+        let parsed = crate::kdeconnect::NetworkPacket::parse(&serialized)
+            .unwrap()
+            .as_pair()
+            .unwrap();
         assert!(parsed.pair);
         assert_eq!(parsed.timestamp, Some(now));
     }
@@ -230,7 +236,10 @@ mod tests {
 
         let accept_pkt = PairBody::accept();
         assert_eq!(accept_pkt.packet_type, crate::kdeconnect::PACKET_TYPE_PAIR);
-        let parsed = crate::kdeconnect::NetworkPacket::parse(&accept_pkt.serialize()).unwrap().as_pair().unwrap();
+        let parsed = crate::kdeconnect::NetworkPacket::parse(&accept_pkt.serialize())
+            .unwrap()
+            .as_pair()
+            .unwrap();
         assert!(parsed.pair);
         assert_eq!(parsed.timestamp, None);
     }
@@ -251,7 +260,10 @@ mod tests {
         assert_eq!(session.timestamp, None);
 
         let unpair_pkt = PairBody::unpair();
-        let parsed = crate::kdeconnect::NetworkPacket::parse(&unpair_pkt.serialize()).unwrap().as_pair().unwrap();
+        let parsed = crate::kdeconnect::NetworkPacket::parse(&unpair_pkt.serialize())
+            .unwrap()
+            .as_pair()
+            .unwrap();
         assert!(!parsed.pair);
         assert_eq!(parsed.timestamp, None);
     }
@@ -267,7 +279,10 @@ mod tests {
             1_700_000_000,
             PROTOCOL_VERSION,
         );
-        assert_eq!(effect, PairingEffect::Failed(PairingFailReason::MissingTimestamp));
+        assert_eq!(
+            effect,
+            PairingEffect::Failed(PairingFailReason::MissingTimestamp)
+        );
         assert_eq!(session.state, PairState::NotPaired);
     }
 
@@ -284,7 +299,10 @@ mod tests {
             now,
             PROTOCOL_VERSION,
         );
-        assert_eq!(effect_too_old, PairingEffect::Failed(PairingFailReason::ClocksOutOfSync));
+        assert_eq!(
+            effect_too_old,
+            PairingEffect::Failed(PairingFailReason::ClocksOutOfSync)
+        );
         assert_eq!(session.state, PairState::NotPaired);
 
         // Skew in future > 1800s
@@ -296,7 +314,10 @@ mod tests {
             now,
             PROTOCOL_VERSION,
         );
-        assert_eq!(effect_too_future, PairingEffect::Failed(PairingFailReason::ClocksOutOfSync));
+        assert_eq!(
+            effect_too_future,
+            PairingEffect::Failed(PairingFailReason::ClocksOutOfSync)
+        );
         assert_eq!(session.state, PairState::NotPaired);
 
         // Skew within 1800s is accepted
@@ -308,7 +329,10 @@ mod tests {
             now,
             PROTOCOL_VERSION,
         );
-        assert!(matches!(effect_valid, PairingEffect::IncomingRequest { .. }));
+        assert!(matches!(
+            effect_valid,
+            PairingEffect::IncomingRequest { .. }
+        ));
         assert_eq!(session.state, PairState::RequestedByPeer);
     }
 
@@ -353,7 +377,9 @@ mod tests {
         let code2 = compute_verification_key(key_b, key_a, ts);
         assert_eq!(code1.len(), 8);
         assert_eq!(code1, code2);
-        assert!(code1.chars().all(|c| c.is_ascii_hexdigit() && !c.is_ascii_lowercase()));
+        assert!(code1
+            .chars()
+            .all(|c| c.is_ascii_hexdigit() && !c.is_ascii_lowercase()));
 
         let code_diff_ts = compute_verification_key(key_a, key_b, ts + 1);
         assert_ne!(code1, code_diff_ts);

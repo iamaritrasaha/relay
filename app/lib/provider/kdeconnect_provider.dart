@@ -1,5 +1,7 @@
 import 'dart:async';
 
+import 'package:collection/collection.dart';
+import 'package:flutter/services.dart';
 import 'package:logging/logging.dart';
 import 'package:refena_flutter/refena_flutter.dart';
 import 'package:relay_app/provider/persistence_provider.dart';
@@ -17,16 +19,35 @@ class KdeConnectIncomingRequest {
 class KdeConnectState {
   final List<RsKdeConnectDevice> devices;
   final KdeConnectIncomingRequest? incoming;
+  final Map<String, List<RsKdeNotification>> notifications;
+  final String? lastPingDeviceName;
+  final String? lastPingMessage;
+  final int lastPingTimestamp;
 
-  const KdeConnectState({this.devices = const [], this.incoming});
+  const KdeConnectState({
+    this.devices = const [],
+    this.incoming,
+    this.notifications = const {},
+    this.lastPingDeviceName,
+    this.lastPingMessage,
+    this.lastPingTimestamp = 0,
+  });
 
   KdeConnectState copyWith({
     List<RsKdeConnectDevice>? devices,
     KdeConnectIncomingRequest? incoming,
     bool clearIncoming = false,
+    Map<String, List<RsKdeNotification>>? notifications,
+    String? lastPingDeviceName,
+    String? lastPingMessage,
+    int? lastPingTimestamp,
   }) => KdeConnectState(
     devices: devices ?? this.devices,
     incoming: clearIncoming ? null : incoming ?? this.incoming,
+    notifications: notifications ?? this.notifications,
+    lastPingDeviceName: lastPingDeviceName ?? this.lastPingDeviceName,
+    lastPingMessage: lastPingMessage ?? this.lastPingMessage,
+    lastPingTimestamp: lastPingTimestamp ?? this.lastPingTimestamp,
   );
 }
 
@@ -48,6 +69,7 @@ class KdeConnectService extends ReduxNotifier<KdeConnectState> {
 
   RsKdeConnect? _runtime;
   StreamSubscription<RsKdeConnectEvent>? _events;
+  String? _lastReceivedClipboard;
 
   KdeConnectService({
     required this.persistence,
@@ -116,8 +138,7 @@ class KdeConnectStartAction extends AsyncReduxAction<KdeConnectService, KdeConne
         _logger.warning('KDE Connect event stream failed', error, stack);
       },
     );
-    final snapshot = await runtime.snapshot();
-    return state.copyWith(devices: snapshot);
+    return state;
   }
 }
 
@@ -128,7 +149,11 @@ class KdeConnectRequestPairAction extends AsyncReduxAction<KdeConnectService, Kd
 
   @override
   Future<KdeConnectState> reduce() async {
-    await notifier._runtime?.requestPair(deviceId: deviceId);
+    try {
+      await notifier._runtime?.requestPair(deviceId: deviceId);
+    } catch (error, stack) {
+      _logger.warning('Pair request failed for device $deviceId', error, stack);
+    }
     return state;
   }
 }
@@ -140,7 +165,11 @@ class KdeConnectAcceptPairAction extends AsyncReduxAction<KdeConnectService, Kde
 
   @override
   Future<KdeConnectState> reduce() async {
-    await notifier._runtime?.acceptPair(deviceId: deviceId);
+    try {
+      await notifier._runtime?.acceptPair(deviceId: deviceId);
+    } catch (error, stack) {
+      _logger.warning('Accept pair failed for device $deviceId', error, stack);
+    }
     return state.copyWith(clearIncoming: true);
   }
 }
@@ -152,7 +181,11 @@ class KdeConnectRejectPairAction extends AsyncReduxAction<KdeConnectService, Kde
 
   @override
   Future<KdeConnectState> reduce() async {
-    await notifier._runtime?.rejectPair(deviceId: deviceId);
+    try {
+      await notifier._runtime?.rejectPair(deviceId: deviceId);
+    } catch (error, stack) {
+      _logger.warning('Reject pair failed for device $deviceId', error, stack);
+    }
     return state.copyWith(clearIncoming: true);
   }
 }
@@ -164,8 +197,66 @@ class KdeConnectUnpairAction extends AsyncReduxAction<KdeConnectService, KdeConn
 
   @override
   Future<KdeConnectState> reduce() async {
-    await notifier._runtime?.unpair(deviceId: deviceId);
+    try {
+      await notifier._runtime?.unpair(deviceId: deviceId);
+    } catch (error, stack) {
+      _logger.warning('Unpair failed for device $deviceId', error, stack);
+    }
     return state.copyWith(clearIncoming: true);
+  }
+}
+
+class KdeConnectPingAction extends AsyncReduxAction<KdeConnectService, KdeConnectState> {
+  final String deviceId;
+  final String? message;
+
+  KdeConnectPingAction(this.deviceId, {this.message});
+
+  @override
+  Future<KdeConnectState> reduce() async {
+    try {
+      await notifier._runtime?.sendPing(deviceId: deviceId, message: message);
+    } catch (error, stack) {
+      _logger.warning('Send ping failed for device $deviceId', error, stack);
+    }
+    return state;
+  }
+}
+
+class KdeConnectFindPhoneAction extends AsyncReduxAction<KdeConnectService, KdeConnectState> {
+  final String deviceId;
+
+  KdeConnectFindPhoneAction(this.deviceId);
+
+  @override
+  Future<KdeConnectState> reduce() async {
+    try {
+      await notifier._runtime?.findPhone(deviceId: deviceId);
+    } catch (error, stack) {
+      _logger.warning('Find phone failed for device $deviceId', error, stack);
+    }
+    return state;
+  }
+}
+
+class KdeConnectSendClipboardAction extends AsyncReduxAction<KdeConnectService, KdeConnectState> {
+  final String content;
+
+  KdeConnectSendClipboardAction(this.content);
+
+  @override
+  Future<KdeConnectState> reduce() async {
+    if (content.isNotEmpty && content != notifier._lastReceivedClipboard) {
+      try {
+        await notifier._runtime?.sendClipboardToAllPaired(
+          content: content,
+          timestampMs: DateTime.now().millisecondsSinceEpoch,
+        );
+      } catch (error, stack) {
+        _logger.warning('Send clipboard failed', error, stack);
+      }
+    }
+    return state;
   }
 }
 
@@ -200,6 +291,24 @@ class KdeConnectApplyEventAction extends ReduxAction<KdeConnectService, KdeConne
           ]),
         );
         return state;
+      case RsKdeConnectEvent_PingReceived(:final deviceId, :final message):
+        final dev = state.devices.firstWhereOrNull((d) => d.deviceId == deviceId);
+        final devName = dev?.name ?? 'Phone';
+        return state.copyWith(
+          lastPingDeviceName: devName,
+          lastPingMessage: message,
+          lastPingTimestamp: DateTime.now().millisecondsSinceEpoch,
+        );
+      case RsKdeConnectEvent_ClipboardReceived(:final deviceId, :final content, :final timestampMs):
+        if (content.isNotEmpty && content != notifier._lastReceivedClipboard) {
+          notifier._lastReceivedClipboard = content;
+          unawaited(Clipboard.setData(ClipboardData(text: content)));
+        }
+        return state;
+      case RsKdeConnectEvent_NotificationsChanged(:final deviceId, :final notifications):
+        return state.copyWith(
+          notifications: {...state.notifications, deviceId: notifications},
+        );
     }
   }
 }

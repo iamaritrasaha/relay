@@ -55,14 +55,17 @@ extension RsKdeConnectEventPatterns on RsKdeConnectEvent {
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeMap<TResult extends Object?>({TResult Function( RsKdeConnectEvent_DevicesChanged value)?  devicesChanged,TResult Function( RsKdeConnectEvent_IncomingPair value)?  incomingPair,TResult Function( RsKdeConnectEvent_PairingFailed value)?  pairingFailed,TResult Function( RsKdeConnectEvent_TrustChanged value)?  trustChanged,required TResult orElse(),}){
+@optionalTypeArgs TResult maybeMap<TResult extends Object?>({TResult Function( RsKdeConnectEvent_DevicesChanged value)?  devicesChanged,TResult Function( RsKdeConnectEvent_IncomingPair value)?  incomingPair,TResult Function( RsKdeConnectEvent_PairingFailed value)?  pairingFailed,TResult Function( RsKdeConnectEvent_TrustChanged value)?  trustChanged,TResult Function( RsKdeConnectEvent_PingReceived value)?  pingReceived,TResult Function( RsKdeConnectEvent_ClipboardReceived value)?  clipboardReceived,TResult Function( RsKdeConnectEvent_NotificationsChanged value)?  notificationsChanged,required TResult orElse(),}){
 final _that = this;
 switch (_that) {
 case RsKdeConnectEvent_DevicesChanged() when devicesChanged != null:
 return devicesChanged(_that);case RsKdeConnectEvent_IncomingPair() when incomingPair != null:
 return incomingPair(_that);case RsKdeConnectEvent_PairingFailed() when pairingFailed != null:
 return pairingFailed(_that);case RsKdeConnectEvent_TrustChanged() when trustChanged != null:
-return trustChanged(_that);case _:
+return trustChanged(_that);case RsKdeConnectEvent_PingReceived() when pingReceived != null:
+return pingReceived(_that);case RsKdeConnectEvent_ClipboardReceived() when clipboardReceived != null:
+return clipboardReceived(_that);case RsKdeConnectEvent_NotificationsChanged() when notificationsChanged != null:
+return notificationsChanged(_that);case _:
   return orElse();
 
 }
@@ -80,14 +83,17 @@ return trustChanged(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult map<TResult extends Object?>({required TResult Function( RsKdeConnectEvent_DevicesChanged value)  devicesChanged,required TResult Function( RsKdeConnectEvent_IncomingPair value)  incomingPair,required TResult Function( RsKdeConnectEvent_PairingFailed value)  pairingFailed,required TResult Function( RsKdeConnectEvent_TrustChanged value)  trustChanged,}){
+@optionalTypeArgs TResult map<TResult extends Object?>({required TResult Function( RsKdeConnectEvent_DevicesChanged value)  devicesChanged,required TResult Function( RsKdeConnectEvent_IncomingPair value)  incomingPair,required TResult Function( RsKdeConnectEvent_PairingFailed value)  pairingFailed,required TResult Function( RsKdeConnectEvent_TrustChanged value)  trustChanged,required TResult Function( RsKdeConnectEvent_PingReceived value)  pingReceived,required TResult Function( RsKdeConnectEvent_ClipboardReceived value)  clipboardReceived,required TResult Function( RsKdeConnectEvent_NotificationsChanged value)  notificationsChanged,}){
 final _that = this;
 switch (_that) {
 case RsKdeConnectEvent_DevicesChanged():
 return devicesChanged(_that);case RsKdeConnectEvent_IncomingPair():
 return incomingPair(_that);case RsKdeConnectEvent_PairingFailed():
 return pairingFailed(_that);case RsKdeConnectEvent_TrustChanged():
-return trustChanged(_that);}
+return trustChanged(_that);case RsKdeConnectEvent_PingReceived():
+return pingReceived(_that);case RsKdeConnectEvent_ClipboardReceived():
+return clipboardReceived(_that);case RsKdeConnectEvent_NotificationsChanged():
+return notificationsChanged(_that);}
 }
 /// A variant of `map` that fallback to returning `null`.
 ///
@@ -101,14 +107,17 @@ return trustChanged(_that);}
 /// }
 /// ```
 
-@optionalTypeArgs TResult? mapOrNull<TResult extends Object?>({TResult? Function( RsKdeConnectEvent_DevicesChanged value)?  devicesChanged,TResult? Function( RsKdeConnectEvent_IncomingPair value)?  incomingPair,TResult? Function( RsKdeConnectEvent_PairingFailed value)?  pairingFailed,TResult? Function( RsKdeConnectEvent_TrustChanged value)?  trustChanged,}){
+@optionalTypeArgs TResult? mapOrNull<TResult extends Object?>({TResult? Function( RsKdeConnectEvent_DevicesChanged value)?  devicesChanged,TResult? Function( RsKdeConnectEvent_IncomingPair value)?  incomingPair,TResult? Function( RsKdeConnectEvent_PairingFailed value)?  pairingFailed,TResult? Function( RsKdeConnectEvent_TrustChanged value)?  trustChanged,TResult? Function( RsKdeConnectEvent_PingReceived value)?  pingReceived,TResult? Function( RsKdeConnectEvent_ClipboardReceived value)?  clipboardReceived,TResult? Function( RsKdeConnectEvent_NotificationsChanged value)?  notificationsChanged,}){
 final _that = this;
 switch (_that) {
 case RsKdeConnectEvent_DevicesChanged() when devicesChanged != null:
 return devicesChanged(_that);case RsKdeConnectEvent_IncomingPair() when incomingPair != null:
 return incomingPair(_that);case RsKdeConnectEvent_PairingFailed() when pairingFailed != null:
 return pairingFailed(_that);case RsKdeConnectEvent_TrustChanged() when trustChanged != null:
-return trustChanged(_that);case _:
+return trustChanged(_that);case RsKdeConnectEvent_PingReceived() when pingReceived != null:
+return pingReceived(_that);case RsKdeConnectEvent_ClipboardReceived() when clipboardReceived != null:
+return clipboardReceived(_that);case RsKdeConnectEvent_NotificationsChanged() when notificationsChanged != null:
+return notificationsChanged(_that);case _:
   return null;
 
 }
@@ -125,13 +134,16 @@ return trustChanged(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeWhen<TResult extends Object?>({TResult Function( List<RsKdeConnectDevice> devices)?  devicesChanged,TResult Function( String deviceId,  String name)?  incomingPair,TResult Function( String deviceId,  String reason)?  pairingFailed,TResult Function( List<RsKdeConnectTrustedDevice> devices)?  trustChanged,required TResult orElse(),}) {final _that = this;
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>({TResult Function( List<RsKdeConnectDevice> devices)?  devicesChanged,TResult Function( String deviceId,  String name)?  incomingPair,TResult Function( String deviceId,  String reason)?  pairingFailed,TResult Function( List<RsKdeConnectTrustedDevice> devices)?  trustChanged,TResult Function( String deviceId,  String? message)?  pingReceived,TResult Function( String deviceId,  String content,  PlatformInt64 timestampMs)?  clipboardReceived,TResult Function( String deviceId,  List<RsKdeNotification> notifications)?  notificationsChanged,required TResult orElse(),}) {final _that = this;
 switch (_that) {
 case RsKdeConnectEvent_DevicesChanged() when devicesChanged != null:
 return devicesChanged(_that.devices);case RsKdeConnectEvent_IncomingPair() when incomingPair != null:
 return incomingPair(_that.deviceId,_that.name);case RsKdeConnectEvent_PairingFailed() when pairingFailed != null:
 return pairingFailed(_that.deviceId,_that.reason);case RsKdeConnectEvent_TrustChanged() when trustChanged != null:
-return trustChanged(_that.devices);case _:
+return trustChanged(_that.devices);case RsKdeConnectEvent_PingReceived() when pingReceived != null:
+return pingReceived(_that.deviceId,_that.message);case RsKdeConnectEvent_ClipboardReceived() when clipboardReceived != null:
+return clipboardReceived(_that.deviceId,_that.content,_that.timestampMs);case RsKdeConnectEvent_NotificationsChanged() when notificationsChanged != null:
+return notificationsChanged(_that.deviceId,_that.notifications);case _:
   return orElse();
 
 }
@@ -149,13 +161,16 @@ return trustChanged(_that.devices);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult when<TResult extends Object?>({required TResult Function( List<RsKdeConnectDevice> devices)  devicesChanged,required TResult Function( String deviceId,  String name)  incomingPair,required TResult Function( String deviceId,  String reason)  pairingFailed,required TResult Function( List<RsKdeConnectTrustedDevice> devices)  trustChanged,}) {final _that = this;
+@optionalTypeArgs TResult when<TResult extends Object?>({required TResult Function( List<RsKdeConnectDevice> devices)  devicesChanged,required TResult Function( String deviceId,  String name)  incomingPair,required TResult Function( String deviceId,  String reason)  pairingFailed,required TResult Function( List<RsKdeConnectTrustedDevice> devices)  trustChanged,required TResult Function( String deviceId,  String? message)  pingReceived,required TResult Function( String deviceId,  String content,  PlatformInt64 timestampMs)  clipboardReceived,required TResult Function( String deviceId,  List<RsKdeNotification> notifications)  notificationsChanged,}) {final _that = this;
 switch (_that) {
 case RsKdeConnectEvent_DevicesChanged():
 return devicesChanged(_that.devices);case RsKdeConnectEvent_IncomingPair():
 return incomingPair(_that.deviceId,_that.name);case RsKdeConnectEvent_PairingFailed():
 return pairingFailed(_that.deviceId,_that.reason);case RsKdeConnectEvent_TrustChanged():
-return trustChanged(_that.devices);}
+return trustChanged(_that.devices);case RsKdeConnectEvent_PingReceived():
+return pingReceived(_that.deviceId,_that.message);case RsKdeConnectEvent_ClipboardReceived():
+return clipboardReceived(_that.deviceId,_that.content,_that.timestampMs);case RsKdeConnectEvent_NotificationsChanged():
+return notificationsChanged(_that.deviceId,_that.notifications);}
 }
 /// A variant of `when` that fallback to returning `null`
 ///
@@ -169,13 +184,16 @@ return trustChanged(_that.devices);}
 /// }
 /// ```
 
-@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>({TResult? Function( List<RsKdeConnectDevice> devices)?  devicesChanged,TResult? Function( String deviceId,  String name)?  incomingPair,TResult? Function( String deviceId,  String reason)?  pairingFailed,TResult? Function( List<RsKdeConnectTrustedDevice> devices)?  trustChanged,}) {final _that = this;
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>({TResult? Function( List<RsKdeConnectDevice> devices)?  devicesChanged,TResult? Function( String deviceId,  String name)?  incomingPair,TResult? Function( String deviceId,  String reason)?  pairingFailed,TResult? Function( List<RsKdeConnectTrustedDevice> devices)?  trustChanged,TResult? Function( String deviceId,  String? message)?  pingReceived,TResult? Function( String deviceId,  String content,  PlatformInt64 timestampMs)?  clipboardReceived,TResult? Function( String deviceId,  List<RsKdeNotification> notifications)?  notificationsChanged,}) {final _that = this;
 switch (_that) {
 case RsKdeConnectEvent_DevicesChanged() when devicesChanged != null:
 return devicesChanged(_that.devices);case RsKdeConnectEvent_IncomingPair() when incomingPair != null:
 return incomingPair(_that.deviceId,_that.name);case RsKdeConnectEvent_PairingFailed() when pairingFailed != null:
 return pairingFailed(_that.deviceId,_that.reason);case RsKdeConnectEvent_TrustChanged() when trustChanged != null:
-return trustChanged(_that.devices);case _:
+return trustChanged(_that.devices);case RsKdeConnectEvent_PingReceived() when pingReceived != null:
+return pingReceived(_that.deviceId,_that.message);case RsKdeConnectEvent_ClipboardReceived() when clipboardReceived != null:
+return clipboardReceived(_that.deviceId,_that.content,_that.timestampMs);case RsKdeConnectEvent_NotificationsChanged() when notificationsChanged != null:
+return notificationsChanged(_that.deviceId,_that.notifications);case _:
   return null;
 
 }
@@ -457,6 +475,218 @@ class _$RsKdeConnectEvent_TrustChangedCopyWithImpl<$Res>
   return _then(RsKdeConnectEvent_TrustChanged(
 devices: null == devices ? _self._devices : devices // ignore: cast_nullable_to_non_nullable
 as List<RsKdeConnectTrustedDevice>,
+  ));
+}
+
+
+}
+
+/// @nodoc
+
+
+class RsKdeConnectEvent_PingReceived extends RsKdeConnectEvent {
+  const RsKdeConnectEvent_PingReceived({required this.deviceId, this.message}): super._();
+
+
+ final  String deviceId;
+ final  String? message;
+
+/// Create a copy of RsKdeConnectEvent
+/// with the given fields replaced by the non-null parameter values.
+@JsonKey(includeFromJson: false, includeToJson: false)
+@pragma('vm:prefer-inline')
+$RsKdeConnectEvent_PingReceivedCopyWith<RsKdeConnectEvent_PingReceived> get copyWith => _$RsKdeConnectEvent_PingReceivedCopyWithImpl<RsKdeConnectEvent_PingReceived>(this, _$identity);
+
+
+
+@override
+bool operator ==(Object other) {
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is RsKdeConnectEvent_PingReceived&&(identical(other.deviceId, deviceId) || other.deviceId == deviceId)&&(identical(other.message, message) || other.message == message));
+}
+
+
+@override
+int get hashCode => Object.hash(runtimeType,deviceId,message);
+
+@override
+String toString() {
+  return 'RsKdeConnectEvent.pingReceived(deviceId: $deviceId, message: $message)';
+}
+
+
+}
+
+/// @nodoc
+abstract mixin class $RsKdeConnectEvent_PingReceivedCopyWith<$Res> implements $RsKdeConnectEventCopyWith<$Res> {
+  factory $RsKdeConnectEvent_PingReceivedCopyWith(RsKdeConnectEvent_PingReceived value, $Res Function(RsKdeConnectEvent_PingReceived) _then) = _$RsKdeConnectEvent_PingReceivedCopyWithImpl;
+@useResult
+$Res call({
+ String deviceId, String? message
+});
+
+
+
+
+}
+/// @nodoc
+class _$RsKdeConnectEvent_PingReceivedCopyWithImpl<$Res>
+    implements $RsKdeConnectEvent_PingReceivedCopyWith<$Res> {
+  _$RsKdeConnectEvent_PingReceivedCopyWithImpl(this._self, this._then);
+
+  final RsKdeConnectEvent_PingReceived _self;
+  final $Res Function(RsKdeConnectEvent_PingReceived) _then;
+
+/// Create a copy of RsKdeConnectEvent
+/// with the given fields replaced by the non-null parameter values.
+@pragma('vm:prefer-inline') $Res call({Object? deviceId = null,Object? message = freezed,}) {
+  return _then(RsKdeConnectEvent_PingReceived(
+deviceId: null == deviceId ? _self.deviceId : deviceId // ignore: cast_nullable_to_non_nullable
+as String,message: freezed == message ? _self.message : message // ignore: cast_nullable_to_non_nullable
+as String?,
+  ));
+}
+
+
+}
+
+/// @nodoc
+
+
+class RsKdeConnectEvent_ClipboardReceived extends RsKdeConnectEvent {
+  const RsKdeConnectEvent_ClipboardReceived({required this.deviceId, required this.content, required this.timestampMs}): super._();
+
+
+ final  String deviceId;
+ final  String content;
+ final  PlatformInt64 timestampMs;
+
+/// Create a copy of RsKdeConnectEvent
+/// with the given fields replaced by the non-null parameter values.
+@JsonKey(includeFromJson: false, includeToJson: false)
+@pragma('vm:prefer-inline')
+$RsKdeConnectEvent_ClipboardReceivedCopyWith<RsKdeConnectEvent_ClipboardReceived> get copyWith => _$RsKdeConnectEvent_ClipboardReceivedCopyWithImpl<RsKdeConnectEvent_ClipboardReceived>(this, _$identity);
+
+
+
+@override
+bool operator ==(Object other) {
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is RsKdeConnectEvent_ClipboardReceived&&(identical(other.deviceId, deviceId) || other.deviceId == deviceId)&&(identical(other.content, content) || other.content == content)&&(identical(other.timestampMs, timestampMs) || other.timestampMs == timestampMs));
+}
+
+
+@override
+int get hashCode => Object.hash(runtimeType,deviceId,content,timestampMs);
+
+@override
+String toString() {
+  return 'RsKdeConnectEvent.clipboardReceived(deviceId: $deviceId, content: $content, timestampMs: $timestampMs)';
+}
+
+
+}
+
+/// @nodoc
+abstract mixin class $RsKdeConnectEvent_ClipboardReceivedCopyWith<$Res> implements $RsKdeConnectEventCopyWith<$Res> {
+  factory $RsKdeConnectEvent_ClipboardReceivedCopyWith(RsKdeConnectEvent_ClipboardReceived value, $Res Function(RsKdeConnectEvent_ClipboardReceived) _then) = _$RsKdeConnectEvent_ClipboardReceivedCopyWithImpl;
+@useResult
+$Res call({
+ String deviceId, String content, PlatformInt64 timestampMs
+});
+
+
+
+
+}
+/// @nodoc
+class _$RsKdeConnectEvent_ClipboardReceivedCopyWithImpl<$Res>
+    implements $RsKdeConnectEvent_ClipboardReceivedCopyWith<$Res> {
+  _$RsKdeConnectEvent_ClipboardReceivedCopyWithImpl(this._self, this._then);
+
+  final RsKdeConnectEvent_ClipboardReceived _self;
+  final $Res Function(RsKdeConnectEvent_ClipboardReceived) _then;
+
+/// Create a copy of RsKdeConnectEvent
+/// with the given fields replaced by the non-null parameter values.
+@pragma('vm:prefer-inline') $Res call({Object? deviceId = null,Object? content = null,Object? timestampMs = null,}) {
+  return _then(RsKdeConnectEvent_ClipboardReceived(
+deviceId: null == deviceId ? _self.deviceId : deviceId // ignore: cast_nullable_to_non_nullable
+as String,content: null == content ? _self.content : content // ignore: cast_nullable_to_non_nullable
+as String,timestampMs: null == timestampMs ? _self.timestampMs : timestampMs // ignore: cast_nullable_to_non_nullable
+as PlatformInt64,
+  ));
+}
+
+
+}
+
+/// @nodoc
+
+
+class RsKdeConnectEvent_NotificationsChanged extends RsKdeConnectEvent {
+  const RsKdeConnectEvent_NotificationsChanged({required this.deviceId, required final  List<RsKdeNotification> notifications}): _notifications = notifications,super._();
+
+
+ final  String deviceId;
+ final  List<RsKdeNotification> _notifications;
+ List<RsKdeNotification> get notifications {
+  if (_notifications is EqualUnmodifiableListView) return _notifications;
+  // ignore: implicit_dynamic_type
+  return EqualUnmodifiableListView(_notifications);
+}
+
+
+/// Create a copy of RsKdeConnectEvent
+/// with the given fields replaced by the non-null parameter values.
+@JsonKey(includeFromJson: false, includeToJson: false)
+@pragma('vm:prefer-inline')
+$RsKdeConnectEvent_NotificationsChangedCopyWith<RsKdeConnectEvent_NotificationsChanged> get copyWith => _$RsKdeConnectEvent_NotificationsChangedCopyWithImpl<RsKdeConnectEvent_NotificationsChanged>(this, _$identity);
+
+
+
+@override
+bool operator ==(Object other) {
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is RsKdeConnectEvent_NotificationsChanged&&(identical(other.deviceId, deviceId) || other.deviceId == deviceId)&&const DeepCollectionEquality().equals(other._notifications, _notifications));
+}
+
+
+@override
+int get hashCode => Object.hash(runtimeType,deviceId,const DeepCollectionEquality().hash(_notifications));
+
+@override
+String toString() {
+  return 'RsKdeConnectEvent.notificationsChanged(deviceId: $deviceId, notifications: $notifications)';
+}
+
+
+}
+
+/// @nodoc
+abstract mixin class $RsKdeConnectEvent_NotificationsChangedCopyWith<$Res> implements $RsKdeConnectEventCopyWith<$Res> {
+  factory $RsKdeConnectEvent_NotificationsChangedCopyWith(RsKdeConnectEvent_NotificationsChanged value, $Res Function(RsKdeConnectEvent_NotificationsChanged) _then) = _$RsKdeConnectEvent_NotificationsChangedCopyWithImpl;
+@useResult
+$Res call({
+ String deviceId, List<RsKdeNotification> notifications
+});
+
+
+
+
+}
+/// @nodoc
+class _$RsKdeConnectEvent_NotificationsChangedCopyWithImpl<$Res>
+    implements $RsKdeConnectEvent_NotificationsChangedCopyWith<$Res> {
+  _$RsKdeConnectEvent_NotificationsChangedCopyWithImpl(this._self, this._then);
+
+  final RsKdeConnectEvent_NotificationsChanged _self;
+  final $Res Function(RsKdeConnectEvent_NotificationsChanged) _then;
+
+/// Create a copy of RsKdeConnectEvent
+/// with the given fields replaced by the non-null parameter values.
+@pragma('vm:prefer-inline') $Res call({Object? deviceId = null,Object? notifications = null,}) {
+  return _then(RsKdeConnectEvent_NotificationsChanged(
+deviceId: null == deviceId ? _self.deviceId : deviceId // ignore: cast_nullable_to_non_nullable
+as String,notifications: null == notifications ? _self._notifications : notifications // ignore: cast_nullable_to_non_nullable
+as List<RsKdeNotification>,
   ));
 }
 

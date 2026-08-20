@@ -130,7 +130,14 @@ Future<void> updateSystemOverlayStyleWithBrightness(Brightness brightness) async
   if (checkPlatform([TargetPlatform.android])) {
     // See https://github.com/flutter/flutter/issues/90098
     final darkMode = brightness == Brightness.dark;
-    final androidSdkInt = RefenaScope.defaultRef.read(deviceInfoProvider).androidSdkInt ?? 0;
+    int androidSdkInt = 0;
+    try {
+      androidSdkInt = RefenaScope.defaultRef.read(deviceInfoProvider).androidSdkInt ?? 0;
+    } on StateError {
+      // This can run during platform bootstrap, before RefenaScope installs its
+      // default ref. The conservative SDK 0 fallback keeps that narrow race
+      // from preventing the app from starting.
+    }
     final bool edgeToEdge = androidSdkInt >= 29;
 
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge); // ignore: unawaited_futures
