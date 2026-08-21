@@ -164,7 +164,9 @@ where
     // Advertise, then ask for what this device is allowed to consume.
     let granted = {
         let permissions = config.permissions.read().await;
-        permissions.for_device(&remote_relay_id).granted_capabilities()
+        permissions
+            .for_device(&remote_relay_id)
+            .granted_capabilities()
     };
     if let Err(error) = send(
         &mut writer,
@@ -404,7 +406,11 @@ where
     // Privileged actions get freshness and idempotency on top of authorization.
     if envelope.payload.is_action_request() {
         let issued = envelope.payload.issued_at_ms().unwrap_or_default();
-        let request_id = envelope.payload.action_request_id().unwrap_or_default().to_owned();
+        let request_id = envelope
+            .payload
+            .action_request_id()
+            .unwrap_or_default()
+            .to_owned();
         match state.replay.admit_action(&request_id, issued, now_ms()) {
             ActionAdmission::Fresh => {
                 state.replay.record_action(&request_id);

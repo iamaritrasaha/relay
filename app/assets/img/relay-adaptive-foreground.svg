@@ -2,9 +2,9 @@
   <!-- Android adaptive FOREGROUND: transparent layer, mark 66 dp inside the 72 dp safe circle. -->
   <defs>
     <linearGradient id="relayGrad" x1="16" y1="16" x2="112" y2="112" gradientUnits="userSpaceOnUse">
-      <stop offset="0" stop-color="#5B8CFF"/>
-      <stop offset="0.55" stop-color="#6E79FB"/>
-      <stop offset="1" stop-color="#8B5CF6"/>
+      <stop offset="0" stop-color="#F07855"/>
+      <stop offset="0.55" stop-color="#E08A52"/>
+      <stop offset="1" stop-color="#C89A55"/>
     </linearGradient>
     <symbol id="mark" viewBox="0 0 128 128">
       <g fill="none" stroke="url(#relayGrad)" stroke-width="11">

@@ -4,6 +4,7 @@ export 'package:relay_app/config/relay_typography.dart';
 
 abstract final class RelayProduct {
   static const name = 'Relay';
+  static const tagline = 'One desktop for all the devices around you.';
   static const copyright = '© 2026 Aritra Saha';
   static const localSendAttribution = 'Portions based on LocalSend, licensed under the Apache License 2.0.';
 }
@@ -17,6 +18,7 @@ class RelayPalette {
   final Color canvasTonalLow;
   final Color elevated;
   final Color softSurface;
+  final Color hoverSurface;
   final Color hairline;
   final Color topHighlight;
   final Color accent;
@@ -35,6 +37,7 @@ class RelayPalette {
     required this.canvasTonalLow,
     required this.elevated,
     required this.softSurface,
+    required this.hoverSurface,
     required this.hairline,
     required this.topHighlight,
     required this.accent,
@@ -48,42 +51,48 @@ class RelayPalette {
     required this.error,
   });
 
+  /// Relay Carbon — warm neutral carbon. No purple cast, no blue cast: the
+  /// greys carry a faint amber so the accent sits inside the same family
+  /// rather than on top of a cool ground.
   static const dark = RelayPalette(
-    canvas: Color(0xff121318),
-    canvasTonalHigh: Color(0xff15161b),
-    canvasTonalLow: Color(0xff0e0f13),
-    elevated: Color(0xff191b22),
-    softSurface: Color(0x0ffffffF),
-    hairline: Color(0x0effffff),
-    topHighlight: Color(0x14ffffff),
-    accent: Color(0xff7d8fff),
-    accentSoft: Color(0xffaab5ff),
-    accentSecondary: Color(0xff6ea8ff),
-    textPrimary: Color(0xfff5f6fa),
-    textSecondary: Color(0xff8e94a4),
-    textTertiary: Color(0xff6e7482),
-    success: Color(0xff69d49a),
-    warning: Color(0xffe0a65c),
-    error: Color(0xffe8796f),
+    canvas: Color(0xff11110f),
+    canvasTonalHigh: Color(0xff151310),
+    canvasTonalLow: Color(0xff10100e),
+    elevated: Color(0xff1a1815),
+    softSurface: Color(0xff201d19),
+    hoverSurface: Color(0xff29241f),
+    hairline: Color(0x14f4f0e8),
+    topHighlight: Color(0x00000000),
+    accent: Color(0xfff07855),
+    accentSoft: Color(0xffff9a7c),
+    accentSecondary: Color(0xffc89a55),
+    textPrimary: Color(0xfff4f0e8),
+    textSecondary: Color(0xffaaa39b),
+    textTertiary: Color(0xff77716a),
+    success: Color(0xff74c986),
+    warning: Color(0xffc89a55),
+    error: Color(0xffde665c),
   );
 
+  /// Relay Carbon, light. Warm paper against the same accent family.
   static const light = RelayPalette(
-    canvas: Color(0xfff8f8fc),
-    canvasTonalHigh: Color(0xfffdfdff),
-    canvasTonalLow: Color(0xffeef0f6),
-    elevated: Color(0xffffffff),
-    softSurface: Color(0x0f171920),
-    hairline: Color(0x14171920),
-    topHighlight: Color(0xaaffffff),
-    accent: Color(0xff5368d6),
-    accentSoft: Color(0xff4055bd),
-    accentSecondary: Color(0xff3d7ed5),
-    textPrimary: Color(0xff171920),
-    textSecondary: Color(0xff565d6d),
-    textTertiary: Color(0xff747b8a),
-    success: Color(0xff247a4a),
-    warning: Color(0xff9d671f),
-    error: Color(0xffb94741),
+    canvas: Color(0xfff6f3ed),
+    canvasTonalHigh: Color(0xfffdfbf7),
+    canvasTonalLow: Color(0xffeeeae2),
+    elevated: Color(0xfffcfaf6),
+    softSurface: Color(0xfff0ece4),
+    hoverSurface: Color(0xffe6e0d6),
+    hairline: Color(0x141a1815),
+    topHighlight: Color(0x00000000),
+    accent: Color(0xffc0522f),
+    accentSoft: Color(0xffa4441f),
+    accentSecondary: Color(0xff8a6420),
+    textPrimary: Color(0xff1a1815),
+    textSecondary: Color(0xff5f594f),
+    textTertiary: Color(0xff847d73),
+    success: Color(0xff2c7a45),
+    warning: Color(0xff8a6420),
+    error: Color(0xffb04a41),
   );
 
   static RelayPalette of(Brightness brightness) => brightness == Brightness.dark ? dark : light;
@@ -91,75 +100,82 @@ class RelayPalette {
 
 /// Small, shared layout and type constants for Relay's product UI.
 abstract final class RelayComponentTokens {
-  static const double groupedRadius = 15;
-  static const double dialogRadius = 24;
+  static const double groupedRadius = RelayRadius.panel;
+  static const double dialogRadius = RelayRadius.card;
   static const double compactControlHeight = 40;
   static const double sectionTracking = 1.1;
 }
 
+/// Relay Carbon corner radii.
+///
+/// One ladder for the whole product so surfaces nest without the corners
+/// fighting each other: a smaller surface inside a larger one always takes the
+/// next step down.
+abstract final class RelayRadius {
+  /// The hero, the one surface allowed to be the roundest thing on screen.
+  static const double hero = 26;
+
+  /// The other major surfaces. There should only ever be two or three.
+  static const double card = 23;
+
+  /// A region inside a major surface that genuinely needs its own shape.
+  static const double panel = 16;
+
+  /// Device rows in the dock and the sidebar.
+  static const double action = 14;
+
+  /// Sidebar rows and nav items.
+  static const double nav = 14;
+
+  /// Buttons and inputs.
+  static const double button = 14;
+
+  /// Small chips that really are pills.
+  static const double pill = 999;
+}
+
+/// Depth for Relay Carbon: contrast plus one restrained shadow, never blur.
+abstract final class RelayElevation {
+  static List<BoxShadow> resting(Brightness brightness) => const [];
+
+  static List<BoxShadow> lifted(Brightness brightness) => brightness == Brightness.dark
+      ? const [BoxShadow(color: Color(0x33000000), blurRadius: 22, spreadRadius: -10, offset: Offset(0, 6))]
+      : const [BoxShadow(color: Color(0x121a1815), blurRadius: 18, spreadRadius: -8, offset: Offset(0, 4))];
+}
+
 ColorScheme relayColorScheme(Brightness brightness) {
   final palette = RelayPalette.of(brightness);
-  if (brightness == Brightness.dark) {
-    return const ColorScheme.dark(
-      primary: Color(0xff7d8fff),
-      onPrimary: Color(0xfff5f6fa),
-      primaryContainer: Color(0xff303867),
-      onPrimaryContainer: Color(0xffdce0ff),
-      secondary: Color(0xff6ea8ff),
-      onSecondary: Color(0xff10131a),
-      secondaryContainer: Color(0xff202c47),
-      onSecondaryContainer: Color(0xffdce7ff),
-      tertiary: Color(0xff69d49a),
-      onTertiary: Color(0xff102119),
-      tertiaryContainer: Color(0xff1c4030),
-      onTertiaryContainer: Color(0xffb7f4cf),
-      error: Color(0xffe8796f),
-      onError: Color(0xff2b100f),
-      errorContainer: Color(0xff542522),
-      onErrorContainer: Color(0xffffdad5),
-      surface: Color(0xff121318),
-      onSurface: Color(0xfff5f6fa),
-      surfaceContainerHighest: Color(0xff191b22),
-      onSurfaceVariant: Color(0xff8e94a4),
-      outline: Color(0xff6e7482),
-      outlineVariant: Color(0xff2c2f38),
-      shadow: Color(0xff000000),
-      scrim: Color(0xff000000),
-      inverseSurface: Color(0xfff5f6fa),
-      onInverseSurface: Color(0xff1a1b20),
-      inversePrimary: Color(0xff5368d6),
-      surfaceTint: Color(0xff7d8fff),
-    );
-  }
+  final isDark = brightness == Brightness.dark;
 
-  return ColorScheme.light(
+  return ColorScheme(
+    brightness: brightness,
     primary: palette.accent,
-    onPrimary: const Color(0xffffffff),
-    primaryContainer: const Color(0xffe0e5ff),
-    onPrimaryContainer: const Color(0xff17235f),
+    onPrimary: isDark ? const Color(0xff2b100a) : const Color(0xffffffff),
+    primaryContainer: isDark ? const Color(0xff45231b) : const Color(0xfff7ddd4),
+    onPrimaryContainer: isDark ? const Color(0xffffd9cd) : const Color(0xff4a1a0d),
     secondary: palette.accentSecondary,
-    onSecondary: const Color(0xffffffff),
-    secondaryContainer: const Color(0xffdce9ff),
-    onSecondaryContainer: const Color(0xff0c315c),
+    onSecondary: isDark ? const Color(0xff1b131e) : const Color(0xffffffff),
+    secondaryContainer: isDark ? const Color(0xff342b39) : const Color(0xffe9dfec),
+    onSecondaryContainer: isDark ? const Color(0xffecdcf1) : const Color(0xff2d2032),
     tertiary: palette.success,
-    onTertiary: const Color(0xffffffff),
-    tertiaryContainer: const Color(0xffc9f2d8),
-    onTertiaryContainer: const Color(0xff00391d),
+    onTertiary: isDark ? const Color(0xff0d2118) : const Color(0xffffffff),
+    tertiaryContainer: isDark ? const Color(0xff1c3d2d) : const Color(0xffc9eeda),
+    onTertiaryContainer: isDark ? const Color(0xffbdf2d3) : const Color(0xff00391f),
     error: palette.error,
-    onError: const Color(0xffffffff),
-    errorContainer: const Color(0xffffdad5),
-    onErrorContainer: const Color(0xff410002),
+    onError: isDark ? const Color(0xff2b100f) : const Color(0xffffffff),
+    errorContainer: isDark ? const Color(0xff522421) : const Color(0xffffdad5),
+    onErrorContainer: isDark ? const Color(0xffffdad5) : const Color(0xff410002),
     surface: palette.canvas,
     onSurface: palette.textPrimary,
     surfaceContainerHighest: palette.elevated,
     onSurfaceVariant: palette.textSecondary,
     outline: palette.textTertiary,
-    outlineVariant: const Color(0xffd7d9e2),
+    outlineVariant: isDark ? const Color(0xff322d35) : const Color(0xffdcd5da),
     shadow: const Color(0xff000000),
     scrim: const Color(0xff000000),
-    inverseSurface: const Color(0xff2d3038),
-    onInverseSurface: const Color(0xfff4f5f9),
-    inversePrimary: const Color(0xffaab5ff),
+    inverseSurface: isDark ? const Color(0xfff4f1f4) : const Color(0xff2e2a30),
+    onInverseSurface: isDark ? const Color(0xff1c191f) : const Color(0xfff7f4f6),
+    inversePrimary: isDark ? const Color(0xffc24d30) : const Color(0xffff9c85),
     surfaceTint: palette.accent,
   );
 }

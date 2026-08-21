@@ -113,6 +113,12 @@ const _relayPairedAddressesKey = 'ls_relay_paired_addresses_v1';
 const _relayContinuitySettingsKey = 'ls_relay_continuity_settings_v1';
 const _kdeConnectIdentityKey = 'kc_local_identity_v1';
 const _kdeConnectTrustedDevicesKey = 'kc_trusted_devices_v1';
+const _gnomePanelDeviceIdKey = 'ls_gnome_panel_device_id';
+const _gnomePanelShowNetworkTypeKey = 'ls_gnome_panel_show_network_type';
+const _gnomePanelShowBatteryPercentageKey = 'ls_gnome_panel_show_battery_percentage';
+const _gnomePanelShowNotificationsKey = 'ls_gnome_panel_show_notifications';
+const _gnomePanelChargingAnimationKey = 'ls_gnome_panel_charging_animation';
+const _gnomePanelShowSignalKey = 'ls_gnome_panel_show_signal';
 
 final persistenceProvider = Provider<PersistenceService>((ref) {
   throw Exception('persistenceProvider not initialized');
@@ -709,5 +715,57 @@ class PersistenceService {
 
   Future<void> setKdeConnectTrustedDevices(List<Map<String, dynamic>> devices) async {
     await _prefs.setStringList(_kdeConnectTrustedDevicesKey, [for (final device in devices) jsonEncode(device)]);
+  }
+
+  String? getGnomePanelDeviceId() {
+    return _prefs.getString(_gnomePanelDeviceIdKey);
+  }
+
+  Future<void> setGnomePanelDeviceId(String? deviceId) async {
+    if (deviceId == null) {
+      await _prefs.remove(_gnomePanelDeviceIdKey);
+    } else {
+      await _prefs.setString(_gnomePanelDeviceIdKey, deviceId);
+    }
+  }
+
+  bool getGnomePanelShowNetworkType() {
+    return _prefs.getBool(_gnomePanelShowNetworkTypeKey) ?? true;
+  }
+
+  Future<void> setGnomePanelShowNetworkType(bool show) async {
+    await _prefs.setBool(_gnomePanelShowNetworkTypeKey, show);
+  }
+
+  bool getGnomePanelShowBatteryPercentage() {
+    return _prefs.getBool(_gnomePanelShowBatteryPercentageKey) ?? true;
+  }
+
+  Future<void> setGnomePanelShowBatteryPercentage(bool show) async {
+    await _prefs.setBool(_gnomePanelShowBatteryPercentageKey, show);
+  }
+
+  bool getGnomePanelShowNotifications() {
+    return _prefs.getBool(_gnomePanelShowNotificationsKey) ?? true;
+  }
+
+  Future<void> setGnomePanelShowNotifications(bool show) async {
+    await _prefs.setBool(_gnomePanelShowNotificationsKey, show);
+  }
+
+  bool getGnomePanelChargingAnimation() {
+    return _prefs.getBool(_gnomePanelChargingAnimationKey) ?? true;
+  }
+
+  Future<void> setGnomePanelChargingAnimation(bool enable) async {
+    await _prefs.setBool(_gnomePanelChargingAnimationKey, enable);
+  }
+
+  bool getGnomePanelShowSignal() {
+    return _prefs.getBool(_gnomePanelShowSignalKey) ?? true;
+  }
+
+  Future<void> setGnomePanelShowSignal(bool show) async {
+    await _prefs.setBool(_gnomePanelShowSignalKey, show);
   }
 }

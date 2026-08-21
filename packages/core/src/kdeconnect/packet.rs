@@ -12,6 +12,9 @@ pub use super::capabilities::{
     PACKET_TYPE_BATTERY, PACKET_TYPE_CLIPBOARD, PACKET_TYPE_CLIPBOARD_CONNECT,
     PACKET_TYPE_CONNECTIVITY_REPORT, PACKET_TYPE_FINDMYPHONE_REQUEST, PACKET_TYPE_IDENTITY,
     PACKET_TYPE_NOTIFICATION, PACKET_TYPE_NOTIFICATION_REQUEST, PACKET_TYPE_PAIR, PACKET_TYPE_PING,
+    PACKET_TYPE_SMS_MESSAGES, PACKET_TYPE_SMS_REQUEST, PACKET_TYPE_SMS_REQUEST_CONVERSATION,
+    PACKET_TYPE_SMS_REQUEST_CONVERSATIONS, PACKET_TYPE_TELEPHONY,
+    PACKET_TYPE_TELEPHONY_REQUEST_MUTE,
 };
 pub const PROTOCOL_VERSION: i64 = 8;
 
@@ -91,6 +94,54 @@ pub struct NotificationBody {
     pub is_clearable: Option<bool>,
     pub silent: Option<bool>,
     pub is_cancel: bool,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct TelephonyBody {
+    pub event: String,
+    pub is_cancel: bool,
+    pub phone_number: Option<String>,
+    pub contact_name: Option<String>,
+    pub phone_thumbnail: Option<String>,
+}
+
+const MAX_SMS_MESSAGES_PER_PACKET: usize = 200;
+const MAX_SMS_BODY_BYTES: usize = 16 * 1024;
+const MAX_SMS_ADDRESSES: usize = 16;
+const MAX_SMS_ATTACHMENTS: usize = 16;
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SmsAttachmentMetadata {
+    pub part_id: String,
+    pub mime_type: Option<String>,
+    pub unique_identifier: Option<String>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SmsMessage {
+    pub id: i64,
+    pub thread_id: i64,
+    pub addresses: Vec<String>,
+    pub body: String,
+    pub date: i64,
+    pub message_type: i32,
+    pub read: Option<bool>,
+    pub sub_id: Option<i32>,
+    pub event: Option<String>,
+    pub attachments: Vec<SmsAttachmentMetadata>,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct SmsMessagesBody {
+    pub messages: Vec<SmsMessage>,
+}
+
+pub struct SmsRequestConversationsBody;
+
+pub struct SmsRequestConversationBody {
+    pub thread_id: i64,
+    pub range_start_timestamp: Option<i64>,
+    pub number_to_request: Option<u16>,
 }
 
 #[derive(Debug)]
@@ -216,6 +267,20 @@ impl NetworkPacket {
             return Err(PacketError("not a notification request packet".into()));
         }
         Ok(())
+    }
+
+    pub fn as_sms_messages(&self) -> Result<SmsMessagesBody, PacketError> {
+        if self.packet_type != PACKET_TYPE_SMS_MESSAGES {
+            return Err(PacketError("not an sms messages packet".into()));
+        }
+        SmsMessagesBody::from_map(&self.body)
+    }
+
+    pub fn as_telephony(&self) -> Result<TelephonyBody, PacketError> {
+        if self.packet_type != PACKET_TYPE_TELEPHONY {
+            return Err(PacketError("not a telephony packet".into()));
+        }
+        TelephonyBody::from_map(&self.body)
     }
 }
 
@@ -544,6 +609,201 @@ impl NotificationBody {
     }
 }
 
+impl SmsMessagesBody {
+    fn from_map(body: &Map<String, Value>) -> Result<Self, PacketError> {
+        let version = body.get("version").and_then(Value::as_i64).unwrap_or(2);
+        if version != 2 {
+            return Err(PacketError("unsupported sms messages version".into()));
+        }
+        let raw = body
+            .get("messages")
+            .and_then(Value::as_array)
+            .ok_or_else(|| PacketError("messages must be an array".into()))?;
+        if raw.len() > MAX_SMS_MESSAGES_PER_PACKET {
+            return Err(PacketError("too many sms messages".into()));
+        }
+        let messages = raw.iter().filter_map(SmsMessage::from_value).collect();
+        Ok(Self { messages })
+    }
+}
+
+impl SmsMessage {
+    fn from_value(value: &Value) -> Option<Self> {
+        let map = value.as_object()?;
+        let id = map.get("_id")?.as_i64()?;
+        let thread_id = map.get("thread_id")?.as_i64()?;
+        let date = map.get("date")?.as_i64()?;
+        if date < 0 {
+            return None;
+        }
+        let body = map.get("body").and_then(Value::as_str).unwrap_or("");
+        if body.len() > MAX_SMS_BODY_BYTES {
+            return None;
+        }
+        let message_type = map
+            .get("type")
+            .and_then(Value::as_i64)
+            .and_then(|v| i32::try_from(v).ok())
+            .unwrap_or(0);
+        let read = match map.get("read") {
+            None => None,
+            Some(v) => match v.as_i64() {
+                Some(0) => Some(false),
+                Some(1) => Some(true),
+                _ => return None,
+            },
+        };
+        let addresses = map
+            .get("addresses")
+            .and_then(Value::as_array)
+            .map(|items| {
+                items
+                    .iter()
+                    .take(MAX_SMS_ADDRESSES)
+                    .filter_map(|entry| {
+                        entry
+                            .as_object()?
+                            .get("address")?
+                            .as_str()
+                            .map(str::to_string)
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+        let attachments = map
+            .get("attachments")
+            .and_then(Value::as_array)
+            .map(|items| {
+                items
+                    .iter()
+                    .take(MAX_SMS_ATTACHMENTS)
+                    .filter_map(|entry| {
+                        let item = entry.as_object()?;
+                        Some(SmsAttachmentMetadata {
+                            part_id: item.get("part_id")?.as_str()?.to_string(),
+                            mime_type: item
+                                .get("mime_type")
+                                .and_then(Value::as_str)
+                                .map(str::to_string),
+                            unique_identifier: item
+                                .get("unique_identifier")
+                                .and_then(Value::as_str)
+                                .map(str::to_string),
+                        })
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+        Some(Self {
+            id,
+            thread_id,
+            addresses,
+            body: body.to_string(),
+            date,
+            message_type,
+            read,
+            // Android names this after the Telephony provider column, `sub_id`,
+            // while the request packet going the other way spells the same
+            // concept `subID`. Both are accepted here so a peer that mirrors
+            // the request spelling back is not silently read as single-SIM.
+            sub_id: map
+                .get("sub_id")
+                .or_else(|| map.get("subID"))
+                .and_then(Value::as_i64)
+                .and_then(|v| i32::try_from(v).ok()),
+            event: map.get("event").and_then(Value::as_str).map(str::to_string),
+            attachments,
+        })
+    }
+}
+
+impl SmsRequestConversationsBody {
+    pub fn request() -> NetworkPacket {
+        NetworkPacket::new(PACKET_TYPE_SMS_REQUEST_CONVERSATIONS, Map::new())
+    }
+}
+
+impl SmsRequestConversationBody {
+    pub fn request(
+        thread_id: i64,
+        range_start_timestamp: Option<i64>,
+        number_to_request: Option<u16>,
+    ) -> NetworkPacket {
+        let mut body = Map::new();
+        body.insert("threadID".into(), Value::Number(thread_id.into()));
+        if let Some(value) = range_start_timestamp {
+            body.insert("rangeStartTimestamp".into(), Value::Number(value.into()));
+        }
+        if let Some(value) = number_to_request {
+            body.insert(
+                "numberToRequest".into(),
+                Value::Number(u64::from(value).into()),
+            );
+        }
+        NetworkPacket::new(PACKET_TYPE_SMS_REQUEST_CONVERSATION, body)
+    }
+}
+
+impl TelephonyBody {
+    fn from_map(body: &Map<String, Value>) -> Result<Self, PacketError> {
+        let event = required_string(body, "event")?;
+        let is_cancel = body
+            .get("isCancel")
+            .and_then(Value::as_bool)
+            .unwrap_or(false);
+        let phone_number = optional_string(body, "phoneNumber");
+        let contact_name = optional_string(body, "contactName");
+        let phone_thumbnail = optional_string(body, "phoneThumbnail");
+        Ok(Self {
+            event,
+            is_cancel,
+            phone_number,
+            contact_name,
+            phone_thumbnail,
+        })
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SmsRequestBody {
+    pub addresses: Vec<String>,
+    pub message_body: String,
+    pub sub_id: Option<i32>,
+}
+
+impl SmsRequestBody {
+    pub fn to_packet(&self) -> NetworkPacket {
+        let mut body = Map::new();
+        body.insert("version".into(), Value::Number(2.into()));
+        let addrs: Vec<Value> = self
+            .addresses
+            .iter()
+            .map(|a| {
+                let mut map = Map::new();
+                map.insert("address".into(), Value::String(a.clone()));
+                Value::Object(map)
+            })
+            .collect();
+        body.insert("addresses".into(), Value::Array(addrs));
+        body.insert(
+            "messageBody".into(),
+            Value::String(self.message_body.clone()),
+        );
+        if let Some(sub_id) = self.sub_id {
+            body.insert("subID".into(), Value::Number(sub_id.into()));
+        }
+        NetworkPacket::new(PACKET_TYPE_SMS_REQUEST, body)
+    }
+}
+
+pub struct TelephonyRequestMuteBody;
+
+impl TelephonyRequestMuteBody {
+    pub fn request() -> NetworkPacket {
+        NetworkPacket::new(PACKET_TYPE_TELEPHONY_REQUEST_MUTE, Map::new())
+    }
+}
+
 pub fn is_valid_device_id(id: &str) -> bool {
     let len = id.len();
     (32..=38).contains(&len)
@@ -606,6 +866,137 @@ fn optional_string_list(body: &Map<String, Value>, key: &str) -> Vec<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The SMS v2 request is the packet that actually sends a message, so its
+    /// shape is pinned field by field: `addresses` is an array of objects, not
+    /// an array of strings, and the SIM is `subID` on the way out even though
+    /// Android reports it as `sub_id` on the way in.
+    #[test]
+    fn sms_request_matches_the_v2_schema() {
+        let packet = SmsRequestBody {
+            addresses: vec!["+15550100".into()],
+            message_body: "hello".into(),
+            sub_id: Some(2),
+        }
+        .to_packet();
+
+        assert_eq!(packet.packet_type, PACKET_TYPE_SMS_REQUEST);
+        assert_eq!(packet.body.get("version").and_then(Value::as_i64), Some(2));
+        assert_eq!(
+            packet.body.get("messageBody").and_then(Value::as_str),
+            Some("hello")
+        );
+        assert_eq!(packet.body.get("subID").and_then(Value::as_i64), Some(2));
+        assert!(
+            packet.body.get("sub_id").is_none(),
+            "the request spells the SIM subID, not sub_id"
+        );
+
+        let addresses = packet
+            .body
+            .get("addresses")
+            .and_then(Value::as_array)
+            .expect("addresses must be an array");
+        assert_eq!(addresses.len(), 1);
+        assert_eq!(
+            addresses[0].get("address").and_then(Value::as_str),
+            Some("+15550100"),
+            "each address is an object with an address field"
+        );
+    }
+
+    #[test]
+    fn sms_request_omits_an_unknown_sim() {
+        let packet = SmsRequestBody {
+            addresses: vec!["+15550100".into()],
+            message_body: "hello".into(),
+            sub_id: None,
+        }
+        .to_packet();
+
+        assert!(
+            packet.body.get("subID").is_none(),
+            "an absent SIM must be omitted rather than sent as a guess"
+        );
+    }
+
+    #[test]
+    fn sms_request_carries_every_recipient() {
+        let packet = SmsRequestBody {
+            addresses: vec!["+15550100".into(), "+15550111".into()],
+            message_body: "hi".into(),
+            sub_id: None,
+        }
+        .to_packet();
+
+        let addresses = packet
+            .body
+            .get("addresses")
+            .and_then(Value::as_array)
+            .expect("addresses must be an array");
+        assert_eq!(addresses.len(), 2);
+    }
+
+    #[test]
+    fn sms_request_round_trips_through_serialization() {
+        let serialized = SmsRequestBody {
+            addresses: vec!["+15550100".into()],
+            message_body: "round trip".into(),
+            sub_id: Some(1),
+        }
+        .to_packet()
+        .serialize();
+
+        let parsed = NetworkPacket::parse(&serialized).expect("must parse back");
+        assert_eq!(parsed.packet_type, PACKET_TYPE_SMS_REQUEST);
+        assert_eq!(
+            parsed.body.get("messageBody").and_then(Value::as_str),
+            Some("round trip")
+        );
+    }
+
+    #[test]
+    fn incoming_messages_accept_either_sim_spelling() {
+        let snake = serde_json::json!({
+            "messages": [{
+                "_id": 7, "thread_id": 3, "body": "x", "date": 1,
+                "type": 1, "read": 1, "sub_id": 2,
+                "addresses": [{"address": "+15550100"}]
+            }]
+        });
+        let camel = serde_json::json!({
+            "messages": [{
+                "_id": 7, "thread_id": 3, "body": "x", "date": 1,
+                "type": 1, "read": 1, "subID": 2,
+                "addresses": [{"address": "+15550100"}]
+            }]
+        });
+
+        for body in [snake, camel] {
+            let packet =
+                NetworkPacket::new(PACKET_TYPE_SMS_MESSAGES, body.as_object().unwrap().clone());
+            let parsed = packet.as_sms_messages().expect("must parse");
+            assert_eq!(parsed.messages[0].sub_id, Some(2));
+        }
+    }
+
+    #[test]
+    fn a_message_without_a_sim_reports_none() {
+        let body = serde_json::json!({
+            "messages": [{
+                "_id": 7, "thread_id": 3, "body": "x", "date": 1,
+                "type": 1, "read": 1,
+                "addresses": [{"address": "+15550100"}]
+            }]
+        });
+        let packet =
+            NetworkPacket::new(PACKET_TYPE_SMS_MESSAGES, body.as_object().unwrap().clone());
+
+        assert_eq!(
+            packet.as_sms_messages().expect("must parse").messages[0].sub_id,
+            None
+        );
+    }
 
     fn identity() -> IdentityBody {
         IdentityBody {

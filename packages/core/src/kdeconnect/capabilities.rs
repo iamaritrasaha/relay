@@ -10,6 +10,12 @@ pub const PACKET_TYPE_PING: &str = "kdeconnect.ping";
 pub const PACKET_TYPE_FINDMYPHONE_REQUEST: &str = "kdeconnect.findmyphone.request";
 pub const PACKET_TYPE_NOTIFICATION: &str = "kdeconnect.notification";
 pub const PACKET_TYPE_NOTIFICATION_REQUEST: &str = "kdeconnect.notification.request";
+pub const PACKET_TYPE_SMS_MESSAGES: &str = "kdeconnect.sms.messages";
+pub const PACKET_TYPE_SMS_REQUEST: &str = "kdeconnect.sms.request";
+pub const PACKET_TYPE_SMS_REQUEST_CONVERSATIONS: &str = "kdeconnect.sms.request_conversations";
+pub const PACKET_TYPE_SMS_REQUEST_CONVERSATION: &str = "kdeconnect.sms.request_conversation";
+pub const PACKET_TYPE_TELEPHONY: &str = "kdeconnect.telephony";
+pub const PACKET_TYPE_TELEPHONY_REQUEST_MUTE: &str = "kdeconnect.telephony.request_mute";
 
 /// Capabilities that Relay Linux can RECEIVE from KDE Connect peers.
 pub fn canonical_incoming_capabilities() -> Vec<String> {
@@ -20,6 +26,8 @@ pub fn canonical_incoming_capabilities() -> Vec<String> {
         PACKET_TYPE_CLIPBOARD_CONNECT.to_string(),
         PACKET_TYPE_PING.to_string(),
         PACKET_TYPE_NOTIFICATION.to_string(),
+        PACKET_TYPE_SMS_MESSAGES.to_string(),
+        PACKET_TYPE_TELEPHONY.to_string(),
     ]
 }
 
@@ -31,6 +39,10 @@ pub fn canonical_outgoing_capabilities() -> Vec<String> {
         PACKET_TYPE_PING.to_string(),
         PACKET_TYPE_FINDMYPHONE_REQUEST.to_string(),
         PACKET_TYPE_NOTIFICATION_REQUEST.to_string(),
+        PACKET_TYPE_SMS_REQUEST.to_string(),
+        PACKET_TYPE_SMS_REQUEST_CONVERSATIONS.to_string(),
+        PACKET_TYPE_SMS_REQUEST_CONVERSATION.to_string(),
+        PACKET_TYPE_TELEPHONY_REQUEST_MUTE.to_string(),
     ]
 }
 
@@ -49,12 +61,18 @@ mod tests {
         assert!(incoming.contains(&PACKET_TYPE_CLIPBOARD_CONNECT.to_string()));
         assert!(incoming.contains(&PACKET_TYPE_PING.to_string()));
         assert!(incoming.contains(&PACKET_TYPE_NOTIFICATION.to_string()));
+        assert!(incoming.contains(&PACKET_TYPE_SMS_MESSAGES.to_string()));
+        assert!(incoming.contains(&PACKET_TYPE_TELEPHONY.to_string()));
 
         assert!(outgoing.contains(&PACKET_TYPE_CLIPBOARD.to_string()));
         assert!(outgoing.contains(&PACKET_TYPE_CLIPBOARD_CONNECT.to_string()));
         assert!(outgoing.contains(&PACKET_TYPE_PING.to_string()));
         assert!(outgoing.contains(&PACKET_TYPE_FINDMYPHONE_REQUEST.to_string()));
         assert!(outgoing.contains(&PACKET_TYPE_NOTIFICATION_REQUEST.to_string()));
+        assert!(outgoing.contains(&PACKET_TYPE_SMS_REQUEST.to_string()));
+        assert!(outgoing.contains(&PACKET_TYPE_SMS_REQUEST_CONVERSATIONS.to_string()));
+        assert!(outgoing.contains(&PACKET_TYPE_SMS_REQUEST_CONVERSATION.to_string()));
+        assert!(outgoing.contains(&PACKET_TYPE_TELEPHONY_REQUEST_MUTE.to_string()));
 
         // Battery is receive only on Linux desktop
         assert!(!outgoing.contains(&PACKET_TYPE_BATTERY.to_string()));

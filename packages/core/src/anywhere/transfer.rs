@@ -17,19 +17,19 @@ use std::time::{Duration, Instant};
 use tokio::sync::{mpsc, oneshot};
 use tokio_util::sync::CancellationToken;
 
-use super::endpoint::{AnywhereEndpoint, PathPreference, bind_endpoint, selected_path};
+use super::endpoint::{bind_endpoint, selected_path, AnywhereEndpoint, PathPreference};
 use super::error::{AnywhereError, TlsStage, TransportStage};
 use super::identity::AnywhereIdentity;
 use super::proof::{authenticate_initiator, authenticate_server};
 use super::runtime::{AnywhereRuntime, AnywhereSaveTarget, AnywhereSessionId, IncomingTransferId};
 use super::stream::{
-    IrohBiStream, client_peer_certificate_fingerprint, server_peer_certificate_fingerprint,
+    client_peer_certificate_fingerprint, server_peer_certificate_fingerprint, IrohBiStream,
 };
 use super::tls::InnerTlsPeer;
-use super::{RelayAddressV1, authorize_unknown_authenticated, empty_trust};
+use super::{authorize_unknown_authenticated, empty_trust, RelayAddressV1};
 use crate::http::server::common::save::FileUploadTarget;
 use crate::http::server::v2::{PrepareUploadDecisionV2, ServerEventV2, SessionEndReasonV2};
-use crate::http::server::{ConnectionOrigin, ServerConfigV2, start_v2_stream_only};
+use crate::http::server::{start_v2_stream_only, ConnectionOrigin, ServerConfigV2};
 use crate::http::state::ClientInfo;
 use crate::model::discovery::ProtocolType;
 use crate::model::transfer::{FileDto, FileMetadata};

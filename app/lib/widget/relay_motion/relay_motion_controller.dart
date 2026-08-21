@@ -24,15 +24,15 @@ class SpatialNodePosition {
   });
 }
 
-/// Controller and deterministic math engine for Relay spatial scene positioning,
-/// continuous idle orbits, depth layering, focus transitions, and transfer mechanics.
+/// Controller and deterministic math engine for the Relay Spatial Scene.
+///
+/// Resting positions are deliberately still: spatial layout expresses a device's
+/// relationship to this desktop, while motion is reserved for arrivals, focus,
+/// departures and real transfer progress.
 class RelaySpatialLayoutEngine {
   /// Base radii for spatial orbital rings (scaled to available canvas size)
   static const double baseInnerRadiusRatio = 0.42;
   static const double baseOuterRadiusRatio = 0.70;
-
-  /// Nominal ambient animation duration in seconds for period normalization
-  static const double ambientCycleDuration = 120.0;
 
   /// Deterministic pseudo-random seed from device string key.
   static int _hashKey(String key) {
@@ -101,12 +101,9 @@ class RelaySpatialLayoutEngine {
     }
 
     if (!hasFocusedDevice || focusProgress == 0.0) {
-      // Resting center with very subtle presence breathing
-      final driftX = math.sin(ambientPhase * 2 * math.pi) * 1.5;
-      final driftY = math.cos(ambientPhase * 2 * math.pi) * 1.5;
       return SpatialNodePosition(
-        offset: center + Offset(driftX, driftY),
-        scale: 1.0 + (0.02 * math.sin(ambientPhase * 4 * math.pi)),
+        offset: center,
+        scale: 1.0,
         opacity: 1.0,
       );
     }
@@ -151,35 +148,12 @@ class RelaySpatialLayoutEngine {
       sceneRadius: sceneRadius,
     );
 
-    final hash = _hashKey(device.key);
-    final isPrimary = device.isAuthenticatedRelay;
-
-    // --- Continuous Idle Orbit & Depth Calculation ---
-    // Deterministic revolution period:
-    // Inner primary devices: ~26-38 seconds per revolution
-    // Outer compatibility devices: ~40-54 seconds per revolution
-    final periodSeconds = isPrimary ? (26.0 + (hash % 13).toDouble()) : (40.0 + (hash % 15).toDouble());
-
-    // When ambientPhase is non-zero (animations enabled), devices continuously revolve around center
-    final double continuousAngle;
-    if (ambientPhase > 0.0) {
-      final elapsedSeconds = ambientPhase * ambientCycleDuration;
-      final revolutions = elapsedSeconds / periodSeconds;
-      continuousAngle = polar.angle + (revolutions * 2 * math.pi);
-    } else {
-      continuousAngle = polar.angle;
-    }
-
-    // Subtle radial breathing
-    final radialBreathing = ambientPhase > 0.0 ? math.sin((ambientPhase * 4 * math.pi) + ((hash % 100) / 100.0 * 2 * math.pi)) * 3.5 : 0.0;
-    final effectiveRestingRadius = polar.radius + radialBreathing;
-
-    // Front/Back perspective depth for idle orbit:
-    // zDepth: -1.0 (deep rear behind center), +1.0 (front)
-    final idleZDepth = math.sin(continuousAngle);
-    final isIdleBehind = idleZDepth < -0.10;
-    final idleDepthScale = ambientPhase > 0.0 ? (1.0 + (0.08 * idleZDepth)) : 1.0;
-    final idleDepthOpacity = ambientPhase > 0.0 ? (isIdleBehind ? 0.82 : 1.0) : 1.0;
+    // Resting layout must be stable. There is no idle orbit or breathing.
+    final continuousAngle = polar.angle;
+    final effectiveRestingRadius = polar.radius;
+    const isIdleBehind = false;
+    const idleDepthScale = 1.0;
+    const idleDepthOpacity = 1.0;
 
     // Slight elliptical perspective compression on the Y axis
     final restingOffset =
@@ -201,7 +175,8 @@ class RelaySpatialLayoutEngine {
     if (isThisTransferring) {
       final isTerminal =
           transferPhase == RelayDevicePhase.success || transferPhase == RelayDevicePhase.failed || transferPhase == RelayDevicePhase.cancelled;
-      final progressVal = isTerminal ? 1.0 : (transferProgress ?? (ambientPhase % 1.0)).clamp(0.0, 1.0);
+      // A stream only moves when a real transfer has supplied progress.
+      final progressVal = isTerminal ? 1.0 : (transferProgress ?? 0.0).clamp(0.0, 1.0);
 
       // Signature 3D Perspective Orbit: Generous elliptical path tilted on Y-axis
       final rx = math.min(sceneSize.width * 0.38, 160.0);

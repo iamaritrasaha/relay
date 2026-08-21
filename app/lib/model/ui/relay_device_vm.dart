@@ -35,6 +35,8 @@ class RelayDeviceVm {
   final bool connectivityStale;
   final bool canPing;
   final bool canFindDevice;
+  final bool canSendSms;
+  final bool canMuteRinger;
 
   /// Continuity capability states for this device, already folded together from
   /// what the user enabled, what this device can do and what the peer
@@ -69,6 +71,8 @@ class RelayDeviceVm {
     this.connectivityStale = false,
     this.canPing = false,
     this.canFindDevice = false,
+    this.canSendSms = false,
+    this.canMuteRinger = false,
     this.capabilities = const {},
     this.continuityConnected = false,
     this.ip,
@@ -122,6 +126,15 @@ class RelayDeviceVm {
     return 'Nearby · Local';
   }
 
+  /// Whether the device is reachable right now, as opposed to merely known.
+  ///
+  /// A trusted device that has gone away keeps its place in the UI and reads as
+  /// offline; it is never dropped just because discovery stopped seeing it.
+  bool get isPresent {
+    final summary = statusSummary;
+    return summary.startsWith('Connected') || summary.startsWith('Nearby') || summary.startsWith('Transferring') || summary == 'Paired';
+  }
+
   /// Capability states for display.
   ///
   /// Relay-compatible peers get files and nothing else: continuity never
@@ -132,7 +145,11 @@ class RelayDeviceVm {
         RelayCapability.files: CapabilityStatus.unavailable,
         RelayCapability.clipboard: capabilities[RelayCapability.clipboard] ?? CapabilityStatus.unavailable,
         RelayCapability.battery: capabilities[RelayCapability.battery] ?? CapabilityStatus.unavailable,
-        RelayCapability.messages: CapabilityStatus.unavailable,
+        // Derived from the peer's own advertised SMS capabilities, like every
+        // other row here. Pinning this to unavailable hid the Messages action
+        // and told the GNOME pill the phone had no messages at all, on peers
+        // whose conversations Relay was reading at the same moment.
+        RelayCapability.messages: capabilities[RelayCapability.messages] ?? CapabilityStatus.unavailable,
         RelayCapability.notifications: capabilities[RelayCapability.notifications] ?? CapabilityStatus.unavailable,
         RelayCapability.phone: capabilities[RelayCapability.phone] ?? CapabilityStatus.unavailable,
       };

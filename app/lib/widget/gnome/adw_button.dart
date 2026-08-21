@@ -75,8 +75,9 @@ class AdwButton extends StatelessWidget {
         border = null;
         break;
       case AdwButtonStyle.destructive:
-        bg = palette.error;
-        fg = Colors.white;
+        // Muted rather than alarming: this is a deliberate action, not a warning.
+        bg = palette.error.withValues(alpha: 0.14);
+        fg = palette.error;
         border = null;
         break;
       case AdwButtonStyle.flat:
@@ -85,19 +86,19 @@ class AdwButton extends StatelessWidget {
         border = null;
         break;
       case AdwButtonStyle.normal:
-        bg = isDark ? const Color(0x1fffffff) : const Color(0x0f000000);
+        bg = palette.softSurface;
         fg = palette.textPrimary;
-        border = BorderSide(color: isDark ? const Color(0x18ffffff) : const Color(0x12000000), width: 1);
+        border = null;
         break;
     }
 
     if (onPressed == null) {
-      bg = isDark ? const Color(0x0affffff) : const Color(0x08000000);
+      bg = isDark ? const Color(0x0af4f0e8) : const Color(0x081a1815);
       fg = palette.textTertiary;
       border = null;
     }
 
-    final radius = isPill ? BorderRadius.circular(20) : BorderRadius.circular(8);
+    final radius = BorderRadius.circular(isPill ? RelayRadius.pill : RelayRadius.button);
 
     Widget content =
         child ??
@@ -113,7 +114,7 @@ class AdwButton extends StatelessWidget {
               Flexible(
                 child: Text(
                   label!,
-                  style: RelayTypography.body(fg, isGnome: true, bold: style == AdwButtonStyle.suggested),
+                  style: RelayTypography.body(fg, isGnome: true, bold: true),
                   overflow: TextOverflow.ellipsis,
                 ),
               ),

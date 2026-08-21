@@ -16,21 +16,21 @@ use std::sync::{Arc, Mutex, OnceLock};
 
 use flutter_rust_bridge::frb;
 use relay_core::anywhere::{
-    connect_continuity, spawn_link, AnywhereIdentity, PathPreference, RelayAddressV1,
+    AnywhereIdentity, PathPreference, RelayAddressV1, connect_continuity, spawn_link,
 };
 use relay_core::continuity::{
-    capability_entry, clipboard_fingerprint, now_ms, BatteryState, CallAction, CallActionOutcome,
-    CallActionRequest, CallActionResult, CallPhase, CallState, CapabilityGrant, CapabilityManifest,
-    CapabilityState, ChargingState, ClipboardMode, ClipboardUpdate, ContinuityCapability,
-    ContinuityErrorPayload, ContinuityEvent, ContinuityEventSink, ContinuityHostRequest,
-    ContinuityPayload, ContinuityPermissions, ContinuitySessionConfig, ContinuitySessionEnd,
-    ContinuitySessionHandle, DevicePlatform, NotificationDismissRequest, NotificationEvent,
-    NotificationRemoval, SharedPermissions, SmsConversation, SmsConversationsPage,
-    SmsConversationsRequest, SmsDirection, SmsMessage, SmsMessagesPage, SmsMessagesRequest,
-    SmsSendOutcome, SmsSendRequest,
+    BatteryState, CallAction, CallActionOutcome, CallActionRequest, CallActionResult, CallPhase,
+    CallState, CapabilityGrant, CapabilityManifest, CapabilityState, ChargingState, ClipboardMode,
+    ClipboardUpdate, ContinuityCapability, ContinuityErrorPayload, ContinuityEvent,
+    ContinuityEventSink, ContinuityHostRequest, ContinuityPayload, ContinuityPermissions,
+    ContinuitySessionConfig, ContinuitySessionEnd, ContinuitySessionHandle, DevicePlatform,
+    NotificationDismissRequest, NotificationEvent, NotificationRemoval, SharedPermissions,
+    SmsConversation, SmsConversationsPage, SmsConversationsRequest, SmsDirection, SmsMessage,
+    SmsMessagesPage, SmsMessagesRequest, SmsSendOutcome, SmsSendRequest, capability_entry,
+    clipboard_fingerprint, now_ms,
 };
 use relay_core::relay::{RelayId, TrustDirectory, TrustRecord};
-use tokio::sync::{mpsc, oneshot, RwLock};
+use tokio::sync::{RwLock, mpsc, oneshot};
 use tokio_util::sync::CancellationToken;
 
 use crate::frb_generated::StreamSink;
@@ -153,7 +153,10 @@ fn ensure_host_pump_started() {
 }
 
 /// Forwards authorized host work to Dart and remembers where the answer goes.
-fn spawn_host_pump(runtime: Arc<ContinuityRuntime>, mut host_rx: mpsc::Receiver<ContinuityHostRequest>) {
+fn spawn_host_pump(
+    runtime: Arc<ContinuityRuntime>,
+    mut host_rx: mpsc::Receiver<ContinuityHostRequest>,
+) {
     tokio::spawn(async move {
         while let Some(request) = host_rx.recv().await {
             let request_id = runtime.next_request_id.fetch_add(1, Ordering::SeqCst);
@@ -173,16 +176,21 @@ fn spawn_host_pump(runtime: Arc<ContinuityRuntime>, mut host_rx: mpsc::Receiver<
                 .unwrap_or(false);
             #[cfg(not(test))]
             let delivered_to_test = false;
-            let delivered = delivered_to_test || runtime
-                .host_sink
-                .lock()
-                .ok()
-                .and_then(|slot| slot.as_ref().map(|sink| sink.add(wire).is_ok()))
-                .unwrap_or(false);
+            let delivered = delivered_to_test
+                || runtime
+                    .host_sink
+                    .lock()
+                    .ok()
+                    .and_then(|slot| slot.as_ref().map(|sink| sink.add(wire).is_ok()))
+                    .unwrap_or(false);
             if !delivered {
                 // Nothing is listening: drop the reply channel so the session
                 // answers the peer with a provider failure instead of hanging.
-                runtime.pending.lock().map(|mut map| map.remove(&request_id)).ok();
+                runtime
+                    .pending
+                    .lock()
+                    .map(|mut map| map.remove(&request_id))
+                    .ok();
             }
         }
     });
@@ -715,7 +723,11 @@ fn map_event(event: ContinuityEvent) -> Option<RsContinuityEvent> {
             page,
         } => RsContinuityEvent::ConversationsPage {
             remote_relay_id,
-            conversations: page.conversations.into_iter().map(map_conversation).collect(),
+            conversations: page
+                .conversations
+                .into_iter()
+                .map(map_conversation)
+                .collect(),
             has_more: page.has_more,
         },
         ContinuityEvent::MessagesPage {
@@ -1042,8 +1054,9 @@ pub async fn continuity_connect_device(
     // Continuity never binds its own Iroh endpoint: it rides the one the
     // Anywhere listener already owns, so a device has a single routing identity
     // and a single socket.
-    let endpoint = crate::api::relay_anywhere::anywhere_listener_endpoint()
-        .ok_or_else(|| anyhow::anyhow!("the Relay listener must be running before continuity connects"))?;
+    let endpoint = crate::api::relay_anywhere::anywhere_listener_endpoint().ok_or_else(|| {
+        anyhow::anyhow!("the Relay listener must be running before continuity connects")
+    })?;
 
     tokio::spawn(async move {
         let runtime = runtime();
@@ -1087,11 +1100,14 @@ pub async fn continuity_connect_device(
             }
             backoff = (backoff * 2).min(std::time::Duration::from_secs(60));
         }
-        runtime.dialers.lock().map(|mut d| d.remove(&remote_relay_id)).ok();
+        runtime
+            .dialers
+            .lock()
+            .map(|mut d| d.remove(&remote_relay_id))
+            .ok();
     });
     Ok(())
 }
-
 
 /// One local network observation a paired device might be reachable at.
 ///
@@ -1383,9 +1399,9 @@ pub async fn continuity_publish_notification(
 }
 
 pub async fn continuity_publish_notification_removed(key: String) {
-    publish_all(ContinuityPayload::NotificationRemoved(NotificationRemoval {
-        key,
-    }))
+    publish_all(ContinuityPayload::NotificationRemoved(
+        NotificationRemoval { key },
+    ))
     .await;
 }
 
@@ -1491,7 +1507,9 @@ pub async fn continuity_call_action(
             request_id,
             action: action.into(),
             // Only a dial names a number; everything else acts on the current call.
-            address: matches!(action, RsCallAction::Dial).then_some(address).flatten(),
+            address: matches!(action, RsCallAction::Dial)
+                .then_some(address)
+                .flatten(),
             issued_at_ms: now_ms(),
         }),
     )
@@ -1643,8 +1661,8 @@ fn _protocol_surface(result: CallActionResult) -> String {
 /// Returns `None` when no device has any capability enabled, so a fresh install
 /// — or a user who only transfers files — never serves the continuity protocol
 /// at all.
-pub(crate) async fn listener_accept_config(
-) -> Option<relay_core::anywhere::listener::ContinuityAcceptConfig> {
+pub(crate) async fn listener_accept_config()
+-> Option<relay_core::anywhere::listener::ContinuityAcceptConfig> {
     if !runtime().permissions.read().await.any_capability_enabled() {
         return None;
     }
@@ -1719,13 +1737,11 @@ mod tests {
                     .await
                     .unwrap();
 
-                let request = tokio::time::timeout(
-                    std::time::Duration::from_secs(1),
-                    delivered.recv(),
-                )
-                .await
-                .expect("the host pump should receive authorized work")
-                .expect("the test host sink should remain open");
+                let request =
+                    tokio::time::timeout(std::time::Duration::from_secs(1), delivered.recv())
+                        .await
+                        .expect("the host pump should receive authorized work")
+                        .expect("the test host sink should remain open");
                 let request_id = match request {
                     RsContinuityHostRequest::DismissNotification {
                         request_id,
@@ -1741,18 +1757,17 @@ mod tests {
                 assert!(runtime().pending.lock().unwrap().contains_key(&request_id));
 
                 continuity_answer_ack(request_id);
-                answered.await.expect("the session reply should be completed");
+                answered
+                    .await
+                    .expect("the session reply should be completed");
                 assert!(!runtime().pending.lock().unwrap().contains_key(&request_id));
 
                 // Repeated session setup cannot create another pump or a
                 // duplicate delivery because the receiver was taken once.
                 assert!(
-                    tokio::time::timeout(
-                        std::time::Duration::from_millis(25),
-                        delivered.recv(),
-                    )
-                    .await
-                    .is_err()
+                    tokio::time::timeout(std::time::Duration::from_millis(25), delivered.recv(),)
+                        .await
+                        .is_err()
                 );
                 *runtime().host_test_sink.lock().unwrap() = None;
             });

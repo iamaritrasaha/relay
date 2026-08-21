@@ -383,19 +383,17 @@ class RelayDeviceNode extends StatelessWidget {
 
     if (isCompatibilityPeer) {
       return Container(
-        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+        width: 14,
+        height: 14,
         decoration: BoxDecoration(
           color: palette.elevated,
-          borderRadius: BorderRadius.circular(4),
+          shape: BoxShape.circle,
           border: Border.all(color: palette.hairline),
         ),
-        child: Text(
-          'LS',
-          style: TextStyle(
-            color: palette.textTertiary,
-            fontSize: 8,
-            fontWeight: FontWeight.w700,
-          ),
+        child: Icon(
+          Icons.near_me_outlined,
+          size: 8,
+          color: palette.textTertiary,
         ),
       );
     }

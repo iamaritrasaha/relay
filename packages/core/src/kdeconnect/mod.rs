@@ -11,21 +11,24 @@ mod pairing;
 
 pub use capabilities::{
     canonical_incoming_capabilities, canonical_outgoing_capabilities, PACKET_TYPE_BATTERY,
-    PACKET_TYPE_CONNECTIVITY_REPORT,
-    PACKET_TYPE_CLIPBOARD, PACKET_TYPE_CLIPBOARD_CONNECT, PACKET_TYPE_FINDMYPHONE_REQUEST,
-    PACKET_TYPE_IDENTITY, PACKET_TYPE_NOTIFICATION, PACKET_TYPE_NOTIFICATION_REQUEST,
-    PACKET_TYPE_PAIR, PACKET_TYPE_PING,
+    PACKET_TYPE_CLIPBOARD, PACKET_TYPE_CLIPBOARD_CONNECT, PACKET_TYPE_CONNECTIVITY_REPORT,
+    PACKET_TYPE_FINDMYPHONE_REQUEST, PACKET_TYPE_IDENTITY, PACKET_TYPE_NOTIFICATION,
+    PACKET_TYPE_NOTIFICATION_REQUEST, PACKET_TYPE_PAIR, PACKET_TYPE_PING, PACKET_TYPE_SMS_MESSAGES,
+    PACKET_TYPE_SMS_REQUEST, PACKET_TYPE_SMS_REQUEST_CONVERSATION,
+    PACKET_TYPE_SMS_REQUEST_CONVERSATIONS, PACKET_TYPE_TELEPHONY,
+    PACKET_TYPE_TELEPHONY_REQUEST_MUTE,
 };
 pub use identity::LocalIdentity;
 pub use lan::{
-    BatteryState, BindMode, ConnectivityState, DeviceTable, LanConfig, ObservedDevice, MAX_TCP_PORT, MIN_TCP_PORT,
-    UDP_PORT,
+    BatteryState, BindMode, ConnectivityState, DeviceTable, LanConfig, ObservedDevice,
+    MAX_TCP_PORT, MIN_TCP_PORT, UDP_PORT,
 };
 pub use packet::{
-    filter_device_name, is_valid_device_id, BatteryBody, ClipboardBody, FindMyPhoneBody,
-    ConnectivityReportBody, ConnectivitySignal,
-    IdentityBody, NetworkPacket, NotificationBody, PacketError, PairBody, PingBody,
-    PROTOCOL_VERSION,
+    filter_device_name, is_valid_device_id, BatteryBody, ClipboardBody, ConnectivityReportBody,
+    ConnectivitySignal, FindMyPhoneBody, IdentityBody, NetworkPacket, NotificationBody,
+    PacketError, PairBody, PingBody, SmsAttachmentMetadata, SmsMessage, SmsMessagesBody,
+    SmsRequestBody, SmsRequestConversationBody, SmsRequestConversationsBody, TelephonyBody,
+    TelephonyRequestMuteBody, PROTOCOL_VERSION,
 };
 pub use pairing::{
     compute_verification_key, extract_public_key_der, PairState, PairingEffect, PairingFailReason,
@@ -88,6 +91,23 @@ pub struct KdeNotification {
     pub silent: bool,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct KdeSmsConversation {
+    pub thread_id: i64,
+    pub participants: Vec<String>,
+    pub latest_message: Option<SmsMessage>,
+    pub unread_count: i32,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct KdeTelephonyEvent {
+    pub event: String,
+    pub is_cancel: bool,
+    pub phone_number: Option<String>,
+    pub contact_name: Option<String>,
+    pub phone_thumbnail: Option<String>,
+}
+
 #[derive(Clone, Debug)]
 pub enum KdeConnectEvent {
     DevicesChanged {
@@ -116,6 +136,15 @@ pub enum KdeConnectEvent {
     NotificationsChanged {
         device_id: String,
         notifications: Vec<KdeNotification>,
+    },
+    SmsChanged {
+        device_id: String,
+        conversations: Vec<KdeSmsConversation>,
+        messages: Vec<SmsMessage>,
+    },
+    TelephonyReceived {
+        device_id: String,
+        event: KdeTelephonyEvent,
     },
 }
 
@@ -230,6 +259,41 @@ impl KdeConnectHandle {
 
     pub async fn get_notifications(&self, device_id: &str) -> Vec<KdeNotification> {
         self.inner.get_notifications(device_id).await
+    }
+
+    pub async fn get_sms_conversations(&self, device_id: &str) -> Vec<KdeSmsConversation> {
+        self.inner.get_sms_conversations(device_id).await
+    }
+    pub async fn get_sms_messages(&self, device_id: &str, thread_id: i64) -> Vec<SmsMessage> {
+        self.inner.get_sms_messages(device_id, thread_id).await
+    }
+    pub async fn request_sms_conversations(&self, device_id: &str) -> Result<()> {
+        self.inner.request_sms_conversations(device_id).await
+    }
+    pub async fn request_sms_conversation(
+        &self,
+        device_id: &str,
+        thread_id: i64,
+        before: Option<i64>,
+        limit: u16,
+    ) -> Result<()> {
+        self.inner
+            .request_sms_conversation(device_id, thread_id, before, limit)
+            .await
+    }
+
+    pub async fn send_sms(
+        &self,
+        device_id: &str,
+        addresses: Vec<String>,
+        body: &str,
+        sub_id: Option<i32>,
+    ) -> Result<()> {
+        self.inner.send_sms(device_id, addresses, body, sub_id).await
+    }
+
+    pub async fn send_mute_call(&self, device_id: &str) -> Result<()> {
+        self.inner.send_mute_call(device_id).await
     }
 
     pub fn stop(&self) {

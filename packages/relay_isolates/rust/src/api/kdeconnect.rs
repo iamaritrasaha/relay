@@ -8,7 +8,8 @@ use std::sync::Arc;
 use flutter_rust_bridge::frb;
 use relay_core::kdeconnect::{
     BindMode, DeviceSnapshot, KdeConnectConfig, KdeConnectEvent, KdeConnectHandle, KdeNotification,
-    LanConfig, LocalIdentity, TrustedDevice,
+    KdeSmsConversation, KdeTelephonyEvent, LanConfig, LocalIdentity, SmsAttachmentMetadata,
+    SmsMessage, TrustedDevice,
 };
 
 use crate::frb_generated::StreamSink;
@@ -58,6 +59,42 @@ pub struct RsKdeNotification {
     pub silent: bool,
 }
 
+pub struct RsKdeTelephonyEvent {
+    pub event: String,
+    pub is_cancel: bool,
+    pub phone_number: Option<String>,
+    pub contact_name: Option<String>,
+    pub phone_thumbnail: Option<String>,
+}
+
+pub struct RsKdeSmsAttachment {
+    pub part_id: String,
+    pub mime_type: Option<String>,
+    pub unique_identifier: Option<String>,
+}
+
+pub struct RsKdeSmsMessage {
+    pub id: i64,
+    pub thread_id: i64,
+    pub addresses: Vec<String>,
+    pub body: String,
+    pub date: i64,
+    pub message_type: i32,
+    pub read: Option<bool>,
+    /// Which SIM the message belongs to. Carried through so a reply goes out on
+    /// the same subscription the thread is already on, which matters on the
+    /// dual-SIM phones this is most often used with.
+    pub sub_id: Option<i32>,
+    pub attachments: Vec<RsKdeSmsAttachment>,
+}
+
+pub struct RsKdeSmsConversation {
+    pub thread_id: i64,
+    pub participants: Vec<String>,
+    pub latest_message: Option<RsKdeSmsMessage>,
+    pub unread_count: i32,
+}
+
 pub enum RsKdeConnectEvent {
     DevicesChanged {
         devices: Vec<RsKdeConnectDevice>,
@@ -85,6 +122,15 @@ pub enum RsKdeConnectEvent {
     NotificationsChanged {
         device_id: String,
         notifications: Vec<RsKdeNotification>,
+    },
+    SmsChanged {
+        device_id: String,
+        conversations: Vec<RsKdeSmsConversation>,
+        messages: Vec<RsKdeSmsMessage>,
+    },
+    TelephonyReceived {
+        device_id: String,
+        event: RsKdeTelephonyEvent,
     },
 }
 
@@ -201,6 +247,59 @@ impl RsKdeConnect {
             .collect()
     }
 
+    pub async fn get_sms_conversations(&self, device_id: String) -> Vec<RsKdeSmsConversation> {
+        self.handle
+            .get_sms_conversations(&device_id)
+            .await
+            .into_iter()
+            .map(Into::into)
+            .collect()
+    }
+
+    pub async fn get_sms_messages(
+        &self,
+        device_id: String,
+        thread_id: i64,
+    ) -> Vec<RsKdeSmsMessage> {
+        self.handle
+            .get_sms_messages(&device_id, thread_id)
+            .await
+            .into_iter()
+            .map(Into::into)
+            .collect()
+    }
+
+    pub async fn request_sms_conversations(&self, device_id: String) -> anyhow::Result<()> {
+        self.handle.request_sms_conversations(&device_id).await
+    }
+
+    pub async fn request_sms_conversation(
+        &self,
+        device_id: String,
+        thread_id: i64,
+        before: Option<i64>,
+    ) -> anyhow::Result<()> {
+        self.handle
+            .request_sms_conversation(&device_id, thread_id, before, 50)
+            .await
+    }
+
+    pub async fn send_sms(
+        &self,
+        device_id: String,
+        addresses: Vec<String>,
+        body: String,
+        sub_id: Option<i32>,
+    ) -> anyhow::Result<()> {
+        self.handle
+            .send_sms(&device_id, addresses, &body, sub_id)
+            .await
+    }
+
+    pub async fn mute_call(&self, device_id: String) -> anyhow::Result<()> {
+        self.handle.send_mute_call(&device_id).await
+    }
+
     pub fn stop(&self) {
         self.handle.stop();
     }
@@ -279,6 +378,43 @@ impl From<DeviceSnapshot> for RsKdeConnectDevice {
     }
 }
 
+impl From<SmsAttachmentMetadata> for RsKdeSmsAttachment {
+    fn from(value: SmsAttachmentMetadata) -> Self {
+        Self {
+            part_id: value.part_id,
+            mime_type: value.mime_type,
+            unique_identifier: value.unique_identifier,
+        }
+    }
+}
+
+impl From<SmsMessage> for RsKdeSmsMessage {
+    fn from(value: SmsMessage) -> Self {
+        Self {
+            id: value.id,
+            thread_id: value.thread_id,
+            addresses: value.addresses,
+            body: value.body,
+            date: value.date,
+            message_type: value.message_type,
+            read: value.read,
+            sub_id: value.sub_id,
+            attachments: value.attachments.into_iter().map(Into::into).collect(),
+        }
+    }
+}
+
+impl From<KdeSmsConversation> for RsKdeSmsConversation {
+    fn from(value: KdeSmsConversation) -> Self {
+        Self {
+            thread_id: value.thread_id,
+            participants: value.participants,
+            latest_message: value.latest_message.map(Into::into),
+            unread_count: value.unread_count,
+        }
+    }
+}
+
 impl From<KdeNotification> for RsKdeNotification {
     fn from(value: KdeNotification) -> Self {
         Self {
@@ -327,6 +463,33 @@ impl From<KdeConnectEvent> for RsKdeConnectEvent {
                 device_id,
                 notifications: notifications.into_iter().map(Into::into).collect(),
             },
+            KdeConnectEvent::SmsChanged {
+                device_id,
+                conversations,
+                messages,
+            } => RsKdeConnectEvent::SmsChanged {
+                device_id,
+                conversations: conversations.into_iter().map(Into::into).collect(),
+                messages: messages.into_iter().map(Into::into).collect(),
+            },
+            KdeConnectEvent::TelephonyReceived { device_id, event } => {
+                RsKdeConnectEvent::TelephonyReceived {
+                    device_id,
+                    event: event.into(),
+                }
+            }
+        }
+    }
+}
+
+impl From<KdeTelephonyEvent> for RsKdeTelephonyEvent {
+    fn from(value: KdeTelephonyEvent) -> Self {
+        Self {
+            event: value.event,
+            is_cancel: value.is_cancel,
+            phone_number: value.phone_number,
+            contact_name: value.contact_name,
+            phone_thumbnail: value.phone_thumbnail,
         }
     }
 }

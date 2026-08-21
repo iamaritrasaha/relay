@@ -2,7 +2,7 @@
 
 **One desktop for all the devices around you.**
 
-Relay is an open-source cross-device continuity application being developed desktop-first. Its goal is to present phones, computers, and nearby devices through one coherent desktop interface regardless of which supported protocol connects them.
+Relay is an open-source cross-device continuity application built desktop-first for Linux. It unifies phones, computers, and nearby devices through a coherent, restrained GNOME Libadwaita interface regardless of which supported protocol connects them.
 
 ```
                     Relay Desktop
@@ -12,163 +12,104 @@ Relay is an open-source cross-device continuity application being developed desk
          ┌────────────────┼────────────────┐
          │                │                │
     KDE Connect       LocalSend        Relay-native
-    compatible        compatible       mechanisms
+    compatible        compatible       continuity
 ```
 
-The user sees devices and their capabilities; the underlying protocols are implementation details.
+The user interacts with nearby and paired devices and their live capabilities; the underlying transport protocols are clean implementation details.
 
 ---
 
-## Platform Focus
+## Key Features
 
-Relay is being developed with a clear platform priority:
+### 🖥️ Native Linux & GNOME Experience
+- **Libadwaita Design System:** Built from the ground up for modern Linux desktop environments with a warm-carbon palette, Geist typography, and native GNOME navigation patterns.
+- **Ambient Motion & Liveliness:** Subtle ambient luminosity and breath animation on focal cards, paired with smooth edge sweeps on connection, selection, and transfers (fully respecting `prefers-reduced-motion`).
+- **GNOME Shell Extension:** Integrated top-bar pill showing connected phone status, battery percentage, notification indicator, and cellular network signal with configurable presentation options.
 
-1. **Linux** (active primary target)
-2. **Windows** (second priority)
-3. **Android** (later)
+### 📱 KDE Connect Compatibility
+Relay embeds a complete, independent Rust implementation of the KDE Connect protocol (v8) without requiring `kdeconnectd`, KDE Plasma, Kirigami, or KDE Frameworks:
+- **LAN Discovery & Secure Pairing:** Mutual TLS handshake, persistent trust, and automatic reconnection.
+- **Battery & Power State:** Real-time battery percentage, charging state, full charge indicators, and stale state detection.
+- **Find Phone & Ping:** Audible ringing trigger (even when silent) and connection latency testing.
+- **Clipboard Sync:** Bidirectional clipboard text synchronization.
+- **Notification Mirroring:** Real-time phone notification streaming with action dismissing.
+- **Messages & SMS:** Desktop split-view conversation viewer with thread history, unread counters, date grouping, and a multiline composer that sends with `Ctrl+Enter`. Reading and sending are gated separately, on the SMS capabilities the phone actually advertises, so a phone that only permits reading still shows its conversations.
+- **Telephony & Call State:** Awareness of incoming ringing, active calls and missed calls, plus remote ringer muting, on phones that advertise telephony. Relay reports call state and silences the ringer; it does not place, answer or end calls from the desktop.
 
-Linux is the active product target. Android Relay development is not currently a priority. During Linux development, phone integration is accomplished by connecting directly with mature, existing Android companion applications such as KDE Connect.
+### ⚡ LocalSend Transfer Protocol
+- Retains compatibility with the fast LocalSend local-network transfer protocol.
+- High-speed peer-to-peer file, folder, and text transfers over encrypted local HTTPS with SHA-256 integrity verification.
 
----
-
-## Ecosystem Compatibility
-
-### KDE Connect Compatibility
-
-Relay implements direct KDE Connect protocol compatibility inside its own lightweight core.
-
-Relay's KDE Connect compatibility layer does not depend on the KDE Connect desktop stack. It runs independently on any desktop environment (such as GNOME or standard window managers) without requiring:
-
-- `kdeconnectd`
-- KDE Plasma or KDE Frameworks
-- KIO or Kirigami
-- The KDE Connect desktop application's D-Bus API
-
-#### Currently Verified Status
-
-The physically verified foundation has been tested with real Android devices running KDE Connect and includes:
-
-- KDE Connect protocol version 8 compatibility foundation
-- LAN device discovery
-- Secure TCP/TLS connection establishment
-- Protocol-v8 secure identity exchange
-- Pairing initiated from either side (desktop or mobile)
-- Accept / reject pairing requests
-- Persistent paired trust across sessions
-- Automatic reconnection after Relay restart
-- Unpair / remove device
-
-#### Planned Capabilities
-
-Capabilities planned for incremental implementation and physical validation include:
-
-- Battery status and charging indicators
-- Clipboard continuity
-- Notifications sync
-- Messages and SMS
-- File and URL sharing
-- Media playback controls
-- Telephony status
-- Contacts integration
-- Remote commands
+### 🔒 Relay-Native Continuity
+- Next-generation authenticated peer-to-peer identity, secure LAN routing, and extensible continuity capabilities.
 
 ---
 
-### LocalSend Compatibility
-
-Relay originated from the LocalSend codebase and retains mature components of its cross-platform transfer and application infrastructure. Relay is not a simple rebrand: LocalSend compatibility is intended to serve as a dedicated transfer backend within Relay's unified device experience.
-
----
-
-### Relay-Native Mechanisms
-
-Relay includes foundational work toward its own authenticated device identity and transport layer. These mechanisms are designed for future Relay-to-Relay workflows and advanced capabilities where third-party compatibility protocols are insufficient.
-
----
-
-## Architecture & Security
+## Architecture
 
 ```
-KDE Connect ─┐
-LocalSend   ─┼──→ Unified Relay device/capability model ──→ Relay Desktop UI
-Relay       ─┘
+app/ (Flutter / Libadwaita UI)
+  │
+  └── packages/relay_isolates/ (Dart Isolate Runtime + flutter_rust_bridge)
+        │
+        └── packages/core/ (Rust Protocol Implementation: KDE Connect, LocalSend, Crypto, WebRTC)
 ```
 
-While Relay unifies device presence and capabilities in a single interface, each protocol's security domain remains isolated internally:
-
-- **Discovery does not imply trust:** Nearby devices are visible only according to their discovery rules; pairing and capabilities require explicit authorization.
-- **IP address is not identity:** Cryptographic certificates and persistent key exchanges define device identity, remaining stable across network changes.
-- **No silent credential replacement:** Certificate or identity changes require explicit user re-verification.
-- **Isolated trust domains:** KDE Connect, LocalSend, and Relay-native pairing and trust boundaries remain strictly separated.
-
----
-
-## Design Direction
-
-Relay aims to provide a calm, device-centric desktop hub:
-
-- **Device-centric overview:** Nearby and paired devices visible in a single space.
-- **Contextual capability surfaces:** Quick access to device health, battery levels, notifications, clipboard sharing, and transfer queues.
-- **Polished desktop integration:** Native desktop conventions, system tray support, and responsive layouts.
-
----
-
-## Project Status
-
-**Status: Active Development**
-
-Relay is actively evolving and is not yet a general-consumer stable release. Development proceeds in the following order:
-
-1. Complete KDE Connect functionality on Linux
-2. Improve and refine the Relay Linux UX and visual identity
-3. Expand LocalSend integration
-4. Expand Relay-native functionality
-5. Windows platform support
-6. Android application later
-
----
-
-## Technology Stack
-
-- **UI & State:** [Flutter](https://flutter.dev/) (pinned: `3.41.9`)
-- **Core Engine & Networking:** [Rust](https://www.rust-lang.org/) (pinned: `1.97.1`)
-- **FFI Bridge:** [flutter_rust_bridge](https://github.com/fzyzcjy/flutter_rust_bridge)
+- **UI & State:** Flutter (`3.41.9`) using Refena Redux state management.
+- **Protocol Engine:** Rust (`1.97.1`) in `packages/core` with asynchronous Tokio networking.
+- **FFI Bridge:** `flutter_rust_bridge` (FRB v2) ensuring zero network or cryptography overhead on the UI thread.
+- **Desktop Shell Integration:** GNOME Shell extension in `app/linux/gnome-shell/` communicating via D-Bus.
 
 ---
 
 ## Building from Source
 
 ### Prerequisites
-
 - [FVM](https://fvm.app/) (Flutter Version Management)
 - Rust toolchain (managed via `rust-toolchain.toml`)
-- Linux development libraries for secure credential storage:
+- Linux build dependencies:
 
 ```bash
-sudo apt install libsecret-1-dev
+sudo apt install clang cmake ninja-build libgtk-3-dev libayatana-appindicator3-dev libsecret-1-dev
 ```
 
-### Build & Run
+### Development & Testing
 
 ```bash
-# Clone the repository
-git clone https://github.com/iamaritrasaha/relay.git
-cd relay/app
+# Run tests
+cargo test --features full            # in packages/core
+fvm flutter test                     # in app/
 
-# Install dependencies and run on Linux
-fvm flutter pub get
+# Analyze and format
+fvm flutter analyze                  # in app/
+fvm dart format --set-exit-if-changed lib test
+
+# Launch debug app
+cd app
 fvm flutter run -d linux
+```
 
-# Build release executable
-fvm flutter build linux --release
+### Local Build & Installation
+
+Relay includes a dedicated Linux packaging script for direct compilation and user-space installation (`~/.local/bin/relay`):
+
+```bash
+./linux/install-relay-local.sh
+```
+
+To install the accompanying GNOME Shell top-bar pill:
+
+```bash
+cd app/linux/gnome-shell
+./install-relay-extension.sh
 ```
 
 ---
 
-## Acknowledgements
+## Ecosystem & Acknowledgements
 
-- **[LocalSend](https://github.com/localsend/localsend):** Relay originated from the LocalSend codebase and retains portions of its cross-platform infrastructure. Applicable upstream notices remain preserved. LocalSend is an independent project and does not endorse Relay.
-- **[KDE Connect](https://kdeconnect.kde.org/):** Relay implements compatible protocol behavior to communicate with existing KDE Connect devices. KDE Connect is an independent KDE project. Relay is not affiliated with or endorsed by KDE. Relay's KDE Connect integration does not vendor or require the KDE Connect desktop application.
+- **[LocalSend](https://github.com/localsend/localsend):** Relay originated from the LocalSend codebase and retains portions of its cross-platform transfer infrastructure. Applicable upstream notices remain preserved. LocalSend is an independent project and does not endorse Relay.
+- **[KDE Connect](https://kdeconnect.kde.org/):** Relay implements protocol-level compatibility to communicate seamlessly with existing KDE Connect Android devices. KDE Connect is an independent KDE project. Relay is not affiliated with or endorsed by KDE. Relay's KDE Connect integration runs independently without KDE desktop dependencies.
 
 ---
 

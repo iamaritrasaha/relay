@@ -28,8 +28,10 @@ class _RelaySymbolPainter extends CustomPainter {
   void paint(Canvas canvas, Size size) {
     final scale = size.shortestSide / 128;
     final shader = color == null
+        // The mark runs along Relay's own accent family — coral into copper —
+        // so the product identity and the interface are the same colour story.
         ? const LinearGradient(
-            colors: [Color(0xff5b8cff), Color(0xff6e79fb), Color(0xff8b5cf6)],
+            colors: [Color(0xfff07855), Color(0xffe08a52), Color(0xffc89a55)],
             stops: [0, 0.55, 1],
           ).createShader(Rect.fromLTWH(16 * scale, 16 * scale, 96 * scale, 96 * scale))
         : null;

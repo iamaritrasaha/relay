@@ -291,6 +291,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   int dco_decode_box_autoadd_i_32(dynamic raw);
 
   @protected
+  PlatformInt64 dco_decode_box_autoadd_i_64(dynamic raw);
+
+  @protected
   PinConfig dco_decode_box_autoadd_pin_config(dynamic raw);
 
   @protected
@@ -322,6 +325,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   RsKdeConnectIdentity dco_decode_box_autoadd_rs_kde_connect_identity(dynamic raw);
+
+  @protected
+  RsKdeSmsMessage dco_decode_box_autoadd_rs_kde_sms_message(dynamic raw);
+
+  @protected
+  RsKdeTelephonyEvent dco_decode_box_autoadd_rs_kde_telephony_event(dynamic raw);
 
   @protected
   RsSmsMessage dco_decode_box_autoadd_rs_sms_message(dynamic raw);
@@ -426,6 +435,15 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   List<RsKdeNotification> dco_decode_list_rs_kde_notification(dynamic raw);
 
   @protected
+  List<RsKdeSmsAttachment> dco_decode_list_rs_kde_sms_attachment(dynamic raw);
+
+  @protected
+  List<RsKdeSmsConversation> dco_decode_list_rs_kde_sms_conversation(dynamic raw);
+
+  @protected
+  List<RsKdeSmsMessage> dco_decode_list_rs_kde_sms_message(dynamic raw);
+
+  @protected
   List<RsLanCandidate> dco_decode_list_rs_lan_candidate(dynamic raw);
 
   @protected
@@ -469,10 +487,16 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   int? dco_decode_opt_box_autoadd_i_32(dynamic raw);
 
   @protected
+  PlatformInt64? dco_decode_opt_box_autoadd_i_64(dynamic raw);
+
+  @protected
   PinConfig? dco_decode_opt_box_autoadd_pin_config(dynamic raw);
 
   @protected
   PrepareUploadResponseDto? dco_decode_opt_box_autoadd_prepare_upload_response_dto(dynamic raw);
+
+  @protected
+  RsKdeSmsMessage? dco_decode_opt_box_autoadd_rs_kde_sms_message(dynamic raw);
 
   @protected
   TlsConfig? dco_decode_opt_box_autoadd_tls_config(dynamic raw);
@@ -605,6 +629,18 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   RsKdeNotification dco_decode_rs_kde_notification(dynamic raw);
+
+  @protected
+  RsKdeSmsAttachment dco_decode_rs_kde_sms_attachment(dynamic raw);
+
+  @protected
+  RsKdeSmsConversation dco_decode_rs_kde_sms_conversation(dynamic raw);
+
+  @protected
+  RsKdeSmsMessage dco_decode_rs_kde_sms_message(dynamic raw);
+
+  @protected
+  RsKdeTelephonyEvent dco_decode_rs_kde_telephony_event(dynamic raw);
 
   @protected
   RsLanCandidate dco_decode_rs_lan_candidate(dynamic raw);
@@ -944,6 +980,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   int sse_decode_box_autoadd_i_32(SseDeserializer deserializer);
 
   @protected
+  PlatformInt64 sse_decode_box_autoadd_i_64(SseDeserializer deserializer);
+
+  @protected
   PinConfig sse_decode_box_autoadd_pin_config(SseDeserializer deserializer);
 
   @protected
@@ -975,6 +1014,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   RsKdeConnectIdentity sse_decode_box_autoadd_rs_kde_connect_identity(SseDeserializer deserializer);
+
+  @protected
+  RsKdeSmsMessage sse_decode_box_autoadd_rs_kde_sms_message(SseDeserializer deserializer);
+
+  @protected
+  RsKdeTelephonyEvent sse_decode_box_autoadd_rs_kde_telephony_event(SseDeserializer deserializer);
 
   @protected
   RsSmsMessage sse_decode_box_autoadd_rs_sms_message(SseDeserializer deserializer);
@@ -1079,6 +1124,15 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   List<RsKdeNotification> sse_decode_list_rs_kde_notification(SseDeserializer deserializer);
 
   @protected
+  List<RsKdeSmsAttachment> sse_decode_list_rs_kde_sms_attachment(SseDeserializer deserializer);
+
+  @protected
+  List<RsKdeSmsConversation> sse_decode_list_rs_kde_sms_conversation(SseDeserializer deserializer);
+
+  @protected
+  List<RsKdeSmsMessage> sse_decode_list_rs_kde_sms_message(SseDeserializer deserializer);
+
+  @protected
   List<RsLanCandidate> sse_decode_list_rs_lan_candidate(SseDeserializer deserializer);
 
   @protected
@@ -1124,10 +1178,16 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   int? sse_decode_opt_box_autoadd_i_32(SseDeserializer deserializer);
 
   @protected
+  PlatformInt64? sse_decode_opt_box_autoadd_i_64(SseDeserializer deserializer);
+
+  @protected
   PinConfig? sse_decode_opt_box_autoadd_pin_config(SseDeserializer deserializer);
 
   @protected
   PrepareUploadResponseDto? sse_decode_opt_box_autoadd_prepare_upload_response_dto(SseDeserializer deserializer);
+
+  @protected
+  RsKdeSmsMessage? sse_decode_opt_box_autoadd_rs_kde_sms_message(SseDeserializer deserializer);
 
   @protected
   TlsConfig? sse_decode_opt_box_autoadd_tls_config(SseDeserializer deserializer);
@@ -1260,6 +1320,18 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   RsKdeNotification sse_decode_rs_kde_notification(SseDeserializer deserializer);
+
+  @protected
+  RsKdeSmsAttachment sse_decode_rs_kde_sms_attachment(SseDeserializer deserializer);
+
+  @protected
+  RsKdeSmsConversation sse_decode_rs_kde_sms_conversation(SseDeserializer deserializer);
+
+  @protected
+  RsKdeSmsMessage sse_decode_rs_kde_sms_message(SseDeserializer deserializer);
+
+  @protected
+  RsKdeTelephonyEvent sse_decode_rs_kde_telephony_event(SseDeserializer deserializer);
 
   @protected
   RsLanCandidate sse_decode_rs_lan_candidate(SseDeserializer deserializer);
@@ -1644,6 +1716,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   void sse_encode_box_autoadd_i_32(int self, SseSerializer serializer);
 
   @protected
+  void sse_encode_box_autoadd_i_64(PlatformInt64 self, SseSerializer serializer);
+
+  @protected
   void sse_encode_box_autoadd_pin_config(PinConfig self, SseSerializer serializer);
 
   @protected
@@ -1675,6 +1750,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   void sse_encode_box_autoadd_rs_kde_connect_identity(RsKdeConnectIdentity self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_box_autoadd_rs_kde_sms_message(RsKdeSmsMessage self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_box_autoadd_rs_kde_telephony_event(RsKdeTelephonyEvent self, SseSerializer serializer);
 
   @protected
   void sse_encode_box_autoadd_rs_sms_message(RsSmsMessage self, SseSerializer serializer);
@@ -1779,6 +1860,15 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   void sse_encode_list_rs_kde_notification(List<RsKdeNotification> self, SseSerializer serializer);
 
   @protected
+  void sse_encode_list_rs_kde_sms_attachment(List<RsKdeSmsAttachment> self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_list_rs_kde_sms_conversation(List<RsKdeSmsConversation> self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_list_rs_kde_sms_message(List<RsKdeSmsMessage> self, SseSerializer serializer);
+
+  @protected
   void sse_encode_list_rs_lan_candidate(List<RsLanCandidate> self, SseSerializer serializer);
 
   @protected
@@ -1824,10 +1914,16 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   void sse_encode_opt_box_autoadd_i_32(int? self, SseSerializer serializer);
 
   @protected
+  void sse_encode_opt_box_autoadd_i_64(PlatformInt64? self, SseSerializer serializer);
+
+  @protected
   void sse_encode_opt_box_autoadd_pin_config(PinConfig? self, SseSerializer serializer);
 
   @protected
   void sse_encode_opt_box_autoadd_prepare_upload_response_dto(PrepareUploadResponseDto? self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_opt_box_autoadd_rs_kde_sms_message(RsKdeSmsMessage? self, SseSerializer serializer);
 
   @protected
   void sse_encode_opt_box_autoadd_tls_config(TlsConfig? self, SseSerializer serializer);
@@ -1961,6 +2057,18 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   void sse_encode_rs_kde_notification(RsKdeNotification self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_rs_kde_sms_attachment(RsKdeSmsAttachment self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_rs_kde_sms_conversation(RsKdeSmsConversation self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_rs_kde_sms_message(RsKdeSmsMessage self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_rs_kde_telephony_event(RsKdeTelephonyEvent self, SseSerializer serializer);
 
   @protected
   void sse_encode_rs_lan_candidate(RsLanCandidate self, SseSerializer serializer);

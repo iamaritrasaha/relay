@@ -2,12 +2,12 @@
 
 use bytes::Bytes;
 use relay_core::crypto::relay_identity::RelayIdentity;
-use relay_core::crypto::relay_identity_proof::{RelayProofRole, create_relay_identity_proof};
+use relay_core::crypto::relay_identity_proof::{create_relay_identity_proof, RelayProofRole};
 use relay_core::http::client::AnywhereHttpClient;
 use relay_core::http::dto_v2::{PrepareUploadRequestDtoV2, RegisterDtoV2};
 use relay_core::http::server::common::save::FileUploadTarget;
 use relay_core::http::server::v2::{PrepareUploadDecisionV2, ServerEventV2};
-use relay_core::http::server::{ConnectionOrigin, ServerConfigV2, start_with_port};
+use relay_core::http::server::{start_with_port, ConnectionOrigin, ServerConfigV2};
 use relay_core::http::state::ClientInfo as ServerInfo;
 use relay_core::model::discovery::ProtocolType;
 use relay_core::model::transfer::{FileContent, FileDto};
@@ -18,8 +18,8 @@ use std::io;
 use std::path::PathBuf;
 use std::pin::Pin;
 use std::sync::{
-    Arc,
     atomic::{AtomicU64, Ordering},
+    Arc,
 };
 use std::task::{Context, Poll};
 use std::time::Duration;

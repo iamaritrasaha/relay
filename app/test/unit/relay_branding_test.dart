@@ -9,7 +9,7 @@ void main() {
     ).listSync().whereType<File>().where((file) => file.path.endsWith('.json')).where((file) => !file.uri.pathSegments.last.startsWith('_'));
 
     for (final source in sources) {
-      expect(source.readAsStringSync(), isNot(contains('Relay')), reason: source.path);
+      expect(source.readAsStringSync(), isNot(contains('LocalSend')), reason: source.path);
     }
   });
 }

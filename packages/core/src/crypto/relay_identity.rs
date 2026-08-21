@@ -107,7 +107,9 @@ mod tests {
 
         let relay_id = identity.relay_id().unwrap();
         assert_eq!(relay_id.len(), 64);
-        assert!(relay_id.chars().all(|c| c.is_ascii_hexdigit() && !c.is_ascii_lowercase()));
+        assert!(relay_id
+            .chars()
+            .all(|c| c.is_ascii_hexdigit() && !c.is_ascii_lowercase()));
     }
 
     #[test]

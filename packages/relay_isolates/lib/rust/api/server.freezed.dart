@@ -224,7 +224,7 @@ return show_(_that.args);case _:
 
 class RsServerEvent_Register extends RsServerEvent {
   const RsServerEvent_Register({required this.ip, required this.info}): super._();
-
+  
 
  final  String ip;
  final  RegisterDtoV2 info;
@@ -292,7 +292,7 @@ as RegisterDtoV2,
 
 class RsServerEvent_PrepareUpload extends RsServerEvent {
   const RsServerEvent_PrepareUpload({required this.sessionId, required this.ip, required this.info, this.certFingerprint, required final  Map<String, FileDto> files}): _files = files,super._();
-
+  
 
 /// The session ID the upload session will have when the request is accepted.
  final  String sessionId;
@@ -377,7 +377,7 @@ as Map<String, FileDto>,
 
 class RsServerEvent_FileUpload extends RsServerEvent {
   const RsServerEvent_FileUpload({required this.sessionId, required this.fileId, required this.file}): super._();
-
+  
 
  final  String sessionId;
  final  String fileId;
@@ -447,7 +447,7 @@ as FileDto,
 
 class RsServerEvent_SessionEnd extends RsServerEvent {
   const RsServerEvent_SessionEnd({required this.sessionId, required this.reason}): super._();
-
+  
 
  final  String sessionId;
  final  SessionEndReasonV2 reason;
@@ -515,7 +515,7 @@ as SessionEndReasonV2,
 
 class RsServerEvent_PrepareUploadAborted extends RsServerEvent {
   const RsServerEvent_PrepareUploadAborted({required this.sessionId}): super._();
-
+  
 
  final  String sessionId;
 
@@ -581,7 +581,7 @@ as String,
 
 class RsServerEvent_CancelReceived extends RsServerEvent {
   const RsServerEvent_CancelReceived({required this.ip, required this.sessionId}): super._();
-
+  
 
  final  String ip;
  final  String sessionId;
@@ -649,7 +649,7 @@ as String,
 
 class RsServerEvent_WebPrepareDownload extends RsServerEvent {
   const RsServerEvent_WebPrepareDownload({required this.ip, required this.sessionId, this.userAgent}): super._();
-
+  
 
  final  String ip;
  final  String sessionId;
@@ -719,7 +719,7 @@ as String?,
 
 class RsServerEvent_WebFileDownload extends RsServerEvent {
   const RsServerEvent_WebFileDownload({required this.sessionId, required this.fileId, required this.file}): super._();
-
+  
 
  final  String sessionId;
  final  String fileId;
@@ -789,7 +789,7 @@ as FileDto,
 
 class RsServerEvent_RelayPairRequest extends RsServerEvent {
   const RsServerEvent_RelayPairRequest({required this.relayId, required this.alias, this.ip, required this.verificationCode}): super._();
-
+  
 
  final  String relayId;
  final  String alias;
@@ -863,7 +863,7 @@ as String,
 
 class RsServerEvent_Show extends RsServerEvent {
   const RsServerEvent_Show({required final  List<String> args}): _args = args,super._();
-
+  
 
 /// Command-line arguments forwarded by the other application instance.
  final  List<String> _args;

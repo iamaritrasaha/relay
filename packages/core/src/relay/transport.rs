@@ -413,12 +413,12 @@ mod tests {
     use std::collections::VecDeque;
     use std::sync::Mutex;
 
-    use crate::anywhere::{RelayAddressV1, TlsStage, TransportStage, iroh_endpoint_bind_count};
+    use crate::anywhere::{iroh_endpoint_bind_count, RelayAddressV1, TlsStage, TransportStage};
     use crate::crypto::relay_identity::RelayIdentity;
     use crate::model::discovery::ProtocolType;
     use crate::relay::{
-        MemoryTrustDirectory, PathDescriptor, RelayAuthCoordinator, RelayDeviceDirectory,
-        RelayDeviceMetadata, TransferAuthorization, TransferRequestContext, authorize,
+        authorize, MemoryTrustDirectory, PathDescriptor, RelayAuthCoordinator,
+        RelayDeviceDirectory, RelayDeviceMetadata, TransferAuthorization, TransferRequestContext,
     };
     use iroh::{SecretKey, TransportAddr};
 
@@ -568,11 +568,9 @@ mod tests {
         let id = relay_id();
         let mut device = device_with_anywhere(id);
         let unassociated = lan("nearby");
-        assert!(
-            device
-                .add_authenticated_lan_candidate(unassociated)
-                .is_err()
-        );
+        assert!(device
+            .add_authenticated_lan_candidate(unassociated)
+            .is_err());
         let attempts = TransportResolver.resolve(
             &RelaySendTarget::VerifiedDevice(device),
             TransportPolicy::default(),
@@ -792,33 +790,25 @@ mod tests {
 
     #[test]
     fn transport_error_policy_is_explicit() {
-        assert!(
-            RelaySendError::ConnectionFailed {
-                stage: ConnectionStage::BeforeIdentityVerification,
-                detail: "refused".into()
-            }
-            .permits_fallback()
-        );
-        assert!(
-            RelaySendError::Timeout {
-                stage: ConnectionStage::BeforeIdentityVerification
-            }
-            .permits_fallback()
-        );
-        assert!(
-            !RelaySendError::ConnectionFailed {
-                stage: ConnectionStage::AfterIdentityVerification,
-                detail: "reset".into()
-            }
-            .permits_fallback()
-        );
+        assert!(RelaySendError::ConnectionFailed {
+            stage: ConnectionStage::BeforeIdentityVerification,
+            detail: "refused".into()
+        }
+        .permits_fallback());
+        assert!(RelaySendError::Timeout {
+            stage: ConnectionStage::BeforeIdentityVerification
+        }
+        .permits_fallback());
+        assert!(!RelaySendError::ConnectionFailed {
+            stage: ConnectionStage::AfterIdentityVerification,
+            detail: "reset".into()
+        }
+        .permits_fallback());
         assert!(!RelaySendError::Cancelled.permits_fallback());
-        assert!(
-            !RelaySendError::IdentityVerificationFailed {
-                reason: IdentityFailure::InvalidRelayProof
-            }
-            .permits_fallback()
-        );
+        assert!(!RelaySendError::IdentityVerificationFailed {
+            reason: IdentityFailure::InvalidRelayProof
+        }
+        .permits_fallback());
     }
 
     #[test]

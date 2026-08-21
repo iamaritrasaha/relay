@@ -187,12 +187,12 @@ void main() {
       expect(find.text('Release notes'), findsOneWidget);
     });
 
-    testWidgets('carries no Donate, Support Relay or About Relay', (tester) async {
+    testWidgets('carries no Donate, Support LocalSend or About LocalSend', (tester) async {
       await pump(tester, RelayDesktopFixtures.settings(), const Size(1440, 900));
 
       expect(find.textContaining('Donate'), findsNothing);
-      expect(find.textContaining('Support Relay'), findsNothing);
-      expect(find.text('About Relay'), findsNothing);
+      expect(find.textContaining('Support LocalSend'), findsNothing);
+      expect(find.text('About LocalSend'), findsNothing);
       expect(find.text('About Relay'), findsOneWidget);
     });
 
@@ -220,11 +220,11 @@ void main() {
       expect(find.text('Acknowledgements'), findsNothing);
     });
 
-    testWidgets('does not co-brand with Relay', (tester) async {
+    testWidgets('does not co-brand with LocalSend', (tester) async {
       await pump(tester, RelayDesktopFixtures.about(), const Size(1440, 900));
 
-      expect(find.text('Relay'), findsNothing);
-      expect(find.text('About Relay'), findsNothing);
+      expect(find.text('LocalSend'), findsNothing);
+      expect(find.text('About LocalSend'), findsNothing);
     });
 
     testWidgets('narrow desktop collapses to one column without overflow', (tester) async {

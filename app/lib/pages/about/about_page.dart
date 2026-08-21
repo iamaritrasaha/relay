@@ -75,7 +75,7 @@ class RelayAboutIdentity extends StatelessWidget {
         SizedBox(height: mobile ? 18 : 22),
         Text(
           RelayProduct.name,
-          style: TextStyle(fontSize: mobile ? 31 : 38, height: 1.1, fontWeight: FontWeight.w600, letterSpacing: -0.8, color: palette.textPrimary),
+          style: RelayTypography.deviceName(palette.textPrimary).copyWith(fontSize: mobile ? 31 : 38, letterSpacing: -0.8),
         ),
         const SizedBox(height: 10),
         if (version != null && buildNumber != null)
@@ -97,11 +97,11 @@ class RelayAboutIdentity extends StatelessWidget {
       mainAxisSize: MainAxisSize.min,
       children: [
         Text(
-          'Send files between your own devices over the local network.',
-          style: TextStyle(fontSize: 15, height: 1.6, color: palette.textPrimary),
+          RelayProduct.tagline,
+          style: RelayTypography.body(palette.textPrimary, isGnome: true).copyWith(fontSize: 15.5, height: 1.6),
         ),
         const SizedBox(height: 26),
-        Text(RelayProduct.copyright, style: TextStyle(fontSize: 13, height: 1.5, color: palette.textSecondary)),
+        Text(RelayProduct.copyright, style: RelayTypography.subtitle(palette.textSecondary, isGnome: true)),
         const SizedBox(height: 14),
         Text(RelayProduct.localSendAttribution, style: RelayTypography.legal(palette.textTertiary)),
         const SizedBox(height: 22),
@@ -208,17 +208,19 @@ class _AboutAction extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final palette = Theme.of(context).relayPalette;
-    return OutlinedButton.icon(
+    // A filled quiet surface rather than an outline, so About uses the same
+    // control language as the rest of Relay.
+    return TextButton.icon(
       onPressed: onPressed,
-      style: OutlinedButton.styleFrom(
+      style: TextButton.styleFrom(
         minimumSize: const Size(0, 44),
         foregroundColor: palette.textPrimary,
-        side: BorderSide(color: palette.textTertiary.withValues(alpha: 0.32)),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(9)),
-        padding: const EdgeInsets.symmetric(horizontal: 15),
+        backgroundColor: palette.softSurface,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(RelayRadius.button)),
+        padding: const EdgeInsets.symmetric(horizontal: 16),
       ),
-      icon: Icon(icon, size: 17),
-      label: Text(label, style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w500)),
+      icon: Icon(icon, size: 17, color: palette.textSecondary),
+      label: Text(label, style: RelayTypography.body(palette.textPrimary, isGnome: true)),
     );
   }
 }

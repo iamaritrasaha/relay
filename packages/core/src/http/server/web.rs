@@ -236,13 +236,7 @@ pub(crate) async fn prepare_download(
         }
     }
 
-    check_pin(
-        web.pin.as_deref(),
-        &web.pin_attempts,
-        &query,
-        client_ip.ip,
-    )
-    .await?;
+    check_pin(web.pin.as_deref(), &web.pin_attempts, &query, client_ip.ip).await?;
 
     let user_agent = req
         .headers()

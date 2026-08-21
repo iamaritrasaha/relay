@@ -208,10 +208,10 @@ pub(crate) async fn register(
             // The event carries no responder, and peers repeat their
             // announcement, so a dropped registration is recoverable.
             if let Some(ip) = client_info.peer_ip() {
-                if let Err(err) = v2.event_tx.try_send(ServerEventV2::Register {
-                    ip,
-                    info: payload,
-                }) {
+                if let Err(err) = v2
+                    .event_tx
+                    .try_send(ServerEventV2::Register { ip, info: payload })
+                {
                     tracing::debug!("Dropped a register event: {err}");
                 }
             }
@@ -508,7 +508,7 @@ pub(crate) async fn cancel(
     let pending_cancelled = {
         let slot = v2.session.lock().await;
         match slot.as_ref() {
-                Some(SessionStateV2::Pending(pending))
+            Some(SessionStateV2::Pending(pending))
                 if pending.sender_origin == client_info.origin
                     && pending.sender_session == client_info.relay_session
                     && session_id.is_none_or(|id| *id == pending.session_id) =>

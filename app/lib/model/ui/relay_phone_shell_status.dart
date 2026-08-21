@@ -66,6 +66,21 @@ class RelayPhoneShellStatus {
   final bool supportsMessages;
   final bool supportsNotifications;
 
+  /// Whether the network type (LTE, 5G) should be shown in the shell.
+  final bool showNetworkLabel;
+
+  /// Whether numerical battery percentage should be shown in the shell.
+  final bool showBatteryPercentage;
+
+  /// Whether notification indicator should be shown in the shell.
+  final bool showNotifications;
+
+  /// Whether charging warmth animation is enabled.
+  final bool chargingAnimationEnabled;
+
+  /// Whether signal icon should be shown in the shell.
+  final bool showSignal;
+
   /// How many phones were eligible when this snapshot was taken, so a shell
   /// surface can say "1 of 2" without Relay having to expose the other phones.
   final int phoneCount;
@@ -91,6 +106,11 @@ class RelayPhoneShellStatus {
     required this.supportsClipboard,
     required this.supportsMessages,
     required this.supportsNotifications,
+    required this.showNetworkLabel,
+    required this.showBatteryPercentage,
+    required this.showNotifications,
+    required this.chargingAnimationEnabled,
+    required this.showSignal,
     required this.phoneCount,
     required this.lastUpdated,
   });
@@ -119,6 +139,11 @@ class RelayPhoneShellStatus {
     bool supportsClipboard = false,
     bool supportsMessages = false,
     bool supportsNotifications = false,
+    bool showNetworkLabel = true,
+    bool showBatteryPercentage = true,
+    bool showNotifications = true,
+    bool chargingAnimationEnabled = true,
+    bool showSignal = true,
     int phoneCount = 1,
   }) {
     final battery = batteryPercentage != null && batteryPercentage >= 0 && batteryPercentage <= 100 ? batteryPercentage : null;
@@ -147,6 +172,11 @@ class RelayPhoneShellStatus {
       supportsClipboard: supportsClipboard,
       supportsMessages: supportsMessages,
       supportsNotifications: supportsNotifications,
+      showNetworkLabel: showNetworkLabel,
+      showBatteryPercentage: showBatteryPercentage,
+      showNotifications: showNotifications,
+      chargingAnimationEnabled: chargingAnimationEnabled,
+      showSignal: showSignal,
       phoneCount: phoneCount < 1 ? 1 : phoneCount,
       lastUpdated: lastUpdated,
     );
@@ -166,32 +196,63 @@ class RelayPhoneShellStatus {
   /// Picks the phone a shell surface should present, or null when Relay has no
   /// phone worth showing.
   ///
-  /// Only paired phones qualify: an unpaired handset that happens to be on the
-  /// network is a discovery result, not "the user's phone". Ordering is
-  /// connected first and then by key, which makes the choice deterministic
-  /// rather than dependent on arrival order. [preferredDeviceId] keeps a phone
-  /// that is still just as good as the best candidate, so a second phone
-  /// briefly connecting never yanks the pill away from the one in use.
+  /// Only paired phones qualify. When [pinnedDeviceId] is set, the panel remains
+  /// pinned to that specific device (and reports its disconnected state if offline).
+  /// When [pinnedDeviceId] is null, the panel follows Relay's [focusedDeviceId],
+  /// falling back to the primary connected phone if none is focused.
   static RelayPhoneShellStatus? select({
     required List<RelayDeviceVm> devices,
     required DateTime now,
-    String? preferredDeviceId,
+    String? pinnedDeviceId,
+    String? focusedDeviceId,
+    bool showNetworkLabel = true,
+    bool showBatteryPercentage = true,
+    bool showNotifications = true,
+    bool chargingAnimationEnabled = true,
+    bool showSignal = true,
     Map<String, int> notificationCounts = const {},
+    Map<String, int> unreadMessageCounts = const {},
   }) {
     final candidates = devices.where(isEligiblePhone).toList()
       ..sort((a, b) {
         final connectedComparison = _boolRank(isConnected(b)).compareTo(_boolRank(isConnected(a)));
         return connectedComparison != 0 ? connectedComparison : a.key.compareTo(b.key);
       });
-    if (candidates.isEmpty) {
+
+    RelayDeviceVm? chosen;
+
+    if (pinnedDeviceId != null && pinnedDeviceId.isNotEmpty) {
+      // User-pinned device: strictly stay bound to this device.
+      // Even if disconnected, do NOT jump to another connected phone.
+      chosen = devices.firstWhereOrNull((device) => device.key == pinnedDeviceId);
+      if (chosen == null) {
+        return null;
+      }
+    } else {
+      // Follow selected / focused device:
+      if (focusedDeviceId != null) {
+        chosen = candidates.firstWhereOrNull((device) => device.key == focusedDeviceId);
+      }
+      // Fallback if focused device is not an eligible phone:
+      chosen ??= candidates.firstOrNull;
+    }
+
+    if (chosen == null) {
       return null;
     }
 
-    final best = candidates.first;
-    final preferred = preferredDeviceId == null ? null : candidates.firstWhereOrNull((device) => device.key == preferredDeviceId);
-    final chosen = preferred != null && isConnected(preferred) == isConnected(best) ? preferred : best;
-
-    return fromDevice(chosen, now: now, phoneCount: candidates.length, notificationCount: notificationCounts[chosen.key]);
+    return fromDevice(
+      chosen,
+      now: now,
+      phoneCount: candidates.length,
+      notificationCount: notificationCounts[chosen.key],
+      unreadMessageCount: unreadMessageCounts[chosen.key],
+      showNetworkLabel: showNetworkLabel,
+      showBatteryPercentage: showBatteryPercentage,
+      showNotifications: showNotifications,
+      chargingAnimationEnabled: chargingAnimationEnabled,
+      showSignal: showSignal,
+    );
   }
 
   /// Whether this device is a phone Relay is entitled to present in the shell.
@@ -207,7 +268,18 @@ class RelayPhoneShellStatus {
   /// Network and unread-message state have no source in Relay yet, so they stay
   /// absent here. When a Relay capability starts reporting them this mapping
   /// gains the fields and every shell surface picks them up unchanged.
-  static RelayPhoneShellStatus fromDevice(RelayDeviceVm device, {required DateTime now, int phoneCount = 1, int? notificationCount}) {
+  static RelayPhoneShellStatus fromDevice(
+    RelayDeviceVm device, {
+    required DateTime now,
+    int phoneCount = 1,
+    int? notificationCount,
+    int? unreadMessageCount,
+    bool showNetworkLabel = true,
+    bool showBatteryPercentage = true,
+    bool showNotifications = true,
+    bool chargingAnimationEnabled = true,
+    bool showSignal = true,
+  }) {
     final capabilities = device.capabilityStatuses;
     final battery = device.battery;
     final connected = isConnected(device);
@@ -234,6 +306,12 @@ class RelayPhoneShellStatus {
       // A count only means something while the mirror is live; a phone that
       // went away is not still holding three notifications for the user.
       notificationCount: notifications && connected ? notificationCount ?? 0 : null,
+      unreadMessageCount: _isUsable(capabilities[RelayCapability.messages]) && connected ? unreadMessageCount ?? 0 : null,
+      showNetworkLabel: showNetworkLabel,
+      showBatteryPercentage: showBatteryPercentage,
+      showNotifications: showNotifications,
+      chargingAnimationEnabled: chargingAnimationEnabled,
+      showSignal: showSignal,
       phoneCount: phoneCount,
       lastUpdated: now,
     );
@@ -266,6 +344,11 @@ class RelayPhoneShellStatus {
     'supportsClipboard': supportsClipboard,
     'supportsMessages': supportsMessages,
     'supportsNotifications': supportsNotifications,
+    'showNetworkLabel': showNetworkLabel,
+    'showBatteryPercentage': showBatteryPercentage,
+    'showNotifications': showNotifications,
+    'chargingAnimationEnabled': chargingAnimationEnabled,
+    'showSignal': showSignal,
     'phoneCount': phoneCount,
     'lastUpdated': lastUpdated.millisecondsSinceEpoch,
   };
@@ -296,6 +379,11 @@ class RelayPhoneShellStatus {
         supportsClipboard == other.supportsClipboard &&
         supportsMessages == other.supportsMessages &&
         supportsNotifications == other.supportsNotifications &&
+        showNetworkLabel == other.showNetworkLabel &&
+        showBatteryPercentage == other.showBatteryPercentage &&
+        showNotifications == other.showNotifications &&
+        chargingAnimationEnabled == other.chargingAnimationEnabled &&
+        showSignal == other.showSignal &&
         phoneCount == other.phoneCount;
   }
 }

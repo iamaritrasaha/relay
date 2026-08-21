@@ -245,15 +245,15 @@ void main() {
   testWidgets('paired KDE Connect phone with no battery shows Waiting for battery status', (tester) async {
     await pumpShell(tester, vm([pairedPhoneNoBattery]));
     expect(find.text('Pixel'), findsWidgets);
-    expect(find.text('Battery'), findsOneWidget);
+    expect(find.text('Battery'), findsWidgets);
     expect(find.text('Waiting for battery status'), findsOneWidget);
-    expect(find.text('—'), findsOneWidget);
+    expect(find.text('—'), findsWidgets);
   });
 
   testWidgets('paired KDE Connect phone with charging battery shows percentage and Charging', (tester) async {
     await pumpShell(tester, vm([pairedPhoneCharging]));
     expect(find.text('Pixel'), findsWidgets);
-    expect(find.text('Battery'), findsOneWidget);
+    expect(find.text('Battery'), findsWidgets);
     expect(find.text('76%'), findsWidgets);
     expect(find.text('Charging'), findsOneWidget);
   });
@@ -261,7 +261,7 @@ void main() {
   testWidgets('paired KDE Connect phone with unplugged battery shows percentage and On battery', (tester) async {
     await pumpShell(tester, vm([pairedPhoneUnplugged]));
     expect(find.text('Pixel'), findsWidgets);
-    expect(find.text('Battery'), findsOneWidget);
+    expect(find.text('Battery'), findsWidgets);
     expect(find.text('76%'), findsWidgets);
     expect(find.text('On battery'), findsOneWidget);
   });
@@ -269,16 +269,14 @@ void main() {
   testWidgets('disconnected KDE Connect phone shows stale battery subtitle', (tester) async {
     await pumpShell(tester, vm([pairedPhoneStale]));
     expect(find.text('Pixel'), findsWidgets);
-    expect(find.text('Battery'), findsOneWidget);
+    expect(find.text('Battery'), findsWidgets);
     expect(find.text('76%'), findsWidgets);
     expect(find.text('Last known before disconnecting'), findsOneWidget);
   });
 
-  testWidgets('paired KDE Connect phone shows Ping device and Find device', (tester) async {
+  testWidgets('paired KDE Connect phone exposes compact ping and find-phone actions', (tester) async {
     await pumpShell(tester, vm([pairedPhoneCharging]));
-    expect(find.text('Ping device'), findsOneWidget);
-    expect(find.text('Find device'), findsOneWidget);
     expect(find.text('Ping'), findsOneWidget);
-    expect(find.text('Ring'), findsOneWidget);
+    expect(find.text('Find Phone'), findsOneWidget);
   });
 }

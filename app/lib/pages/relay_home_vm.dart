@@ -1,4 +1,5 @@
 import 'package:collection/collection.dart';
+import 'package:flutter/foundation.dart';
 import 'package:refena_flutter/refena_flutter.dart';
 import 'package:relay_app/model/continuity/continuity_runtime.dart';
 import 'package:relay_app/model/cross_file.dart';
@@ -353,6 +354,11 @@ class RelayHomeVm {
     );
   }
 
+  /// The capability gating for a KDE Connect peer, exposed so the directional
+  /// rules can be tested against real advertised capability sets.
+  @visibleForTesting
+  static RelayDeviceVm kdeDeviceVm(RsKdeConnectDevice device) => _kdeConnectDeviceVm(device);
+
   static RelayDeviceVm _kdeConnectDeviceVm(RsKdeConnectDevice device) {
     final detail = device.connected && device.paired
         ? 'Connected'
@@ -386,13 +392,19 @@ class RelayHomeVm {
       connectivityStale: device.connectivityStale,
       canPing: _kdePeerAccepts(device, 'kdeconnect.ping'),
       canFindDevice: _kdePeerAccepts(device, 'kdeconnect.findmyphone.request'),
+      canSendSms: _kdePeerAccepts(device, 'kdeconnect.sms.request'),
+      canMuteRinger: _kdePeerAccepts(device, 'kdeconnect.telephony.request_mute'),
       capabilities: {
         RelayCapability.files: CapabilityStatus.unavailable,
         RelayCapability.clipboard: device.paired ? CapabilityStatus.available : CapabilityStatus.unavailable,
         RelayCapability.battery: device.paired ? CapabilityStatus.available : CapabilityStatus.unavailable,
-        RelayCapability.messages: CapabilityStatus.unavailable,
+        RelayCapability.messages: _kdePeerAccepts(device, 'kdeconnect.sms.request_conversations')
+            ? CapabilityStatus.available
+            : CapabilityStatus.unavailable,
         RelayCapability.notifications: device.paired ? CapabilityStatus.available : CapabilityStatus.unavailable,
-        RelayCapability.phone: _kdePeerAccepts(device, 'kdeconnect.findmyphone.request')
+        RelayCapability.phone:
+            (device.paired &&
+                (device.outgoingCapabilities.contains('kdeconnect.telephony') || _kdePeerAccepts(device, 'kdeconnect.telephony.request_mute')))
             ? CapabilityStatus.available
             : CapabilityStatus.unavailable,
       },

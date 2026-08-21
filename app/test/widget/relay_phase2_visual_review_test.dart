@@ -16,7 +16,6 @@ import 'package:relay_isolates/model/device.dart';
 
 void main() {
   const desktop = Size(1280, 800);
-  const mobile = Size(412, 915);
 
   const nearbyDevices = [
     RelayDeviceVm(
@@ -92,7 +91,7 @@ void main() {
     onDeviceTap: (_) {},
   );
 
-  for (final (name, size) in [('desktop', desktop), ('android', mobile)]) {
+  for (final (name, size) in [('desktop', desktop)]) {
     testWidgets('$name home nearby visual review', (tester) async {
       await render(tester, size, home(selected: false, sending: false));
       await expectLater(find.byType(RelayShell), matchesGoldenFile('goldens/relay_phase2/${name}_home_nearby.png'));

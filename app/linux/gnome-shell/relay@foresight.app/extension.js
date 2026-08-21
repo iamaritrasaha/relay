@@ -24,15 +24,21 @@ import {Extension, gettext as _} from 'resource:///org/gnome/shell/extensions/ex
 
 import {
     accessibleName,
-    batteryIconNames,
+    batteryMenuLabel,
     batterySlotState,
+    bellIconNames,
     bellState,
-    hasLiveBattery,
+    chargeAnimationState,
     needsAttention,
-    networkIconNames,
-    notificationPulseOpacities,
     normalizePhoneStatus,
-    signalBarRectangles,
+    bellRestingOpacity,
+    bellRingDuration,
+    bellRingKeyframes,
+    shouldRingBell,
+    batteryPanelLabel,
+    networkGenerationLabel,
+    signalIconNames,
+    signalQualityLabel,
     unreadLabel,
 } from './phoneStatus.js';
 
@@ -50,20 +56,18 @@ const DESKTOP_IDS = ['relay.desktop', 'com.foresight.app.relay.desktop'];
 
 const APPEAR_MS = 180;
 const CHANGE_MS = 140;
-const NOTIFICATION_PULSE_PHASE_MS = 180;
+/* How warm the bell is allowed to get at the peak of a ring. Well short of a
+ * solid coral glyph, and gone again within half a second. */
+const BELL_RING_WARMTH = 200;
 
 const FULL_OPACITY = 255;
 const MUTED_OPACITY = 155;
 const SECONDARY_OPACITY = 180;
 const INACTIVE_BELL_OPACITY = 191;
-// Every permanent status pictogram lives in the same 18 px slot.  The art
-// itself is intentionally a little smaller, so the panel reads as one calm
-// cluster instead of three differently-sized actors.
-const STATUS_SLOT_SIZE = 20;
-const SIGNAL_AREA_WIDTH = STATUS_SLOT_SIZE;
-const SIGNAL_AREA_HEIGHT = STATUS_SLOT_SIZE;
-const GROUP_GAP = 8;
-const SIGNAL_BAR_RADIUS = 1;
+/* Charging warmth: fade up, fade back, then rest. One pass reads as a pulse of
+ * energy arriving; a continuous loop would read as a spinner. */
+const CHARGE_FADE_MS = 900;
+const CHARGE_REST_MS = 800;
 
 /**
  * A themed icon built from a fallback chain.
@@ -82,17 +86,6 @@ function themedIcon(names) {
 /** @returns {boolean} whether the shell is currently animating anything */
 function animationsEnabled() {
     return St.Settings.get().enable_animations;
-}
-
-/** Draws a compact rounded rectangle without turning the 2 px bars into dots. */
-function roundedRectangle(cr, x, y, width, height, radius) {
-    const corner = Math.min(radius, width / 2, height / 2);
-    cr.newSubPath();
-    cr.arc(x + width - corner, y + corner, corner, -Math.PI / 2, 0);
-    cr.arc(x + width - corner, y + height - corner, corner, 0, Math.PI / 2);
-    cr.arc(x + corner, y + height - corner, corner, Math.PI / 2, Math.PI);
-    cr.arc(x + corner, y + corner, corner, Math.PI, Math.PI * 1.5);
-    cr.closePath();
 }
 
 /**
@@ -147,6 +140,61 @@ class RelayInfoRow extends PopupMenu.PopupBaseMenuItem {
     }
 });
 
+/** Custom dropdown row for cellular/WiFi network status with 4-bar indicator. */
+const NetworkRow = GObject.registerClass(
+class RelayNetworkRow extends PopupMenu.PopupBaseMenuItem {
+    _init(label) {
+        super._init({reactive: false, can_focus: false, style_class: 'popup-menu-item relay-info-row relay-network-row'});
+
+        this._label = new St.Label({text: label, style_class: 'relay-info-label', y_align: Clutter.ActorAlign.CENTER, opacity: SECONDARY_OPACITY});
+
+        this._valueBox = new St.BoxLayout({style_class: 'relay-network-value-box', y_align: Clutter.ActorAlign.CENTER});
+
+        this._badge = new St.Label({style_class: 'relay-network-badge', y_align: Clutter.ActorAlign.CENTER});
+        this._badge.hide();
+
+        this._carrier = new St.Label({style_class: 'relay-network-carrier', y_align: Clutter.ActorAlign.CENTER});
+        this._carrier.clutter_text.ellipsize = Pango.EllipsizeMode.END;
+
+        // The same native cellular icon the top panel shows, so the dropdown
+        // and the panel never present two different drawings of one reading.
+        this._signalIcon = new St.Icon({style_class: 'relay-signal-icon', y_align: Clutter.ActorAlign.CENTER});
+        this._signalLevel = null;
+
+        this._quality = new St.Label({style_class: 'relay-info-value relay-signal-quality', y_align: Clutter.ActorAlign.CENTER});
+
+        this._valueBox.add_child(this._badge);
+        this._valueBox.add_child(this._carrier);
+        this._valueBox.add_child(this._signalIcon);
+        this._valueBox.add_child(this._quality);
+
+        this.add_child(this._label);
+        this.add_child(new St.Widget({x_expand: true}));
+        this.add_child(this._valueBox);
+    }
+
+    setNetwork(networkKind, networkLabel, signalLevel) {
+        this._signalLevel = signalLevel;
+        this._signalIcon.gicon = themedIcon(signalIconNames({networkKind, signalLevel, connected: true}, true));
+
+        if (networkKind && networkKind !== 'none' && networkKind !== 'unknown') {
+            this._badge.text = networkKind.toUpperCase();
+            this._badge.show();
+        } else {
+            this._badge.hide();
+        }
+
+        if (networkLabel) {
+            this._carrier.text = networkLabel;
+            this._carrier.show();
+        } else {
+            this._carrier.hide();
+        }
+
+        this._quality.text = signalQualityLabel(signalLevel, _);
+    }
+});
+
 /**
  * The Relay pill in the top panel, plus the menu behind it.
  *
@@ -172,43 +220,74 @@ class RelayPhoneIndicator extends PanelMenu.Button {
 
         this.add_style_class_name('relay-pill');
 
-        this._box = new St.BoxLayout({style_class: 'relay-pill-box', y_align: Clutter.ActorAlign.CENTER});
+        // Three tight groups rather than five loose widgets: network, power,
+        // notifications. Icons stay stock `system-status-icon`s so their size
+        // still comes from the shell theme and follows the user's font scale;
+        // only the spacing between them is Relay's, because the native 4px icon
+        // margin cannot express "tight pair, loose group".
+        this._box = new St.BoxLayout({style_class: 'relay-cluster', y_align: Clutter.ActorAlign.CENTER});
         this.add_child(this._box);
 
-        // ── Slot 1: Signal bars ─────────────────────────────────────────
-        this._signalBox = new St.Bin({
-            style_class: 'relay-status-icon-slot relay-signal-slot',
-            width: STATUS_SLOT_SIZE,
-            height: STATUS_SLOT_SIZE,
+        // ── Network: [signal] LTE ───────────────────────────────────────
+        this._networkGroup = new St.BoxLayout({style_class: 'relay-group', y_align: Clutter.ActorAlign.CENTER});
+        this._signalIcon = new St.Icon({style_class: 'system-status-icon', y_align: Clutter.ActorAlign.CENTER});
+        this._networkLabel = new St.Label({
+            style_class: 'relay-panel-label',
             y_align: Clutter.ActorAlign.CENTER,
-            // Bars rise from one baseline, which makes a mathematically
-            // centred surface look low next to symbolic icons.
-            translation_y: 0,
+            // Quieter than the charge percentage: the generation is context,
+            // the battery reading is the thing being glanced at. Done with
+            // opacity rather than a colour so it holds in any shell theme.
+            opacity: SECONDARY_OPACITY,
         });
-        this._signalArea = new St.DrawingArea({
-            style_class: 'relay-signal-area',
-            width: SIGNAL_AREA_WIDTH,
-            height: SIGNAL_AREA_HEIGHT,
+        this._networkGroup.add_child(this._signalIcon);
+        this._networkGroup.add_child(this._networkLabel);
+        this._box.add_child(this._networkGroup);
+
+        // ── Power: [battery] 55% ────────────────────────────────────────
+        this._batteryCharging = false;
+        this._batteryChargeAnimated = false;
+        this._chargeRunning = false;
+        this._chargeRestId = 0;
+
+        this._batteryGroup = new St.BoxLayout({style_class: 'relay-group', y_align: Clutter.ActorAlign.CENTER});
+
+        // Two copies of the same native icon, one tinted warm and normally
+        // invisible. Charging fades the warm copy in and out over the top, so
+        // the icon on screen is always the stock GNOME artwork — and the
+        // percentage beside it never moves.
+        this._batteryStack = new St.Widget({
+            layout_manager: new Clutter.BinLayout(),
             y_align: Clutter.ActorAlign.CENTER,
         });
-        this._signalArea.connect('repaint', area => this._paintSignalBars(area));
-        this._signalBox.set_child(this._signalArea);
-        this._box.add_child(this._signalBox);
-        this._signalArea.queue_repaint();
+        this._batteryIcon = new St.Icon({style_class: 'system-status-icon'});
+        this._batteryWarmIcon = new St.Icon({style_class: 'system-status-icon relay-charge-warm', opacity: 0});
+        this._batteryStack.add_child(this._batteryIcon);
+        this._batteryStack.add_child(this._batteryWarmIcon);
 
-        this._box.add_child(this._buildSpacer(GROUP_GAP));
+        this._batteryLabel = new St.Label({style_class: 'relay-panel-label', y_align: Clutter.ActorAlign.CENTER});
+        this._batteryGroup.add_child(this._batteryStack);
+        this._batteryGroup.add_child(this._batteryLabel);
+        this._box.add_child(this._batteryGroup);
 
-        // ── Slot 2: Battery ─────────────────────────────────────────────
-        this._battery = this._buildSegment('relay-battery-slot', 'relay-battery-icon-slot');
-        this._box.add_child(this._battery.box);
-
-        this._box.add_child(this._buildSpacer(GROUP_GAP));
-
-        // ── Slot 3: Notification bell ───────────────────────────────────
-        this._notifications = this._buildSegment('relay-notification-slot', 'relay-bell-icon-slot');
-        this._box.add_child(this._notifications.box);
-        this._notifications.icon.gicon = themedIcon(['preferences-system-notifications-symbolic', 'user-available-symbolic']);
-        this._notifications.label.hide();
+        // ── Notifications: [bell] ───────────────────────────────────────
+        // The bell is never given a permanent marker. Unread is carried by the
+        // glyph being fuller, and a new one is announced by a single ring that
+        // ends exactly where it started.
+        this._bellActive = false;
+        this._bellStack = new St.Widget({
+            layout_manager: new Clutter.BinLayout(),
+            y_align: Clutter.ActorAlign.CENTER,
+        });
+        this._bellIcon = new St.Icon({style_class: 'system-status-icon'});
+        // A coral copy, invisible except during the ring itself. Symbolic icon
+        // colour comes from CSS and cannot be eased, so the warmth is a second
+        // icon fading over the first — the same trick the battery uses.
+        this._bellWarmIcon = new St.Icon({style_class: 'system-status-icon relay-bell-warm', opacity: 0});
+        this._bellStack.add_child(this._bellIcon);
+        this._bellStack.add_child(this._bellWarmIcon);
+        // A bell swings from where it hangs, not from the middle of its box.
+        this._bellStack.set_pivot_point(0.5, 0.1);
+        this._box.add_child(this._bellStack);
 
         // ── State label (offline / "Relay") ─────────────────────────────
         this._stateLabel = new St.Label({style_class: 'relay-pill-state', y_align: Clutter.ActorAlign.CENTER});
@@ -247,35 +326,6 @@ class RelayPhoneIndicator extends PanelMenu.Button {
         this._handlerIds.push([object, object.connect(signal, callback)]);
     }
 
-    /**
-     * @param {string} [styleClass] - extra style class for the group
-     * @param {string} [iconSlotClass] - extra style class for the icon slot
-     * @returns {object} the icon and label of a status segment
-     */
-    _buildSegment(styleClass, iconSlotClass) {
-        const box = new St.BoxLayout({
-            style_class: styleClass ? `relay-pill-segment ${styleClass}` : 'relay-pill-segment',
-            y_align: Clutter.ActorAlign.CENTER,
-        });
-        const icon = new St.Icon({style_class: 'relay-pill-icon', y_align: Clutter.ActorAlign.CENTER});
-        const iconSlot = new St.Bin({
-            style_class: iconSlotClass ? `relay-status-icon-slot ${iconSlotClass}` : 'relay-status-icon-slot',
-            width: STATUS_SLOT_SIZE,
-            height: STATUS_SLOT_SIZE,
-            y_align: Clutter.ActorAlign.CENTER,
-        });
-        const label = new St.Label({style_class: 'relay-pill-value', y_align: Clutter.ActorAlign.CENTER});
-        iconSlot.set_child(icon);
-        box.add_child(iconSlot);
-        box.add_child(label);
-        box.hide();
-        return {box, icon, iconSlot, label};
-    }
-
-    _buildSpacer(width) {
-        return new St.Widget({style_class: 'relay-pill-group-gap', width, height: STATUS_SLOT_SIZE, y_align: Clutter.ActorAlign.CENTER});
-    }
-
     _buildMenu() {
         this._header = new PopupMenu.PopupBaseMenuItem({reactive: false, can_focus: false, style_class: 'popup-menu-item relay-header'});
         this._headerIcon = new St.Icon({style_class: 'relay-header-icon', y_align: Clutter.ActorAlign.CENTER});
@@ -293,12 +343,10 @@ class RelayPhoneIndicator extends PanelMenu.Button {
         this.menu.addMenuItem(this._detailSection);
 
         this._batteryRow = new InfoRow(_('Battery'), '');
-        this._batteryStateRow = new InfoRow(_('Status'), '');
-        this._networkRow = new InfoRow(_('Network'), '');
-        this._signalRow = new InfoRow(_('Signal'), '');
+        this._networkRow = new NetworkRow(_('Network'));
         this._notificationsRow = new InfoRow(_('Notifications'), '');
         this._messagesRow = new InfoRow(_('Messages'), '');
-        for (const row of [this._batteryRow, this._batteryStateRow, this._networkRow, this._signalRow, this._notificationsRow, this._messagesRow])
+        for (const row of [this._batteryRow, this._networkRow, this._notificationsRow, this._messagesRow])
             this._detailSection.addMenuItem(row);
 
         this._actionSeparator = new PopupMenu.PopupSeparatorMenuItem();
@@ -339,15 +387,25 @@ class RelayPhoneIndicator extends PanelMenu.Button {
         const status = this._status;
         const connected = status !== null && status.connected;
 
-        // ── Slot 1: Signal bars ─────────────────────────────────────────
-        // One Cairo surface owns all four bars. Unknown and offline remain
-        // deliberately muted rather than inventing a signal level.
-        this._setSignalLevel(connected ? status.signalLevel : null);
+        // ── Network ─────────────────────────────────────────────────────
+        // The same native cellular family the shell's own network indicator
+        // uses. Unknown stays unknown rather than being drawn as zero bars.
+        const showSignal = status === null || status.showSignal !== false;
+        this._signalIcon.gicon = themedIcon(signalIconNames(status, connected));
+        this._signalIcon.visible = showSignal;
 
-        // ── Slot 2: Battery ─────────────────────────────────────────────
+        // The generation only. Signal quality is wording for the dropdown; in
+        // the panel it would just be a long word that changes on its own.
+        const showNetLabel = status !== null && status.showNetworkLabel !== false;
+        const generation = showNetLabel ? networkGenerationLabel(status, connected) : null;
+        this._networkLabel.text = generation ?? '';
+        this._networkLabel.visible = generation !== null;
+        this._networkGroup.visible = this._signalIcon.visible || this._networkLabel.visible;
+
+        // ── Battery ─────────────────────────────────────────────────────
         this._renderBattery(status);
 
-        // ── Slot 3: Notification bell ───────────────────────────────────
+        // ── Notification bell ───────────────────────────────────────────
         this._renderBell(status);
 
         if (!connected)
@@ -370,48 +428,106 @@ class RelayPhoneIndicator extends PanelMenu.Button {
         this._renderMenu();
     }
 
-    _setSignalLevel(signalLevel) {
-        if (this._signalLevel === signalLevel)
-            return;
-        this._signalLevel = signalLevel;
-        this._signalArea.queue_repaint();
-    }
-
-    _paintSignalBars(area) {
-        const [width, height] = area.get_surface_size();
-        const cr = area.get_context();
-        try {
-            if (width <= 0 || height <= 0)
-                return;
-
-            const foreground = this.get_theme_node().get_foreground_color();
-            for (const rect of signalBarRectangles(width, height, this._signalLevel)) {
-                cr.setSourceColor(new Clutter.Color({
-                    red: foreground.red,
-                    green: foreground.green,
-                    blue: foreground.blue,
-                    alpha: Math.round(foreground.alpha * rect.alpha),
-                }));
-                roundedRectangle(cr, rect.x, rect.y, rect.width, rect.height, SIGNAL_BAR_RADIUS);
-                cr.fill();
+    /**
+     * Fades a warm copy of the battery icon in and out while charging.
+     *
+     * The base icon is never touched, so what is on screen stays stock GNOME
+     * artwork: only a tinted duplicate above it changes opacity. Nothing runs
+     * at all when the phone is not charging or animations are off.
+     *
+     * @param {boolean} wanted - whether the warmth pulse should be running
+     */
+    _syncChargeWarmth(wanted) {
+        if (!wanted) {
+            this._chargeRunning = false;
+            if (this._chargeRestId !== 0) {
+                GLib.Source.remove(this._chargeRestId);
+                this._chargeRestId = 0;
             }
-        } finally {
-            cr.$dispose();
+            this._batteryWarmIcon.remove_all_transitions();
+            this._batteryWarmIcon.opacity = 0;
+            return;
         }
+
+        if (this._chargeRunning)
+            return;
+        this._chargeRunning = true;
+        this._runChargePulse();
     }
 
+    _runChargePulse() {
+        if (this._destroyed || !this._chargeRunning)
+            return;
+
+        this._batteryWarmIcon.remove_all_transitions();
+        this._batteryWarmIcon.opacity = 0;
+        this._batteryWarmIcon.ease({
+            opacity: FULL_OPACITY,
+            duration: CHARGE_FADE_MS,
+            mode: Clutter.AnimationMode.EASE_IN_OUT_QUAD,
+            onComplete: () => {
+                if (this._destroyed || !this._chargeRunning)
+                    return;
+                this._batteryWarmIcon.ease({
+                    opacity: 0,
+                    duration: CHARGE_FADE_MS,
+                    mode: Clutter.AnimationMode.EASE_IN_OUT_QUAD,
+                    onComplete: () => this._scheduleChargeRest(),
+                });
+            },
+        });
+    }
+
+    _scheduleChargeRest() {
+        if (this._destroyed || !this._chargeRunning)
+            return;
+
+        this._chargeRestId = GLib.timeout_add(GLib.PRIORITY_DEFAULT, CHARGE_REST_MS, () => {
+            this._chargeRestId = 0;
+            if (!this._destroyed && this._chargeRunning)
+                this._runChargePulse();
+            return GLib.SOURCE_REMOVE;
+        });
+    }
+
+    /**
+     * Renders the battery as the stock GNOME battery-level icon.
+     *
+     * The panel stays icon-only: the exact percentage and the charging wording
+     * live one click away in the dropdown, which is where GNOME puts its own.
+     *
+     * @param {object|null} status - a normalized status
+     */
     _renderBattery(status) {
         const state = batterySlotState(status);
 
         if (!state.visible) {
-            this._battery.box.hide();
+            // A phone that has gone away must not leave the pulse running.
+            this._syncChargeWarmth(false);
+            this._batteryGroup.hide();
             return;
         }
 
-        this._battery.icon.gicon = themedIcon(state.icons);
-        setLabelText(this._battery.label, state.label);
-        this._battery.box.opacity = state.muted ? SECONDARY_OPACITY : FULL_OPACITY;
-        this._battery.box.show();
+        const icon = themedIcon(state.icons);
+        this._batteryIcon.gicon = icon;
+        this._batteryWarmIcon.gicon = icon;
+
+        // The reading is the useful part of this group, so it is stated rather
+        // than left to be inferred from a five-step icon. An unknown charge
+        // shows no label at all instead of a placeholder.
+        const showPercent = status === null || status.showBatteryPercentage !== false;
+        const percentage = showPercent ? batteryPanelLabel(status) : null;
+        this._batteryLabel.text = percentage ?? '';
+        this._batteryLabel.visible = percentage !== null;
+
+        const chargingAllowed = status === null || status.chargingAnimationEnabled !== false;
+        const charge = chargeAnimationState(status, animationsEnabled() && chargingAllowed);
+        this._batteryCharging = charge.charging;
+        this._batteryChargeAnimated = charge.animated;
+
+        this._batteryGroup.opacity = state.muted ? SECONDARY_OPACITY : FULL_OPACITY;
+        this._batteryGroup.show();
+        this._syncChargeWarmth(charge.animated);
     }
 
     /**
@@ -421,25 +537,30 @@ class RelayPhoneIndicator extends PanelMenu.Button {
     _renderBell(status) {
         const bell = bellState(status);
 
-        if (!bell.visible) {
-            this._notifications.box.hide();
+        if (!bell.visible || (status !== null && status.showNotifications === false)) {
+            this._bellStack.hide();
             return;
         }
 
-        // Always visible while connected
-        this._notifications.box.show();
-        this._notifications.box.opacity = bell.active ? FULL_OPACITY : INACTIVE_BELL_OPACITY;
+        const icon = themedIcon(bellIconNames());
+        this._bellIcon.gicon = icon;
+        this._bellWarmIcon.gicon = icon;
+        this._bellStack.show();
 
-        // Pulse on count increase
+        // The glyph is the ordinary panel foreground in both states; unread is
+        // simply a fuller one. No colour survives past the ring.
+        this._bellIcon.opacity = bellRestingOpacity(bell.active);
+        this._bellActive = bell.active;
+
         const count = bell.count;
-        const pulse = notificationPulseOpacities(this._previousNotificationCount, count, animationsEnabled());
+        const ring = shouldRingBell(this._previousNotificationCount, count, animationsEnabled());
         this._previousNotificationCount = count;
-        this._notificationPulseGeneration += 1;
-        const generation = this._notificationPulseGeneration;
-        this._notifications.box.remove_all_transitions();
 
-        if (pulse.length > 0)
-            this._runNotificationPulse(pulse, 0, generation, bell.active);
+        // The generation is bumped only when a ring actually starts. Bumping it
+        // on every render would let an ordinary battery update land mid-swing,
+        // abandon the ring and leave the bell tilted in the panel.
+        if (ring)
+            this._ringBell();
 
         if (needsAttention(status))
             this._box.add_style_class_name('relay-attentive');
@@ -447,28 +568,70 @@ class RelayPhoneIndicator extends PanelMenu.Button {
             this._box.remove_style_class_name('relay-attentive');
     }
 
-    _runNotificationPulse(opacities, index, generation, active) {
-        if (this._destroyed || generation !== this._notificationPulseGeneration)
+    /**
+     * One finite bell ring: a decaying swing that always ends level.
+     *
+     * The warm copy fades up over the first half of the swing and back down
+     * over the second, so the colour is gone by the time the glyph stops.
+     *
+     */
+    _ringBell() {
+        const generation = ++this._notificationPulseGeneration;
+        const steps = bellRingKeyframes();
+        this._bellStack.remove_all_transitions();
+        this._bellWarmIcon.remove_all_transitions();
+        this._bellStack.rotation_angle_z = 0;
+
+        const half = Math.round(bellRingDuration() / 2);
+        this._bellWarmIcon.opacity = 0;
+        this._bellWarmIcon.ease({
+            opacity: BELL_RING_WARMTH,
+            duration: half,
+            mode: Clutter.AnimationMode.EASE_OUT_QUAD,
+            onComplete: () => {
+                if (this._destroyed || generation !== this._notificationPulseGeneration)
+                    return;
+                this._bellWarmIcon.ease({
+                    opacity: 0,
+                    duration: bellRingDuration() - half,
+                    mode: Clutter.AnimationMode.EASE_IN_QUAD,
+                });
+            },
+        });
+
+        this._runBellRing(steps, 0, generation);
+    }
+
+    _runBellRing(steps, index, generation) {
+        if (this._destroyed)
             return;
-        if (index >= opacities.length) {
-            // After pulse, settle to the appropriate steady state
-            this._notifications.box.opacity = active ? FULL_OPACITY : INACTIVE_BELL_OPACITY;
+        if (generation !== this._notificationPulseGeneration) {
+            // A newer ring has taken over and has already reset the angle.
             return;
         }
-        this._notifications.box.ease({
-            opacity: opacities[index],
-            duration: NOTIFICATION_PULSE_PHASE_MS,
+        if (index >= steps.length) {
+            // Whatever happened on the way, the bell finishes level and neutral.
+            this._bellStack.rotation_angle_z = 0;
+            this._bellWarmIcon.opacity = 0;
+            return;
+        }
+        this._bellStack.ease({
+            rotation_angle_z: steps[index].angle,
+            duration: steps[index].duration,
             mode: Clutter.AnimationMode.EASE_IN_OUT_QUAD,
-            onComplete: () => this._runNotificationPulse(opacities, index + 1, generation, active),
+            onComplete: () => this._runBellRing(steps, index + 1, generation),
         });
     }
 
     _clearNotificationAttention() {
         this._previousNotificationCount = 0;
         this._notificationPulseGeneration += 1;
-        this._notifications.box.remove_all_transitions();
-        // Bell stays visible at secondary opacity (hollow) when connected but
-        // count is zero; hidden only when disconnected
+        this._bellStack.remove_all_transitions();
+        this._bellStack.rotation_angle_z = 0;
+        this._bellWarmIcon.remove_all_transitions();
+        this._bellWarmIcon.opacity = 0;
+        // The bell stays visible at secondary opacity when connected with
+        // nothing unread; it is hidden only when disconnected.
         this._box.remove_style_class_name('relay-attentive');
     }
 
@@ -491,36 +654,14 @@ class RelayPhoneIndicator extends PanelMenu.Button {
 
         const showBattery = status !== null;
         this._batteryRow.visible = showBattery;
-        this._batteryStateRow.visible = false;
-        if (showBattery) {
-            if (status.batteryPercentage === null) {
-                this._batteryRow.setValue(_('Not reported'));
-            } else {
-                this._batteryRow.setValue(`${status.batteryPercentage}%`);
-                this._batteryStateRow.visible = true;
-                if (status.batteryIsStale || !status.connected)
-                    this._batteryStateRow.setValue(_('Last known'));
-                else if (status.batteryIsFull)
-                    this._batteryStateRow.setValue(_('Charged'));
-                else if (status.batteryIsCharging)
-                    this._batteryStateRow.setValue(_('Charging'));
-                else
-                    this._batteryStateRow.setValue(_('On battery'));
-            }
-        }
+        if (showBattery)
+            this._batteryRow.setValue(batteryMenuLabel(status, _));
 
-        // Network has no source in Relay yet. Its rows appear the moment a real
-        // capability starts reporting it, and stay away until then rather than
-        // standing in as empty placeholders.
-        const showNetwork = status !== null && status.networkLabel !== null;
+        // Network row: native cellular icon, carrier badge and quality wording.
+        const showNetwork = status !== null && (status.networkLabel !== null || status.signalLevel !== null || status.networkKind !== null);
         this._networkRow.visible = showNetwork;
         if (showNetwork)
-            this._networkRow.setValue(status.networkLabel);
-
-        const showSignal = status !== null && status.signalLevel !== null;
-        this._signalRow.visible = showSignal;
-        if (showSignal)
-            this._signalRow.setValue('▂▄▆█'.slice(0, status.signalLevel) || _('No signal'));
+            this._networkRow.setNetwork(status.networkKind, status.networkLabel, status.signalLevel);
 
         const showNotifications = status !== null && status.supportsNotifications;
         this._notificationsRow.visible = showNotifications;
@@ -551,22 +692,25 @@ class RelayPhoneIndicator extends PanelMenu.Button {
     _greet() {
         if (!animationsEnabled())
             return;
+        // A fade rather than a sprung scale: EASE_OUT_BACK overshoots, which at
+        // panel size reads as the icons bouncing.
         this._box.remove_all_transitions();
-        this._box.set_pivot_point(0.5, 0.5);
-        this._box.set_scale(0.9, 0.9);
+        this._box.set_scale(1, 1);
+        this._box.opacity = MUTED_OPACITY;
         this._box.ease({
-            scale_x: 1,
-            scale_y: 1,
+            opacity: FULL_OPACITY,
             duration: APPEAR_MS,
-            mode: Clutter.AnimationMode.EASE_OUT_BACK,
+            mode: Clutter.AnimationMode.EASE_OUT_QUAD,
         });
     }
 
     _onDestroy() {
         this._destroyed = true;
+        this._syncChargeWarmth(false);
         this._notificationPulseGeneration += 1;
-        this._notifications.box.remove_all_transitions();
-        this._battery.label.remove_all_transitions();
+        this._bellStack.remove_all_transitions();
+        this._bellWarmIcon.remove_all_transitions();
+        this._batteryWarmIcon.remove_all_transitions();
         this._box.remove_all_transitions();
         for (const [object, handlerId] of this._handlerIds)
             object.disconnect(handlerId);

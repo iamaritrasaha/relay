@@ -188,7 +188,7 @@ return unavailable(_that.reason);case _:
 
 class RsCapabilityState_Available extends RsCapabilityState {
   const RsCapabilityState_Available(): super._();
-
+  
 
 
 
@@ -220,7 +220,7 @@ String toString() {
 
 class RsCapabilityState_PermissionRequired extends RsCapabilityState {
   const RsCapabilityState_PermissionRequired({required this.reason}): super._();
-
+  
 
  final  String reason;
 
@@ -286,7 +286,7 @@ as String,
 
 class RsCapabilityState_Limited extends RsCapabilityState {
   const RsCapabilityState_Limited({required this.reason}): super._();
-
+  
 
  final  String reason;
 
@@ -352,7 +352,7 @@ as String,
 
 class RsCapabilityState_Unavailable extends RsCapabilityState {
   const RsCapabilityState_Unavailable({required this.reason}): super._();
-
+  
 
  final  String reason;
 
@@ -681,7 +681,7 @@ return peerError(_that.remoteRelayId,_that.code,_that.detail);case _:
 
 class RsContinuityEvent_SessionEstablished extends RsContinuityEvent {
   const RsContinuityEvent_SessionEstablished({required this.remoteRelayId, required this.directPath, required this.localPath}): super._();
-
+  
 
 @override final  String remoteRelayId;
  final  bool directPath;
@@ -753,7 +753,7 @@ as bool,
 
 class RsContinuityEvent_SessionEnded extends RsContinuityEvent {
   const RsContinuityEvent_SessionEnded({required this.remoteRelayId, required this.reason}): super._();
-
+  
 
 @override final  String remoteRelayId;
  final  String reason;
@@ -821,7 +821,7 @@ as String,
 
 class RsContinuityEvent_ManifestReceived extends RsContinuityEvent {
   const RsContinuityEvent_ManifestReceived({required this.remoteRelayId, required this.manifest}): super._();
-
+  
 
 @override final  String remoteRelayId;
  final  RsCapabilityManifest manifest;
@@ -889,7 +889,7 @@ as RsCapabilityManifest,
 
 class RsContinuityEvent_BatteryChanged extends RsContinuityEvent {
   const RsContinuityEvent_BatteryChanged({required this.remoteRelayId, this.percentage, required this.charging}): super._();
-
+  
 
 @override final  String remoteRelayId;
  final  int? percentage;
@@ -959,7 +959,7 @@ as RsChargingState,
 
 class RsContinuityEvent_ClipboardOffered extends RsContinuityEvent {
   const RsContinuityEvent_ClipboardOffered({required this.remoteRelayId, required this.text, required this.explicit}): super._();
-
+  
 
 @override final  String remoteRelayId;
  final  String text;
@@ -1029,7 +1029,7 @@ as bool,
 
 class RsContinuityEvent_NotificationPosted extends RsContinuityEvent {
   const RsContinuityEvent_NotificationPosted({required this.remoteRelayId, required this.key, required this.appLabel, this.title, this.body, required this.postedAtMs, required this.clearable}): super._();
-
+  
 
 @override final  String remoteRelayId;
  final  String key;
@@ -1107,7 +1107,7 @@ as bool,
 
 class RsContinuityEvent_NotificationRemoved extends RsContinuityEvent {
   const RsContinuityEvent_NotificationRemoved({required this.remoteRelayId, required this.key}): super._();
-
+  
 
 @override final  String remoteRelayId;
  final  String key;
@@ -1175,7 +1175,7 @@ as String,
 
 class RsContinuityEvent_ConversationsPage extends RsContinuityEvent {
   const RsContinuityEvent_ConversationsPage({required this.remoteRelayId, required final  List<RsSmsConversation> conversations, required this.hasMore}): _conversations = conversations,super._();
-
+  
 
 @override final  String remoteRelayId;
  final  List<RsSmsConversation> _conversations;
@@ -1251,7 +1251,7 @@ as bool,
 
 class RsContinuityEvent_MessagesPage extends RsContinuityEvent {
   const RsContinuityEvent_MessagesPage({required this.remoteRelayId, required this.conversationId, required final  List<RsSmsMessage> messages, required this.hasMore}): _messages = messages,super._();
-
+  
 
 @override final  String remoteRelayId;
  final  String conversationId;
@@ -1329,7 +1329,7 @@ as bool,
 
 class RsContinuityEvent_MessageReceived extends RsContinuityEvent {
   const RsContinuityEvent_MessageReceived({required this.remoteRelayId, required this.message}): super._();
-
+  
 
 @override final  String remoteRelayId;
  final  RsSmsMessage message;
@@ -1397,7 +1397,7 @@ as RsSmsMessage,
 
 class RsContinuityEvent_SmsSendCompleted extends RsContinuityEvent {
   const RsContinuityEvent_SmsSendCompleted({required this.remoteRelayId, required this.requestId, required this.sent, this.detail}): super._();
-
+  
 
 @override final  String remoteRelayId;
  final  String requestId;
@@ -1469,7 +1469,7 @@ as String?,
 
 class RsContinuityEvent_CallStateChanged extends RsContinuityEvent {
   const RsContinuityEvent_CallStateChanged({required this.remoteRelayId, required this.state}): super._();
-
+  
 
 @override final  String remoteRelayId;
  final  RsCallState state;
@@ -1537,7 +1537,7 @@ as RsCallState,
 
 class RsContinuityEvent_CallActionCompleted extends RsContinuityEvent {
   const RsContinuityEvent_CallActionCompleted({required this.remoteRelayId, required this.requestId, required this.accepted, this.detail}): super._();
-
+  
 
 @override final  String remoteRelayId;
  final  String requestId;
@@ -1609,7 +1609,7 @@ as String?,
 
 class RsContinuityEvent_PeerError extends RsContinuityEvent {
   const RsContinuityEvent_PeerError({required this.remoteRelayId, required this.code, required this.detail}): super._();
-
+  
 
 @override final  String remoteRelayId;
  final  String code;
@@ -1895,7 +1895,7 @@ return callAction(_that.requestId,_that.remoteRelayId,_that.action,_that.address
 
 class RsContinuityHostRequest_ApplyClipboard extends RsContinuityHostRequest {
   const RsContinuityHostRequest_ApplyClipboard({required this.requestId, required this.remoteRelayId, required this.text}): super._();
-
+  
 
 @override final  BigInt requestId;
 @override final  String remoteRelayId;
@@ -1965,7 +1965,7 @@ as String,
 
 class RsContinuityHostRequest_DismissNotification extends RsContinuityHostRequest {
   const RsContinuityHostRequest_DismissNotification({required this.requestId, required this.remoteRelayId, required this.key}): super._();
-
+  
 
 @override final  BigInt requestId;
 @override final  String remoteRelayId;
@@ -2035,7 +2035,7 @@ as String,
 
 class RsContinuityHostRequest_ListConversations extends RsContinuityHostRequest {
   const RsContinuityHostRequest_ListConversations({required this.requestId, required this.remoteRelayId, required this.limit, this.beforeMs}): super._();
-
+  
 
 @override final  BigInt requestId;
 @override final  String remoteRelayId;
@@ -2107,7 +2107,7 @@ as BigInt?,
 
 class RsContinuityHostRequest_ListMessages extends RsContinuityHostRequest {
   const RsContinuityHostRequest_ListMessages({required this.requestId, required this.remoteRelayId, required this.conversationId, required this.limit, this.beforeMs}): super._();
-
+  
 
 @override final  BigInt requestId;
 @override final  String remoteRelayId;
@@ -2181,7 +2181,7 @@ as BigInt?,
 
 class RsContinuityHostRequest_SendSms extends RsContinuityHostRequest {
   const RsContinuityHostRequest_SendSms({required this.requestId, required this.remoteRelayId, this.conversationId, required final  List<String> recipients, required this.body}): _recipients = recipients,super._();
-
+  
 
 @override final  BigInt requestId;
 @override final  String remoteRelayId;
@@ -2261,7 +2261,7 @@ as String,
 
 class RsContinuityHostRequest_CallAction extends RsContinuityHostRequest {
   const RsContinuityHostRequest_CallAction({required this.requestId, required this.remoteRelayId, required this.action, this.address}): super._();
-
+  
 
 @override final  BigInt requestId;
 @override final  String remoteRelayId;

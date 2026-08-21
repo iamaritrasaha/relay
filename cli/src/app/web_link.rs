@@ -9,11 +9,11 @@ use super::App;
 use crate::picker::PickerTarget;
 use crate::ui::Category;
 use crate::util;
+use qrcode::render::unicode;
+use qrcode::{EcLevel, QrCode};
 use relay_core::http::server::web::{WebConfig, WebI18n, WebSendConfig, WebSendEvent};
 use relay_core::http::server::{ServerConfigV2, start_with_port};
 use relay_core::model::transfer::FileContent;
-use qrcode::{EcLevel, QrCode};
-use qrcode::render::unicode;
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -164,7 +164,8 @@ impl App {
     /// code (light on dark), which phone scanners accept.
     fn web_qr(&self) -> Option<String> {
         let address = self.server.local_addresses().into_iter().next()?;
-        let code = QrCode::with_error_correction_level(format!("http://{address}"), EcLevel::L).ok()?;
+        let code =
+            QrCode::with_error_correction_level(format!("http://{address}"), EcLevel::L).ok()?;
         Some(code.render::<unicode::Dense1x2>().quiet_zone(false).build())
     }
 

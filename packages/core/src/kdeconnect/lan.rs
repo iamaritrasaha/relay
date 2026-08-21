@@ -9,13 +9,15 @@ use crate::kdeconnect::identity::{
 };
 use crate::kdeconnect::packet::{
     is_valid_device_id, ClipboardBody, ConnectivityReportBody, FindMyPhoneBody, NetworkPacket,
-    NotificationBody, PairBody, PingBody, MAX_IDENTITY_PACKET_BYTES, MAX_PACKET_BYTES,
-    PROTOCOL_VERSION,
+    NotificationBody, PairBody, PingBody, SmsMessage, SmsRequestConversationBody,
+    SmsRequestConversationsBody, MAX_IDENTITY_PACKET_BYTES, MAX_PACKET_BYTES, PROTOCOL_VERSION,
 };
 use crate::kdeconnect::pairing::{
     now_unix, PairState, PairingEffect, PairingFailReason, PairingSession, PAIRING_TIMEOUT_SECS,
 };
-use crate::kdeconnect::{DeviceSnapshot, KdeConnectEvent, KdeNotification, TrustedDevice};
+use crate::kdeconnect::{
+    DeviceSnapshot, KdeConnectEvent, KdeNotification, KdeSmsConversation, TrustedDevice,
+};
 use anyhow::{Context, Result};
 use rustls::client::danger::{HandshakeSignatureValid, ServerCertVerified, ServerCertVerifier};
 use rustls::crypto::{
@@ -161,6 +163,7 @@ pub(crate) struct LanInner {
     connectivity: Mutex<HashMap<String, ConnectivityState>>,
     clipboard: Mutex<HashMap<String, i64>>,
     notifications: Mutex<HashMap<String, Vec<KdeNotification>>>,
+    sms: Mutex<HashMap<String, HashMap<i64, HashMap<i64, SmsMessage>>>>,
     peer_capabilities: Mutex<HashMap<String, (Vec<String>, Vec<String>)>>,
     last_connect: Mutex<HashMap<String, Instant>>,
     mismatches: Mutex<std::collections::HashSet<String>>,
@@ -194,6 +197,7 @@ impl LanInner {
             connectivity: Mutex::new(HashMap::new()),
             clipboard: Mutex::new(HashMap::new()),
             notifications: Mutex::new(HashMap::new()),
+            sms: Mutex::new(HashMap::new()),
             peer_capabilities: Mutex::new(HashMap::new()),
             last_connect: Mutex::new(HashMap::new()),
             mismatches: Mutex::new(std::collections::HashSet::new()),
@@ -220,7 +224,8 @@ impl LanInner {
             let paired = trust.get(&observed.device_id).is_some();
             let b = battery_map.get(&observed.device_id);
             let connectivity = connectivity_map.get(&observed.device_id);
-            let selected = connectivity.and_then(|state| state.report.selected_signal().map(|(_, signal)| signal));
+            let selected = connectivity
+                .and_then(|state| state.report.selected_signal().map(|(_, signal)| signal));
             let (inc, out_caps) = caps_map
                 .get(&observed.device_id)
                 .cloned()
@@ -250,7 +255,8 @@ impl LanInner {
             }
             let b = battery_map.get(&trusted.device_id);
             let connectivity = connectivity_map.get(&trusted.device_id);
-            let selected = connectivity.and_then(|state| state.report.selected_signal().map(|(_, signal)| signal));
+            let selected = connectivity
+                .and_then(|state| state.report.selected_signal().map(|(_, signal)| signal));
             let (inc, out_caps) = caps_map
                 .get(&trusted.device_id)
                 .cloned()
@@ -387,6 +393,7 @@ impl LanInner {
         self.connectivity.lock().await.remove(device_id);
         self.clipboard.lock().await.remove(device_id);
         self.notifications.lock().await.remove(device_id);
+        self.sms.lock().await.remove(device_id);
         self.peer_capabilities.lock().await.remove(device_id);
         let _ = self.event_tx.send(KdeConnectEvent::NotificationsChanged {
             device_id: device_id.to_string(),
@@ -416,8 +423,11 @@ impl LanInner {
         if !is_paired {
             anyhow::bail!("device not paired");
         }
-        self.ensure_peer_accepts(device_id, crate::kdeconnect::PACKET_TYPE_FINDMYPHONE_REQUEST)
-            .await?;
+        self.ensure_peer_accepts(
+            device_id,
+            crate::kdeconnect::PACKET_TYPE_FINDMYPHONE_REQUEST,
+        )
+        .await?;
         let pkt = FindMyPhoneBody::request().serialize();
         self.send_packet(device_id, &pkt).await
     }
@@ -452,9 +462,14 @@ impl LanInner {
         let connections = self.connections.lock().await;
         let peer_capabilities = self.peer_capabilities.lock().await;
         for t in trusted {
-            let peer_accepts_clipboard = peer_capabilities
-                .get(&t.device_id)
-                .is_some_and(|(incoming, _)| incoming.iter().any(|capability| capability == crate::kdeconnect::PACKET_TYPE_CLIPBOARD_CONNECT));
+            let peer_accepts_clipboard =
+                peer_capabilities
+                    .get(&t.device_id)
+                    .is_some_and(|(incoming, _)| {
+                        incoming.iter().any(|capability| {
+                            capability == crate::kdeconnect::PACKET_TYPE_CLIPBOARD_CONNECT
+                        })
+                    });
             if peer_accepts_clipboard {
                 if let Some(conn) = connections.get(&t.device_id) {
                     let _ = conn.packets.send(pkt.clone()).await;
@@ -473,8 +488,11 @@ impl LanInner {
         if !is_paired {
             anyhow::bail!("device not paired");
         }
-        self.ensure_peer_accepts(device_id, crate::kdeconnect::PACKET_TYPE_NOTIFICATION_REQUEST)
-            .await?;
+        self.ensure_peer_accepts(
+            device_id,
+            crate::kdeconnect::PACKET_TYPE_NOTIFICATION_REQUEST,
+        )
+        .await?;
         let pkt = NotificationBody::request().serialize();
         self.send_packet(device_id, &pkt).await
     }
@@ -483,7 +501,9 @@ impl LanInner {
         let peer_capabilities = self.peer_capabilities.lock().await;
         let peer_accepts = peer_capabilities
             .get(device_id)
-            .is_some_and(|(incoming, _)| incoming.iter().any(|capability| capability == packet_type));
+            .is_some_and(|(incoming, _)| {
+                incoming.iter().any(|capability| capability == packet_type)
+            });
         if !peer_accepts {
             anyhow::bail!("peer does not advertise support for {packet_type}");
         }
@@ -497,6 +517,156 @@ impl LanInner {
             .get(device_id)
             .cloned()
             .unwrap_or_default()
+    }
+
+    pub async fn get_sms_conversations(&self, device_id: &str) -> Vec<KdeSmsConversation> {
+        let sms = self.sms.lock().await;
+        let Some(threads) = sms.get(device_id) else {
+            return Vec::new();
+        };
+        let mut conversations: Vec<_> = threads
+            .iter()
+            .map(|(thread_id, messages)| {
+                let latest = messages
+                    .values()
+                    .max_by_key(|message| (message.date, message.id))
+                    .cloned();
+                let participants = latest
+                    .as_ref()
+                    .map(|message| message.addresses.clone())
+                    .unwrap_or_default();
+                let unread_count = messages
+                    .values()
+                    .filter(|message| message.message_type == 1 && message.read == Some(false))
+                    .count() as i32;
+                KdeSmsConversation {
+                    thread_id: *thread_id,
+                    participants,
+                    latest_message: latest,
+                    unread_count,
+                }
+            })
+            .collect();
+        conversations.sort_by(|a, b| {
+            b.latest_message
+                .as_ref()
+                .map(|m| (m.date, m.id))
+                .cmp(&a.latest_message.as_ref().map(|m| (m.date, m.id)))
+        });
+        conversations
+    }
+
+    pub async fn get_sms_messages(&self, device_id: &str, thread_id: i64) -> Vec<SmsMessage> {
+        let mut messages = self
+            .sms
+            .lock()
+            .await
+            .get(device_id)
+            .and_then(|threads| threads.get(&thread_id))
+            .map(|items| items.values().cloned().collect::<Vec<_>>())
+            .unwrap_or_default();
+        messages.sort_by_key(|message| (message.date, message.id));
+        messages
+    }
+
+    pub async fn request_sms_conversations(&self, device_id: &str) -> Result<()> {
+        if self.trust.lock().await.get(device_id).is_none() {
+            anyhow::bail!("device not paired");
+        }
+        self.ensure_peer_accepts(
+            device_id,
+            crate::kdeconnect::PACKET_TYPE_SMS_REQUEST_CONVERSATIONS,
+        )
+        .await?;
+        self.send_packet(
+            device_id,
+            &SmsRequestConversationsBody::request().serialize(),
+        )
+        .await
+    }
+
+    pub async fn request_sms_conversation(
+        &self,
+        device_id: &str,
+        thread_id: i64,
+        before: Option<i64>,
+        limit: u16,
+    ) -> Result<()> {
+        if self.trust.lock().await.get(device_id).is_none() {
+            anyhow::bail!("device not paired");
+        }
+        self.ensure_peer_accepts(
+            device_id,
+            crate::kdeconnect::PACKET_TYPE_SMS_REQUEST_CONVERSATION,
+        )
+        .await?;
+        self.send_packet(
+            device_id,
+            &SmsRequestConversationBody::request(thread_id, before, Some(limit.min(100)))
+                .serialize(),
+        )
+        .await
+    }
+
+    pub async fn send_sms(
+        &self,
+        device_id: &str,
+        addresses: Vec<String>,
+        body: &str,
+        sub_id: Option<i32>,
+    ) -> Result<()> {
+        if self.trust.lock().await.get(device_id).is_none() {
+            anyhow::bail!("device not paired");
+        }
+        self.ensure_peer_accepts(device_id, crate::kdeconnect::PACKET_TYPE_SMS_REQUEST)
+            .await?;
+        let packet = crate::kdeconnect::packet::SmsRequestBody {
+            addresses,
+            message_body: body.to_string(),
+            sub_id,
+        }
+        .to_packet();
+        self.send_packet(device_id, &packet.serialize()).await
+    }
+
+    pub async fn send_mute_call(&self, device_id: &str) -> Result<()> {
+        if self.trust.lock().await.get(device_id).is_none() {
+            anyhow::bail!("device not paired");
+        }
+        self.ensure_peer_accepts(
+            device_id,
+            crate::kdeconnect::PACKET_TYPE_TELEPHONY_REQUEST_MUTE,
+        )
+        .await?;
+        let packet = crate::kdeconnect::packet::TelephonyRequestMuteBody::request();
+        self.send_packet(device_id, &packet.serialize()).await
+    }
+
+    async fn merge_sms_messages(&self, device_id: &str, messages: Vec<SmsMessage>) {
+        let message_count = messages.len();
+        let event_messages = messages.clone();
+        {
+            let mut sms = self.sms.lock().await;
+            let threads = sms.entry(device_id.to_string()).or_default();
+            for message in messages {
+                threads
+                    .entry(message.thread_id)
+                    .or_default()
+                    .insert(message.id, message);
+            }
+        }
+        let conversations = self.get_sms_conversations(device_id).await;
+        tracing::info!(
+            "[KDE SMS] device={} threads={} messages={}",
+            device_id,
+            conversations.len(),
+            message_count
+        );
+        let _ = self.event_tx.send(KdeConnectEvent::SmsChanged {
+            device_id: device_id.to_string(),
+            conversations,
+            messages: event_messages,
+        });
     }
 
     async fn remember_trust(
@@ -1116,11 +1286,27 @@ async fn finish_secure_link(
     // If paired on connect, request notifications once
     if inner.trust.lock().await.get(&secure.device_id).is_some()
         && inner
-            .ensure_peer_accepts(&secure.device_id, crate::kdeconnect::PACKET_TYPE_NOTIFICATION_REQUEST)
+            .ensure_peer_accepts(
+                &secure.device_id,
+                crate::kdeconnect::PACKET_TYPE_NOTIFICATION_REQUEST,
+            )
             .await
             .is_ok()
     {
         let _ = tx.send(NotificationBody::request().serialize()).await;
+    }
+    if inner.trust.lock().await.get(&secure.device_id).is_some()
+        && inner
+            .ensure_peer_accepts(
+                &secure.device_id,
+                crate::kdeconnect::PACKET_TYPE_SMS_REQUEST_CONVERSATIONS,
+            )
+            .await
+            .is_ok()
+    {
+        let _ = tx
+            .send(SmsRequestConversationsBody::request().serialize())
+            .await;
     }
 
     let device_id = secure.device_id.clone();
@@ -1190,7 +1376,9 @@ async fn finish_secure_link(
                             );
                             read_inner.emit_devices().await;
                         } else if let Ok(report) = packet.as_connectivity_report() {
-                            let selected = report.selected_signal().map(|(_, signal)| (signal.network_type.clone(), signal.signal_strength));
+                            let selected = report.selected_signal().map(|(_, signal)| {
+                                (signal.network_type.clone(), signal.signal_strength)
+                            });
                             tracing::info!(
                                 "[KDE Connectivity] device={} signals={} selectedType={} selectedLevel={}",
                                 read_id,
@@ -1200,7 +1388,10 @@ async fn finish_secure_link(
                             );
                             read_inner.connectivity.lock().await.insert(
                                 read_id.clone(),
-                                ConnectivityState { report, stale: false },
+                                ConnectivityState {
+                                    report,
+                                    stale: false,
+                                },
                             );
                             read_inner.emit_devices().await;
                         } else if let Ok(clipboard) = packet.as_clipboard() {
@@ -1268,6 +1459,20 @@ async fn finish_secure_link(
                                         device_id: read_id.clone(),
                                         notifications: current_notifs,
                                     });
+                        } else if let Ok(sms) = packet.as_sms_messages() {
+                            read_inner.merge_sms_messages(&read_id, sms.messages).await;
+                        } else if let Ok(telephony) = packet.as_telephony() {
+                            let event = crate::kdeconnect::KdeTelephonyEvent {
+                                event: telephony.event,
+                                is_cancel: telephony.is_cancel,
+                                phone_number: telephony.phone_number,
+                                contact_name: telephony.contact_name,
+                                phone_thumbnail: telephony.phone_thumbnail,
+                            };
+                            let _ = read_inner.event_tx.send(KdeConnectEvent::TelephonyReceived {
+                                device_id: read_id.clone(),
+                                event,
+                            });
                         } else {
                             tracing::debug!(
                                 "[KDE Connect] Ignored unhandled packet type: {}",

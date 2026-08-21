@@ -22,7 +22,9 @@ pub enum ContinuityAuthorization {
     /// The device is explicitly blocked.
     DeniedBlocked,
     /// The device is trusted but the user has not enabled this capability.
-    DeniedNotEnabled { capability: ContinuityCapability },
+    DeniedNotEnabled {
+        capability: ContinuityCapability,
+    },
     /// The peer named a capability this build does not implement.
     DeniedUnknownCapability,
 }
