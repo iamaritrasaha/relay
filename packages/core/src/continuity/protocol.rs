@@ -467,8 +467,12 @@ pub enum ContinuityPayload {
     /// Ask the peer to (re)send its manifest.
     ManifestRequest,
     /// Ask the peer to start streaming these capabilities to us.
-    Subscribe { capabilities: Vec<ContinuityCapability> },
-    Unsubscribe { capabilities: Vec<ContinuityCapability> },
+    Subscribe {
+        capabilities: Vec<ContinuityCapability>,
+    },
+    Unsubscribe {
+        capabilities: Vec<ContinuityCapability>,
+    },
     Heartbeat,
 
     Battery(BatteryState),
@@ -652,7 +656,10 @@ impl ContinuityEnvelopeV1 {
     }
 
     /// Defence in depth: the echoed sender must equal the proven remote id.
-    pub fn check_sender(&self, proven_remote_relay_id: &str) -> Result<(), ContinuityProtocolError> {
+    pub fn check_sender(
+        &self,
+        proven_remote_relay_id: &str,
+    ) -> Result<(), ContinuityProtocolError> {
         if self.sender_relay_id == proven_remote_relay_id {
             Ok(())
         } else {
@@ -700,12 +707,20 @@ fn validate_payload(payload: &ContinuityPayload) -> Result<(), ContinuityProtoco
         }
         ContinuityPayload::ClipboardUpdate(update) => {
             bound("clipboard.text", &update.text, MAX_CLIPBOARD_TEXT_BYTES)?;
-            non_empty("clipboard.content_fingerprint", &update.content_fingerprint, 64)?;
+            non_empty(
+                "clipboard.content_fingerprint",
+                &update.content_fingerprint,
+                64,
+            )?;
             non_empty("clipboard.origin_relay_id", &update.origin_relay_id, 64)
         }
         ContinuityPayload::Notification(event) => {
             non_empty("notification.key", &event.key, MAX_KEY_BYTES)?;
-            non_empty("notification.app_label", &event.app_label, MAX_APP_LABEL_BYTES)?;
+            non_empty(
+                "notification.app_label",
+                &event.app_label,
+                MAX_APP_LABEL_BYTES,
+            )?;
             bound_opt(
                 "notification.title",
                 event.title.as_ref(),
@@ -793,9 +808,11 @@ fn validate_payload(payload: &ContinuityPayload) -> Result<(), ContinuityProtoco
                 MAX_MESSAGE_ID_BYTES,
             )?;
             match &result.outcome {
-                SmsSendOutcome::Sent { message_id } => {
-                    bound_opt("sms_send_result.message_id", message_id.as_ref(), MAX_KEY_BYTES)
-                }
+                SmsSendOutcome::Sent { message_id } => bound_opt(
+                    "sms_send_result.message_id",
+                    message_id.as_ref(),
+                    MAX_KEY_BYTES,
+                ),
                 SmsSendOutcome::Rejected { reason } | SmsSendOutcome::Failed { reason } => {
                     bound("sms_send_result.reason", reason, MAX_REASON_BYTES)
                 }
@@ -803,7 +820,11 @@ fn validate_payload(payload: &ContinuityPayload) -> Result<(), ContinuityProtoco
             }
         }
         ContinuityPayload::CallState(state) => {
-            bound_opt("call_state.address", state.address.as_ref(), MAX_ADDRESS_BYTES)?;
+            bound_opt(
+                "call_state.address",
+                state.address.as_ref(),
+                MAX_ADDRESS_BYTES,
+            )?;
             bound_opt(
                 "call_state.display_name",
                 state.display_name.as_ref(),
@@ -859,7 +880,9 @@ fn validate_payload(payload: &ContinuityPayload) -> Result<(), ContinuityProtoco
 
 fn check_page_limit(limit: u32) -> Result<(), ContinuityProtocolError> {
     if limit == 0 || limit > MAX_PAGE_SIZE {
-        return Err(ContinuityProtocolError::OutOfRange { field: "page.limit" });
+        return Err(ContinuityProtocolError::OutOfRange {
+            field: "page.limit",
+        });
     }
     Ok(())
 }
@@ -897,6 +920,10 @@ fn validate_sms_message(message: &SmsMessage) -> Result<(), ContinuityProtocolEr
         MAX_KEY_BYTES,
     )?;
     non_empty("sms_message.message_id", &message.message_id, MAX_KEY_BYTES)?;
-    bound_opt("sms_message.address", message.address.as_ref(), MAX_ADDRESS_BYTES)?;
+    bound_opt(
+        "sms_message.address",
+        message.address.as_ref(),
+        MAX_ADDRESS_BYTES,
+    )?;
     bound("sms_message.body", &message.body, MAX_SMS_BODY_BYTES)
 }

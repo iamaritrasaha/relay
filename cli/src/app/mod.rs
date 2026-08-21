@@ -12,6 +12,7 @@ use crate::slots::Slots;
 use crate::storage;
 use crate::ui::{Category, Ui};
 use crossterm::event::{Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
+use receive::{Answer, PendingReceive, ReceiveSession};
 use relay_core::discovery::{
     DEFAULT_DISCOVERY_TIMEOUT, DeviceIdentity, DiscoveryConfig, DiscoveryEvent, DiscoveryHandle,
 };
@@ -21,7 +22,6 @@ use relay_core::http::server::{ServerConfigV2, ServerHandle, start_with_port};
 use relay_core::model::discovery::ProtocolType;
 use relay_core::multicast::{DEFAULT_MULTICAST_GROUP, DEFAULT_MULTICAST_GROUP_V6, DEFAULT_PORT};
 use relay_core::util::interface::{InterfaceFilter, local_interface_addresses};
-use receive::{Answer, PendingReceive, ReceiveSession};
 use sending::SendState;
 use std::path::PathBuf;
 use std::sync::Arc;

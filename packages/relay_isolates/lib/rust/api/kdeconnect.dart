@@ -7,11 +7,9 @@ import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 import 'package:freezed_annotation/freezed_annotation.dart' hide protected;
 import 'package:relay_isolates/rust/frb_generated.dart';
 
-export 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart' show AnyhowException;
-
 part 'kdeconnect.freezed.dart';
 
-// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `from`, `from`, `from`, `from`, `from`, `from`, `try_from`
+// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `try_from`
 // These functions are ignored (category: IgnoreBecauseExplicitAttribute): `_keep_frb_imports`
 
 Future<RsKdeConnectIdentity> kdeconnectGenerateIdentity({required String deviceName}) =>
@@ -28,7 +26,13 @@ abstract class RsKdeConnect implements RustOpaqueInterface {
 
   Future<List<RsKdeNotification>> getNotifications({required String deviceId});
 
+  Future<List<RsKdeSmsConversation>> getSmsConversations({required String deviceId});
+
+  Future<List<RsKdeSmsMessage>> getSmsMessages({required String deviceId, required PlatformInt64 threadId});
+
   Stream<RsKdeConnectEvent> listen();
+
+  Future<void> muteCall({required String deviceId});
 
   Future<void> rejectPair({required String deviceId});
 
@@ -36,11 +40,17 @@ abstract class RsKdeConnect implements RustOpaqueInterface {
 
   Future<void> requestPair({required String deviceId});
 
+  Future<void> requestSmsConversation({required String deviceId, required PlatformInt64 threadId, PlatformInt64? before});
+
+  Future<void> requestSmsConversations({required String deviceId});
+
   Future<void> sendClipboard({required String deviceId, required String content, required PlatformInt64 timestampMs});
 
   Future<void> sendClipboardToAllPaired({required String content, required PlatformInt64 timestampMs});
 
   Future<void> sendPing({required String deviceId, String? message});
+
+  Future<void> sendSms({required String deviceId, required List<String> addresses, required String body, int? subId});
 
   Future<List<RsKdeConnectDevice>> snapshot();
 
@@ -159,6 +169,15 @@ sealed class RsKdeConnectEvent with _$RsKdeConnectEvent {
     required String deviceId,
     required List<RsKdeNotification> notifications,
   }) = RsKdeConnectEvent_NotificationsChanged;
+  const factory RsKdeConnectEvent.smsChanged({
+    required String deviceId,
+    required List<RsKdeSmsConversation> conversations,
+    required List<RsKdeSmsMessage> messages,
+  }) = RsKdeConnectEvent_SmsChanged;
+  const factory RsKdeConnectEvent.telephonyReceived({
+    required String deviceId,
+    required RsKdeTelephonyEvent event,
+  }) = RsKdeConnectEvent_TelephonyReceived;
 }
 
 class RsKdeConnectIdentity {
@@ -256,4 +275,140 @@ class RsKdeNotification {
           time == other.time &&
           isClearable == other.isClearable &&
           silent == other.silent;
+}
+
+class RsKdeSmsAttachment {
+  final String partId;
+  final String? mimeType;
+  final String? uniqueIdentifier;
+
+  const RsKdeSmsAttachment({
+    required this.partId,
+    this.mimeType,
+    this.uniqueIdentifier,
+  });
+
+  @override
+  int get hashCode => partId.hashCode ^ mimeType.hashCode ^ uniqueIdentifier.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is RsKdeSmsAttachment &&
+          runtimeType == other.runtimeType &&
+          partId == other.partId &&
+          mimeType == other.mimeType &&
+          uniqueIdentifier == other.uniqueIdentifier;
+}
+
+class RsKdeSmsConversation {
+  final PlatformInt64 threadId;
+  final List<String> participants;
+  final RsKdeSmsMessage? latestMessage;
+  final int unreadCount;
+
+  const RsKdeSmsConversation({
+    required this.threadId,
+    required this.participants,
+    this.latestMessage,
+    required this.unreadCount,
+  });
+
+  @override
+  int get hashCode => threadId.hashCode ^ participants.hashCode ^ latestMessage.hashCode ^ unreadCount.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is RsKdeSmsConversation &&
+          runtimeType == other.runtimeType &&
+          threadId == other.threadId &&
+          participants == other.participants &&
+          latestMessage == other.latestMessage &&
+          unreadCount == other.unreadCount;
+}
+
+class RsKdeSmsMessage {
+  final PlatformInt64 id;
+  final PlatformInt64 threadId;
+  final List<String> addresses;
+  final String body;
+  final PlatformInt64 date;
+  final int messageType;
+  final bool? read;
+
+  /// Which SIM the message belongs to. Carried through so a reply goes out on
+  /// the same subscription the thread is already on, which matters on the
+  /// dual-SIM phones this is most often used with.
+  final int? subId;
+  final List<RsKdeSmsAttachment> attachments;
+
+  const RsKdeSmsMessage({
+    required this.id,
+    required this.threadId,
+    required this.addresses,
+    required this.body,
+    required this.date,
+    required this.messageType,
+    this.read,
+    this.subId,
+    required this.attachments,
+  });
+
+  @override
+  int get hashCode =>
+      id.hashCode ^
+      threadId.hashCode ^
+      addresses.hashCode ^
+      body.hashCode ^
+      date.hashCode ^
+      messageType.hashCode ^
+      read.hashCode ^
+      subId.hashCode ^
+      attachments.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is RsKdeSmsMessage &&
+          runtimeType == other.runtimeType &&
+          id == other.id &&
+          threadId == other.threadId &&
+          addresses == other.addresses &&
+          body == other.body &&
+          date == other.date &&
+          messageType == other.messageType &&
+          read == other.read &&
+          subId == other.subId &&
+          attachments == other.attachments;
+}
+
+class RsKdeTelephonyEvent {
+  final String event;
+  final bool isCancel;
+  final String? phoneNumber;
+  final String? contactName;
+  final String? phoneThumbnail;
+
+  const RsKdeTelephonyEvent({
+    required this.event,
+    required this.isCancel,
+    this.phoneNumber,
+    this.contactName,
+    this.phoneThumbnail,
+  });
+
+  @override
+  int get hashCode => event.hashCode ^ isCancel.hashCode ^ phoneNumber.hashCode ^ contactName.hashCode ^ phoneThumbnail.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is RsKdeTelephonyEvent &&
+          runtimeType == other.runtimeType &&
+          event == other.event &&
+          isCancel == other.isCancel &&
+          phoneNumber == other.phoneNumber &&
+          contactName == other.contactName &&
+          phoneThumbnail == other.phoneThumbnail;
 }

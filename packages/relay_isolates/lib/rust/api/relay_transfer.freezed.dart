@@ -249,7 +249,7 @@ return cancelled(_that.transferId);case _:
 
 class RsRelayTransferEvent_OutgoingStarted extends RsRelayTransferEvent {
   const RsRelayTransferEvent_OutgoingStarted({required this.transferId, required this.totalBytes, required this.origin}): super._();
-
+  
 
 @override final  String transferId;
  final  BigInt totalBytes;
@@ -319,7 +319,7 @@ as String,
 
 class RsRelayTransferEvent_Accepted extends RsRelayTransferEvent {
   const RsRelayTransferEvent_Accepted({required this.transferId, required this.sessionId, required final  List<String> acceptedFileIds, required this.totalBytes, required this.origin}): _acceptedFileIds = acceptedFileIds,super._();
-
+  
 
 @override final  String transferId;
  final  String sessionId;
@@ -399,7 +399,7 @@ as String,
 
 class RsRelayTransferEvent_Declined extends RsRelayTransferEvent {
   const RsRelayTransferEvent_Declined({required this.transferId, this.fileId, required this.origin}): super._();
-
+  
 
 @override final  String transferId;
  final  String? fileId;
@@ -469,7 +469,7 @@ as String,
 
 class RsRelayTransferEvent_FileStarted extends RsRelayTransferEvent {
   const RsRelayTransferEvent_FileStarted({required this.transferId, required this.sessionId, required this.fileId, required this.fileName, required this.fileIndex, required this.fileCount, required this.totalBytes, required this.origin}): super._();
-
+  
 
 @override final  String transferId;
  final  String sessionId;
@@ -549,7 +549,7 @@ as String,
 
 class RsRelayTransferEvent_FileProgress extends RsRelayTransferEvent {
   const RsRelayTransferEvent_FileProgress({required this.transferId, required this.sessionId, required this.fileId, required this.bytes, required this.totalBytes, required this.origin}): super._();
-
+  
 
 @override final  String transferId;
  final  String sessionId;
@@ -625,7 +625,7 @@ as String,
 
 class RsRelayTransferEvent_OverallProgress extends RsRelayTransferEvent {
   const RsRelayTransferEvent_OverallProgress({required this.transferId, required this.sessionId, required this.bytes, required this.totalBytes, required this.origin}): super._();
-
+  
 
 @override final  String transferId;
  final  String sessionId;
@@ -699,7 +699,7 @@ as String,
 
 class RsRelayTransferEvent_Completed extends RsRelayTransferEvent {
   const RsRelayTransferEvent_Completed({required this.transferId, this.sessionId, required this.bytes, required this.origin}): super._();
-
+  
 
 @override final  String transferId;
  final  String? sessionId;
@@ -771,7 +771,7 @@ as String,
 
 class RsRelayTransferEvent_Failed extends RsRelayTransferEvent {
   const RsRelayTransferEvent_Failed({required this.transferId, required this.category}): super._();
-
+  
 
 @override final  String transferId;
  final  String category;
@@ -839,7 +839,7 @@ as String,
 
 class RsRelayTransferEvent_Cancelled extends RsRelayTransferEvent {
   const RsRelayTransferEvent_Cancelled({required this.transferId}): super._();
-
+  
 
 @override final  String transferId;
 

@@ -236,7 +236,7 @@ return cancelled();case _:
 
 class RsRelayAnywhereEvent_Starting extends RsRelayAnywhereEvent {
   const RsRelayAnywhereEvent_Starting(): super._();
-
+  
 
 
 
@@ -268,7 +268,7 @@ String toString() {
 
 class RsRelayAnywhereEvent_AddressReady extends RsRelayAnywhereEvent {
   const RsRelayAnywhereEvent_AddressReady({required this.address, required this.localRelayId}): super._();
-
+  
 
  final  String address;
  final  String localRelayId;
@@ -336,7 +336,7 @@ as String,
 
 class RsRelayAnywhereEvent_WaitingForPeer extends RsRelayAnywhereEvent {
   const RsRelayAnywhereEvent_WaitingForPeer(): super._();
-
+  
 
 
 
@@ -368,7 +368,7 @@ String toString() {
 
 class RsRelayAnywhereEvent_Connecting extends RsRelayAnywhereEvent {
   const RsRelayAnywhereEvent_Connecting(): super._();
-
+  
 
 
 
@@ -400,7 +400,7 @@ String toString() {
 
 class RsRelayAnywhereEvent_PeerConnected extends RsRelayAnywhereEvent {
   const RsRelayAnywhereEvent_PeerConnected(): super._();
-
+  
 
 
 
@@ -432,7 +432,7 @@ String toString() {
 
 class RsRelayAnywhereEvent_TlsEstablished extends RsRelayAnywhereEvent {
   const RsRelayAnywhereEvent_TlsEstablished(): super._();
-
+  
 
 
 
@@ -464,7 +464,7 @@ String toString() {
 
 class RsRelayAnywhereEvent_PeerAuthenticated extends RsRelayAnywhereEvent {
   const RsRelayAnywhereEvent_PeerAuthenticated({required this.remoteRelayId}): super._();
-
+  
 
  final  String remoteRelayId;
 
@@ -530,7 +530,7 @@ as String,
 
 class RsRelayAnywhereEvent_IncomingBatch extends RsRelayAnywhereEvent {
   const RsRelayAnywhereEvent_IncomingBatch({required this.transferId, required final  List<RsRelayIncomingFile> files, required this.remoteRelayId}): _files = files,super._();
-
+  
 
  final  BigInt transferId;
  final  List<RsRelayIncomingFile> _files;
@@ -606,7 +606,7 @@ as String,
 
 class RsRelayAnywhereEvent_Transferring extends RsRelayAnywhereEvent {
   const RsRelayAnywhereEvent_Transferring({required this.bytes, required this.total}): super._();
-
+  
 
  final  BigInt bytes;
  final  BigInt total;
@@ -674,7 +674,7 @@ as BigInt,
 
 class RsRelayAnywhereEvent_Completed extends RsRelayAnywhereEvent {
   const RsRelayAnywhereEvent_Completed({required this.path, required this.bytes, required this.localRelayId, required this.remoteRelayId, required this.durationMs}): super._();
-
+  
 
  final  String path;
  final  BigInt bytes;
@@ -748,7 +748,7 @@ as BigInt,
 
 class RsRelayAnywhereEvent_Failed extends RsRelayAnywhereEvent {
   const RsRelayAnywhereEvent_Failed({required this.message, required this.category, this.stage}): super._();
-
+  
 
  final  String message;
  final  String category;
@@ -818,7 +818,7 @@ as String?,
 
 class RsRelayAnywhereEvent_Cancelled extends RsRelayAnywhereEvent {
   const RsRelayAnywhereEvent_Cancelled(): super._();
-
+  
 
 
 
@@ -1070,7 +1070,7 @@ return stopped();case _:
 
 class RsRelayAnywhereListenerEvent_AddressReady extends RsRelayAnywhereListenerEvent {
   const RsRelayAnywhereListenerEvent_AddressReady({required this.address, required this.localRelayId}): super._();
-
+  
 
  final  String address;
  final  String localRelayId;
@@ -1138,7 +1138,7 @@ as String,
 
 class RsRelayAnywhereListenerEvent_SessionStarting extends RsRelayAnywhereListenerEvent {
   const RsRelayAnywhereListenerEvent_SessionStarting({required this.sessionId}): super._();
-
+  
 
  final  BigInt sessionId;
 
@@ -1204,7 +1204,7 @@ as BigInt,
 
 class RsRelayAnywhereListenerEvent_SessionWaitingForPeer extends RsRelayAnywhereListenerEvent {
   const RsRelayAnywhereListenerEvent_SessionWaitingForPeer({required this.sessionId}): super._();
-
+  
 
  final  BigInt sessionId;
 
@@ -1270,7 +1270,7 @@ as BigInt,
 
 class RsRelayAnywhereListenerEvent_SessionPeerConnected extends RsRelayAnywhereListenerEvent {
   const RsRelayAnywhereListenerEvent_SessionPeerConnected({required this.sessionId}): super._();
-
+  
 
  final  BigInt sessionId;
 
@@ -1336,7 +1336,7 @@ as BigInt,
 
 class RsRelayAnywhereListenerEvent_SessionTlsEstablished extends RsRelayAnywhereListenerEvent {
   const RsRelayAnywhereListenerEvent_SessionTlsEstablished({required this.sessionId}): super._();
-
+  
 
  final  BigInt sessionId;
 
@@ -1402,7 +1402,7 @@ as BigInt,
 
 class RsRelayAnywhereListenerEvent_SessionPeerAuthenticated extends RsRelayAnywhereListenerEvent {
   const RsRelayAnywhereListenerEvent_SessionPeerAuthenticated({required this.sessionId, required this.remoteRelayId}): super._();
-
+  
 
  final  BigInt sessionId;
  final  String remoteRelayId;
@@ -1470,7 +1470,7 @@ as String,
 
 class RsRelayAnywhereListenerEvent_SessionIncomingBatch extends RsRelayAnywhereListenerEvent {
   const RsRelayAnywhereListenerEvent_SessionIncomingBatch({required this.sessionId, required this.transferId, required final  List<RsRelayIncomingFile> files, required this.remoteRelayId}): _files = files,super._();
-
+  
 
  final  BigInt sessionId;
  final  BigInt transferId;
@@ -1548,7 +1548,7 @@ as String,
 
 class RsRelayAnywhereListenerEvent_SessionTransferring extends RsRelayAnywhereListenerEvent {
   const RsRelayAnywhereListenerEvent_SessionTransferring({required this.sessionId, required this.bytes, required this.total}): super._();
-
+  
 
  final  BigInt sessionId;
  final  BigInt bytes;
@@ -1618,7 +1618,7 @@ as BigInt,
 
 class RsRelayAnywhereListenerEvent_SessionCompleted extends RsRelayAnywhereListenerEvent {
   const RsRelayAnywhereListenerEvent_SessionCompleted({required this.sessionId, required this.path, required this.bytes, required this.localRelayId, required this.remoteRelayId, required this.durationMs}): super._();
-
+  
 
  final  BigInt sessionId;
  final  String path;
@@ -1694,7 +1694,7 @@ as BigInt,
 
 class RsRelayAnywhereListenerEvent_SessionCancelled extends RsRelayAnywhereListenerEvent {
   const RsRelayAnywhereListenerEvent_SessionCancelled({required this.sessionId}): super._();
-
+  
 
  final  BigInt sessionId;
 
@@ -1760,7 +1760,7 @@ as BigInt,
 
 class RsRelayAnywhereListenerEvent_SessionFailed extends RsRelayAnywhereListenerEvent {
   const RsRelayAnywhereListenerEvent_SessionFailed({required this.sessionId, required this.message, required this.category, this.stage}): super._();
-
+  
 
  final  BigInt sessionId;
  final  String message;
@@ -1832,7 +1832,7 @@ as String?,
 
 class RsRelayAnywhereListenerEvent_Stopped extends RsRelayAnywhereListenerEvent {
   const RsRelayAnywhereListenerEvent_Stopped(): super._();
-
+  
 
 
 

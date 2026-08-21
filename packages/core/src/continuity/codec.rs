@@ -9,9 +9,7 @@
 use thiserror::Error;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 
-use super::protocol::{
-    ContinuityEnvelopeV1, ContinuityProtocolError, MAX_ENVELOPE_BYTES,
-};
+use super::protocol::{ContinuityEnvelopeV1, ContinuityProtocolError, MAX_ENVELOPE_BYTES};
 
 pub const LENGTH_PREFIX_BYTES: usize = 4;
 
@@ -38,10 +36,7 @@ impl ContinuityCodecError {
     pub fn is_recoverable(&self) -> bool {
         matches!(
             self,
-            Self::FrameTooLarge { .. }
-                | Self::EmptyFrame
-                | Self::Malformed
-                | Self::Protocol(_)
+            Self::FrameTooLarge { .. } | Self::EmptyFrame | Self::Malformed | Self::Protocol(_)
         )
     }
 }

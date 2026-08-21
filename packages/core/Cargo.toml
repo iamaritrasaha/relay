@@ -52,6 +52,14 @@ libc = "0.2"
 name = "anywhere_lan_isolation"
 required-features = ["anywhere"]
 
+[[test]]
+name = "anywhere_production"
+required-features = ["anywhere"]
+
+[[test]]
+name = "anywhere_transfer"
+required-features = ["anywhere"]
+
 
 [features]
 default = []

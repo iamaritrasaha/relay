@@ -7,10 +7,10 @@ use std::sync::{Arc, Mutex};
 
 use relay_core::anywhere::AnywhereError;
 use relay_core::anywhere::{
-    AnywhereBatch, AnywhereDecision, AnywhereEvent, AnywhereFileSource, AnywhereFileSpec,
-    AnywhereIdentity, AnywhereOutcome, AnywherePathClass, AnywhereReceiveRequest, AnywhereRuntime,
-    AnywhereSaveTarget, AnywhereSendRequest, PathPreference, RelayAddressV1, authenticate_address,
-    receive, send_batch,
+    authenticate_address, receive, send_batch, AnywhereBatch, AnywhereDecision, AnywhereEvent,
+    AnywhereFileSource, AnywhereFileSpec, AnywhereIdentity, AnywhereOutcome, AnywherePathClass,
+    AnywhereReceiveRequest, AnywhereRuntime, AnywhereSaveTarget, AnywhereSendRequest,
+    PathPreference, RelayAddressV1,
 };
 use relay_core::crypto::relay_identity::RelayIdentity;
 use tokio::sync::mpsc;

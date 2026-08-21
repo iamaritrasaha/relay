@@ -18,6 +18,7 @@ use iroh::endpoint::Connection;
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 
+use super::address::RelayAddressV1;
 use super::endpoint::{selected_path, AnywhereEndpoint, PathPreference};
 use super::error::{AnywhereError, TlsStage, TransportStage};
 use super::identity::AnywhereIdentity;
@@ -26,7 +27,6 @@ use super::stream::{
     client_peer_certificate_fingerprint, server_peer_certificate_fingerprint, IrohBiStream,
 };
 use super::tls::InnerTlsPeer;
-use super::address::RelayAddressV1;
 use crate::continuity::{
     run_session, session_channel, ContinuityEvent, ContinuityPayload, ContinuitySessionConfig,
     ContinuitySessionEnd, ContinuitySessionHandle,
@@ -152,9 +152,7 @@ impl ContinuityLink {
 
     pub async fn shutdown(self) -> ContinuitySessionEnd {
         self.cancel.cancel();
-        self.task
-            .await
-            .unwrap_or(ContinuitySessionEnd::Cancelled)
+        self.task.await.unwrap_or(ContinuitySessionEnd::Cancelled)
     }
 }
 
@@ -169,7 +167,13 @@ where
     S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send + 'static,
 {
     let (handle, outbound) = session_channel(&session.remote_relay_id().as_hex(), 64);
-    let task = tokio::spawn(run_session(stream, session, config, outbound, cancel.clone()));
+    let task = tokio::spawn(run_session(
+        stream,
+        session,
+        config,
+        outbound,
+        cancel.clone(),
+    ));
     ContinuityLink {
         handle,
         cancel,

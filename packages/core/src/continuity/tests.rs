@@ -286,10 +286,7 @@ async fn an_oversized_length_prefix_is_refused_before_allocation() {
         .await
         .unwrap();
     let error = read_envelope(&mut server).await.unwrap_err();
-    assert!(matches!(
-        error,
-        ContinuityCodecError::FrameTooLarge { .. }
-    ));
+    assert!(matches!(error, ContinuityCodecError::FrameTooLarge { .. }));
 }
 
 // ----------------------------------------------------------- authorization
@@ -360,8 +357,20 @@ fn grants_do_not_leak_between_devices() {
     let permissions = all_enabled(&granted_device.as_hex());
 
     let mut trust = MemoryTrustDirectory::new();
-    trust.insert(DeviceBinding::new("a", granted_device.clone(), "A", true, false));
-    trust.insert(DeviceBinding::new("b", other_device.clone(), "B", true, false));
+    trust.insert(DeviceBinding::new(
+        "a",
+        granted_device.clone(),
+        "A",
+        true,
+        false,
+    ));
+    trust.insert(DeviceBinding::new(
+        "b",
+        other_device.clone(),
+        "B",
+        true,
+        false,
+    ));
     let trust = Arc::new(trust);
 
     assert!(authorize_capability(
@@ -390,7 +399,11 @@ fn clipboard_mode_off_disables_the_capability_even_when_granted() {
     let remote = relay_id();
     let hex = remote.as_hex();
     let mut permissions = ContinuityPermissions::new();
-    permissions.set_grant(&hex, ContinuityCapability::Clipboard, CapabilityGrant::Granted);
+    permissions.set_grant(
+        &hex,
+        ContinuityCapability::Clipboard,
+        CapabilityGrant::Granted,
+    );
     permissions.set_clipboard_mode(&hex, ClipboardMode::Off);
 
     assert_eq!(
@@ -410,7 +423,11 @@ fn clipboard_mode_off_disables_the_capability_even_when_granted() {
 fn a_fresh_install_runs_no_continuity() {
     assert!(!ContinuityPermissions::new().any_capability_enabled());
     let mut permissions = ContinuityPermissions::new();
-    permissions.set_grant(&"A".repeat(64), ContinuityCapability::Battery, CapabilityGrant::Granted);
+    permissions.set_grant(
+        &"A".repeat(64),
+        ContinuityCapability::Battery,
+        CapabilityGrant::Granted,
+    );
     assert!(permissions.any_capability_enabled());
 }
 
@@ -466,7 +483,10 @@ fn actions_outside_the_freshness_window_are_stale_in_both_directions() {
 fn a_replayed_action_is_reported_as_a_duplicate_not_executed_again() {
     let mut guard = ReplayGuard::new();
     let now = 1_000_000_u64;
-    assert_eq!(guard.admit_action("send-1", now, now), ActionAdmission::Fresh);
+    assert_eq!(
+        guard.admit_action("send-1", now, now),
+        ActionAdmission::Fresh
+    );
     guard.record_action("send-1");
     assert_eq!(
         guard.admit_action("send-1", now, now),
@@ -534,12 +554,7 @@ async fn wait_for<T>(
     mut predicate: impl FnMut(&ContinuityEvent) -> Option<T>,
 ) -> T {
     for _ in 0..400 {
-        if let Some(found) = events
-            .lock()
-            .unwrap()
-            .iter()
-            .find_map(&mut predicate)
-        {
+        if let Some(found) = events.lock().unwrap().iter().find_map(&mut predicate) {
             return found;
         }
         tokio::time::sleep(std::time::Duration::from_millis(5)).await;
@@ -767,10 +782,12 @@ async fn clipboard_content_is_applied_once_and_never_echoed_back() {
 
     tokio::time::sleep(std::time::Duration::from_millis(150)).await;
     assert!(
-        android.events.lock().unwrap().iter().all(|event| !matches!(
-            event,
-            ContinuityEvent::ClipboardOffered { .. }
-        )),
+        android
+            .events
+            .lock()
+            .unwrap()
+            .iter()
+            .all(|event| !matches!(event, ContinuityEvent::ClipboardOffered { .. })),
         "clipboard content must not echo back to the device it came from"
     );
 
@@ -877,9 +894,11 @@ async fn notifications_mirror_and_dismiss() {
 
     android
         .handle
-        .publish(ContinuityPayload::NotificationRemoved(NotificationRemoval {
-            key: posted.key.clone(),
-        }))
+        .publish(ContinuityPayload::NotificationRemoved(
+            NotificationRemoval {
+                key: posted.key.clone(),
+            },
+        ))
         .await;
     let removed = wait_for(&linux.events, |event| match event {
         ContinuityEvent::NotificationRemoved { removal, .. } => Some(removal.key.clone()),

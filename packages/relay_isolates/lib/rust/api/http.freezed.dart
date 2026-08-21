@@ -194,7 +194,7 @@ return other(_that.field0);case _:
 
 class RsHttpClientError_StatusCode extends RsHttpClientError {
   const RsHttpClientError_StatusCode({required this.status, this.message}): super._();
-
+  
 
  final  int status;
  final  String? message;
@@ -262,7 +262,7 @@ as String?,
 
 class RsHttpClientError_Reqwest extends RsHttpClientError {
   const RsHttpClientError_Reqwest(this.field0): super._();
-
+  
 
  final  String field0;
 
@@ -328,7 +328,7 @@ as String,
 
 class RsHttpClientError_Json extends RsHttpClientError {
   const RsHttpClientError_Json(this.field0): super._();
-
+  
 
  final  String field0;
 
@@ -394,7 +394,7 @@ as String,
 
 class RsHttpClientError_Io extends RsHttpClientError {
   const RsHttpClientError_Io(this.field0): super._();
-
+  
 
  final  String field0;
 
@@ -460,7 +460,7 @@ as String,
 
 class RsHttpClientError_Other extends RsHttpClientError {
   const RsHttpClientError_Other(this.field0): super._();
-
+  
 
  final  String field0;
 
@@ -716,7 +716,7 @@ return transportFailed();case _:
 
 class RsRelayLanPairingEvent_VerificationCode extends RsRelayLanPairingEvent {
   const RsRelayLanPairingEvent_VerificationCode({required this.code, required this.remoteRelayId}): super._();
-
+  
 
  final  String code;
  final  String remoteRelayId;
@@ -784,7 +784,7 @@ as String,
 
 class RsRelayLanPairingEvent_Paired extends RsRelayLanPairingEvent {
   const RsRelayLanPairingEvent_Paired({required this.remoteRelayId, required this.remoteAlias, required this.verificationCode}): super._();
-
+  
 
  final  String remoteRelayId;
  final  String remoteAlias;
@@ -854,7 +854,7 @@ as String,
 
 class RsRelayLanPairingEvent_Declined extends RsRelayLanPairingEvent {
   const RsRelayLanPairingEvent_Declined(): super._();
-
+  
 
 
 
@@ -886,7 +886,7 @@ String toString() {
 
 class RsRelayLanPairingEvent_Unsupported extends RsRelayLanPairingEvent {
   const RsRelayLanPairingEvent_Unsupported(): super._();
-
+  
 
 
 
@@ -918,7 +918,7 @@ String toString() {
 
 class RsRelayLanPairingEvent_Busy extends RsRelayLanPairingEvent {
   const RsRelayLanPairingEvent_Busy(): super._();
-
+  
 
 
 
@@ -950,7 +950,7 @@ String toString() {
 
 class RsRelayLanPairingEvent_AuthenticationFailed extends RsRelayLanPairingEvent {
   const RsRelayLanPairingEvent_AuthenticationFailed(): super._();
-
+  
 
 
 
@@ -982,7 +982,7 @@ String toString() {
 
 class RsRelayLanPairingEvent_TransportFailed extends RsRelayLanPairingEvent {
   const RsRelayLanPairingEvent_TransportFailed(): super._();
-
+  
 
 
 
@@ -1216,7 +1216,7 @@ return authenticated(_that.relayId);case _:
 
 class RsRelayPeerAuth_NotAttempted extends RsRelayPeerAuth {
   const RsRelayPeerAuth_NotAttempted(): super._();
-
+  
 
 
 
@@ -1248,7 +1248,7 @@ String toString() {
 
 class RsRelayPeerAuth_Unsupported extends RsRelayPeerAuth {
   const RsRelayPeerAuth_Unsupported(): super._();
-
+  
 
 
 
@@ -1280,7 +1280,7 @@ String toString() {
 
 class RsRelayPeerAuth_TransportUnauthenticated extends RsRelayPeerAuth {
   const RsRelayPeerAuth_TransportUnauthenticated(): super._();
-
+  
 
 
 
@@ -1312,7 +1312,7 @@ String toString() {
 
 class RsRelayPeerAuth_SignerUnavailable extends RsRelayPeerAuth {
   const RsRelayPeerAuth_SignerUnavailable(): super._();
-
+  
 
 
 
@@ -1344,7 +1344,7 @@ String toString() {
 
 class RsRelayPeerAuth_Malformed extends RsRelayPeerAuth {
   const RsRelayPeerAuth_Malformed(): super._();
-
+  
 
 
 
@@ -1376,7 +1376,7 @@ String toString() {
 
 class RsRelayPeerAuth_RoleMismatch extends RsRelayPeerAuth {
   const RsRelayPeerAuth_RoleMismatch(): super._();
-
+  
 
 
 
@@ -1408,7 +1408,7 @@ String toString() {
 
 class RsRelayPeerAuth_ChallengeMismatch extends RsRelayPeerAuth {
   const RsRelayPeerAuth_ChallengeMismatch(): super._();
-
+  
 
 
 
@@ -1440,7 +1440,7 @@ String toString() {
 
 class RsRelayPeerAuth_CryptoInvalid extends RsRelayPeerAuth {
   const RsRelayPeerAuth_CryptoInvalid(): super._();
-
+  
 
 
 
@@ -1472,7 +1472,7 @@ String toString() {
 
 class RsRelayPeerAuth_Authenticated extends RsRelayPeerAuth {
   const RsRelayPeerAuth_Authenticated({required this.relayId}): super._();
-
+  
 
  final  String relayId;
 
@@ -1698,7 +1698,7 @@ return failed(_that.error);case _:
 
 class RsUploadEvent_Progress extends RsUploadEvent {
   const RsUploadEvent_Progress({required this.progress}): super._();
-
+  
 
  final  double progress;
 
@@ -1764,7 +1764,7 @@ as double,
 
 class RsUploadEvent_Failed extends RsUploadEvent {
   const RsUploadEvent_Failed({required this.error}): super._();
-
+  
 
  final  RsHttpClientError error;
 
@@ -1827,7 +1827,7 @@ as RsHttpClientError,
 @override
 @pragma('vm:prefer-inline')
 $RsHttpClientErrorCopyWith<$Res> get error {
-
+  
   return $RsHttpClientErrorCopyWith<$Res>(_self.error, (value) {
     return _then(_self.copyWith(error: value));
   });

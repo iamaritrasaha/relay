@@ -472,8 +472,14 @@ impl ServerHandle {
     where
         S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send + 'static,
     {
-        anyhow::ensure!(origin.is_anywhere(), "Anywhere streams need an Anywhere origin");
-        anyhow::ensure!(session.mutual(), "Anywhere HTTP needs a mutual authenticated session");
+        anyhow::ensure!(
+            origin.is_anywhere(),
+            "Anywhere streams need an Anywhere origin"
+        );
+        anyhow::ensure!(
+            session.mutual(),
+            "Anywhere HTTP needs a mutual authenticated session"
+        );
         let state = self.state.clone();
         let cancel = self.cancel.clone();
         self.connections.spawn(async move {
@@ -864,18 +870,16 @@ async fn serve_connection(
     let _ = res;
 }
 
-async fn serve_stream<S>(
-    stream: S,
-    client_info: RequestClientInfo,
-    app_state: AppState,
-) where
+async fn serve_stream<S>(stream: S, client_info: RequestClientInfo, app_state: AppState)
+where
     S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send + 'static,
 {
     if let Err(err) = Builder::new(TokioExecutor::new())
         .serve_connection(
             TokioIo::new(stream),
             hyper::service::service_fn(move |mut req: Request<Incoming>| {
-                req.extensions_mut().insert::<RequestClientInfo>(client_info.clone());
+                req.extensions_mut()
+                    .insert::<RequestClientInfo>(client_info.clone());
                 req.extensions_mut().insert::<AppState>(app_state.clone());
                 handle_request(req)
             }),
@@ -901,8 +905,10 @@ async fn serve_stream_with_tls<S>(
         .serve_connection_with_upgrades(
             TokioIo::new(stream),
             hyper::service::service_fn(move |mut req: Request<Incoming>| {
-                req.extensions_mut().insert::<RequestClientInfo>(client_info.clone());
-                req.extensions_mut().insert::<ConnectionTlsCtx>(tls_context.clone());
+                req.extensions_mut()
+                    .insert::<RequestClientInfo>(client_info.clone());
+                req.extensions_mut()
+                    .insert::<ConnectionTlsCtx>(tls_context.clone());
                 req.extensions_mut().insert::<AppState>(app_state.clone());
                 handle_request(req)
             }),
@@ -1012,11 +1018,10 @@ impl RequestClientInfo {
     }
 
     fn identifier(&self) -> String {
-        self.extract_public_key()
-            .unwrap_or_else(|| {
-                self.peer_ip()
-                    .map_or_else(|| "anywhere".to_owned(), |ip| ip.to_string())
-            })
+        self.extract_public_key().unwrap_or_else(|| {
+            self.peer_ip()
+                .map_or_else(|| "anywhere".to_owned(), |ip| ip.to_string())
+        })
     }
 }
 
@@ -1115,9 +1120,7 @@ async fn handle_request_inner(mut req: Request<Incoming>) -> Result<Response<Box
                 .into_response())
         }
         (&Method::POST, "/api/relay/v1/proof") => relay::proof(req, state).await,
-        (&Method::POST, "/api/relay/v1/pair/challenge") => {
-            relay::pair_challenge(req, state).await
-        }
+        (&Method::POST, "/api/relay/v1/pair/challenge") => relay::pair_challenge(req, state).await,
         (&Method::POST, "/api/relay/v1/pair/complete") => {
             relay::pair_complete(req, state, client_info).await
         }

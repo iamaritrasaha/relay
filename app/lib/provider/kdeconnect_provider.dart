@@ -16,10 +16,30 @@ class KdeConnectIncomingRequest {
   const KdeConnectIncomingRequest({required this.deviceId, required this.name});
 }
 
+class KdeTelephonyState {
+  final String event; // 'ringing', 'talking', 'missedCall'
+  final bool isCancel;
+  final String? phoneNumber;
+  final String? contactName;
+  final int timestamp;
+
+  const KdeTelephonyState({
+    required this.event,
+    this.isCancel = false,
+    this.phoneNumber,
+    this.contactName,
+    required this.timestamp,
+  });
+}
+
 class KdeConnectState {
   final List<RsKdeConnectDevice> devices;
   final KdeConnectIncomingRequest? incoming;
   final Map<String, List<RsKdeNotification>> notifications;
+  final Map<String, List<RsKdeSmsConversation>> smsConversations;
+  final Map<String, Map<int, List<RsKdeSmsMessage>>> smsMessages;
+  final Map<String, KdeTelephonyState?> activeCalls;
+  final Map<String, List<KdeTelephonyState>> recentTelephonyEvents;
   final String? lastPingDeviceName;
   final String? lastPingMessage;
   final int lastPingTimestamp;
@@ -28,6 +48,10 @@ class KdeConnectState {
     this.devices = const [],
     this.incoming,
     this.notifications = const {},
+    this.smsConversations = const {},
+    this.smsMessages = const {},
+    this.activeCalls = const {},
+    this.recentTelephonyEvents = const {},
     this.lastPingDeviceName,
     this.lastPingMessage,
     this.lastPingTimestamp = 0,
@@ -38,6 +62,10 @@ class KdeConnectState {
     KdeConnectIncomingRequest? incoming,
     bool clearIncoming = false,
     Map<String, List<RsKdeNotification>>? notifications,
+    Map<String, List<RsKdeSmsConversation>>? smsConversations,
+    Map<String, Map<int, List<RsKdeSmsMessage>>>? smsMessages,
+    Map<String, KdeTelephonyState?>? activeCalls,
+    Map<String, List<KdeTelephonyState>>? recentTelephonyEvents,
     String? lastPingDeviceName,
     String? lastPingMessage,
     int? lastPingTimestamp,
@@ -45,6 +73,10 @@ class KdeConnectState {
     devices: devices ?? this.devices,
     incoming: clearIncoming ? null : incoming ?? this.incoming,
     notifications: notifications ?? this.notifications,
+    smsConversations: smsConversations ?? this.smsConversations,
+    smsMessages: smsMessages ?? this.smsMessages,
+    activeCalls: activeCalls ?? this.activeCalls,
+    recentTelephonyEvents: recentTelephonyEvents ?? this.recentTelephonyEvents,
     lastPingDeviceName: lastPingDeviceName ?? this.lastPingDeviceName,
     lastPingMessage: lastPingMessage ?? this.lastPingMessage,
     lastPingTimestamp: lastPingTimestamp ?? this.lastPingTimestamp,
@@ -151,7 +183,7 @@ class KdeConnectRequestPairAction extends AsyncReduxAction<KdeConnectService, Kd
   Future<KdeConnectState> reduce() async {
     try {
       await notifier._runtime?.requestPair(deviceId: deviceId);
-    } on AnyhowException catch (error, stack) {
+    } catch (error, stack) {
       _logger.warning('Pair request failed for device $deviceId', error, stack);
     }
     return state;
@@ -167,7 +199,7 @@ class KdeConnectAcceptPairAction extends AsyncReduxAction<KdeConnectService, Kde
   Future<KdeConnectState> reduce() async {
     try {
       await notifier._runtime?.acceptPair(deviceId: deviceId);
-    } on AnyhowException catch (error, stack) {
+    } catch (error, stack) {
       _logger.warning('Accept pair failed for device $deviceId', error, stack);
     }
     return state.copyWith(clearIncoming: true);
@@ -183,7 +215,7 @@ class KdeConnectRejectPairAction extends AsyncReduxAction<KdeConnectService, Kde
   Future<KdeConnectState> reduce() async {
     try {
       await notifier._runtime?.rejectPair(deviceId: deviceId);
-    } on AnyhowException catch (error, stack) {
+    } catch (error, stack) {
       _logger.warning('Reject pair failed for device $deviceId', error, stack);
     }
     return state.copyWith(clearIncoming: true);
@@ -199,7 +231,7 @@ class KdeConnectUnpairAction extends AsyncReduxAction<KdeConnectService, KdeConn
   Future<KdeConnectState> reduce() async {
     try {
       await notifier._runtime?.unpair(deviceId: deviceId);
-    } on AnyhowException catch (error, stack) {
+    } catch (error, stack) {
       _logger.warning('Unpair failed for device $deviceId', error, stack);
     }
     return state.copyWith(clearIncoming: true);
@@ -216,7 +248,7 @@ class KdeConnectPingAction extends AsyncReduxAction<KdeConnectService, KdeConnec
   Future<KdeConnectState> reduce() async {
     try {
       await notifier._runtime?.sendPing(deviceId: deviceId, message: message);
-    } on AnyhowException catch (error, stack) {
+    } catch (error, stack) {
       _logger.warning('Send ping failed for device $deviceId', error, stack);
     }
     return state;
@@ -232,8 +264,8 @@ class KdeConnectFindPhoneAction extends AsyncReduxAction<KdeConnectService, KdeC
   Future<KdeConnectState> reduce() async {
     try {
       await notifier._runtime?.findPhone(deviceId: deviceId);
-    } on AnyhowException catch (error, stack) {
-        _logger.warning('Find phone failed for device $deviceId', error, stack);
+    } catch (error, stack) {
+      _logger.warning('Find phone failed for device $deviceId', error, stack);
     }
     return state;
   }
@@ -252,7 +284,7 @@ class KdeConnectSendClipboardAction extends AsyncReduxAction<KdeConnectService, 
           content: content,
           timestampMs: DateTime.now().millisecondsSinceEpoch,
         );
-      } on AnyhowException catch (error, stack) {
+      } catch (error, stack) {
         _logger.warning('Send clipboard failed', error, stack);
       }
     }
@@ -299,7 +331,7 @@ class KdeConnectApplyEventAction extends ReduxAction<KdeConnectService, KdeConne
           lastPingMessage: message,
           lastPingTimestamp: DateTime.now().millisecondsSinceEpoch,
         );
-      case RsKdeConnectEvent_ClipboardReceived(:final deviceId, :final content, :final timestampMs):
+      case RsKdeConnectEvent_ClipboardReceived(:final content):
         if (content.isNotEmpty && content != notifier._lastReceivedClipboard) {
           notifier._lastReceivedClipboard = content;
           unawaited(Clipboard.setData(ClipboardData(text: content)));
@@ -309,7 +341,198 @@ class KdeConnectApplyEventAction extends ReduxAction<KdeConnectService, KdeConne
         return state.copyWith(
           notifications: {...state.notifications, deviceId: notifications},
         );
+      case RsKdeConnectEvent_SmsChanged(:final deviceId, :final conversations, :final messages):
+        final deviceMessages = Map<int, List<RsKdeSmsMessage>>.from(state.smsMessages[deviceId] ?? const {});
+        for (final message in messages) {
+          final threadList = (deviceMessages[message.threadId] ?? const <RsKdeSmsMessage>[])
+              .where((item) => item.id > 0 || item.body != message.body)
+              .toList();
+          final current = Map<int, RsKdeSmsMessage>.fromEntries(
+            threadList.map((item) => MapEntry(item.id, item)),
+          );
+          current[message.id] = message;
+          final merged = current.values.toList()..sort((a, b) => a.date.compareTo(b.date));
+          deviceMessages[message.threadId] = merged;
+        }
+        return state.copyWith(
+          smsConversations: {...state.smsConversations, deviceId: conversations},
+          smsMessages: {...state.smsMessages, deviceId: deviceMessages},
+        );
+      case RsKdeConnectEvent_TelephonyReceived(:final deviceId, :final event):
+        final currentEvent = KdeTelephonyState(
+          event: event.event,
+          isCancel: event.isCancel,
+          phoneNumber: event.phoneNumber,
+          contactName: event.contactName,
+          timestamp: DateTime.now().millisecondsSinceEpoch,
+        );
+        final recentList = List<KdeTelephonyState>.from(state.recentTelephonyEvents[deviceId] ?? const []);
+        recentList.insert(0, currentEvent);
+        if (recentList.length > 50) {
+          recentList.removeLast();
+        }
+
+        final active = nextActiveCall(state.activeCalls[deviceId], currentEvent);
+
+        return state.copyWith(
+          activeCalls: {...state.activeCalls, deviceId: active},
+          recentTelephonyEvents: {...state.recentTelephonyEvents, deviceId: recentList},
+        );
     }
+  }
+}
+
+/// The call state machine for one device.
+///
+/// Only the event that is actually live can end the call. Android sends the
+/// ringing cancel around the same time as the talking event when a call is
+/// answered, so a blanket "any cancel clears the call" rule tears down a call
+/// that has just been picked up, and leaves ringing stuck when the order is
+/// reversed. A repeat of the event already in progress keeps its original
+/// timestamp, which is what makes an in-call duration measurable from the
+/// moment talking actually began.
+///
+/// [previous] is the call currently held for the device, [incoming] the event
+/// just received. Returns the call to hold next, or null for idle.
+KdeTelephonyState? nextActiveCall(KdeTelephonyState? previous, KdeTelephonyState incoming) {
+  // A missed call is a notification about a call that is already over.
+  if (incoming.event == 'missedCall') return null;
+
+  if (incoming.isCancel) {
+    return (previous != null && previous.event == incoming.event) ? null : previous;
+  }
+
+  if (previous != null && previous.event == incoming.event) return previous;
+
+  return incoming;
+}
+
+class KdeConnectUpdateMessagesAction extends ReduxAction<KdeConnectService, KdeConnectState> {
+  final String deviceId;
+  final Map<int, List<RsKdeSmsMessage>> messages;
+
+  KdeConnectUpdateMessagesAction({required this.deviceId, required this.messages});
+
+  @override
+  KdeConnectState reduce() => state.copyWith(
+    smsMessages: {...state.smsMessages, deviceId: messages},
+  );
+}
+
+/// How many unreconciled outgoing bubbles a single thread may hold.
+const int _maxPendingPerThread = 20;
+
+class KdeConnectSendSmsAction extends AsyncReduxAction<KdeConnectService, KdeConnectState> {
+  final String deviceId;
+  final int threadId;
+  final List<String> addresses;
+  final String messageBody;
+  final int? subId;
+
+  KdeConnectSendSmsAction({
+    required this.deviceId,
+    required this.threadId,
+    required this.addresses,
+    required this.messageBody,
+    this.subId,
+  });
+
+  @override
+  Future<KdeConnectState> reduce() async {
+    final pendingId = -DateTime.now().millisecondsSinceEpoch;
+    final pendingMessage = RsKdeSmsMessage(
+      id: pendingId,
+      threadId: threadId,
+      addresses: addresses,
+      body: messageBody,
+      date: DateTime.now().millisecondsSinceEpoch,
+      messageType: 2, // outgoing
+      read: true,
+      attachments: const [],
+    );
+
+    final deviceMessages = Map<int, List<RsKdeSmsMessage>>.from(state.smsMessages[deviceId] ?? const {});
+    var currentList = List<RsKdeSmsMessage>.from(deviceMessages[threadId] ?? const []);
+
+    // A pending bubble is cleared when Android echoes the canonical message
+    // back. If that echo never comes the entry would otherwise sit in the
+    // thread forever, so the oldest unreconciled ones are dropped.
+    final pendingCount = currentList.where((message) => message.id < 0).length;
+    if (pendingCount >= _maxPendingPerThread) {
+      var toDrop = pendingCount - _maxPendingPerThread + 1;
+      currentList = currentList.where((message) {
+        if (message.id >= 0 || toDrop <= 0) return true;
+        toDrop--;
+        return false;
+      }).toList();
+    }
+
+    currentList.add(pendingMessage);
+    deviceMessages[threadId] = currentList;
+
+    dispatch(KdeConnectUpdateMessagesAction(deviceId: deviceId, messages: deviceMessages));
+
+    try {
+      await notifier._runtime?.sendSms(
+        deviceId: deviceId,
+        addresses: addresses,
+        body: messageBody,
+        subId: subId,
+      );
+    } catch (error, stack) {
+      _logger.warning('Send SMS failed for device $deviceId', error, stack);
+      final updatedMessages = Map<int, List<RsKdeSmsMessage>>.from(state.smsMessages[deviceId] ?? const {});
+      final list = List<RsKdeSmsMessage>.from(updatedMessages[threadId] ?? const []);
+      list.removeWhere((m) => m.id == pendingId);
+      updatedMessages[threadId] = list;
+      return state.copyWith(smsMessages: {...state.smsMessages, deviceId: updatedMessages});
+    }
+    return state;
+  }
+}
+
+class KdeConnectMuteCallAction extends AsyncReduxAction<KdeConnectService, KdeConnectState> {
+  final String deviceId;
+  KdeConnectMuteCallAction(this.deviceId);
+
+  @override
+  Future<KdeConnectState> reduce() async {
+    try {
+      await notifier._runtime?.muteCall(deviceId: deviceId);
+    } catch (error, stack) {
+      _logger.warning('Mute call failed for device $deviceId', error, stack);
+    }
+    return state;
+  }
+}
+
+class KdeConnectRequestSmsConversationsAction extends AsyncReduxAction<KdeConnectService, KdeConnectState> {
+  final String deviceId;
+  KdeConnectRequestSmsConversationsAction(this.deviceId);
+  @override
+  Future<KdeConnectState> reduce() async {
+    try {
+      await notifier._runtime?.requestSmsConversations(deviceId: deviceId);
+    } catch (error, stack) {
+      _logger.warning('SMS conversation request failed for device $deviceId', error, stack);
+    }
+    return state;
+  }
+}
+
+class KdeConnectRequestSmsConversationAction extends AsyncReduxAction<KdeConnectService, KdeConnectState> {
+  final String deviceId;
+  final int threadId;
+  final int? beforeTimestamp;
+  KdeConnectRequestSmsConversationAction(this.deviceId, this.threadId, {this.beforeTimestamp});
+  @override
+  Future<KdeConnectState> reduce() async {
+    try {
+      await notifier._runtime?.requestSmsConversation(deviceId: deviceId, threadId: threadId, before: beforeTimestamp);
+    } catch (error, stack) {
+      _logger.warning('SMS history request failed for device $deviceId', error, stack);
+    }
+    return state;
   }
 }
 

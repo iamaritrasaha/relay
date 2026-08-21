@@ -36,9 +36,7 @@ pub use authz::{
     authorize_capability, authorize_session, permissions_for, ContinuityAuthorization,
 };
 pub use codec::{decode_body, encode_frame, read_envelope, write_envelope, ContinuityCodecError};
-pub use host::{
-    ContinuityEvent, ContinuityEventSink, ContinuityHostRequest, ContinuitySessionEnd,
-};
+pub use host::{ContinuityEvent, ContinuityEventSink, ContinuityHostRequest, ContinuitySessionEnd};
 pub use permission::{
     CapabilityGrant, ClipboardMode, ContinuityPermissions, DeviceContinuityPermissions,
 };

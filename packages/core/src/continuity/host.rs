@@ -9,10 +9,10 @@
 use tokio::sync::oneshot;
 
 use super::protocol::{
-    CallActionOutcome, CallActionRequest, CallState, CapabilityManifest, ClipboardUpdate,
-    ContinuityErrorPayload, NotificationEvent, NotificationRemoval, SmsConversationsPage,
-    SmsConversationsRequest, SmsMessage, SmsMessagesPage, SmsMessagesRequest, SmsSendOutcome,
-    SmsSendRequest, BatteryState,
+    BatteryState, CallActionOutcome, CallActionRequest, CallState, CapabilityManifest,
+    ClipboardUpdate, ContinuityErrorPayload, NotificationEvent, NotificationRemoval,
+    SmsConversationsPage, SmsConversationsRequest, SmsMessage, SmsMessagesPage, SmsMessagesRequest,
+    SmsSendOutcome, SmsSendRequest,
 };
 
 /// Work the *remote* peer asked this device to perform.

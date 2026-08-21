@@ -21,8 +21,8 @@ pub use address::{
     RELAY_ADDRESS_PREFIX, RELAY_ADDRESS_VERSION,
 };
 pub use continuity_link::{
-    accept_continuity, broadcast, connect_continuity, run_dialer, spawn_link, ContinuityDialerConfig,
-    ContinuityLink, CONTINUITY_ALPN,
+    accept_continuity, broadcast, connect_continuity, run_dialer, spawn_link,
+    ContinuityDialerConfig, ContinuityLink, CONTINUITY_ALPN,
 };
 pub use endpoint::{
     bind_endpoint, bind_endpoint_with_key, iroh_endpoint_bind_count, selected_path, wrap_endpoint,
@@ -37,13 +37,14 @@ pub use listener::{
 pub use proof::{authenticate_initiator, authenticate_server};
 pub use routing_key::{AnywhereRoutingKey, RoutingKeyError};
 pub use runtime::{
-    AnywhereDecision, AnywhereRespondError, AnywhereRuntime, AnywhereSaveTarget, AnywhereSessionId, IncomingTransferId,
+    AnywhereDecision, AnywhereRespondError, AnywhereRuntime, AnywhereSaveTarget, AnywhereSessionId,
+    IncomingTransferId,
 };
 pub use tls::InnerTlsPeer;
 pub use transfer::{
-    authenticate_address, receive, send_batch, send_files_over_authenticated_stream, AnywhereBatch, AnywhereEvent,
-    AnywhereEventSink, AnywhereFileSource, AnywhereFileSpec, AnywhereIncomingFile, AnywhereOutcome,
-    AnywherePathClass, AnywhereReceiveRequest, AnywhereSendRequest,
+    authenticate_address, receive, send_batch, send_files_over_authenticated_stream, AnywhereBatch,
+    AnywhereEvent, AnywhereEventSink, AnywhereFileSource, AnywhereFileSpec, AnywhereIncomingFile,
+    AnywhereOutcome, AnywherePathClass, AnywhereReceiveRequest, AnywhereSendRequest,
 };
 
 use crate::relay::{

@@ -32,9 +32,9 @@ pub use pairing::{
 };
 pub use path::{ChannelBinding, PathDescriptor};
 pub use policy::{
-    AuthorizationAdvisory, AuthorizationDecision, DeviceBinding, MemoryTrustDirectory,
-    TransferAuthorization, TransferRequestContext, TrustDirectory, TrustRecord, authorize,
-    authorize_with_memory_directory,
+    authorize, authorize_with_memory_directory, AuthorizationAdvisory, AuthorizationDecision,
+    DeviceBinding, MemoryTrustDirectory, TransferAuthorization, TransferRequestContext,
+    TrustDirectory, TrustRecord,
 };
 #[cfg(feature = "anywhere")]
 pub use production::{LanRelaySessionFactory, ProductionLanConnection};

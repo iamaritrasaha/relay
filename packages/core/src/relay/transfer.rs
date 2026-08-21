@@ -856,13 +856,11 @@ mod tests {
                 } if file_id == "one"
             )
         }));
-        assert!(
-            received
-                .lock()
-                .unwrap()
-                .iter()
-                .any(|event| { matches!(event, RelayTransferEvent::Completed { bytes: 5, .. }) })
-        );
+        assert!(received
+            .lock()
+            .unwrap()
+            .iter()
+            .any(|event| { matches!(event, RelayTransferEvent::Completed { bytes: 5, .. }) }));
     }
 
     #[tokio::test]

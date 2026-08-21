@@ -1,7 +1,6 @@
 use crate::frb_generated::StreamSink;
 use flutter_rust_bridge::frb;
 pub use relay_core::http::dto_v2::RegisterDtoV2;
-use relay_core::http::server::{RelayContinuityAcceptConfig, ServerConfigV2};
 pub use relay_core::http::server::TlsConfig;
 use relay_core::http::server::common::save::FileUploadTarget;
 use relay_core::http::server::internal::{InternalConfig, InternalEvent};
@@ -9,6 +8,7 @@ pub use relay_core::http::server::v2::SessionEndReasonV2;
 use relay_core::http::server::v2::{PrepareUploadDecisionV2, ServerEventV2};
 pub use relay_core::http::server::web::WebI18n;
 use relay_core::http::server::web::{WebConfig, WebSendConfig, WebSendEvent};
+use relay_core::http::server::{RelayContinuityAcceptConfig, ServerConfigV2};
 use relay_core::http::state::ClientInfo;
 use relay_core::model::discovery::DeviceType;
 use relay_core::model::discovery::ProtocolType;

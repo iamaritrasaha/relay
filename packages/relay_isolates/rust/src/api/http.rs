@@ -202,7 +202,9 @@ fn resolve_file_content(
         (None, None, Some(file_descriptor)) => {
             #[cfg(target_os = "android")]
             {
-                Ok(relay_core::model::transfer::FileContent::Fd(file_descriptor))
+                Ok(relay_core::model::transfer::FileContent::Fd(
+                    file_descriptor,
+                ))
             }
             #[cfg(not(target_os = "android"))]
             {

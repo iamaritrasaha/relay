@@ -73,7 +73,12 @@ mod relay_identity_tests {
         assert!(!material.private_key.is_empty());
         assert!(relay_core::crypto::relay_identity::parse_public_key(&material.public_key).is_ok());
         assert_eq!(material.relay_id.len(), 64);
-        assert!(material.relay_id.chars().all(|c| c.is_ascii_hexdigit() && !c.is_ascii_lowercase()));
+        assert!(
+            material
+                .relay_id
+                .chars()
+                .all(|c| c.is_ascii_hexdigit() && !c.is_ascii_lowercase())
+        );
     }
 
     #[test]
