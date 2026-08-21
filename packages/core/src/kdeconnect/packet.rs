@@ -19,7 +19,10 @@ pub use super::capabilities::{
 pub const PROTOCOL_VERSION: i64 = 8;
 
 pub const MAX_IDENTITY_PACKET_BYTES: usize = 8192;
-pub const MAX_PACKET_BYTES: usize = 8192;
+// Bulk SMS replies contain up to hundreds of messages and may legitimately be
+// much larger than identity/control packets. Keep the stream bounded without
+// applying the identity packet's 8 KiB ceiling to message history.
+pub const MAX_PACKET_BYTES: usize = 4 * 1024 * 1024;
 
 const NAME_INVALID: &[char] = &[
     '"', '\'', ',', ';', ':', '.', '!', '?', '(', ')', '[', ']', '<', '>',
@@ -679,8 +682,13 @@ impl SmsMessage {
                     .take(MAX_SMS_ATTACHMENTS)
                     .filter_map(|entry| {
                         let item = entry.as_object()?;
+                        let part_id = match item.get("part_id")? {
+                            Value::String(value) => value.clone(),
+                            Value::Number(value) => value.to_string(),
+                            _ => return None,
+                        };
                         Some(SmsAttachmentMetadata {
-                            part_id: item.get("part_id")?.as_str()?.to_string(),
+                            part_id,
                             mime_type: item
                                 .get("mime_type")
                                 .and_then(Value::as_str)
@@ -952,6 +960,84 @@ mod tests {
         assert_eq!(
             parsed.body.get("messageBody").and_then(Value::as_str),
             Some("round trip")
+        );
+    }
+
+    #[test]
+    fn sms_conversation_list_request_has_the_android_shape() {
+        let packet = SmsRequestConversationsBody::request();
+
+        assert_eq!(packet.packet_type, PACKET_TYPE_SMS_REQUEST_CONVERSATIONS);
+        assert!(packet.body.is_empty());
+    }
+
+    #[test]
+    fn sms_thread_request_has_the_android_field_names_and_types() {
+        let packet =
+            SmsRequestConversationBody::request(9_223_372_036, Some(1_700_000_000_000), Some(50));
+
+        assert_eq!(packet.packet_type, PACKET_TYPE_SMS_REQUEST_CONVERSATION);
+        assert_eq!(
+            packet.body.get("threadID").and_then(Value::as_i64),
+            Some(9_223_372_036)
+        );
+        assert_eq!(
+            packet
+                .body
+                .get("rangeStartTimestamp")
+                .and_then(Value::as_i64),
+            Some(1_700_000_000_000),
+        );
+        assert_eq!(
+            packet.body.get("numberToRequest").and_then(Value::as_u64),
+            Some(50)
+        );
+    }
+
+    #[test]
+    fn current_android_sms_v2_bulk_schema_parses_without_narrowing_ids() {
+        let body = serde_json::json!({
+            "version": 2,
+            "messages": [{
+                "_id": 9_223_372_036_i64,
+                "thread_id": 8_589_934_592_i64,
+                "addresses": [{"address": "+15550100"}],
+                "body": "hello",
+                "date": 1_700_000_000_000_i64,
+                "type": 1,
+                "read": 1,
+                "sub_id": 2,
+                "event": 0,
+                "attachments": [{
+                    "part_id": 42,
+                    "mime_type": "image/jpeg",
+                    "unique_identifier": "attachment-42"
+                }]
+            }]
+        });
+        let packet =
+            NetworkPacket::new(PACKET_TYPE_SMS_MESSAGES, body.as_object().unwrap().clone());
+
+        let parsed = packet
+            .as_sms_messages()
+            .expect("Android SMS v2 packet must parse");
+        let message = &parsed.messages[0];
+        assert_eq!(message.id, 9_223_372_036);
+        assert_eq!(message.thread_id, 8_589_934_592);
+        assert_eq!(message.date, 1_700_000_000_000);
+        assert_eq!(message.sub_id, Some(2));
+        assert_eq!(message.attachments[0].part_id, "42");
+    }
+
+    #[test]
+    fn unsupported_sms_bulk_version_is_rejected_explicitly() {
+        let body = serde_json::json!({"version": 3, "messages": []});
+        let packet =
+            NetworkPacket::new(PACKET_TYPE_SMS_MESSAGES, body.as_object().unwrap().clone());
+
+        assert_eq!(
+            packet.as_sms_messages().unwrap_err().to_string(),
+            "unsupported sms messages version",
         );
     }
 
