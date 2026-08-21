@@ -8,6 +8,9 @@ import 'package:relay_app/provider/persistence_provider.dart';
 import 'package:relay_isolates/rust/api/kdeconnect.dart';
 
 final _logger = Logger('KdeConnect');
+final _smsLogger = Logger('RelaySmsBridge');
+
+String kdeConnectDeviceIdFromKey(String key) => key.startsWith('kdeconnect:') ? key.substring('kdeconnect:'.length) : key;
 
 class KdeConnectIncomingRequest {
   final String deviceId;
@@ -354,10 +357,15 @@ class KdeConnectApplyEventAction extends ReduxAction<KdeConnectService, KdeConne
           final merged = current.values.toList()..sort((a, b) => a.date.compareTo(b.date));
           deviceMessages[message.threadId] = merged;
         }
-        return state.copyWith(
+        final nextState = state.copyWith(
           smsConversations: {...state.smsConversations, deviceId: conversations},
           smsMessages: {...state.smsMessages, deviceId: deviceMessages},
         );
+        _smsLogger.info(
+          'PROVIDER updated device=$deviceId conversations=${nextState.smsConversations[deviceId]?.length ?? 0} '
+          'messages=${nextState.smsMessages[deviceId]?.values.fold<int>(0, (total, thread) => total + thread.length) ?? 0}',
+        );
+        return nextState;
       case RsKdeConnectEvent_TelephonyReceived(:final deviceId, :final event):
         final currentEvent = KdeTelephonyState(
           event: event.event,
@@ -511,10 +519,18 @@ class KdeConnectRequestSmsConversationsAction extends AsyncReduxAction<KdeConnec
   KdeConnectRequestSmsConversationsAction(this.deviceId);
   @override
   Future<KdeConnectState> reduce() async {
+    final runtime = notifier._runtime;
+    if (runtime == null) {
+      _smsLogger.warning('REQUEST skipped device=$deviceId packetType=kdeconnect.sms.request_conversations runtimeAvailable=false');
+      return state;
+    }
+    _smsLogger.info('REQUEST action device=$deviceId packetType=kdeconnect.sms.request_conversations');
     try {
-      await notifier._runtime?.requestSmsConversations(deviceId: deviceId);
+      await runtime.requestSmsConversations(deviceId: deviceId);
+      _smsLogger.info('REQUEST bridged device=$deviceId packetType=kdeconnect.sms.request_conversations');
     } catch (error, stack) {
       _logger.warning('SMS conversation request failed for device $deviceId', error, stack);
+      _smsLogger.warning('REQUEST failed device=$deviceId packetType=kdeconnect.sms.request_conversations reason=${error.runtimeType}');
     }
     return state;
   }
@@ -527,10 +543,22 @@ class KdeConnectRequestSmsConversationAction extends AsyncReduxAction<KdeConnect
   KdeConnectRequestSmsConversationAction(this.deviceId, this.threadId, {this.beforeTimestamp});
   @override
   Future<KdeConnectState> reduce() async {
+    final runtime = notifier._runtime;
+    if (runtime == null) {
+      _smsLogger.warning(
+        'REQUEST skipped device=$deviceId packetType=kdeconnect.sms.request_conversation threadId=$threadId runtimeAvailable=false',
+      );
+      return state;
+    }
+    _smsLogger.info('REQUEST action device=$deviceId packetType=kdeconnect.sms.request_conversation threadId=$threadId');
     try {
-      await notifier._runtime?.requestSmsConversation(deviceId: deviceId, threadId: threadId, before: beforeTimestamp);
+      await runtime.requestSmsConversation(deviceId: deviceId, threadId: threadId, before: beforeTimestamp);
+      _smsLogger.info('REQUEST bridged device=$deviceId packetType=kdeconnect.sms.request_conversation threadId=$threadId');
     } catch (error, stack) {
       _logger.warning('SMS history request failed for device $deviceId', error, stack);
+      _smsLogger.warning(
+        'REQUEST failed device=$deviceId packetType=kdeconnect.sms.request_conversation threadId=$threadId reason=${error.runtimeType}',
+      );
     }
     return state;
   }

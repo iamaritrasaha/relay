@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:relay_app/config/relay_brand.dart';
+import 'package:relay_app/widget/gnome/adw_action_row.dart';
 
 /// Libadwaita Boxed List / Preferences Group for GNOME.
 ///
@@ -10,6 +11,9 @@ class AdwPreferencesGroup extends StatelessWidget {
   final String? description;
   final List<Widget> children;
   final EdgeInsetsGeometry margin;
+  final bool uppercaseTitle;
+  final EdgeInsetsGeometry? rowPadding;
+  final double? rowMinHeight;
 
   const AdwPreferencesGroup({
     super.key,
@@ -17,10 +21,14 @@ class AdwPreferencesGroup extends StatelessWidget {
     this.description,
     required this.children,
     this.margin = const EdgeInsets.only(bottom: 24),
+    this.uppercaseTitle = true,
+    this.rowPadding,
+    this.rowMinHeight,
   });
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
     final palette = Theme.of(context).relayPalette;
 
     return Padding(
@@ -33,8 +41,10 @@ class AdwPreferencesGroup extends StatelessWidget {
             Padding(
               padding: const EdgeInsets.only(left: 4, bottom: 10),
               child: Text(
-                title!.toUpperCase(),
-                style: RelayTypography.sectionHeader(palette.textSecondary, isGnome: true),
+                uppercaseTitle ? title!.toUpperCase() : title!,
+                style: uppercaseTitle
+                    ? RelayTypography.sectionHeader(palette.textSecondary, isGnome: true)
+                    : theme.textTheme.titleSmall?.copyWith(color: theme.colorScheme.onSurfaceVariant, fontWeight: FontWeight.w600),
               ),
             ),
           ],
@@ -47,7 +57,14 @@ class AdwPreferencesGroup extends StatelessWidget {
               ),
             ),
           ],
-          AdwBoxedList(children: children),
+          if (rowPadding != null && rowMinHeight != null)
+            AdwRowGeometry(
+              padding: rowPadding!,
+              minHeight: rowMinHeight!,
+              child: AdwBoxedList(children: children),
+            )
+          else
+            AdwBoxedList(children: children),
         ],
       ),
     );
@@ -86,10 +103,20 @@ class AdwBoxedList extends StatelessWidget {
       separated.add(children[i]);
     }
 
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: separated,
+    final shape = RoundedRectangleBorder(borderRadius: BorderRadius.circular(borderRadius));
+
+    // The Material is the single visual and clipping boundary for the group:
+    // rows stay contiguous, dividers finish inside the rounded outer edge, and
+    // InkWell feedback from actionable rows cannot paint square corners.
+    return Material(
+      color: palette.elevated,
+      shape: shape,
+      clipBehavior: Clip.antiAlias,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: separated,
+      ),
     );
   }
 }

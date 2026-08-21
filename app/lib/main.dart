@@ -9,6 +9,7 @@ import 'package:relay_app/model/persistence/color_mode.dart';
 import 'package:relay_app/pages/home_page.dart';
 import 'package:relay_app/provider/local_ip_provider.dart';
 import 'package:relay_app/provider/settings_provider.dart';
+import 'package:relay_app/util/native/platform_check.dart';
 import 'package:relay_app/util/ui/dynamic_colors.dart';
 import 'package:relay_app/widget/watcher/life_cycle_watcher.dart';
 import 'package:relay_app/widget/watcher/shortcut_watcher.dart';
@@ -18,6 +19,7 @@ import 'package:relay_isolates/isolate.dart';
 import 'package:refena_flutter/addons.dart';
 import 'package:refena_flutter/refena_flutter.dart';
 import 'package:routerino/routerino.dart';
+import 'package:yaru/yaru.dart' as yaru;
 
 Future<void> main(List<String> args) async {
   final RefenaContainer container;
@@ -57,45 +59,73 @@ class RelayApp extends StatelessWidget {
       settingsProvider.select((settings) => (settings.theme, settings.colorMode, settings.customColor)),
     );
     final dynamicColors = ref.watch(dynamicColorsProvider);
-    return TrayWatcher(
-      child: WindowWatcher(
-        child: LifeCycleWatcher(
-          onChangedState: (AppLifecycleState state) {
-            switch (state) {
-              case AppLifecycleState.resumed:
-                ref.redux(localIpProvider).dispatch(InitLocalIpAction());
-                break;
-              case AppLifecycleState.detached:
-                // The main isolate is only exited when all child isolates are exited.
-                // https://github.com/relay/relay/issues/1568
-                ref.redux(parentIsolateProvider).dispatch(IsolateDisposeAction());
-                break;
-              default:
-                break;
-            }
-          },
-          child: ShortcutWatcher(
-            child: MaterialApp(
-              title: RelayProduct.name,
-              locale: TranslationProvider.of(context).flutterLocale,
-              supportedLocales: AppLocaleUtils.supportedLocales,
-              localizationsDelegates: GlobalMaterialLocalizations.delegates,
-              debugShowCheckedModeBanner: false,
-              theme: getTheme(colorMode, customColor, Brightness.light, dynamicColors),
-              darkTheme: getTheme(colorMode, customColor, Brightness.dark, dynamicColors),
-              themeMode: colorMode == ColorMode.oled ? ThemeMode.dark : themeMode,
-              navigatorKey: context.read(navigationProvider).key,
-              home: RouterinoHome(
-                builder: () => HomePage(
-                  initialTab: HomeTab.home,
-                  appStart: true,
-                  networkBootstrap: networkBootstrap,
+
+    Widget buildApp({
+      required ThemeData theme,
+      required ThemeData darkTheme,
+      ThemeData? highContrastTheme,
+      ThemeData? highContrastDarkTheme,
+    }) {
+      return TrayWatcher(
+        child: WindowWatcher(
+          child: LifeCycleWatcher(
+            onChangedState: (AppLifecycleState state) {
+              switch (state) {
+                case AppLifecycleState.resumed:
+                  ref.redux(localIpProvider).dispatch(InitLocalIpAction());
+                  break;
+                case AppLifecycleState.detached:
+                  // The main isolate is only exited when all child isolates are exited.
+                  // https://github.com/relay/relay/issues/1568
+                  ref.redux(parentIsolateProvider).dispatch(IsolateDisposeAction());
+                  break;
+                default:
+                  break;
+              }
+            },
+            child: ShortcutWatcher(
+              child: MaterialApp(
+                title: RelayProduct.name,
+                locale: TranslationProvider.of(context).flutterLocale,
+                supportedLocales: AppLocaleUtils.supportedLocales,
+                localizationsDelegates: GlobalMaterialLocalizations.delegates,
+                debugShowCheckedModeBanner: false,
+                theme: theme,
+                darkTheme: darkTheme,
+                highContrastTheme: highContrastTheme,
+                highContrastDarkTheme: highContrastDarkTheme,
+                themeMode: colorMode == ColorMode.oled ? ThemeMode.dark : themeMode,
+                navigatorKey: context.read(navigationProvider).key,
+                home: RouterinoHome(
+                  builder: () => HomePage(
+                    initialTab: HomeTab.home,
+                    appStart: true,
+                    networkBootstrap: networkBootstrap,
+                  ),
                 ),
               ),
             ),
           ),
         ),
-      ),
+      );
+    }
+
+    if (checkPlatform([TargetPlatform.linux]) && colorMode != ColorMode.custom) {
+      return yaru.YaruTheme(
+        builder: (context, yaruTheme, child) {
+          return buildApp(
+            theme: yaruTheme.theme,
+            darkTheme: yaruTheme.darkTheme,
+            highContrastTheme: yaru.yaruHighContrastLight,
+            highContrastDarkTheme: yaru.yaruHighContrastDark,
+          );
+        },
+      );
+    }
+
+    return buildApp(
+      theme: getTheme(colorMode, customColor, Brightness.light, dynamicColors),
+      darkTheme: getTheme(colorMode, customColor, Brightness.dark, dynamicColors),
     );
   }
 }

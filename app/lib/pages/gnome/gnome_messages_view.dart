@@ -1,16 +1,15 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
-import 'package:relay_app/config/relay_brand.dart';
+import 'package:refena_flutter/refena_flutter.dart';
 import 'package:relay_app/model/continuity/continuity_runtime.dart';
 import 'package:relay_app/model/persistence/relay_continuity_settings.dart';
 import 'package:relay_app/model/ui/relay_device_vm.dart';
 import 'package:relay_app/provider/continuity/continuity_provider.dart';
 import 'package:relay_app/widget/gnome/adw_action_row.dart';
 import 'package:relay_app/widget/gnome/adw_boxed_list.dart';
-import 'package:relay_app/widget/gnome/adw_button.dart';
 import 'package:relay_app/widget/gnome/adw_status_page.dart';
-import 'package:refena_flutter/refena_flutter.dart';
+import 'package:yaru/yaru.dart';
 
 /// GNOME messages continuity surface: conversations, one thread, and a reply
 /// box. Every state it can be in is a real one — there are no sample chats.
@@ -43,11 +42,11 @@ class _GnomeMessagesViewState extends State<GnomeMessagesView> {
 
   @override
   Widget build(BuildContext context) {
-    final palette = Theme.of(context).relayPalette;
+    final theme = Theme.of(context);
     final relayId = _relayId;
 
     return SingleChildScrollView(
-      padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 28),
+      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
       child: Center(
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 680),
@@ -56,19 +55,17 @@ class _GnomeMessagesViewState extends State<GnomeMessagesView> {
             children: [
               Row(
                 children: [
-                  AdwButton.flat(
-                    icon: Icons.arrow_back_rounded,
-                    label: _openConversationId == null ? 'Back' : 'Conversations',
+                  YaruBackButton(
                     onPressed: _openConversationId == null ? widget.onBack : () => setState(() => _openConversationId = null),
                   ),
-                  const SizedBox(width: 12),
-                  Text('Messages', style: RelayTypography.largeTitle(palette.textPrimary, isGnome: true)),
+                  const SizedBox(width: 10),
+                  Text('Messages', style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600)),
                 ],
               ),
-              const SizedBox(height: 24),
+              const SizedBox(height: 20),
               if (relayId == null)
                 AdwStatusPage(
-                  icon: Icons.sms_outlined,
+                  icon: YaruIcons.chat_bubble,
                   title: 'Not a Relay device',
                   description: '${widget.device.alias} is a Relay-compatible peer. Messages need a paired Relay device.',
                 )
@@ -90,12 +87,10 @@ class _GnomeMessagesViewState extends State<GnomeMessagesView> {
 
         if (!settings.isEnabled(ContinuityCapabilityKind.messages)) {
           return AdwStatusPage(
-            icon: Icons.sms_outlined,
+            icon: YaruIcons.chat_bubble,
             title: 'Messages are off',
             description: 'Turn on Messages for ${widget.device.alias} to read and reply to its conversations here.',
-            action: AdwButton(
-              label: settings.trusted ? 'Turn on Messages' : 'Trust this device first',
-              isPill: true,
+            action: FilledButton(
               onPressed: settings.trusted
                   ? () => ref
                         .redux(continuityProvider)
@@ -107,13 +102,14 @@ class _GnomeMessagesViewState extends State<GnomeMessagesView> {
                           ),
                         )
                   : null,
+              child: Text(settings.trusted ? 'Turn on Messages' : 'Trust this device first'),
             ),
           );
         }
 
         if (!device.connected) {
           return AdwStatusPage(
-            icon: Icons.cloud_off_rounded,
+            icon: YaruIcons.network_offline,
             title: '${widget.device.alias} is not connected',
             description: 'Messages appear here once the device reconnects.',
           );
@@ -122,7 +118,7 @@ class _GnomeMessagesViewState extends State<GnomeMessagesView> {
         final remote = device.remoteCapabilities[ContinuityCapabilityKind.messages];
         if (remote != null && !remote.isUsable) {
           return AdwStatusPage(
-            icon: Icons.lock_outline_rounded,
+            icon: YaruIcons.lock,
             title: remote.needsPermission ? 'Permission needed on ${widget.device.alias}' : 'Not available',
             description: remote.reason ?? 'That phone cannot share its messages.',
           );
@@ -152,10 +148,11 @@ class _GnomeMessagesViewState extends State<GnomeMessagesView> {
   }
 
   Widget _conversations(BuildContext context, WatchableRef ref, String relayId, DeviceContinuity device) {
-    final palette = Theme.of(context).relayPalette;
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
     if (device.conversations.isEmpty) {
       return const AdwStatusPage(
-        icon: Icons.forum_outlined,
+        icon: YaruIcons.chat_bubble,
         title: 'No conversations yet',
         description: 'Conversations load from the phone as they are needed.',
       );
@@ -167,12 +164,12 @@ class _GnomeMessagesViewState extends State<GnomeMessagesView> {
           children: [
             for (final conversation in device.conversations)
               AdwActionRow(
-                leading: Icon(conversation.unread ? Icons.mark_chat_unread_outlined : Icons.chat_bubble_outline),
+                leading: Icon(conversation.unread ? YaruIcons.chat_bubble_filled : YaruIcons.chat_bubble),
                 title: conversation.title,
                 subtitle: conversation.snippet,
                 trailing: Text(
                   _timeLabel(conversation.lastMessageAt),
-                  style: RelayTypography.caption(palette.textSecondary, isGnome: true),
+                  style: theme.textTheme.labelSmall?.copyWith(color: colorScheme.onSurface.withValues(alpha: 0.5)),
                 ),
                 onTap: () {
                   setState(() => _openConversationId = conversation.conversationId);
@@ -191,8 +188,7 @@ class _GnomeMessagesViewState extends State<GnomeMessagesView> {
           ],
         ),
         if (device.conversationsHasMore)
-          AdwButton.flat(
-            label: 'Load older conversations',
+          OutlinedButton(
             onPressed: () => ref
                 .redux(continuityProvider)
                 .dispatchAsync(
@@ -201,6 +197,7 @@ class _GnomeMessagesViewState extends State<GnomeMessagesView> {
                     beforeMs: device.conversations.last.lastMessageAt.millisecondsSinceEpoch,
                   ),
                 ),
+            child: const Text('Load older conversations'),
           ),
       ],
     );
@@ -213,7 +210,7 @@ class _GnomeMessagesViewState extends State<GnomeMessagesView> {
     DeviceContinuity device,
     String conversationId,
   ) {
-    final palette = Theme.of(context).relayPalette;
+    final theme = Theme.of(context);
     final messages = device.messages[conversationId] ?? const <RemoteMessage>[];
     final conversation = device.conversations.where((entry) => entry.conversationId == conversationId).firstOrNull;
     final recipients = conversation?.addresses ?? const <String>[];
@@ -226,12 +223,12 @@ class _GnomeMessagesViewState extends State<GnomeMessagesView> {
             padding: const EdgeInsets.only(bottom: 12),
             child: Text(
               conversation.title,
-              style: RelayTypography.title(palette.textPrimary, isGnome: true),
+              style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600),
             ),
           ),
         if (messages.isEmpty)
           const AdwStatusPage(
-            icon: Icons.chat_outlined,
+            icon: YaruIcons.chat_bubble,
             title: 'Loading messages…',
             description: 'The phone is sending this conversation.',
           )
@@ -240,15 +237,14 @@ class _GnomeMessagesViewState extends State<GnomeMessagesView> {
             children: [
               for (final message in messages.reversed)
                 AdwActionRow(
-                  leading: Icon(message.outgoing ? Icons.call_made_rounded : Icons.call_received_rounded),
+                  leading: Icon(message.outgoing ? YaruIcons.call_start : YaruIcons.call_incoming),
                   title: message.body,
                   subtitle: _timeLabel(message.sentAt),
                 ),
             ],
           ),
         if ((device.messagesHasMore[conversationId] ?? false) && messages.isNotEmpty)
-          AdwButton.flat(
-            label: 'Load older messages',
+          OutlinedButton(
             onPressed: () => ref
                 .redux(continuityProvider)
                 .dispatchAsync(
@@ -258,6 +254,7 @@ class _GnomeMessagesViewState extends State<GnomeMessagesView> {
                     beforeMs: messages.last.sentAt.millisecondsSinceEpoch,
                   ),
                 ),
+            child: const Text('Load older messages'),
           ),
         const SizedBox(height: 12),
         Row(
@@ -275,16 +272,15 @@ class _GnomeMessagesViewState extends State<GnomeMessagesView> {
               ),
             ),
             const SizedBox(width: 12),
-            AdwButton(
-              label: 'Send',
-              isPill: true,
+            FilledButton(
               onPressed: recipients.isEmpty ? null : () => _send(ref, relayId, conversationId, recipients),
+              child: const Text('Send'),
             ),
           ],
         ),
         if (device.lastError != null) ...[
           const SizedBox(height: 12),
-          Text(device.lastError!, style: RelayTypography.caption(palette.error, isGnome: true)),
+          Text(device.lastError!, style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.error)),
         ],
       ],
     );

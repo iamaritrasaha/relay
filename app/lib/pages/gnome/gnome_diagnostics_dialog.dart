@@ -2,11 +2,10 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:relay_app/config/relay_brand.dart';
 import 'package:relay_app/model/ui/relay_device_vm.dart';
 import 'package:relay_app/widget/gnome/adw_action_row.dart';
 import 'package:relay_app/widget/gnome/adw_boxed_list.dart';
-import 'package:relay_app/widget/gnome/adw_button.dart';
+import 'package:yaru/yaru.dart';
 
 /// GNOME Advanced Diagnostics modal dialog.
 ///
@@ -19,16 +18,15 @@ class GnomeDiagnosticsDialog extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final palette = Theme.of(context).relayPalette;
-    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
 
     return Dialog(
-      backgroundColor: isDark ? const Color(0xff181a22) : const Color(0xfff6f7fa),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(kYaruContainerRadius)),
       child: ConstrainedBox(
         constraints: const BoxConstraints(maxWidth: 520),
         child: Padding(
-          padding: const EdgeInsets.all(24),
+          padding: const EdgeInsets.all(20),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -39,10 +37,10 @@ class GnomeDiagnosticsDialog extends StatelessWidget {
                 children: [
                   Text(
                     'Device Diagnostics',
-                    style: RelayTypography.title(palette.textPrimary, isGnome: true),
+                    style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600),
                   ),
-                  IconButton(
-                    icon: const Icon(Icons.close_rounded, size: 20),
+                  YaruIconButton(
+                    icon: const Icon(YaruIcons.window_close, size: 18),
                     onPressed: () => Navigator.of(context).pop(),
                   ),
                 ],
@@ -51,21 +49,25 @@ class GnomeDiagnosticsDialog extends StatelessWidget {
 
               AdwPreferencesGroup(
                 title: 'Identity & Transport',
+                uppercaseTitle: false,
                 children: [
                   AdwActionRow(
                     title: 'Alias',
-                    trailing: Text(device.alias, style: RelayTypography.body(palette.textSecondary, isGnome: true)),
+                    trailing: Text(device.alias, style: theme.textTheme.bodyMedium?.copyWith(color: colorScheme.onSurface.withValues(alpha: 0.7))),
                   ),
                   AdwActionRow(
                     title: 'Target Kind',
-                    trailing: Text(device.targetKind.name, style: RelayTypography.body(palette.textSecondary, isGnome: true)),
+                    trailing: Text(
+                      device.targetKind.name,
+                      style: theme.textTheme.bodyMedium?.copyWith(color: colorScheme.onSurface.withValues(alpha: 0.7)),
+                    ),
                   ),
                   if (device.relayId != null)
                     AdwActionRow(
                       title: 'Relay ID',
                       subtitle: device.relayId,
-                      trailing: IconButton(
-                        icon: const Icon(Icons.copy_rounded, size: 16),
+                      trailing: YaruIconButton(
+                        icon: const Icon(YaruIcons.copy, size: 16),
                         tooltip: 'Copy Relay ID',
                         onPressed: () {
                           unawaited(Clipboard.setData(ClipboardData(text: device.relayId!)));
@@ -79,8 +81,8 @@ class GnomeDiagnosticsDialog extends StatelessWidget {
                     AdwActionRow(
                       title: 'Fingerprint',
                       subtitle: device.lanFingerprint ?? device.key,
-                      trailing: IconButton(
-                        icon: const Icon(Icons.copy_rounded, size: 16),
+                      trailing: YaruIconButton(
+                        icon: const Icon(YaruIcons.copy, size: 16),
                         tooltip: 'Copy Fingerprint',
                         onPressed: () {
                           unawaited(Clipboard.setData(ClipboardData(text: device.lanFingerprint ?? device.key)));
@@ -95,7 +97,7 @@ class GnomeDiagnosticsDialog extends StatelessWidget {
                       title: 'Endpoint',
                       trailing: Text(
                         '${device.ip}:${device.port ?? 53317}',
-                        style: RelayTypography.monospace(palette.textSecondary),
+                        style: theme.textTheme.bodySmall?.copyWith(fontFamily: 'monospace'),
                       ),
                     ),
                 ],
@@ -105,9 +107,9 @@ class GnomeDiagnosticsDialog extends StatelessWidget {
               Row(
                 mainAxisAlignment: MainAxisAlignment.end,
                 children: [
-                  AdwButton(
-                    label: 'Close',
+                  OutlinedButton(
                     onPressed: () => Navigator.of(context).pop(),
+                    child: const Text('Close'),
                   ),
                 ],
               ),

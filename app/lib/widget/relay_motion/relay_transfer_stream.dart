@@ -296,6 +296,7 @@ class RelayTransferStream extends StatelessWidget {
   final RelayDevicePhase phase;
   final double? progress;
   final double pulsePhase;
+  final RelayDevicePalette? devicePalette;
   final bool isFocusedPair;
   final int fileCount;
   final String? origin;
@@ -308,6 +309,7 @@ class RelayTransferStream extends StatelessWidget {
     this.phase = RelayDevicePhase.idle,
     this.progress,
     this.pulsePhase = 0.0,
+    this.devicePalette,
     this.isFocusedPair = false,
     this.fileCount = 1,
     this.origin,
@@ -326,7 +328,7 @@ class RelayTransferStream extends StatelessWidget {
         progress: progress,
         pulsePhase: pulsePhase,
         primaryColor: palette.hairline,
-        accentColor: palette.accent,
+        accentColor: devicePalette?.primary ?? palette.accent,
         successColor: palette.success,
         errorColor: palette.error,
         isFocusedPair: isFocusedPair,

@@ -6,9 +6,11 @@ import 'package:relay_app/config/relay_motion.dart';
 import 'package:relay_app/model/ui/relay_device_vm.dart';
 import 'package:relay_app/pages/gnome/gnome_shell.dart';
 import 'package:relay_app/pages/relay_home_vm.dart';
-import 'package:relay_app/widget/relay/relay_device_silhouette.dart';
+import 'package:relay_app/widget/gnome/relay_connection_status.dart';
 import 'package:relay_app/widget/relay_carbon/relay_surface.dart';
 import 'package:relay_app/widget/relay_symbol.dart';
+import 'package:relay_isolates/model/device.dart';
+import 'package:yaru/yaru.dart';
 
 /// One entry in the sidebar's main navigation.
 class GnomeNavDestination {
@@ -50,21 +52,25 @@ class GnomeDeviceSidebar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final palette = Theme.of(context).relayPalette;
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+    final yaruColors = YaruColors.of(context);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Padding(
-          padding: const EdgeInsets.fromLTRB(18, 22, 18, 20),
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 12),
           child: Row(
             children: [
-              const RelaySymbol(size: 26),
-              const SizedBox(width: 12),
+              const RelaySymbol(size: 24),
+              const SizedBox(width: 10),
               Expanded(
                 child: Text(
                   RelayProduct.name,
-                  style: RelayTypography.wordmark(palette.textPrimary),
+                  style: theme.textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.w600,
+                  ),
                   overflow: TextOverflow.ellipsis,
                 ),
               ),
@@ -73,23 +79,47 @@ class GnomeDeviceSidebar extends StatelessWidget {
         ),
         Expanded(
           child: ListView(
-            padding: const EdgeInsets.symmetric(horizontal: 10),
+            padding: const EdgeInsets.symmetric(horizontal: 8),
             children: [
               for (final destination in destinations)
-                _NavItem(
-                  destination: destination,
-                  selected: destination.view != null && destination.view == subView,
-                  onTap: () => onSelectDestination(destination),
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 2),
+                  child: YaruMasterTile(
+                    leading: Icon(destination.icon, size: 20),
+                    title: Text(destination.label),
+                    trailing: destination.badge > 0
+                        ? Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: colorScheme.primary.withValues(alpha: 0.15),
+                              borderRadius: BorderRadius.circular(RelayRadius.pill),
+                            ),
+                            child: Text(
+                              '${destination.badge}',
+                              style: theme.textTheme.labelSmall?.copyWith(
+                                color: colorScheme.primary,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          )
+                        : null,
+                    selected: destination.view != null && destination.view == subView,
+                    onTap: () => onSelectDestination(destination),
+                  ),
                 ),
-              const SizedBox(height: 30),
+              const SizedBox(height: 20),
               Padding(
-                padding: const EdgeInsets.fromLTRB(10, 0, 6, 12),
+                padding: const EdgeInsets.fromLTRB(12, 0, 4, 8),
                 child: Row(
                   children: [
                     Expanded(
                       child: Text(
                         'DEVICES',
-                        style: RelayTypography.sectionHeader(palette.textTertiary, isGnome: true),
+                        style: theme.textTheme.labelSmall?.copyWith(
+                          color: colorScheme.onSurface.withValues(alpha: 0.6),
+                          fontWeight: FontWeight.w600,
+                          letterSpacing: 1.0,
+                        ),
                       ),
                     ),
                     _AddDeviceButton(onPressed: onAddDevice),
@@ -110,7 +140,7 @@ class GnomeDeviceSidebar extends StatelessWidget {
           ),
         ),
         Padding(
-          padding: const EdgeInsets.fromLTRB(20, 12, 20, 18),
+          padding: const EdgeInsets.fromLTRB(16, 10, 16, 14),
           child: Row(
             children: [
               Container(
@@ -119,13 +149,13 @@ class GnomeDeviceSidebar extends StatelessWidget {
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
                   color: switch (vm.presence) {
-                    RelayPresence.offline => palette.textTertiary,
-                    RelayPresence.discovering => palette.warning,
-                    RelayPresence.ready => palette.success,
+                    RelayPresence.offline => colorScheme.onSurface.withValues(alpha: 0.4),
+                    RelayPresence.discovering => yaruColors.warning,
+                    RelayPresence.ready => theme.relayPalette.accent,
                   },
                 ),
               ),
-              const SizedBox(width: 10),
+              const SizedBox(width: 8),
               Expanded(
                 child: Text(
                   switch (vm.presence) {
@@ -133,7 +163,9 @@ class GnomeDeviceSidebar extends StatelessWidget {
                     RelayPresence.discovering => 'Looking for devices',
                     RelayPresence.ready => 'Ready',
                   },
-                  style: RelayTypography.caption(palette.textSecondary, isGnome: true),
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: colorScheme.onSurface.withValues(alpha: 0.6),
+                  ),
                   overflow: TextOverflow.ellipsis,
                 ),
               ),
@@ -152,111 +184,15 @@ class _AddDeviceButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final palette = Theme.of(context).relayPalette;
-    return Tooltip(
-      message: 'Add device',
-      child: InkWell(
-        onTap: onPressed,
-        borderRadius: BorderRadius.circular(10),
-        child: Padding(
-          padding: const EdgeInsets.all(4),
-          child: Icon(Icons.add_rounded, size: 18, color: palette.textSecondary),
-        ),
-      ),
+    return YaruIconButton(
+      icon: const Icon(YaruIcons.plus, size: 18),
+      tooltip: 'Add device',
+      onPressed: onPressed,
     );
   }
 }
 
-/// A navigation row. Selection reads as an elevated surface plus a short warm
-/// strip on the leading edge, never as a saturated fill.
-class _NavItem extends StatefulWidget {
-  final GnomeNavDestination destination;
-  final bool selected;
-  final VoidCallback onTap;
-
-  const _NavItem({required this.destination, required this.selected, required this.onTap});
-
-  @override
-  State<_NavItem> createState() => _NavItemState();
-}
-
-class _NavItemState extends State<_NavItem> {
-  bool _hovered = false;
-
-  @override
-  Widget build(BuildContext context) {
-    final palette = Theme.of(context).relayPalette;
-    final reducedMotion = MediaQuery.disableAnimationsOf(context);
-    final selected = widget.selected;
-
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 4),
-      child: MouseRegion(
-        cursor: SystemMouseCursors.click,
-        onEnter: (_) => setState(() => _hovered = true),
-        onExit: (_) => setState(() => _hovered = false),
-        child: Semantics(
-          button: true,
-          selected: selected,
-          child: GestureDetector(
-            onTap: widget.onTap,
-            child: AnimatedContainer(
-              duration: reducedMotion ? Duration.zero : RelayMotion.hover,
-              curve: RelayMotion.curve,
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
-              decoration: BoxDecoration(
-                color: selected ? palette.softSurface : (_hovered ? palette.hoverSurface : Colors.transparent),
-                borderRadius: BorderRadius.circular(RelayRadius.nav),
-              ),
-              child: Row(
-                children: [
-                  AnimatedContainer(
-                    duration: reducedMotion ? Duration.zero : RelayMotion.state,
-                    width: 4,
-                    height: selected ? 16 : 0,
-                    decoration: BoxDecoration(
-                      color: palette.accent,
-                      borderRadius: BorderRadius.circular(2),
-                    ),
-                  ),
-                  SizedBox(width: selected ? 10 : 14),
-                  Icon(
-                    widget.destination.icon,
-                    size: 18,
-                    color: selected ? palette.textPrimary : palette.textTertiary,
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Text(
-                      widget.destination.label,
-                      style: RelayTypography.navLabel(selected ? palette.textPrimary : palette.textSecondary),
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ),
-                  if (widget.destination.badge > 0)
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
-                      decoration: BoxDecoration(
-                        color: palette.accent.withValues(alpha: 0.2),
-                        borderRadius: BorderRadius.circular(RelayRadius.pill),
-                      ),
-                      child: Text(
-                        '${widget.destination.badge}',
-                        style: RelayTypography.caption(palette.accent, isGnome: true),
-                      ),
-                    ),
-                ],
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-/// A known device in the sidebar: what it is, whether it is here, and its
-/// battery when the device actually reports one.
+/// A known device in the sidebar.
 class _DeviceSidebarCard extends StatefulWidget {
   final RelayDeviceVm device;
   final bool selected;
@@ -270,7 +206,6 @@ class _DeviceSidebarCard extends StatefulWidget {
 
 class _DeviceSidebarCardState extends State<_DeviceSidebarCard> with SingleTickerProviderStateMixin {
   late final AnimationController _arrival;
-  bool _hovered = false;
 
   @override
   void initState() {
@@ -289,7 +224,8 @@ class _DeviceSidebarCardState extends State<_DeviceSidebarCard> with SingleTicke
 
   @override
   Widget build(BuildContext context) {
-    final palette = Theme.of(context).relayPalette;
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
     final reducedMotion = MediaQuery.disableAnimationsOf(context);
     final device = widget.device;
     final selected = widget.selected;
@@ -300,72 +236,59 @@ class _DeviceSidebarCardState extends State<_DeviceSidebarCard> with SingleTicke
       _ => _online ? RelayPresenceTone.online : RelayPresenceTone.offline,
     };
 
-    Widget card = AnimatedContainer(
-      duration: reducedMotion ? Duration.zero : RelayMotion.focus,
-      curve: RelayMotion.focusCurve,
-      margin: const EdgeInsets.only(bottom: 2),
-      padding: const EdgeInsets.fromLTRB(10, 10, 12, 10),
-      decoration: BoxDecoration(
-        color: selected ? palette.softSurface : (_hovered ? palette.hoverSurface : Colors.transparent),
-        borderRadius: BorderRadius.circular(RelayRadius.nav),
-      ),
-      child: Row(
-        children: [
-          AnimatedContainer(
-            duration: reducedMotion ? Duration.zero : RelayMotion.state,
-            width: 4,
-            height: selected ? 26 : 0,
-            decoration: BoxDecoration(
-              color: palette.accent,
-              borderRadius: BorderRadius.circular(2),
-            ),
-          ),
-          SizedBox(width: selected ? 10 : 14),
-          RelayDeviceSilhouette(
-            deviceType: device.deviceType,
-            color: _online ? palette.textSecondary : palette.textTertiary,
-            size: 20,
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  device.alias,
-                  style: RelayTypography.body(palette.textPrimary, isGnome: true),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                const SizedBox(height: 2),
-                RelayStatusPill(
-                  tone: tone,
-                  label: _online ? device.statusSummary : 'Offline',
-                  compact: true,
-                ),
-              ],
-            ),
-          ),
-          if (device.battery.hasInfo) ...[
-            const SizedBox(width: 8),
-            Text(
-              '${device.battery.percentage}%',
-              style: RelayTypography.caption(palette.textTertiary, isGnome: true),
-            ),
-          ],
-        ],
-      ),
-    );
+    final IconData deviceIcon = switch (device.deviceType) {
+      DeviceType.mobile => YaruIcons.smartphone,
+      DeviceType.desktop => YaruIcons.desktop,
+      _ => YaruIcons.computer,
+    };
 
-    card = MouseRegion(
-      cursor: SystemMouseCursors.click,
-      onEnter: (_) => setState(() => _hovered = true),
-      onExit: (_) => setState(() => _hovered = false),
-      child: Semantics(
-        button: true,
+    final devicePalette = RelayDevicePalette.fromDevice(device, brightness: theme.brightness);
+
+    Widget card = Padding(
+      padding: const EdgeInsets.only(bottom: 2),
+      child: YaruMasterTile(
+        leading: Icon(
+          deviceIcon,
+          size: 20,
+          color: _online ? (selected ? devicePalette.primary : colorScheme.onSurface) : colorScheme.onSurface.withValues(alpha: 0.4),
+        ),
+        title: Text(
+          device.alias,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+        ),
+        subtitle: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Flexible(
+              child: device.phase == RelayDevicePhase.idle
+                  ? RelayConnectionStatus(
+                      connected: _online,
+                      label: _online ? device.statusSummary : 'Offline',
+                      palette: devicePalette,
+                      animationsEnabled: !reducedMotion,
+                      ambient: true,
+                      compact: true,
+                    )
+                  : RelayStatusPill(
+                      tone: tone,
+                      label: device.statusSummary,
+                      compact: true,
+                    ),
+            ),
+            if (device.battery.hasInfo) ...[
+              const SizedBox(width: 6),
+              Text(
+                '${device.battery.percentage}%',
+                style: theme.textTheme.labelSmall?.copyWith(
+                  color: colorScheme.onSurface.withValues(alpha: 0.6),
+                ),
+              ),
+            ],
+          ],
+        ),
         selected: selected,
-        child: GestureDetector(onTap: widget.onTap, child: card),
+        onTap: widget.onTap,
       ),
     );
 
@@ -373,7 +296,6 @@ class _DeviceSidebarCardState extends State<_DeviceSidebarCard> with SingleTicke
       return card;
     }
 
-    // Relay Arrival, in the sidebar: a newly discovered device rises in once.
     return AnimatedBuilder(
       animation: _arrival,
       child: card,
@@ -381,7 +303,7 @@ class _DeviceSidebarCardState extends State<_DeviceSidebarCard> with SingleTicke
         final t = Curves.easeOutCubic.transform(_arrival.value);
         return Opacity(
           opacity: t,
-          child: Transform.translate(offset: Offset(0, 8 * (1 - t)), child: child),
+          child: Transform.translate(offset: Offset(0, 6 * (1 - t)), child: child),
         );
       },
     );
@@ -395,23 +317,28 @@ class _EmptySidebarState extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final palette = Theme.of(context).relayPalette;
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
 
     return Padding(
-      padding: const EdgeInsets.fromLTRB(10, 10, 10, 10),
+      padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(Icons.devices_other_outlined, size: 19, color: palette.textTertiary),
-          const SizedBox(height: 10),
+          Icon(YaruIcons.computer, size: 20, color: colorScheme.onSurface.withValues(alpha: 0.4)),
+          const SizedBox(height: 8),
           Text(
             presence == RelayPresence.offline ? 'Relay is offline' : 'No devices yet',
-            style: RelayTypography.body(palette.textSecondary, isGnome: true),
+            style: theme.textTheme.bodyMedium?.copyWith(
+              color: colorScheme.onSurface.withValues(alpha: 0.8),
+            ),
           ),
-          const SizedBox(height: 3),
+          const SizedBox(height: 2),
           Text(
             presence == RelayPresence.offline ? 'Turn on receiving to find devices.' : 'Devices on your network appear here.',
-            style: RelayTypography.caption(palette.textTertiary, isGnome: true),
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: colorScheme.onSurface.withValues(alpha: 0.5),
+            ),
           ),
         ],
       ),

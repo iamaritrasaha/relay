@@ -1,3 +1,30 @@
+## 0.2.0 — 2026-08-21
+
+### GNOME/Yaru desktop
+- New GNOME/Yaru-oriented Linux interface
+- Rounded GTK3 application window via current Handy/Yaru integration
+- Redesigned Overview, Settings, Messages and Phone views
+- System light/dark theme and typography
+
+### Device identity and motion
+- Deterministic multicolor identity per connected device
+- Animated selected-device Hero
+- Optimized ambient animation scheduler
+- Reduced-motion and Spatial Animations support
+
+### KDE Connect interoperability
+- Messages and Phone UI improvements
+- Linux SMS runtime packet bound hardened
+- Android attachment part_id compatibility
+- Device-ID normalization improvements
+
+### GNOME integration
+- Preserved Relay Phone Pill integration
+- Panel device/status controls
+
+### Performance
+- Animated Overview idle CPU substantially reduced after scheduler optimization
+
 ## 1.18.2 (unreleased)
 
 - fix: ignore proxies, fixes "TLS info not found" when a system proxy (e.g. Shadowrocket) is enabled

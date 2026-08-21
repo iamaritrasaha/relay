@@ -47,13 +47,16 @@ void main() {
     addTearDown(tester.view.reset);
     final theme = getTheme(ColorMode.relay, Colors.blue, Brightness.dark, null);
     await tester.pumpWidget(
-      MaterialApp(
-        debugShowCheckedModeBanner: false,
-        theme: theme.copyWith(
-          textTheme: theme.textTheme.apply(fontFamily: reviewFontFamily),
-          primaryTextTheme: theme.primaryTextTheme.apply(fontFamily: reviewFontFamily),
+      MediaQuery(
+        data: const MediaQueryData(disableAnimations: true),
+        child: MaterialApp(
+          debugShowCheckedModeBanner: false,
+          theme: theme.copyWith(
+            textTheme: theme.textTheme.apply(fontFamily: reviewFontFamily),
+            primaryTextTheme: theme.primaryTextTheme.apply(fontFamily: reviewFontFamily),
+          ),
+          home: child,
         ),
-        home: child,
       ),
     );
     await tester.pumpAndSettle();

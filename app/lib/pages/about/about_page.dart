@@ -12,6 +12,7 @@ import 'package:relay_app/widget/responsive_list_view.dart';
 import 'package:refena_flutter/refena_flutter.dart';
 import 'package:routerino/routerino.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:yaru/yaru.dart';
 
 part 'contributors.dart';
 
@@ -71,7 +72,7 @@ class RelayAboutIdentity extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       mainAxisSize: MainAxisSize.min,
       children: [
-        RelaySymbol(size: mobile ? 72 : 88, semanticLabel: 'Relay'),
+        RelaySymbol(size: mobile ? 72 : 88, animated: true, semanticLabel: 'Relay'),
         SizedBox(height: mobile ? 18 : 22),
         Text(
           RelayProduct.name,
@@ -170,23 +171,23 @@ class _AboutActions extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final actions = [
-      _AboutAction(label: 'Open Source Licenses', icon: Icons.article_outlined, onPressed: () async => context.push(() => const LicensePage())),
+      _AboutAction(label: 'Open Source Licenses', icon: YaruIcons.document, onPressed: () async => context.push(() => const LicensePage())),
       _AboutAction(
         label: 'Upstream acknowledgements',
-        icon: Icons.people_outline_rounded,
+        icon: YaruIcons.users,
         onPressed: () async => context.push(() => const UpstreamAcknowledgementsPage()),
       ),
       _AboutAction(
         label: 'Upstream source',
-        icon: Icons.code_rounded,
+        icon: YaruIcons.code,
         onPressed: () async => launchUrl(Uri.parse('https://github.com/relay/relay'), mode: LaunchMode.externalApplication),
       ),
       _AboutAction(
         label: 'Apache License 2.0',
-        icon: Icons.open_in_new_rounded,
+        icon: YaruIcons.external_link,
         onPressed: () async => launchUrl(Uri.parse('https://www.apache.org/licenses/LICENSE-2.0')),
       ),
-      _AboutAction(label: 'Diagnostics', icon: Icons.bug_report_outlined, onPressed: () async => context.push(() => const DebugPage())),
+      _AboutAction(label: 'Diagnostics', icon: YaruIcons.utilities, onPressed: () async => context.push(() => const DebugPage())),
     ];
     if (mobile) {
       return Column(
@@ -207,20 +208,17 @@ class _AboutAction extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final palette = Theme.of(context).relayPalette;
-    // A filled quiet surface rather than an outline, so About uses the same
-    // control language as the rest of Relay.
-    return TextButton.icon(
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+
+    return OutlinedButton.icon(
       onPressed: onPressed,
-      style: TextButton.styleFrom(
-        minimumSize: const Size(0, 44),
-        foregroundColor: palette.textPrimary,
-        backgroundColor: palette.softSurface,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(RelayRadius.button)),
-        padding: const EdgeInsets.symmetric(horizontal: 16),
+      style: OutlinedButton.styleFrom(
+        minimumSize: const Size(0, 40),
+        padding: const EdgeInsets.symmetric(horizontal: 14),
       ),
-      icon: Icon(icon, size: 17, color: palette.textSecondary),
-      label: Text(label, style: RelayTypography.body(palette.textPrimary, isGnome: true)),
+      icon: Icon(icon, size: 16, color: colorScheme.onSurface.withValues(alpha: 0.7)),
+      label: Text(label),
     );
   }
 }

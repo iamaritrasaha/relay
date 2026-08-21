@@ -58,6 +58,7 @@ import 'package:relay_isolates/util/transfer_notification.dart';
 import 'package:routerino/routerino.dart';
 import 'package:share_handler/share_handler.dart';
 import 'package:window_manager/window_manager.dart';
+import 'package:yaru/yaru.dart';
 
 final _logger = Logger('Init');
 
@@ -120,6 +121,13 @@ Future<RefenaContainer> preInit(List<String> args) async {
 
     // initialize size and position
     await WindowManager.instance.ensureInitialized();
+    if (checkPlatform([TargetPlatform.linux, TargetPlatform.windows, TargetPlatform.macOS])) {
+      try {
+        await YaruWindowTitleBar.ensureInitialized();
+      } catch (e) {
+        _logger.warning('Initializing YaruWindowTitleBar failed: $e');
+      }
+    }
     await WindowDimensionsController(persistenceService).initDimensionsConfiguration();
     if (args.contains(startHiddenFlag)) {
       // keep this app hidden
@@ -129,9 +137,12 @@ Future<RefenaContainer> preInit(List<String> args) async {
     }
 
     if (startHidden) {
-      unawaited(hideToTray());
+      // RefenaScope is mounted by runApp after preInit returns. The initial
+      // sleep value is installed in the container below, so do not dereference
+      // RefenaScope.defaultRef during this native-window bootstrap phase.
+      unawaited(hideToTray(updateSleepState: false));
     } else {
-      unawaited(showFromTray());
+      unawaited(showFromTray(updateSleepState: false));
     }
 
     if (defaultTargetPlatform == TargetPlatform.macOS) {

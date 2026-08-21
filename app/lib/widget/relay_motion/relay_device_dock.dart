@@ -1,17 +1,17 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:relay_app/config/relay_brand.dart';
 import 'package:relay_app/config/relay_motion.dart';
 import 'package:relay_app/model/ui/relay_device_vm.dart';
 import 'package:relay_app/widget/relay/relay_device_silhouette.dart';
+import 'package:relay_app/widget/relay_motion/relay_ambient_clock.dart';
 
 /// The rail of devices that are not currently in the hero.
 ///
-/// Relay keeps one focused device at a time, so the dock is where the rest of
-/// the room lives. Selecting a tile hands focus to it: the tile grows into the
-/// hero's weight while the outgoing device settles back into the rail, which is
-/// why focus is an animation on the tiles themselves rather than a page swap.
+/// Each tile visually reflects its device's unique multicolor identity.
+/// Selecting a tile hands focus to it with a smooth palette transition bloom.
 class RelayDeviceDock extends StatelessWidget {
   final List<RelayDeviceVm> devices;
   final String? selectedKey;
@@ -54,7 +54,7 @@ class RelayDeviceDock extends StatelessWidget {
   }
 }
 
-/// One device in the dock, including its arrival animation.
+/// One device in the dock with device-specific color identity and tactile hover feedback.
 class RelayDockTile extends StatefulWidget {
   final RelayDeviceVm device;
   final bool selected;
@@ -73,22 +73,56 @@ class RelayDockTile extends StatefulWidget {
   State<RelayDockTile> createState() => _RelayDockTileState();
 }
 
-class _RelayDockTileState extends State<RelayDockTile> with SingleTickerProviderStateMixin {
+class _RelayDockTileState extends State<RelayDockTile> with TickerProviderStateMixin {
   late final AnimationController _arrival;
+  AnimationController? _ambientDotLocal;
   bool _hovered = false;
 
   @override
   void initState() {
     super.initState();
-    // Relay Arrival: a device that has just been discovered rises into place
-    // once. There is no idle pulse afterwards.
     _arrival = AnimationController(vsync: this, duration: RelayMotion.arrival);
     unawaited(_arrival.forward());
+  }
+
+  bool get _motionOn => widget.animationsEnabled && !(MediaQuery.maybeDisableAnimationsOf(context) ?? false);
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final clock = RelayAmbientClock.maybeOf(context);
+    _syncMotion(clock);
+  }
+
+  @override
+  void didUpdateWidget(covariant RelayDockTile oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    final clock = RelayAmbientClock.maybeOf(context);
+    _syncMotion(clock);
+  }
+
+  void _syncMotion(RelayAmbientClockNotifier? sharedClock) {
+    if (sharedClock == null) {
+      if (_online && _motionOn) {
+        _ambientDotLocal ??= AnimationController(vsync: this, duration: RelayMotion.ambientGlowCycle);
+        if (!_ambientDotLocal!.isAnimating) {
+          unawaited(_ambientDotLocal!.repeat());
+        }
+      } else if (_ambientDotLocal != null) {
+        _ambientDotLocal!.stop();
+        _ambientDotLocal!.value = 0;
+      }
+    } else if (_ambientDotLocal != null) {
+      _ambientDotLocal!.stop();
+      _ambientDotLocal!.dispose();
+      _ambientDotLocal = null;
+    }
   }
 
   @override
   void dispose() {
     _arrival.dispose();
+    _ambientDotLocal?.dispose();
     super.dispose();
   }
 
@@ -96,10 +130,13 @@ class _RelayDockTileState extends State<RelayDockTile> with SingleTickerProvider
 
   @override
   Widget build(BuildContext context) {
-    final palette = Theme.of(context).relayPalette;
+    final sharedClock = RelayAmbientClock.maybeOf(context);
+    final theme = Theme.of(context);
+    final palette = theme.relayPalette;
     final reducedMotion = MediaQuery.disableAnimationsOf(context) || !widget.animationsEnabled;
-
     final selected = widget.selected;
+    final devicePalette = RelayDevicePalette.fromDevice(widget.device, brightness: theme.brightness);
+    final Listenable? dotRepaint = sharedClock?.statusClock ?? _ambientDotLocal;
 
     final tile = AnimatedContainer(
       duration: reducedMotion ? Duration.zero : RelayMotion.focus,
@@ -107,28 +144,42 @@ class _RelayDockTileState extends State<RelayDockTile> with SingleTickerProvider
       width: 190,
       padding: const EdgeInsets.fromLTRB(12, 9, 14, 9),
       decoration: BoxDecoration(
-        color: selected ? palette.softSurface : (_hovered ? palette.hoverSurface : Colors.transparent),
+        color: selected
+            ? palette.softSurface
+            : (_hovered
+                  ? palette.hoverSurface
+                  : (_online ? devicePalette.primary.withValues(alpha: theme.brightness == Brightness.dark ? 0.03 : 0.02) : Colors.transparent)),
         borderRadius: BorderRadius.circular(RelayRadius.action),
+        border: Border.all(
+          color: selected
+              ? devicePalette.primary.withValues(alpha: 0.3)
+              : (_hovered ? devicePalette.primary.withValues(alpha: 0.18) : palette.hairline),
+          width: 1.0,
+        ),
       ),
       child: Row(
         children: [
-          // The selected device carries a short warm marker, not an outline.
+          // Device identity indicator bar
           AnimatedContainer(
             duration: reducedMotion ? Duration.zero : RelayMotion.state,
-            width: 3,
-            height: selected ? 26 : 0,
+            width: 3.5,
+            height: selected ? 26 : (_online ? 12 : 0),
             decoration: BoxDecoration(
-              color: palette.accent,
+              gradient: LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: [devicePalette.primary, devicePalette.secondary],
+              ),
               borderRadius: BorderRadius.circular(2),
             ),
           ),
-          SizedBox(width: selected ? 10 : 13),
+          SizedBox(width: selected ? 10 : 12),
           RelayDeviceSilhouette(
             deviceType: widget.device.deviceType,
-            color: _online ? palette.textSecondary : palette.textTertiary,
+            color: _online ? (selected ? devicePalette.primary : palette.textSecondary) : palette.textTertiary,
             size: 22,
           ),
-          const SizedBox(width: 11),
+          const SizedBox(width: 10),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -136,16 +187,44 @@ class _RelayDockTileState extends State<RelayDockTile> with SingleTickerProvider
               children: [
                 Text(
                   widget.device.alias,
-                  style: RelayTypography.body(_online ? palette.textPrimary : palette.textSecondary, isGnome: true),
+                  style: RelayTypography.body(
+                    _online ? palette.textPrimary : palette.textSecondary,
+                    isGnome: true,
+                  ),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                 ),
                 const SizedBox(height: 1),
-                Text(
-                  _online ? widget.device.statusSummary : 'Offline',
-                  style: RelayTypography.caption(palette.textTertiary, isGnome: true),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
+                Row(
+                  children: [
+                    if (_online && !reducedMotion && dotRepaint != null) ...[
+                      AnimatedBuilder(
+                        animation: dotRepaint,
+                        builder: (context, _) {
+                          final rawPhase = sharedClock != null ? sharedClock.phaseFast : (_ambientDotLocal?.value ?? 0.0);
+                          final phase = (rawPhase + devicePalette.phaseOffset) % 1.0;
+                          final opacity = 0.55 + 0.45 * (0.5 + 0.5 * math.sin(phase * 2 * math.pi));
+                          return Container(
+                            width: 5,
+                            height: 5,
+                            margin: const EdgeInsets.only(right: 5),
+                            decoration: BoxDecoration(
+                              shape: BoxShape.circle,
+                              color: devicePalette.primary.withValues(alpha: opacity),
+                            ),
+                          );
+                        },
+                      ),
+                    ],
+                    Expanded(
+                      child: Text(
+                        _online ? widget.device.statusSummary : 'Offline',
+                        style: RelayTypography.caption(palette.textTertiary, isGnome: true),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  ],
                 ),
               ],
             ),
@@ -164,16 +243,10 @@ class _RelayDockTileState extends State<RelayDockTile> with SingleTickerProvider
           button: true,
           selected: selected,
           label: '${widget.device.alias}. ${_online ? widget.device.statusSummary : 'Offline'}',
-          child: AnimatedScale(
-            scale: reducedMotion ? 1.0 : (selected ? 1.0 : 0.95),
-            alignment: Alignment.centerLeft,
-            duration: reducedMotion ? Duration.zero : RelayMotion.focus,
-            curve: RelayMotion.focusCurve,
-            child: AnimatedOpacity(
-              opacity: _online ? 1.0 : 0.7,
-              duration: reducedMotion ? Duration.zero : RelayMotion.departure,
-              child: tile,
-            ),
+          child: AnimatedOpacity(
+            opacity: _online ? 1.0 : 0.7,
+            duration: reducedMotion ? Duration.zero : RelayMotion.departure,
+            child: tile,
           ),
         ),
       ),
@@ -189,7 +262,7 @@ class _RelayDockTileState extends State<RelayDockTile> with SingleTickerProvider
             opacity: t,
             child: Transform.translate(
               offset: Offset(0, 8 * (1 - t)),
-              child: Transform.scale(scale: 0.95 + 0.05 * t, child: child),
+              child: child,
             ),
           );
         },

@@ -12,11 +12,14 @@ void main() {
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.reset);
     await tester.pumpWidget(
-      MaterialApp(
-        theme: getTheme(ColorMode.relay, Colors.blue, Brightness.light, null),
-        darkTheme: getTheme(ColorMode.relay, Colors.blue, Brightness.dark, null),
-        themeMode: brightness == Brightness.dark ? ThemeMode.dark : ThemeMode.light,
-        home: const _RelayBrandSample(),
+      MediaQuery(
+        data: const MediaQueryData(disableAnimations: true),
+        child: MaterialApp(
+          theme: getTheme(ColorMode.relay, Colors.blue, Brightness.light, null),
+          darkTheme: getTheme(ColorMode.relay, Colors.blue, Brightness.dark, null),
+          themeMode: brightness == Brightness.dark ? ThemeMode.dark : ThemeMode.light,
+          home: const _RelayBrandSample(),
+        ),
       ),
     );
     await tester.pumpAndSettle();

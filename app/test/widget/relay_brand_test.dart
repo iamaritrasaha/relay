@@ -14,23 +14,19 @@ void main() {
     expect(RelayProduct.localSendAttribution, 'Portions based on LocalSend, licensed under the Apache License 2.0.');
   });
 
-  test('Relay semantic colors use the Relay Carbon dark palette', () {
-    expect(RelayPalette.dark.canvas, const Color(0xff11110f));
-    expect(RelayPalette.dark.elevated, const Color(0xff1a1815));
-    expect(RelayPalette.dark.accent, const Color(0xfff07855));
-    expect(RelayPalette.dark.accentSoft, const Color(0xffff9a7c));
+  test('Relay semantic colors use the GNOME/Yaru palette', () {
+    expect(RelayPalette.dark.canvas, const Color(0xff242424));
+    expect(RelayPalette.dark.elevated, const Color(0xff303030));
+    expect(RelayPalette.dark.accent, const Color(0xffe95420));
+    expect(RelayPalette.dark.accentSoft, const Color(0xffff7846));
     expect(RelayPalette.dark.accentSecondary, const Color(0xffc89a55));
     expect(RelayPalette.dark.accent, isNot(const Color(0xff008080)));
-    // Relay Carbon is a warm neutral. A blue-forward or purple-forward accent
-    // is exactly what this palette replaced, so guard against either returning:
-    // both accents must stay warmest in red and coolest in blue.
     for (final accent in [RelayPalette.dark.accent, RelayPalette.light.accent, RelayPalette.dark.accentSecondary]) {
       expect(accent.b, lessThan(accent.g));
       expect(accent.g, lessThan(accent.r));
     }
-    // The greys carry the same warmth rather than a violet cast.
     expect(RelayPalette.dark.canvas.b, lessThanOrEqualTo(RelayPalette.dark.canvas.r));
-    expect(RelayPalette.dark.elevated.b, lessThan(RelayPalette.dark.elevated.r));
+    expect(RelayPalette.dark.elevated.b, lessThanOrEqualTo(RelayPalette.dark.elevated.r));
     expect(relayColorScheme(Brightness.dark).primary, RelayPalette.dark.accent);
     expect(relayColorScheme(Brightness.light).primary, RelayPalette.light.accent);
   });

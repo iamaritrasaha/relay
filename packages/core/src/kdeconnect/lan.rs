@@ -571,18 +571,48 @@ impl LanInner {
 
     pub async fn request_sms_conversations(&self, device_id: &str) -> Result<()> {
         if self.trust.lock().await.get(device_id).is_none() {
+            tracing::warn!(
+                "[RelaySmsBridge] SEND rejected device={} packetType={} reason=device-not-paired",
+                device_id,
+                crate::kdeconnect::PACKET_TYPE_SMS_REQUEST_CONVERSATIONS
+            );
             anyhow::bail!("device not paired");
         }
-        self.ensure_peer_accepts(
-            device_id,
-            crate::kdeconnect::PACKET_TYPE_SMS_REQUEST_CONVERSATIONS,
-        )
-        .await?;
-        self.send_packet(
-            device_id,
-            &SmsRequestConversationsBody::request().serialize(),
-        )
-        .await
+        if let Err(error) = self
+            .ensure_peer_accepts(
+                device_id,
+                crate::kdeconnect::PACKET_TYPE_SMS_REQUEST_CONVERSATIONS,
+            )
+            .await
+        {
+            tracing::warn!(
+                "[RelaySmsBridge] SEND rejected device={} packetType={} reason={}",
+                device_id,
+                crate::kdeconnect::PACKET_TYPE_SMS_REQUEST_CONVERSATIONS,
+                error
+            );
+            return Err(error);
+        }
+        let result = self
+            .send_packet(
+                device_id,
+                &SmsRequestConversationsBody::request().serialize(),
+            )
+            .await;
+        match &result {
+            Ok(()) => tracing::info!(
+                "[RelaySmsBridge] SEND queued device={} packetType={}",
+                device_id,
+                crate::kdeconnect::PACKET_TYPE_SMS_REQUEST_CONVERSATIONS
+            ),
+            Err(error) => tracing::warn!(
+                "[RelaySmsBridge] SEND rejected device={} packetType={} reason={}",
+                device_id,
+                crate::kdeconnect::PACKET_TYPE_SMS_REQUEST_CONVERSATIONS,
+                error
+            ),
+        }
+        result
     }
 
     pub async fn request_sms_conversation(
@@ -593,19 +623,53 @@ impl LanInner {
         limit: u16,
     ) -> Result<()> {
         if self.trust.lock().await.get(device_id).is_none() {
+            tracing::warn!(
+                "[RelaySmsBridge] SEND rejected device={} packetType={} threadId={} reason=device-not-paired",
+                device_id,
+                crate::kdeconnect::PACKET_TYPE_SMS_REQUEST_CONVERSATION,
+                thread_id
+            );
             anyhow::bail!("device not paired");
         }
-        self.ensure_peer_accepts(
-            device_id,
-            crate::kdeconnect::PACKET_TYPE_SMS_REQUEST_CONVERSATION,
-        )
-        .await?;
-        self.send_packet(
-            device_id,
-            &SmsRequestConversationBody::request(thread_id, before, Some(limit.min(100)))
-                .serialize(),
-        )
-        .await
+        if let Err(error) = self
+            .ensure_peer_accepts(
+                device_id,
+                crate::kdeconnect::PACKET_TYPE_SMS_REQUEST_CONVERSATION,
+            )
+            .await
+        {
+            tracing::warn!(
+                "[RelaySmsBridge] SEND rejected device={} packetType={} threadId={} reason={}",
+                device_id,
+                crate::kdeconnect::PACKET_TYPE_SMS_REQUEST_CONVERSATION,
+                thread_id,
+                error
+            );
+            return Err(error);
+        }
+        let result = self
+            .send_packet(
+                device_id,
+                &SmsRequestConversationBody::request(thread_id, before, Some(limit.min(100)))
+                    .serialize(),
+            )
+            .await;
+        match &result {
+            Ok(()) => tracing::info!(
+                "[RelaySmsBridge] SEND queued device={} packetType={} threadId={}",
+                device_id,
+                crate::kdeconnect::PACKET_TYPE_SMS_REQUEST_CONVERSATION,
+                thread_id
+            ),
+            Err(error) => tracing::warn!(
+                "[RelaySmsBridge] SEND rejected device={} packetType={} threadId={} reason={}",
+                device_id,
+                crate::kdeconnect::PACKET_TYPE_SMS_REQUEST_CONVERSATION,
+                thread_id,
+                error
+            ),
+        }
+        result
     }
 
     pub async fn send_sms(
@@ -656,17 +720,22 @@ impl LanInner {
             }
         }
         let conversations = self.get_sms_conversations(device_id).await;
+        let conversation_count = conversations.len();
+        let emitted = self
+            .event_tx
+            .send(KdeConnectEvent::SmsChanged {
+                device_id: device_id.to_string(),
+                conversations,
+                messages: event_messages,
+            })
+            .is_ok();
         tracing::info!(
-            "[KDE SMS] device={} threads={} messages={}",
+            "[RelaySmsBridge] EVENT SmsChanged device={} conversations={} messages={} emitted={}",
             device_id,
-            conversations.len(),
-            message_count
+            conversation_count,
+            message_count,
+            emitted
         );
-        let _ = self.event_tx.send(KdeConnectEvent::SmsChanged {
-            device_id: device_id.to_string(),
-            conversations,
-            messages: event_messages,
-        });
     }
 
     async fn remember_trust(
@@ -1176,6 +1245,14 @@ async fn finish_secure_link(
         my_identity_body.incoming_capabilities,
         my_identity_body.outgoing_capabilities
     );
+    tracing::info!(
+        "[RelaySmsBridge] IDENTITY SEND device={} incomingMessages={} outgoingRequest={} outgoingConversations={} outgoingConversation={}",
+        my_identity_body.device_id,
+        my_identity_body.incoming_capabilities.iter().any(|item| item == crate::kdeconnect::PACKET_TYPE_SMS_MESSAGES),
+        my_identity_body.outgoing_capabilities.iter().any(|item| item == crate::kdeconnect::PACKET_TYPE_SMS_REQUEST),
+        my_identity_body.outgoing_capabilities.iter().any(|item| item == crate::kdeconnect::PACKET_TYPE_SMS_REQUEST_CONVERSATIONS),
+        my_identity_body.outgoing_capabilities.iter().any(|item| item == crate::kdeconnect::PACKET_TYPE_SMS_REQUEST_CONVERSATION),
+    );
     let my_identity = my_identity_body.to_packet().serialize();
     tls.write_all(&my_identity).await?;
     tracing::info!("[KDE Connect] [G1] secure local identity written");
@@ -1304,12 +1381,20 @@ async fn finish_secure_link(
             .await
             .is_ok()
     {
-        let _ = tx
+        let queued = tx
             .send(SmsRequestConversationsBody::request().serialize())
-            .await;
+            .await
+            .is_ok();
+        tracing::info!(
+            "[RelaySmsBridge] SEND auto-request device={} packetType={} queued={}",
+            secure.device_id,
+            crate::kdeconnect::PACKET_TYPE_SMS_REQUEST_CONVERSATIONS,
+            queued
+        );
     }
 
     let device_id = secure.device_id.clone();
+    let writer_id = device_id.clone();
     let writer_cancel = inner.cancel.clone();
     tokio::spawn(async move {
         loop {
@@ -1317,10 +1402,33 @@ async fn finish_secure_link(
                 _ = writer_cancel.cancelled() => break,
                 packet = rx.recv() => {
                     let Some(packet) = packet else { break };
-                    if writer.write_all(&packet).await.is_err() {
+                    let packet_type = NetworkPacket::parse(&packet).ok().map(|value| value.packet_type);
+                    match writer.write_all(&packet).await {
+                        Ok(()) => {
+                            if let Some(packet_type) = packet_type.as_deref().filter(|value| value.starts_with("kdeconnect.sms.")) {
+                                tracing::info!(
+                                    "[RelaySmsBridge] TLS WRITE success device={} packetType={}",
+                                    writer_id,
+                                    packet_type
+                                );
+                            }
+                        }
+                        Err(error) => {
+                            if let Some(packet_type) = packet_type.as_deref().filter(|value| value.starts_with("kdeconnect.sms.")) {
+                                tracing::warn!(
+                                    "[RelaySmsBridge] TLS WRITE failed device={} packetType={} reason={}",
+                                    writer_id,
+                                    packet_type,
+                                    error
+                                );
+                            }
+                            break;
+                        }
+                    }
+                    if let Err(error) = writer.flush().await {
+                        tracing::warn!("[KDE Connect] TLS flush failed for {}: {}", writer_id, error);
                         break;
                     }
-                    let _ = writer.flush().await;
                 }
             }
         }
@@ -1459,8 +1567,30 @@ async fn finish_secure_link(
                                         device_id: read_id.clone(),
                                         notifications: current_notifs,
                                     });
-                        } else if let Ok(sms) = packet.as_sms_messages() {
-                            read_inner.merge_sms_messages(&read_id, sms.messages).await;
+                        } else if packet.packet_type == crate::kdeconnect::PACKET_TYPE_SMS_MESSAGES
+                        {
+                            tracing::info!(
+                                "[RelaySmsBridge] RECEIVE device={} packetType={}",
+                                read_id,
+                                packet.packet_type
+                            );
+                            match packet.as_sms_messages() {
+                                Ok(sms) => {
+                                    tracing::info!(
+                                        "[RelaySmsBridge] PARSE success device={} packetType={} messages={}",
+                                        read_id,
+                                        packet.packet_type,
+                                        sms.messages.len()
+                                    );
+                                    read_inner.merge_sms_messages(&read_id, sms.messages).await;
+                                }
+                                Err(error) => tracing::warn!(
+                                    "[RelaySmsBridge] PARSE failed device={} packetType={} reason={}",
+                                    read_id,
+                                    packet.packet_type,
+                                    error
+                                ),
+                            }
                         } else if let Ok(telephony) = packet.as_telephony() {
                             let event = crate::kdeconnect::KdeTelephonyEvent {
                                 event: telephony.event,
@@ -1469,10 +1599,12 @@ async fn finish_secure_link(
                                 contact_name: telephony.contact_name,
                                 phone_thumbnail: telephony.phone_thumbnail,
                             };
-                            let _ = read_inner.event_tx.send(KdeConnectEvent::TelephonyReceived {
-                                device_id: read_id.clone(),
-                                event,
-                            });
+                            let _ = read_inner
+                                .event_tx
+                                .send(KdeConnectEvent::TelephonyReceived {
+                                    device_id: read_id.clone(),
+                                    event,
+                                });
                         } else {
                             tracing::debug!(
                                 "[KDE Connect] Ignored unhandled packet type: {}",
@@ -1731,6 +1863,93 @@ mod tests {
     use super::*;
     use crate::kdeconnect::BatteryBody;
     use std::net::Ipv4Addr;
+
+    #[tokio::test]
+    async fn sms_bulk_packet_can_exceed_the_identity_packet_limit() {
+        let packet = NetworkPacket::new(
+            crate::kdeconnect::PACKET_TYPE_SMS_MESSAGES,
+            serde_json::json!({
+                "version": 2,
+                "messages": [{
+                    "_id": 1,
+                    "thread_id": 2,
+                    "body": "x".repeat(MAX_IDENTITY_PACKET_BYTES + 512),
+                    "date": 3,
+                    "type": 1,
+                    "read": 1,
+                    "addresses": []
+                }]
+            })
+            .as_object()
+            .unwrap()
+            .clone(),
+        )
+        .serialize();
+        assert!(packet.len() > MAX_IDENTITY_PACKET_BYTES);
+        let mut reader = std::io::Cursor::new(packet);
+
+        let line = read_line_bounded(&mut reader, MAX_PACKET_BYTES)
+            .await
+            .expect("bulk SMS packet must fit the runtime packet bound");
+        assert_eq!(
+            NetworkPacket::parse(&line).unwrap().packet_type,
+            crate::kdeconnect::PACKET_TYPE_SMS_MESSAGES,
+        );
+    }
+
+    #[tokio::test]
+    async fn merging_sms_constructs_a_counted_event_and_thread_state() {
+        let (event_tx, mut event_rx) = mpsc::unbounded_channel();
+        let inner = LanInner::new(
+            LocalIdentity::generate("Relay test").unwrap(),
+            Vec::new(),
+            LanConfig {
+                bind: BindMode::Loopback,
+                allow_loopback: true,
+            },
+            MIN_TCP_PORT,
+            event_tx,
+            CancellationToken::new(),
+        );
+        let message = SmsMessage {
+            id: 7,
+            thread_id: 4_294_967_297,
+            addresses: vec!["+15550100".into()],
+            body: "test".into(),
+            date: 1_700_000_000_000,
+            message_type: 1,
+            read: Some(false),
+            sub_id: Some(1),
+            event: None,
+            attachments: Vec::new(),
+        };
+
+        inner
+            .merge_sms_messages("phone-id", vec![message.clone()])
+            .await;
+
+        match event_rx.recv().await.expect("SmsChanged event") {
+            KdeConnectEvent::SmsChanged {
+                device_id,
+                conversations,
+                messages,
+            } => {
+                assert_eq!(device_id, "phone-id");
+                assert_eq!(conversations.len(), 1);
+                assert_eq!(conversations[0].thread_id, 4_294_967_297);
+                assert_eq!(conversations[0].unread_count, 1);
+                assert_eq!(messages, vec![message]);
+            }
+            event => panic!("unexpected event: {event:?}"),
+        }
+        assert_eq!(
+            inner
+                .get_sms_messages("phone-id", 4_294_967_297)
+                .await
+                .len(),
+            1
+        );
+    }
 
     #[test]
     fn table_dedupes_device_id_and_updates_ip() {

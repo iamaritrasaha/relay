@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:refena_flutter/refena_flutter.dart';
@@ -13,25 +14,28 @@ import 'package:relay_app/util/native/open_file.dart';
 import 'package:relay_app/util/native/open_folder.dart';
 import 'package:relay_app/widget/gnome/adw_action_row.dart';
 import 'package:relay_app/widget/gnome/adw_boxed_list.dart';
-import 'package:relay_app/widget/gnome/adw_button.dart';
+import 'package:relay_app/widget/gnome/relay_connection_status.dart';
 import 'package:relay_app/widget/relay/relay_device_relationship_tile.dart';
-import 'package:relay_app/widget/relay_carbon/relay_action.dart';
-import 'package:relay_app/widget/relay_carbon/relay_metric.dart';
 import 'package:relay_app/widget/relay_carbon/relay_surface.dart';
+import 'package:relay_app/widget/relay_motion/relay_ambient_clock.dart';
+import 'package:relay_app/widget/relay_motion/relay_atmospheric_drift.dart';
 import 'package:relay_app/widget/relay_motion/relay_breath.dart';
 import 'package:relay_app/widget/relay_motion/relay_device_dock.dart';
 import 'package:relay_app/widget/relay_motion/relay_edge_sweep.dart';
-import 'package:relay_app/widget/relay_motion/relay_link_hero.dart';
+import 'package:relay_app/widget/relay_motion/relay_section_reveal.dart';
 import 'package:relay_isolates/model/device.dart';
 import 'package:relay_isolates/util/file_size_helper.dart';
+import 'package:yaru/yaru.dart';
 
-/// Relay's focused-device page.
-///
-/// The page is deliberately made of two major surfaces — the hero and the
-/// content area — with the device dock, the action row and the detail rows
-/// living directly on the window ground between them. Everything below reports
-/// on the focused device using state the app already holds; where a reading is
-/// not available the row says so rather than filling in a plausible number.
+const double _overviewMaxWidth = 1080;
+const double _overviewGridBreakpoint = 860;
+const double _overviewGridGutter = 18;
+const double _overviewSectionGap = 24;
+const double _overviewTitleGap = 10;
+const double _overviewPrimaryGap = 18;
+const double _overviewDetailsGap = 26;
+
+/// Relay's focused-device page in GNOME / Yaru design system.
 class GnomeDeviceDetailView extends StatelessWidget {
   final RelayDeviceVm device;
   final List<RelayDeviceVm> devices;
@@ -76,50 +80,82 @@ class GnomeDeviceDetailView extends StatelessWidget {
     return LayoutBuilder(
       builder: (context, constraints) {
         final width = constraints.maxWidth;
-        final horizontal = width >= 1100 ? 44.0 : (width >= 760 ? 32.0 : 22.0);
+        final horizontal = width >= 960 ? 32.0 : (width >= 640 ? 24.0 : 16.0);
+        final theme = Theme.of(context);
+        final devicePalette = RelayDevicePalette.fromDevice(device, brightness: theme.brightness);
 
         return SingleChildScrollView(
-          padding: EdgeInsets.fromLTRB(horizontal, 26, horizontal, 44),
+          padding: EdgeInsets.fromLTRB(horizontal, 20, horizontal, 36),
           child: Center(
             child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 1360),
+              key: const ValueKey('overview-master-content'),
+              constraints: const BoxConstraints(maxWidth: _overviewMaxWidth),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  _Hero(
+                  GnomeSelectedDeviceHeader(
                     device: device,
                     selfAlias: selfAlias,
                     selfDeviceType: selfDeviceType,
                     connected: _connected,
-                    activeTransfer: _transferring ? activeTransfer : null,
                     animationsEnabled: animationsEnabled,
                   ),
                   if (devices.length > 1 && onSelectDevice != null) ...[
-                    const SizedBox(height: 20),
+                    const SizedBox(height: 16),
                     RelayDeviceDock(
+                      key: const ValueKey('overview-device-selector'),
                       devices: devices,
                       selectedKey: device.key,
                       animationsEnabled: animationsEnabled,
                       onSelect: onSelectDevice!,
                     ),
                   ],
-                  const SizedBox(height: 22),
-                  _ActionRow(
-                    device: device,
-                    onSendFiles: onSendFiles,
-                    onSendFolder: onSendFolder,
-                    onOpenClipboard: onOpenClipboard,
-                    onOpenMessages: onOpenMessages,
-                    onOpenPhone: onOpenPhone,
+                  const SizedBox(height: 16),
+                  KeyedSubtree(
+                    key: const ValueKey('overview-quick-actions'),
+                    child: _ActionRow(
+                      device: device,
+                      palette: devicePalette,
+                      animationsEnabled: animationsEnabled,
+                      onSendFiles: onSendFiles,
+                      onSendFolder: onSendFolder,
+                      onOpenClipboard: onOpenClipboard,
+                      onOpenMessages: onOpenMessages,
+                      onOpenPhone: onOpenPhone,
+                    ),
                   ),
                   if (_transferring && activeTransfer != null) ...[
-                    const SizedBox(height: 20),
-                    _TransferStrip(device: device, transfer: activeTransfer!, onCancelTransfer: onCancelTransfer),
+                    const SizedBox(height: 16),
+                    _TransferStrip(
+                      device: device,
+                      transfer: activeTransfer!,
+                      palette: devicePalette,
+                      onCancelTransfer: onCancelTransfer,
+                    ),
                   ],
-                  const SizedBox(height: 22),
-                  _ContentArea(device: device, connected: _connected),
-                  const SizedBox(height: 34),
-                  _DeviceDetails(device: device, onOpenDiagnostics: onOpenDiagnostics),
+                  const SizedBox(height: _overviewPrimaryGap),
+                  _ContentArea(
+                    device: device,
+                    palette: devicePalette,
+                    connected: _connected,
+                    animationsEnabled: animationsEnabled,
+                  ),
+                  const SizedBox(height: _overviewDetailsGap),
+                  RelaySectionReveal(
+                    index: 2,
+                    animationsEnabled: animationsEnabled,
+                    child: _DeviceDetails(
+                      device: device,
+                      palette: devicePalette,
+                      connected: _connected,
+                      animationsEnabled: animationsEnabled,
+                      onOpenDiagnostics: onOpenDiagnostics,
+                    ),
+                  ),
+                  if (!device.isCompatibilityPeer) ...[
+                    const SizedBox(height: 18),
+                    _DeviceMaintenanceAction(device: device),
+                  ],
                 ],
               ),
             ),
@@ -130,118 +166,293 @@ class GnomeDeviceDetailView extends StatelessWidget {
   }
 }
 
-/// The focused device and its link to this desktop. Compact on purpose: the
-/// relationship is the point, not the empty space around it.
-class _Hero extends StatelessWidget {
+/// The multi-layered ambient showpiece in the GNOME shell.
+///
+/// Combines:
+/// Layer A: Travelling multicolor perimeter sweep
+/// Layer B: Atmospheric gradient drift
+/// Layer C: Subtle multicolor breath
+/// Layer D: Animated device icon with soft halo
+/// Layer E: Device-palette connection indicator
+class GnomeSelectedDeviceHeader extends StatelessWidget {
   final RelayDeviceVm device;
   final String selfAlias;
   final DeviceType selfDeviceType;
+  final bool selected;
   final bool connected;
-  final RelayTransferVm? activeTransfer;
   final bool animationsEnabled;
 
-  const _Hero({
+  const GnomeSelectedDeviceHeader({
+    super.key,
     required this.device,
     required this.selfAlias,
     required this.selfDeviceType,
+    this.selected = true,
     required this.connected,
-    required this.activeTransfer,
     required this.animationsEnabled,
   });
 
   @override
   Widget build(BuildContext context) {
-    final palette = Theme.of(context).relayPalette;
+    final active = selected && connected;
+    final theme = Theme.of(context);
+    final devicePalette = RelayDevicePalette.fromDevice(device, brightness: theme.brightness);
 
-    final identity = Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        RelayStatusPill(
-          tone: switch (device.phase) {
-            RelayDevicePhase.failed => RelayPresenceTone.attention,
-            RelayDevicePhase.sending || RelayDevicePhase.waiting || RelayDevicePhase.verifying => RelayPresenceTone.busy,
-            _ => connected ? RelayPresenceTone.online : RelayPresenceTone.offline,
-          },
-          label: device.statusSummary,
-          compact: true,
-        ),
-        const SizedBox(height: 10),
-        Text(
-          device.alias,
-          style: RelayTypography.deviceName(palette.textPrimary),
-          maxLines: 2,
-          overflow: TextOverflow.ellipsis,
-        ),
-        if (selfAlias.isNotEmpty) ...[
-          const SizedBox(height: 6),
-          Text(
-            connected ? 'Connected to $selfAlias' : 'Paired with $selfAlias',
-            style: RelayTypography.subtitle(palette.textSecondary, isGnome: true),
-            overflow: TextOverflow.ellipsis,
-          ),
-        ],
-      ],
-    );
-
-    final link = RelayLinkHero(
-      device: device,
-      selfAlias: selfAlias.isEmpty ? 'This desktop' : selfAlias,
-      selfDeviceType: selfDeviceType,
-      connected: connected,
-      activeTransfer: activeTransfer,
-      animationsEnabled: animationsEnabled,
-    );
-
-    final surface = RelaySurface(
-      radius: RelayRadius.hero,
-      padding: const EdgeInsets.fromLTRB(30, 26, 30, 26),
-      child: LayoutBuilder(
-        builder: (context, constraints) {
-          // Wide enough to sit the identity and the link side by side, which is
-          // what keeps the hero short instead of stacking into a tall band.
-          if (constraints.maxWidth >= 720) {
-            return Row(
-              crossAxisAlignment: CrossAxisAlignment.center,
-              children: [
-                Expanded(flex: 5, child: identity),
-                const SizedBox(width: 28),
-                Expanded(flex: 6, child: link),
-              ],
-            );
-          }
-          return Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              identity,
-              const SizedBox(height: 24),
-              link,
-            ],
-          );
-        },
-      ),
-    );
-
-    // The sweep sits outside the breath so its travelling segment lands on top
-    // of the breathing edge rather than under the breath's wash.
     return RelayEdgeSweep(
-      ambient: connected,
-      animationsEnabled: animationsEnabled,
-      trigger: activeTransfer != null || device.phase == RelayDevicePhase.sending || device.phase == RelayDevicePhase.success,
+      key: const ValueKey('selected-device-edge-sweep'),
       radius: RelayRadius.hero,
-      child: RelayBreath(
-        active: connected,
-        animationsEnabled: animationsEnabled,
+      palette: devicePalette,
+      ambient: active,
+      animationsEnabled: animationsEnabled,
+      child: RelayAtmosphericDrift(
+        key: const ValueKey('selected-device-drift'),
         radius: RelayRadius.hero,
-        child: surface,
+        palette: devicePalette,
+        active: active,
+        animationsEnabled: animationsEnabled,
+        child: RelayBreath(
+          key: const ValueKey('selected-device-breath'),
+          radius: RelayRadius.hero,
+          palette: devicePalette,
+          active: active,
+          animationsEnabled: animationsEnabled,
+          child: _DeviceHeader(
+            device: device,
+            palette: devicePalette,
+            selfAlias: selfAlias,
+            selfDeviceType: selfDeviceType,
+            connected: connected,
+            animationsEnabled: animationsEnabled,
+          ),
+        ),
       ),
     );
   }
 }
 
-/// The primary action row. Only actions this device can really perform.
+/// The focused device header. Clean, flat GNOME composition with device-specific life.
+class _DeviceHeader extends StatelessWidget {
+  final RelayDeviceVm device;
+  final RelayDevicePalette palette;
+  final String selfAlias;
+  final DeviceType selfDeviceType;
+  final bool connected;
+  final bool animationsEnabled;
+
+  const _DeviceHeader({
+    required this.device,
+    required this.palette,
+    required this.selfAlias,
+    required this.selfDeviceType,
+    required this.connected,
+    this.animationsEnabled = true,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+
+    final IconData deviceIcon = switch (device.deviceType) {
+      DeviceType.mobile => YaruIcons.smartphone,
+      DeviceType.desktop => YaruIcons.desktop,
+      _ => YaruIcons.computer,
+    };
+
+    final tone = switch (device.phase) {
+      RelayDevicePhase.failed => RelayPresenceTone.attention,
+      RelayDevicePhase.sending || RelayDevicePhase.waiting || RelayDevicePhase.verifying => RelayPresenceTone.busy,
+      _ => connected ? RelayPresenceTone.online : RelayPresenceTone.offline,
+    };
+
+    return YaruBorderContainer(
+      borderRadius: BorderRadius.circular(RelayRadius.hero),
+      clipBehavior: Clip.antiAlias,
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+      child: Row(
+        children: [
+          _AnimatedDeviceIcon(
+            icon: deviceIcon,
+            palette: palette,
+            connected: connected,
+            animationsEnabled: animationsEnabled,
+          ),
+          const SizedBox(width: 16),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  device.alias,
+                  style: theme.textTheme.titleLarge?.copyWith(
+                    fontWeight: FontWeight.w600,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  selfAlias.isNotEmpty ? (connected ? 'Connected to $selfAlias' : 'Paired with $selfAlias') : (connected ? 'Connected' : 'Paired'),
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: colorScheme.onSurface.withValues(alpha: 0.7),
+                  ),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 12),
+          if (device.phase == RelayDevicePhase.idle)
+            RelayConnectionStatus(
+              connected: connected,
+              label: connected ? device.statusSummary : device.detail,
+              palette: palette,
+              animationsEnabled: animationsEnabled,
+              ambient: true,
+              compact: true,
+            )
+          else
+            RelayStatusPill(
+              tone: tone,
+              label: device.statusSummary,
+              compact: true,
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Device icon with subtle halo breath and highlight travel when connected.
+class _AnimatedDeviceIcon extends StatefulWidget {
+  final IconData icon;
+  final RelayDevicePalette palette;
+  final bool connected;
+  final bool animationsEnabled;
+
+  const _AnimatedDeviceIcon({
+    required this.icon,
+    required this.palette,
+    required this.connected,
+    required this.animationsEnabled,
+  });
+
+  @override
+  State<_AnimatedDeviceIcon> createState() => _AnimatedDeviceIconState();
+}
+
+class _AnimatedDeviceIconState extends State<_AnimatedDeviceIcon> with SingleTickerProviderStateMixin {
+  AnimationController? _localController;
+
+  bool get _motionOn => widget.connected && widget.animationsEnabled && !(MediaQuery.maybeDisableAnimationsOf(context) ?? false);
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final clock = RelayAmbientClock.maybeOf(context);
+    _sync(clock);
+  }
+
+  @override
+  void didUpdateWidget(covariant _AnimatedDeviceIcon oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    final clock = RelayAmbientClock.maybeOf(context);
+    _sync(clock);
+  }
+
+  void _sync(RelayAmbientClockNotifier? sharedClock) {
+    if (sharedClock == null) {
+      if (_motionOn) {
+        _localController ??= AnimationController(vsync: this, duration: RelayMotion.ambientGlowCycle);
+        if (!_localController!.isAnimating) {
+          unawaited(_localController!.repeat(reverse: true));
+        }
+      } else if (_localController != null && _localController!.isAnimating) {
+        _localController!.stop();
+        _localController!.value = 0;
+      }
+    } else if (_localController != null) {
+      _localController!.stop();
+      _localController!.dispose();
+      _localController = null;
+    }
+  }
+
+  @override
+  void dispose() {
+    _localController?.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+    final isDark = theme.brightness == Brightness.dark;
+
+    final staticIcon = Icon(
+      widget.icon,
+      size: 28,
+      color: widget.connected ? widget.palette.primary : colorScheme.onSurface.withValues(alpha: 0.5),
+    );
+
+    if (!_motionOn) {
+      return Container(
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: colorScheme.surfaceContainerHighest,
+          borderRadius: BorderRadius.circular(RelayRadius.card),
+        ),
+        child: staticIcon,
+      );
+    }
+
+    final sharedClock = RelayAmbientClock.maybeOf(context);
+    final repaint = (sharedClock?.cadenceClock ?? _localController)!;
+
+    return RepaintBoundary(
+      child: AnimatedBuilder(
+        animation: repaint,
+        builder: (context, child) {
+          final t = sharedClock != null ? sharedClock.breathValue : (_localController?.value ?? 0.0);
+          final glowAlpha = (isDark ? 0.12 : 0.08) + t * (isDark ? 0.10 : 0.06);
+
+          return Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: Color.lerp(
+                colorScheme.surfaceContainerHighest,
+                widget.palette.primary.withValues(alpha: isDark ? 0.15 : 0.10),
+                t,
+              ),
+              borderRadius: BorderRadius.circular(RelayRadius.card),
+              border: Border.all(
+                color: widget.palette.primary.withValues(alpha: glowAlpha),
+                width: 1.2,
+              ),
+              boxShadow: [
+                BoxShadow(
+                  color: widget.palette.primary.withValues(alpha: glowAlpha * 0.6),
+                  blurRadius: (8 + t * 4).toDouble(),
+                  spreadRadius: -2,
+                ),
+              ],
+            ),
+            child: child,
+          );
+        },
+        child: staticIcon,
+      ),
+    );
+  }
+}
+
+/// The primary action row with tactile press and finite interaction animations.
 class _ActionRow extends StatelessWidget {
   final RelayDeviceVm device;
+  final RelayDevicePalette palette;
+  final bool animationsEnabled;
   final VoidCallback onSendFiles;
   final VoidCallback onSendFolder;
   final VoidCallback onOpenClipboard;
@@ -250,6 +461,8 @@ class _ActionRow extends StatelessWidget {
 
   const _ActionRow({
     required this.device,
+    required this.palette,
+    this.animationsEnabled = true,
     required this.onSendFiles,
     required this.onSendFolder,
     required this.onOpenClipboard,
@@ -268,76 +481,70 @@ class _ActionRow extends StatelessWidget {
 
     final actions = <Widget>[
       if (!device.isKdeConnect) ...[
-        RelayAction(
+        FilledButton.icon(
           key: const ValueKey('gnome-send-files-button'),
-          icon: Icons.arrow_upward_rounded,
-          label: 'Send Files',
-          primary: true,
+          icon: const Icon(YaruIcons.send, size: 18),
+          label: const Text('Send Files'),
           onPressed: onSendFiles,
         ),
-        RelayAction(
+        OutlinedButton.icon(
           key: const ValueKey('gnome-send-folder-button'),
-          icon: Icons.folder_outlined,
-          label: 'Send Folder',
+          icon: const Icon(YaruIcons.folder, size: 18),
+          label: const Text('Send Folder'),
           onPressed: onSendFolder,
         ),
-        RelayAction(
+        OutlinedButton.icon(
           key: const ValueKey('gnome-clipboard-button'),
-          icon: Icons.content_paste_rounded,
-          label: 'Clipboard',
+          icon: const Icon(YaruIcons.copy, size: 18),
+          label: const Text('Clipboard'),
           onPressed: onOpenClipboard,
         ),
-        RelayAction(
+        OutlinedButton.icon(
           key: const ValueKey('gnome-messages-button'),
-          icon: Icons.chat_bubble_outline_rounded,
-          label: 'Messages',
+          icon: const Icon(YaruIcons.chat_bubble, size: 18),
+          label: const Text('Messages'),
           onPressed: onOpenMessages,
         ),
         if (!device.isCompatibilityPeer)
-          RelayAction(
+          OutlinedButton.icon(
             key: const ValueKey('gnome-phone-button'),
-            icon: Icons.call_outlined,
-            label: 'Phone',
+            icon: const Icon(YaruIcons.phone, size: 18),
+            label: const Text('Phone'),
             onPressed: onOpenPhone,
           ),
       ] else if (device.isPaired) ...[
         if (_usable(device.capabilityStatuses[RelayCapability.clipboard]))
-          RelayAction(
+          FilledButton.icon(
             key: const ValueKey('gnome-clipboard-button'),
-            icon: Icons.content_paste_rounded,
-            label: 'Clipboard',
-            primary: true,
+            icon: const Icon(YaruIcons.copy, size: 18),
+            label: const Text('Clipboard'),
             onPressed: onOpenClipboard,
           ),
         if (_usable(device.capabilityStatuses[RelayCapability.messages]))
-          RelayAction(
+          OutlinedButton.icon(
             key: const ValueKey('gnome-messages-button'),
-            icon: Icons.chat_bubble_outline_rounded,
-            label: 'Messages',
+            icon: const Icon(YaruIcons.chat_bubble, size: 18),
+            label: const Text('Messages'),
             onPressed: onOpenMessages,
           ),
         if (_usable(device.capabilityStatuses[RelayCapability.phone]))
-          RelayAction(
+          OutlinedButton.icon(
             key: const ValueKey('gnome-phone-button'),
-            icon: Icons.call_outlined,
-            label: 'Phone',
+            icon: const Icon(YaruIcons.phone, size: 18),
+            label: const Text('Phone'),
             onPressed: onOpenPhone,
           ),
-        RelayAction(
-          icon: Icons.wifi_tethering_rounded,
-          label: 'Ping',
-          hint: device.canPing ? 'Check if this phone is reachable' : 'This phone has not advertised ping',
+        _PingActionButton(
+          palette: palette,
+          animationsEnabled: animationsEnabled,
           enabled: device.canPing,
-          onPressed: device.canPing ? () => unawaited(context.ref.redux(kdeConnectProvider).dispatchAsync(KdeConnectPingAction(deviceId))) : null,
+          onPressed: () => unawaited(context.ref.redux(kdeConnectProvider).dispatchAsync(KdeConnectPingAction(deviceId))),
         ),
-        RelayAction(
-          icon: Icons.ring_volume_outlined,
-          label: 'Find Phone',
-          hint: device.canFindDevice ? 'Ring this phone even if it is on silent' : 'This phone has not advertised find device',
+        _FindPhoneActionButton(
+          palette: palette,
+          animationsEnabled: animationsEnabled,
           enabled: device.canFindDevice,
-          onPressed: device.canFindDevice
-              ? () => unawaited(context.ref.redux(kdeConnectProvider).dispatchAsync(KdeConnectFindPhoneAction(deviceId)))
-              : null,
+          onPressed: () => unawaited(context.ref.redux(kdeConnectProvider).dispatchAsync(KdeConnectFindPhoneAction(deviceId))),
         ),
       ],
     ];
@@ -346,19 +553,372 @@ class _ActionRow extends StatelessWidget {
       return const SizedBox.shrink();
     }
 
+    return Wrap(
+      spacing: 10,
+      runSpacing: 10,
+      children: actions,
+    );
+  }
+}
+
+/// Ping action with 3 staggered expanding visual ripple rings upon trigger.
+class _PingActionButton extends StatefulWidget {
+  final RelayDevicePalette palette;
+  final bool animationsEnabled;
+  final bool enabled;
+  final VoidCallback onPressed;
+
+  const _PingActionButton({
+    required this.palette,
+    required this.animationsEnabled,
+    required this.enabled,
+    required this.onPressed,
+  });
+
+  @override
+  State<_PingActionButton> createState() => _PingActionButtonState();
+}
+
+class _PingActionButtonState extends State<_PingActionButton> with SingleTickerProviderStateMixin {
+  late final AnimationController _ripple;
+
+  @override
+  void initState() {
+    super.initState();
+    _ripple = AnimationController(vsync: this, duration: RelayMotion.pingRipple);
+  }
+
+  @override
+  void dispose() {
+    _ripple.dispose();
+    super.dispose();
+  }
+
+  void _trigger() {
+    widget.onPressed();
+    if (widget.animationsEnabled && !(MediaQuery.maybeDisableAnimationsOf(context) ?? false)) {
+      unawaited(_ripple.forward(from: 0));
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Stack(
+      alignment: Alignment.center,
+      children: [
+        if (_ripple.isAnimating)
+          Positioned.fill(
+            child: AnimatedBuilder(
+              animation: _ripple,
+              builder: (context, _) {
+                final t = _ripple.value;
+                return CustomPaint(
+                  painter: _PingRipplePainter(progress: t, color: widget.palette.primary),
+                );
+              },
+            ),
+          ),
+        OutlinedButton.icon(
+          icon: const Icon(YaruIcons.network_wireless, size: 18),
+          label: const Text('Ping'),
+          onPressed: widget.enabled ? _trigger : null,
+        ),
+      ],
+    );
+  }
+}
+
+class _PingRipplePainter extends CustomPainter {
+  final double progress;
+  final Color color;
+
+  _PingRipplePainter({required this.progress, required this.color});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final center = Offset(size.width / 2, size.height / 2);
+    for (int i = 0; i < 3; i++) {
+      final ringProgress = (progress - (i * 0.18)).clamp(0.0, 1.0);
+      if (ringProgress <= 0 || ringProgress >= 1.0) continue;
+
+      final radius = (size.width / 2) * (0.8 + ringProgress * 0.8);
+      final alpha = (1.0 - ringProgress) * 0.45;
+      final paint = Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 1.8 * (1.0 - ringProgress)
+        ..color = color.withValues(alpha: alpha);
+      canvas.drawCircle(center, radius, paint);
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _PingRipplePainter oldDelegate) => oldDelegate.progress != progress;
+}
+
+/// Find Phone action with finite phone wiggle oscillation on trigger.
+class _FindPhoneActionButton extends StatefulWidget {
+  final RelayDevicePalette palette;
+  final bool animationsEnabled;
+  final bool enabled;
+  final VoidCallback onPressed;
+
+  const _FindPhoneActionButton({
+    required this.palette,
+    required this.animationsEnabled,
+    required this.enabled,
+    required this.onPressed,
+  });
+
+  @override
+  State<_FindPhoneActionButton> createState() => _FindPhoneActionButtonState();
+}
+
+class _FindPhoneActionButtonState extends State<_FindPhoneActionButton> with SingleTickerProviderStateMixin {
+  late final AnimationController _wiggle;
+  late final Animation<double> _rotation;
+
+  @override
+  void initState() {
+    super.initState();
+    _wiggle = AnimationController(vsync: this, duration: RelayMotion.findPhoneVibrate);
+    _rotation = TweenSequence<double>([
+      TweenSequenceItem(tween: Tween(begin: 0.0, end: -0.06), weight: 1),
+      TweenSequenceItem(tween: Tween(begin: -0.06, end: 0.06), weight: 2),
+      TweenSequenceItem(tween: Tween(begin: 0.06, end: -0.04), weight: 2),
+      TweenSequenceItem(tween: Tween(begin: -0.04, end: 0.04), weight: 2),
+      TweenSequenceItem(tween: Tween(begin: 0.04, end: 0.0), weight: 1),
+    ]).animate(CurvedAnimation(parent: _wiggle, curve: Curves.easeInOut));
+  }
+
+  @override
+  void dispose() {
+    _wiggle.dispose();
+    super.dispose();
+  }
+
+  void _trigger() {
+    widget.onPressed();
+    if (widget.animationsEnabled && !(MediaQuery.maybeDisableAnimationsOf(context) ?? false)) {
+      unawaited(_wiggle.forward(from: 0));
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _wiggle,
+      builder: (context, child) {
+        return Transform.rotate(
+          angle: _wiggle.isAnimating ? _rotation.value : 0.0,
+          child: OutlinedButton.icon(
+            icon: const Icon(YaruIcons.bell, size: 18),
+            label: const Text('Find Phone'),
+            onPressed: widget.enabled ? _trigger : null,
+          ),
+        );
+      },
+    );
+  }
+}
+
+/// Progress for the transfer in flight with moving device-palette gradient.
+class _TransferStrip extends StatefulWidget {
+  final RelayDeviceVm device;
+  final RelayTransferVm transfer;
+  final RelayDevicePalette palette;
+  final VoidCallback? onCancelTransfer;
+
+  const _TransferStrip({
+    required this.device,
+    required this.transfer,
+    required this.palette,
+    this.onCancelTransfer,
+  });
+
+  @override
+  State<_TransferStrip> createState() => _TransferStripState();
+}
+
+class _TransferStripState extends State<_TransferStrip> with SingleTickerProviderStateMixin {
+  late final AnimationController _pulse;
+
+  @override
+  void initState() {
+    super.initState();
+    _pulse = AnimationController(vsync: this, duration: const Duration(milliseconds: 1400))..repeat();
+  }
+
+  @override
+  void dispose() {
+    _pulse.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+    final progressVal = (widget.transfer.progress ?? 0.0).clamp(0.0, 1.0);
+
+    return YaruBorderContainer(
+      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  widget.transfer.isReceive ? 'Receiving from ${widget.device.alias}…' : 'Sending to ${widget.device.alias}…',
+                  style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w600),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              if (widget.transfer.progress != null)
+                Text(
+                  '${(progressVal * 100).toStringAsFixed(0)}%',
+                  style: theme.textTheme.labelMedium?.copyWith(
+                    color: widget.palette.primary,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              if (widget.onCancelTransfer != null) ...[
+                const SizedBox(width: 12),
+                OutlinedButton(
+                  onPressed: widget.onCancelTransfer,
+                  child: const Text('Cancel'),
+                ),
+              ],
+            ],
+          ),
+          const SizedBox(height: 10),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(4),
+            child: SizedBox(
+              height: 6,
+              child: Stack(
+                children: [
+                  Container(color: colorScheme.surfaceContainerHighest),
+                  FractionallySizedBox(
+                    widthFactor: progressVal,
+                    child: AnimatedBuilder(
+                      animation: _pulse,
+                      builder: (context, _) {
+                        return Container(
+                          decoration: BoxDecoration(
+                            gradient: LinearGradient(
+                              colors: [widget.palette.primary, widget.palette.secondary],
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// The Overview's responsive primary grid with staggered section reveals.
+class _ContentArea extends StatelessWidget {
+  final RelayDeviceVm device;
+  final RelayDevicePalette palette;
+  final bool connected;
+  final bool animationsEnabled;
+
+  const _ContentArea({
+    required this.device,
+    required this.palette,
+    required this.connected,
+    required this.animationsEnabled,
+  });
+
+  @override
+  Widget build(BuildContext context) {
     return LayoutBuilder(
       builder: (context, constraints) {
-        final columns = constraints.maxWidth >= 900
-            ? actions.length
-            : constraints.maxWidth >= 620
-            ? 3
-            : 2;
-        final itemWidth = ((constraints.maxWidth - (columns - 1) * 10) / columns).clamp(120.0, 186.0);
-        return Wrap(
-          spacing: 10,
-          runSpacing: 10,
+        final available = constraints.maxWidth;
+        final wide = available >= _overviewGridBreakpoint;
+
+        final recentActivity = RelaySectionReveal(
+          index: 0,
+          animationsEnabled: animationsEnabled,
+          child: const _OverviewSection(
+            key: ValueKey('recent-activity-section'),
+            title: 'Recent Activity',
+            child: _OverviewContentSurface(
+              key: ValueKey('recent-activity-panel'),
+              child: _RecentActivitySection(),
+            ),
+          ),
+        );
+
+        final deviceStatus = RelaySectionReveal(
+          index: 1,
+          animationsEnabled: animationsEnabled,
+          child: _DeviceStatusSection(
+            device: device,
+            palette: palette,
+            connected: connected,
+            animationsEnabled: animationsEnabled,
+          ),
+        );
+
+        final notifications = RelaySectionReveal(
+          index: 1,
+          animationsEnabled: animationsEnabled,
+          child: _OverviewSection(
+            key: const ValueKey('notifications-section'),
+            title: 'Notifications',
+            child: _OverviewContentSurface(
+              key: const ValueKey('notifications-panel'),
+              child: _NotificationsSection(device: device),
+            ),
+          ),
+        );
+
+        final leftColumn = Column(
+          key: const ValueKey('overview-left-column'),
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          mainAxisSize: MainAxisSize.min,
           children: [
-            for (final action in actions) SizedBox(width: itemWidth, child: action),
+            recentActivity,
+            const SizedBox(height: _overviewSectionGap),
+            notifications,
+          ],
+        );
+
+        final rightColumn = Column(
+          key: const ValueKey('overview-right-column'),
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          mainAxisSize: MainAxisSize.min,
+          children: [deviceStatus],
+        );
+
+        if (wide) {
+          return Row(
+            key: const ValueKey('overview-primary-grid-wide'),
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(flex: 7, child: leftColumn),
+              const SizedBox(width: _overviewGridGutter),
+              Expanded(flex: 5, child: rightColumn),
+            ],
+          );
+        }
+
+        return Column(
+          key: const ValueKey('overview-primary-grid-narrow'),
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            leftColumn,
+            const SizedBox(height: _overviewSectionGap),
+            rightColumn,
           ],
         );
       },
@@ -366,218 +926,91 @@ class _ActionRow extends StatelessWidget {
   }
 }
 
-/// Progress for the one transfer that is genuinely in flight.
-class _TransferStrip extends StatelessWidget {
-  final RelayDeviceVm device;
-  final RelayTransferVm transfer;
-  final VoidCallback? onCancelTransfer;
+class _OverviewSection extends StatelessWidget {
+  final String title;
+  final Widget child;
 
-  const _TransferStrip({required this.device, required this.transfer, this.onCancelTransfer});
+  const _OverviewSection({super.key, required this.title, required this.child});
 
   @override
   Widget build(BuildContext context) {
-    final palette = Theme.of(context).relayPalette;
-    final reducedMotion = MediaQuery.disableAnimationsOf(context);
-
-    // A live transfer is a continuously true state, not a one-off event, so the
-    // strip carries the ambient segment for as long as it is on screen.
-    return RelayEdgeSweep(
-      ambient: !reducedMotion,
-      radius: RelayRadius.panel,
-      child: RelaySurface(
-        radius: RelayRadius.panel,
-        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
-        accented: true,
-        outlined: true,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    transfer.isReceive ? 'Receiving from ${device.alias}…' : 'Sending to ${device.alias}…',
-                    style: RelayTypography.body(palette.textPrimary, isGnome: true, bold: true),
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
-                if (transfer.progress != null)
-                  AnimatedSwitcher(
-                    duration: reducedMotion ? Duration.zero : RelayMotion.state,
-                    child: Text(
-                      '${((transfer.progress ?? 0) * 100).toStringAsFixed(0)}%',
-                      key: ValueKey(((transfer.progress ?? 0) * 100).toStringAsFixed(0)),
-                      style: RelayTypography.body(palette.accent, isGnome: true, bold: true),
-                    ),
-                  ),
-                if (onCancelTransfer != null) ...[
-                  const SizedBox(width: 12),
-                  AdwButton.flat(label: 'Cancel', onPressed: onCancelTransfer),
-                ],
-              ],
+    final theme = Theme.of(context);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Padding(
+          padding: const EdgeInsets.only(left: 4),
+          child: Text(
+            title,
+            style: theme.textTheme.titleSmall?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+              fontWeight: FontWeight.w600,
             ),
-            if (transfer.progress != null) ...[
-              const SizedBox(height: 12),
-              RelayLevelBar(fraction: transfer.progress!.clamp(0.0, 1.0), color: palette.accent, height: 4),
-            ],
-          ],
+          ),
         ),
-      ),
+        const SizedBox(height: _overviewTitleGap),
+        child,
+      ],
     );
   }
 }
 
-/// One content surface, split into columns by hairlines rather than into
-/// separate floating cards.
-class _ContentArea extends StatelessWidget {
-  final RelayDeviceVm device;
-  final bool connected;
+class _OverviewContentSurface extends StatelessWidget {
+  final Widget child;
 
-  const _ContentArea({required this.device, required this.connected});
-
-  @override
-  Widget build(BuildContext context) {
-    final sections = <Widget>[
-      _RecentActivitySection(),
-      _DeviceStatusSection(device: device, connected: connected),
-      _NotificationsSection(device: device),
-    ];
-
-    return RelaySurface(
-      padding: const EdgeInsets.symmetric(horizontal: 30, vertical: 28),
-      child: LayoutBuilder(
-        builder: (context, constraints) {
-          final available = constraints.maxWidth;
-          final columns = available >= 1000 ? 3 : (available >= 700 ? 2 : 1);
-
-          if (columns == 1) {
-            return Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                for (var i = 0; i < sections.length; i++) ...[
-                  if (i > 0) ...[
-                    const SizedBox(height: 22),
-                    const RelayDivider(),
-                    const SizedBox(height: 22),
-                  ],
-                  sections[i],
-                ],
-              ],
-            );
-          }
-
-          final rows = <List<Widget>>[];
-          for (var i = 0; i < sections.length; i += columns) {
-            rows.add(sections.sublist(i, (i + columns).clamp(0, sections.length)));
-          }
-
-          return Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              for (var r = 0; r < rows.length; r++) ...[
-                if (r > 0) ...[
-                  const SizedBox(height: 28),
-                  const RelayDivider(),
-                  const SizedBox(height: 28),
-                ],
-                _ColumnRow(sections: rows[r]),
-              ],
-            ],
-          );
-        },
-      ),
-    );
-  }
-}
-
-/// A row of sections with a hairline rule drawn down each gap.
-///
-/// The rules are painted rather than laid out so the row never has to report
-/// intrinsic dimensions: a column of wrapping text measures differently
-/// unconstrained than it lays out, which is exactly the mismatch that makes an
-/// intrinsic-height row overflow.
-class _ColumnRow extends StatelessWidget {
-  final List<Widget> sections;
-
-  static const double _gap = 60;
-
-  const _ColumnRow({required this.sections});
+  const _OverviewContentSurface({super.key, required this.child});
 
   @override
   Widget build(BuildContext context) {
     final palette = Theme.of(context).relayPalette;
-
-    return CustomPaint(
-      foregroundPainter: _ColumnRulesPainter(count: sections.length, gap: _gap, color: palette.hairline),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          for (var c = 0; c < sections.length; c++) ...[
-            if (c > 0) const SizedBox(width: _gap),
-            Expanded(child: sections[c]),
-          ],
-        ],
+    return Material(
+      color: palette.elevated,
+      borderRadius: BorderRadius.circular(RelayRadius.panel),
+      clipBehavior: Clip.antiAlias,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 20),
+        child: child,
       ),
     );
   }
-}
-
-class _ColumnRulesPainter extends CustomPainter {
-  final int count;
-  final double gap;
-  final Color color;
-
-  const _ColumnRulesPainter({required this.count, required this.gap, required this.color});
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    if (count < 2) {
-      return;
-    }
-    final columnWidth = (size.width - gap * (count - 1)) / count;
-    final paint = Paint()
-      ..color = color
-      ..strokeWidth = 1;
-    for (var i = 1; i < count; i++) {
-      final x = i * columnWidth + (i - 0.5) * gap;
-      canvas.drawLine(Offset(x, 0), Offset(x, size.height), paint);
-    }
-  }
-
-  @override
-  bool shouldRepaint(covariant _ColumnRulesPainter old) => old.count != count || old.gap != gap || old.color != color;
 }
 
 class _RecentActivitySection extends StatelessWidget {
+  const _RecentActivitySection();
+
   @override
   Widget build(BuildContext context) {
-    final palette = Theme.of(context).relayPalette;
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
     final history = context.watch(receiveHistoryProvider);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       mainAxisSize: MainAxisSize.min,
       children: [
-        const RelaySectionLabel(label: 'Recent Activity'),
-        const SizedBox(height: 20),
         if (history.isEmpty)
-          const _EmptySection(icon: Icons.inbox_outlined, title: 'Nothing yet', body: 'Files you send or receive appear here.')
+          const _EmptySection(
+            icon: YaruIcons.inbox,
+            title: 'Nothing yet',
+            body: 'Files you send or receive appear here.',
+          )
         else
           for (final entry in history.take(5))
             Padding(
-              padding: const EdgeInsets.only(bottom: 16),
+              padding: const EdgeInsets.only(bottom: 12),
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Padding(
                     padding: const EdgeInsets.only(top: 2),
                     child: Icon(
-                      entry.isMessage ? Icons.chat_bubble_outline_rounded : Icons.description_outlined,
+                      entry.isMessage ? YaruIcons.chat_bubble : YaruIcons.document,
                       size: 16,
-                      color: palette.textTertiary,
+                      color: colorScheme.onSurface.withValues(alpha: 0.5),
                     ),
                   ),
-                  const SizedBox(width: 12),
+                  const SizedBox(width: 10),
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
@@ -585,14 +1018,16 @@ class _RecentActivitySection extends StatelessWidget {
                       children: [
                         Text(
                           entry.fileName,
-                          style: RelayTypography.body(palette.textPrimary, isGnome: true),
+                          style: theme.textTheme.bodyMedium,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                         ),
                         const SizedBox(height: 2),
                         Text(
                           '${entry.senderAlias} · ${entry.fileSize.asReadableFileSize} · ${_formatDate(entry.timestamp)}',
-                          style: RelayTypography.caption(palette.textTertiary, isGnome: true),
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color: colorScheme.onSurface.withValues(alpha: 0.5),
+                          ),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                         ),
@@ -600,13 +1035,13 @@ class _RecentActivitySection extends StatelessWidget {
                     ),
                   ),
                   if (entry.path != null) ...[
-                    _QuietIconButton(
-                      icon: Icons.folder_open_outlined,
+                    YaruIconButton(
+                      icon: const Icon(YaruIcons.folder_open, size: 16),
                       tooltip: 'Open Folder',
                       onPressed: () => openFolder(folderPath: entry.path!),
                     ),
-                    _QuietIconButton(
-                      icon: Icons.open_in_new_rounded,
+                    YaruIconButton(
+                      icon: const Icon(YaruIcons.external_link, size: 16),
                       tooltip: 'Open File',
                       onPressed: () => openFile(context, entry.fileType, entry.path!),
                     ),
@@ -630,14 +1065,21 @@ class _RecentActivitySection extends StatelessWidget {
 
 class _DeviceStatusSection extends StatelessWidget {
   final RelayDeviceVm device;
+  final RelayDevicePalette palette;
   final bool connected;
+  final bool animationsEnabled;
 
-  const _DeviceStatusSection({required this.device, required this.connected});
+  const _DeviceStatusSection({
+    required this.device,
+    required this.palette,
+    required this.connected,
+    required this.animationsEnabled,
+  });
 
-  static Color? batteryTint(RelayPalette palette, int percentage, bool charging) {
-    if (charging) return palette.success;
-    if (percentage <= 15) return palette.error;
-    if (percentage <= 30) return palette.warning;
+  static Color? batteryTint(BuildContext context, int percentage) {
+    final yaruColors = YaruColors.of(context);
+    if (percentage <= 15) return Theme.of(context).colorScheme.error;
+    if (percentage <= 30) return yaruColors.warning;
     return null;
   }
 
@@ -651,52 +1093,185 @@ class _DeviceStatusSection extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final palette = Theme.of(context).relayPalette;
     final battery = device.battery;
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        const RelaySectionLabel(label: 'Device Status'),
-        const SizedBox(height: 10),
-        RelayStatRow(
-          label: 'Connection',
-          value: connected ? 'Connected' : device.statusSummary,
-          tint: connected ? palette.success : null,
+    return _OverviewSection(
+      key: const ValueKey('device-status-section'),
+      title: 'Device Status',
+      child: AdwRowGeometry(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+        minHeight: 56,
+        child: AdwBoxedList(
+          key: const ValueKey('device-status-group'),
+          children: [
+            AdwActionRow(
+              leading: const Icon(YaruIcons.network_wireless),
+              title: 'Connection',
+              trailing: RelayConnectionStatus(
+                connected: connected,
+                label: connected ? 'Connected' : device.statusSummary,
+                palette: palette,
+                animationsEnabled: animationsEnabled,
+                ambient: true,
+              ),
+            ),
+            _StatusRow(
+              icon: YaruIcons.battery,
+              label: 'Battery',
+              value: battery.hasInfo ? '${battery.percentage}%${battery.isCharging ? ' · Charging' : ''}' : '—',
+              valueColor: battery.hasInfo ? batteryTint(context, battery.percentage ?? 0) : null,
+              animationsEnabled: animationsEnabled,
+            ),
+            _StatusRow(
+              icon: YaruIcons.network_cellular,
+              label: 'Signal',
+              value: device.networkType == null && device.signalLevel == null
+                  ? '—'
+                  : '${device.networkType ?? 'Mobile'} · ${signalLabel(device.signalLevel)}',
+              animationsEnabled: animationsEnabled,
+            ),
+            _StatusRow(
+              icon: YaruIcons.information,
+              label: 'Device',
+              value: device.deviceModel ?? device.alias,
+              animationsEnabled: animationsEnabled,
+            ),
+          ],
         ),
-        const RelayDivider(),
-        RelayStatRow(
-          label: 'Battery',
-          value: battery.hasInfo ? '${battery.percentage}%' : '—',
-          fraction: battery.hasInfo ? (battery.percentage ?? 0) / 100 : null,
-          tint: battery.hasInfo ? batteryTint(palette, battery.percentage ?? 0, battery.isCharging) : null,
-          barColor: palette.textSecondary,
-        ),
-        const RelayDivider(),
-        RelayStatRow(
-          label: 'Signal',
-          value: device.networkType == null && device.signalLevel == null
-              ? '—'
-              : '${device.networkType ?? 'Mobile'} · ${signalLabel(device.signalLevel)}',
-          level: device.signalLevel,
-        ),
-        const RelayDivider(),
-        RelayStatRow(label: 'Device', value: device.deviceModel ?? device.alias),
-        const SizedBox(height: 18),
-        Align(
-          alignment: Alignment.centerLeft,
-          child: device.isKdeConnect
-              ? _KdeConnectRelationshipTile(device: device)
-              : (device.isCompatibilityPeer ? const SizedBox.shrink() : RelayDeviceRelationshipTile(device: device)),
-        ),
-      ],
+      ),
     );
   }
 }
 
-/// Notifications forwarded by the focused phone. Real entries only — when
-/// nothing has arrived the section says nothing has arrived.
+class _DeviceMaintenanceAction extends StatelessWidget {
+  final RelayDeviceVm device;
+
+  const _DeviceMaintenanceAction({required this.device});
+
+  @override
+  Widget build(BuildContext context) {
+    return Align(
+      key: const ValueKey('device-relationship-section'),
+      alignment: Alignment.centerLeft,
+      child: device.isKdeConnect ? _KdeConnectRelationshipTile(device: device) : RelayDeviceRelationshipTile(device: device),
+    );
+  }
+}
+
+class _CompactDeviceAction extends StatefulWidget {
+  final IconData icon;
+  final String label;
+  final bool destructive;
+  final VoidCallback onPressed;
+
+  const _CompactDeviceAction({
+    super.key,
+    required this.icon,
+    required this.label,
+    required this.destructive,
+    required this.onPressed,
+  });
+
+  @override
+  State<_CompactDeviceAction> createState() => _CompactDeviceActionState();
+}
+
+class _CompactDeviceActionState extends State<_CompactDeviceAction> {
+  bool _hovered = false;
+  bool _focused = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final foreground = widget.destructive ? colorScheme.error : colorScheme.primary;
+    final highlighted = _hovered || _focused;
+    const radius = BorderRadius.all(Radius.circular(8));
+
+    return AnimatedContainer(
+      key: const ValueKey('device-maintenance-hover-region'),
+      duration: const Duration(milliseconds: 120),
+      curve: Curves.easeOutCubic,
+      decoration: BoxDecoration(
+        color: highlighted ? foreground.withValues(alpha: 0.08) : Colors.transparent,
+        borderRadius: radius,
+      ),
+      child: Material(
+        color: Colors.transparent,
+        borderRadius: radius,
+        child: InkWell(
+          borderRadius: radius,
+          hoverColor: Colors.transparent,
+          focusColor: Colors.transparent,
+          splashColor: foreground.withValues(alpha: 0.12),
+          highlightColor: foreground.withValues(alpha: 0.06),
+          onHover: (value) => setState(() => _hovered = value),
+          onFocusChange: (value) => setState(() => _focused = value),
+          onTap: widget.onPressed,
+          child: SizedBox(
+            height: 38,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(widget.icon, size: 16, color: foreground),
+                  const SizedBox(width: 8),
+                  Text(
+                    widget.label,
+                    style: Theme.of(context).textTheme.labelLarge?.copyWith(color: foreground, fontWeight: FontWeight.w600),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _StatusRow extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final String value;
+  final Color? valueColor;
+  final bool animationsEnabled;
+
+  const _StatusRow({
+    required this.icon,
+    required this.label,
+    required this.value,
+    this.valueColor,
+    this.animationsEnabled = true,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final motionAllowed = animationsEnabled && !(MediaQuery.maybeDisableAnimationsOf(context) ?? false);
+
+    return AdwActionRow(
+      leading: Icon(icon),
+      title: label,
+      trailing: AnimatedSwitcher(
+        duration: motionAllowed ? RelayMotion.state : Duration.zero,
+        switchInCurve: RelayMotion.curve,
+        switchOutCurve: RelayMotion.curve,
+        child: Text(
+          value,
+          key: ValueKey(value),
+          textAlign: TextAlign.end,
+          style: theme.textTheme.bodyMedium?.copyWith(
+            color: valueColor ?? theme.colorScheme.onSurface,
+            fontWeight: FontWeight.w500,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Notifications forwarded by the focused phone.
 class _NotificationsSection extends StatelessWidget {
   final RelayDeviceVm device;
 
@@ -704,17 +1279,16 @@ class _NotificationsSection extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final palette = Theme.of(context).relayPalette;
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
 
     if (!device.isKdeConnect || !device.isPaired) {
-      return const Column(
+      return Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisSize: MainAxisSize.min,
         children: [
-          RelaySectionLabel(label: 'Notifications'),
-          SizedBox(height: 20),
-          _EmptySection(
-            icon: Icons.notifications_off_outlined,
+          const _EmptySection(
+            icon: YaruIcons.notification,
             title: 'Not available',
             body: 'This device does not forward notifications to Relay.',
           ),
@@ -729,41 +1303,43 @@ class _NotificationsSection extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       mainAxisSize: MainAxisSize.min,
       children: [
-        const RelaySectionLabel(label: 'Notifications'),
-        const SizedBox(height: 20),
         if (notifications.isEmpty)
           const _EmptySection(
-            icon: Icons.notifications_none_rounded,
+            icon: YaruIcons.bell,
             title: 'All clear',
             body: 'Notifications from this phone appear here.',
           )
         else
           for (final notification in notifications.take(5))
             Padding(
-              padding: const EdgeInsets.only(bottom: 16),
+              padding: const EdgeInsets.only(bottom: 12),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Text(
                     notification.title?.isNotEmpty == true ? notification.title! : (notification.appName ?? 'Notification'),
-                    style: RelayTypography.body(palette.textPrimary, isGnome: true, bold: true),
+                    style: theme.textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w600),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                   ),
                   if (notification.appName != null && notification.title?.isNotEmpty == true)
                     Text(
                       notification.appName!,
-                      style: RelayTypography.caption(palette.textTertiary, isGnome: true),
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: colorScheme.onSurface.withValues(alpha: 0.5),
+                      ),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                     ),
                   if (notification.text != null && notification.text!.isNotEmpty)
                     Padding(
-                      padding: const EdgeInsets.only(top: 3),
+                      padding: const EdgeInsets.only(top: 2),
                       child: Text(
                         notification.text!,
-                        style: RelayTypography.caption(palette.textSecondary, isGnome: true),
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: colorScheme.onSurface.withValues(alpha: 0.7),
+                        ),
                         maxLines: 2,
                         overflow: TextOverflow.ellipsis,
                       ),
@@ -776,7 +1352,6 @@ class _NotificationsSection extends StatelessWidget {
   }
 }
 
-/// A lightweight empty state: an icon, a line, a sentence. No inset rectangle.
 class _EmptySection extends StatelessWidget {
   final IconData icon;
   final String title;
@@ -786,118 +1361,117 @@ class _EmptySection extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final palette = Theme.of(context).relayPalette;
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+
     return Padding(
-      padding: const EdgeInsets.only(top: 6, bottom: 6),
+      padding: const EdgeInsets.symmetric(vertical: 4),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(icon, size: 19, color: palette.textTertiary),
-          const SizedBox(height: 10),
-          Text(title, style: RelayTypography.body(palette.textSecondary, isGnome: true)),
-          const SizedBox(height: 3),
-          Text(body, style: RelayTypography.caption(palette.textTertiary, isGnome: true)),
+          Icon(icon, size: 20, color: colorScheme.onSurface.withValues(alpha: 0.4)),
+          const SizedBox(height: 8),
+          Text(title, style: theme.textTheme.bodyMedium?.copyWith(color: colorScheme.onSurface.withValues(alpha: 0.8))),
+          const SizedBox(height: 2),
+          Text(body, style: theme.textTheme.bodySmall?.copyWith(color: colorScheme.onSurface.withValues(alpha: 0.5))),
         ],
       ),
     );
   }
 }
 
-class _QuietIconButton extends StatelessWidget {
-  final IconData icon;
-  final String tooltip;
-  final VoidCallback onPressed;
-
-  const _QuietIconButton({required this.icon, required this.tooltip, required this.onPressed});
-
-  @override
-  Widget build(BuildContext context) {
-    final palette = Theme.of(context).relayPalette;
-    return Tooltip(
-      message: tooltip,
-      child: InkWell(
-        onTap: onPressed,
-        borderRadius: BorderRadius.circular(8),
-        child: Padding(
-          padding: const EdgeInsets.all(5),
-          child: Icon(icon, size: 16, color: palette.textTertiary),
-        ),
-      ),
-    );
-  }
-}
-
-/// The technical rows, kept at the very bottom as a borderless section. This is
-/// where the backend a device happens to speak belongs.
+/// The technical rows as a GNOME preferences group.
 class _DeviceDetails extends StatelessWidget {
   final RelayDeviceVm device;
+  final RelayDevicePalette palette;
+  final bool connected;
+  final bool animationsEnabled;
   final VoidCallback onOpenDiagnostics;
 
-  const _DeviceDetails({required this.device, required this.onOpenDiagnostics});
+  const _DeviceDetails({
+    required this.device,
+    required this.palette,
+    required this.connected,
+    required this.animationsEnabled,
+    required this.onOpenDiagnostics,
+  });
 
   @override
   Widget build(BuildContext context) {
-    final palette = Theme.of(context).relayPalette;
+    final theme = Theme.of(context);
 
-    return AdwPreferencesGroup(
+    return _OverviewSection(
+      key: const ValueKey('device-details-section'),
       title: 'Device Details',
-      margin: EdgeInsets.zero,
-      children: [
-        AdwActionRow(
-          leading: const Icon(Icons.wifi_rounded),
-          title: 'Connection',
-          subtitle: device.isKdeConnect
-              ? device.detail == 'Connected'
-                    ? 'Connected on your local network'
-                    : device.detail == 'Paired'
-                    ? 'Paired'
-                    : 'Nearby on your local network'
-              : device.isCompatibilityPeer
-              ? 'Nearby on your local network'
-              : device.connectionType == RelayConnectionType.direct
-              ? 'Direct connection'
-              : device.connectionType == RelayConnectionType.relayed
-              ? 'Connected remotely'
-              : 'Nearby on your local network',
-        ),
-        AdwActionRow(
-          leading: Icon(device.isVerifiedRelay ? Icons.verified_user_rounded : Icons.info_outline_rounded),
-          title: 'Device verification',
-          subtitle: device.isKdeConnect
-              ? 'KDE Connect'
-              : device.isVerifiedRelay
-              ? 'Authenticated Relay device identity'
-              : 'Relay-compatible device (unauthenticated)',
-        ),
-        AdwActionRow(
-          leading: const Icon(Icons.battery_std_rounded),
-          title: 'Battery',
-          subtitle: switch (device.battery) {
-            final battery when !battery.hasInfo =>
-              device.isKdeConnect
-                  ? 'Waiting for battery status'
+      child: AdwRowGeometry(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+        minHeight: 56,
+        child: AdwBoxedList(
+          key: const ValueKey('device-details-group'),
+          children: [
+            AdwActionRow(
+              leading: const Icon(YaruIcons.network_wireless),
+              title: 'Connection',
+              subtitle: device.isKdeConnect
+                  ? device.detail == 'Connected'
+                        ? 'Local network'
+                        : device.detail == 'Paired'
+                        ? 'Paired'
+                        : 'Nearby on your local network'
                   : device.isCompatibilityPeer
-                  ? 'LocalSend-compatible devices do not share battery status'
-                  : 'Not shared by this device',
-            final battery when battery.isStale => 'Last known before disconnecting',
-            final battery when battery.isFull => 'Charged',
-            final battery when battery.isCharging => 'Charging',
-            _ => 'On battery',
-          },
-          trailing: Text(
-            device.battery.hasInfo ? '${device.battery.percentage}%' : '—',
-            style: RelayTypography.body(palette.textSecondary, isGnome: true),
-          ),
+                  ? 'Nearby on your local network'
+                  : device.connectionType == RelayConnectionType.direct
+                  ? 'Direct connection'
+                  : device.connectionType == RelayConnectionType.relayed
+                  ? 'Remote connection'
+                  : 'Nearby on your local network',
+              trailing: RelayConnectionStatus(
+                connected: connected,
+                label: connected ? 'Connected' : device.statusSummary,
+                palette: palette,
+                animationsEnabled: animationsEnabled,
+              ),
+            ),
+            AdwActionRow(
+              leading: Icon(device.isVerifiedRelay ? YaruIcons.shield : YaruIcons.information),
+              title: 'Device verification',
+              subtitle: device.isKdeConnect
+                  ? 'KDE Connect'
+                  : device.isVerifiedRelay
+                  ? 'Authenticated Relay device identity'
+                  : 'Relay-compatible device (unauthenticated)',
+            ),
+            AdwActionRow(
+              leading: const Icon(YaruIcons.battery),
+              title: 'Battery',
+              subtitle: switch (device.battery) {
+                final battery when !battery.hasInfo =>
+                  device.isKdeConnect
+                      ? 'Waiting for battery status'
+                      : device.isCompatibilityPeer
+                      ? 'LocalSend-compatible devices do not share battery status'
+                      : 'Not shared by this device',
+                final battery when battery.isStale => 'Last known before disconnecting',
+                final battery when battery.isFull => 'Charged',
+                final battery when battery.isCharging => 'Charging',
+                _ => 'On battery',
+              },
+              trailing: Text(
+                device.battery.hasInfo ? '${device.battery.percentage}%' : '—',
+                style: theme.textTheme.bodyMedium,
+              ),
+            ),
+            if (!device.isKdeConnect)
+              AdwNavigationRow(
+                leading: const Icon(YaruIcons.settings),
+                title: 'Security & diagnostics',
+                subtitle: 'Verify this device and view technical details',
+                onTap: onOpenDiagnostics,
+              ),
+          ],
         ),
-        if (!device.isKdeConnect)
-          AdwNavigationRow(
-            leading: const Icon(Icons.tune_rounded),
-            title: 'Security & diagnostics',
-            subtitle: 'Verify this device and view technical details',
-            onTap: onOpenDiagnostics,
-          ),
-      ],
+      ),
     );
   }
 }
@@ -914,17 +1488,19 @@ class _KdeConnectRelationshipTile extends StatelessWidget {
     final paired = device.detail == 'Paired' || device.detail == 'Connected';
 
     if (paired) {
-      return AdwButton.destructive(
+      return _CompactDeviceAction(
         key: const ValueKey('kdeconnect-remove-device'),
-        icon: Icons.link_off_rounded,
+        icon: YaruIcons.trash,
         label: 'Remove Device',
+        destructive: true,
         onPressed: () => unawaited(context.redux(kdeConnectProvider).dispatchAsync(KdeConnectUnpairAction(_deviceId))),
       );
     }
-    return AdwButton.suggested(
+    return _CompactDeviceAction(
       key: const ValueKey('kdeconnect-pair-device'),
-      icon: Icons.link_rounded,
+      icon: YaruIcons.insert_link,
       label: 'Pair',
+      destructive: false,
       onPressed: () => unawaited(context.redux(kdeConnectProvider).dispatchAsync(KdeConnectRequestPairAction(_deviceId))),
     );
   }

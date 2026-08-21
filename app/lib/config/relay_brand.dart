@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+export 'package:relay_app/config/relay_device_palette.dart';
 export 'package:relay_app/config/relay_typography.dart';
 
 abstract final class RelayProduct {
@@ -55,45 +56,48 @@ class RelayPalette {
   /// greys carry a faint amber so the accent sits inside the same family
   /// rather than on top of a cool ground.
   static const dark = RelayPalette(
-    canvas: Color(0xff11110f),
-    canvasTonalHigh: Color(0xff151310),
-    canvasTonalLow: Color(0xff10100e),
-    elevated: Color(0xff1a1815),
-    softSurface: Color(0xff201d19),
-    hoverSurface: Color(0xff29241f),
-    hairline: Color(0x14f4f0e8),
+    canvas: Color(0xff242424),
+    canvasTonalHigh: Color(0xff2c2c2c),
+    canvasTonalLow: Color(0xff1e1e1e),
+    elevated: Color(0xff303030),
+    softSurface: Color(0xff383838),
+    hoverSurface: Color(0xff424242),
+    hairline: Color(0x1fffffff),
     topHighlight: Color(0x00000000),
-    accent: Color(0xfff07855),
-    accentSoft: Color(0xffff9a7c),
+    accent: Color(0xffe95420),
+    accentSoft: Color(0xffff7846),
     accentSecondary: Color(0xffc89a55),
-    textPrimary: Color(0xfff4f0e8),
-    textSecondary: Color(0xffaaa39b),
-    textTertiary: Color(0xff77716a),
-    success: Color(0xff74c986),
-    warning: Color(0xffc89a55),
-    error: Color(0xffde665c),
+    textPrimary: Color(0xfff6f6f6),
+    textSecondary: Color(0xffb0b0b0),
+    textTertiary: Color(0xff787878),
+    success: Color(0xff2ec27e),
+    warning: Color(0xffe5a50a),
+    error: Color(0xffe01b24),
   );
 
-  /// Relay Carbon, light. Warm paper against the same accent family.
+  /// Relay Yaru / GNOME palette, light.
   static const light = RelayPalette(
-    canvas: Color(0xfff6f3ed),
-    canvasTonalHigh: Color(0xfffdfbf7),
-    canvasTonalLow: Color(0xffeeeae2),
-    elevated: Color(0xfffcfaf6),
-    softSurface: Color(0xfff0ece4),
-    hoverSurface: Color(0xffe6e0d6),
-    hairline: Color(0x141a1815),
+    canvas: Color(0xfff6f6f6),
+    canvasTonalHigh: Color(0xffffffff),
+    canvasTonalLow: Color(0xffeeeeee),
+    elevated: Color(0xffffffff),
+    softSurface: Color(0xffececec),
+    hoverSurface: Color(0xffe2e2e2),
+    hairline: Color(0x14000000),
     topHighlight: Color(0x00000000),
-    accent: Color(0xffc0522f),
-    accentSoft: Color(0xffa4441f),
+    accent: Color(0xffe95420),
+    accentSoft: Color(0xffc44012),
     accentSecondary: Color(0xff8a6420),
-    textPrimary: Color(0xff1a1815),
-    textSecondary: Color(0xff5f594f),
-    textTertiary: Color(0xff847d73),
-    success: Color(0xff2c7a45),
-    warning: Color(0xff8a6420),
-    error: Color(0xffb04a41),
+    textPrimary: Color(0xff1e1e1e),
+    textSecondary: Color(0xff5c5c5c),
+    textTertiary: Color(0xff8c8c8c),
+    success: Color(0xff26a269),
+    warning: Color(0xffc67800),
+    error: Color(0xffc01c28),
   );
+
+  static const brandAccent = Color(0xfff07855);
+  static const brandAccentDark = Color(0xffc0522f);
 
   static RelayPalette of(Brightness brightness) => brightness == Brightness.dark ? dark : light;
 }
@@ -106,29 +110,29 @@ abstract final class RelayComponentTokens {
   static const double sectionTracking = 1.1;
 }
 
-/// Relay Carbon corner radii.
+/// GNOME/Yaru corner hierarchy.
 ///
-/// One ladder for the whole product so surfaces nest without the corners
-/// fighting each other: a smaller surface inside a larger one always takes the
-/// next step down.
+/// These values intentionally describe the outer geometry of a surface, not
+/// its visual prominence. Keep group children square and clip them at their
+/// shared parent rather than turning every row into an individual card.
 abstract final class RelayRadius {
-  /// The hero, the one surface allowed to be the roundest thing on screen.
-  static const double hero = 26;
+  /// Major surfaces and dialogs.
+  static const double hero = 14;
 
-  /// The other major surfaces. There should only ever be two or three.
-  static const double card = 23;
+  /// Cards and message bubbles.
+  static const double card = 12;
 
-  /// A region inside a major surface that genuinely needs its own shape.
-  static const double panel = 16;
+  /// Boxed preference/list groups and inputs.
+  static const double panel = 12;
 
-  /// Device rows in the dock and the sidebar.
-  static const double action = 14;
+  /// Interactive rows and compact surfaces.
+  static const double action = 10;
 
-  /// Sidebar rows and nav items.
-  static const double nav = 14;
+  /// Sidebar rows and navigation items.
+  static const double nav = 8;
 
-  /// Buttons and inputs.
-  static const double button = 14;
+  /// Normal buttons.
+  static const double button = 8;
 
   /// Small chips that really are pills.
   static const double pill = 999;

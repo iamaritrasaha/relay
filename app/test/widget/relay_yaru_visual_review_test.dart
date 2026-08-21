@@ -19,7 +19,7 @@ import 'package:relay_isolates/model/device_info_result.dart';
 
 import 'mocks_helper.dart';
 
-/// Review renders of the Relay Carbon desktop shell.
+/// Review renders of the Relay GNOME/Yaru desktop shell.
 ///
 /// These exist to be looked at: they are the only way to inspect the desktop
 /// composition at each supported viewport without a running session. The device
@@ -52,9 +52,6 @@ void main() {
   setUpAll(() async {
     final binding = TestWidgetsFlutterBinding.ensureInitialized();
 
-    // Settings reaches for desktop plugins that the test binding does not
-    // provide. Answering them keeps these renders about layout rather than
-    // about a missing platform implementation.
     final messenger = binding.defaultBinaryMessenger;
     messenger.setMockMethodCallHandler(
       const MethodChannel('dev.fluttercommunity.plus/connectivity'),
@@ -62,15 +59,34 @@ void main() {
     );
     messenger.setMockStreamHandler(
       const EventChannel('dev.fluttercommunity.plus/connectivity_status'),
-      MockStreamHandler.inline(onListen: (arguments, sink) => sink.endOfStream()),
+      MockStreamHandler.inline(
+        onListen: (arguments, sink) {},
+        onCancel: (arguments) {},
+      ),
     );
     messenger.setMockMethodCallHandler(
       const MethodChannel('dev.fluttercommunity.plus/package_info'),
       (call) async => <String, String>{
         'appName': 'Relay',
         'packageName': 'com.foresight.app.relay',
-        'version': '0.1.0',
-        'buildNumber': '62',
+        'version': '0.2.0',
+        'buildNumber': '63',
+      },
+    );
+    messenger.setMockStreamHandler(
+      const EventChannel('yaru_window/events'),
+      MockStreamHandler.inline(
+        onListen: (arguments, sink) {},
+        onCancel: (arguments) {},
+      ),
+    );
+    messenger.setMockMethodCallHandler(
+      const MethodChannel('yaru_window'),
+      (call) async => <String, dynamic>{
+        'isMaximized': false,
+        'isActive': true,
+        'isFullscreen': false,
+        'isMinimized': false,
       },
     );
 
@@ -172,13 +188,16 @@ void main() {
           ),
           parentIsolateProvider.overrideWithNotifier((ref) => ReviewIsolateController()),
         ],
-        child: MaterialApp(
-          debugShowCheckedModeBanner: false,
-          theme: theme.copyWith(
-            textTheme: theme.textTheme.apply(fontFamily: reviewFontFamily),
-            primaryTextTheme: theme.primaryTextTheme.apply(fontFamily: reviewFontFamily),
+        child: MediaQuery(
+          data: const MediaQueryData(disableAnimations: true),
+          child: MaterialApp(
+            debugShowCheckedModeBanner: false,
+            theme: theme.copyWith(
+              textTheme: theme.textTheme.apply(fontFamily: reviewFontFamily),
+              primaryTextTheme: theme.primaryTextTheme.apply(fontFamily: reviewFontFamily),
+            ),
+            home: Scaffold(body: GnomeShell(vm: vm, animationsEnabled: false)),
           ),
-          home: Scaffold(body: GnomeShell(vm: vm, animationsEnabled: false)),
         ),
       ),
     );
@@ -187,37 +206,34 @@ void main() {
   }
 
   for (final viewport in const [Size(1280, 720), Size(1440, 900), Size(1920, 1080)]) {
-    testWidgets('carbon one device ${viewport.width.toInt()}x${viewport.height.toInt()}', (tester) async {
+    testWidgets('yaru one device ${viewport.width.toInt()}x${viewport.height.toInt()}', (tester) async {
       await render(tester, vmWith(const [phone]), viewport);
       await expectLater(
         find.byType(MaterialApp),
-        matchesGoldenFile('goldens/relay_carbon/one_device_${viewport.width.toInt()}x${viewport.height.toInt()}.png'),
+        matchesGoldenFile('goldens/relay_yaru/one_device_${viewport.width.toInt()}x${viewport.height.toInt()}.png'),
       );
     });
   }
 
-  testWidgets('carbon multi device dock 1920x1080', (tester) async {
+  testWidgets('yaru multi device dock 1920x1080', (tester) async {
     await render(tester, vmWith(const [phone, tablet, laptop, offlinePhone]), const Size(1920, 1080));
-    await expectLater(find.byType(MaterialApp), matchesGoldenFile('goldens/relay_carbon/multi_device_1920x1080.png'));
+    await expectLater(find.byType(MaterialApp), matchesGoldenFile('goldens/relay_yaru/multi_device_1920x1080.png'));
   });
 
-  testWidgets('carbon focus moves to another device', (tester) async {
+  testWidgets('yaru focus moves to another device', (tester) async {
     await render(tester, vmWith(const [phone, tablet, laptop, offlinePhone]), const Size(1920, 1080));
     await tester.tap(find.text('ThinkPad X1').first);
     await tester.pumpAndSettle();
-    await expectLater(find.byType(MaterialApp), matchesGoldenFile('goldens/relay_carbon/focus_thinkpad_1920x1080.png'));
+    await expectLater(find.byType(MaterialApp), matchesGoldenFile('goldens/relay_yaru/focus_thinkpad_1920x1080.png'));
   });
 
-  testWidgets('carbon offline device focused', (tester) async {
+  testWidgets('yaru offline device focused', (tester) async {
     await render(tester, vmWith(const [offlinePhone, phone]), const Size(1440, 900));
-    await expectLater(find.byType(MaterialApp), matchesGoldenFile('goldens/relay_carbon/offline_1440x900.png'));
+    await expectLater(find.byType(MaterialApp), matchesGoldenFile('goldens/relay_yaru/offline_1440x900.png'));
   });
 
-  /// Settings reaches for connectivity and autostart platform channels that no
-  /// test binding implements, so these renders drain those rather than treating
-  /// a missing desktop plugin as a layout failure.
-  testWidgets('carbon empty state 1280x720', (tester) async {
+  testWidgets('yaru empty state 1280x720', (tester) async {
     await render(tester, vmWith(const []), const Size(1280, 720));
-    await expectLater(find.byType(MaterialApp), matchesGoldenFile('goldens/relay_carbon/empty_1280x720.png'));
+    await expectLater(find.byType(MaterialApp), matchesGoldenFile('goldens/relay_yaru/empty_1280x720.png'));
   });
 }

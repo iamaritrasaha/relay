@@ -170,6 +170,19 @@ impl RsKdeConnect {
             let Some(event) = self.handle.recv().await else {
                 break;
             };
+            if let KdeConnectEvent::SmsChanged {
+                device_id,
+                conversations,
+                messages,
+            } = &event
+            {
+                tracing::info!(
+                    "[RelaySmsBridge] FFI event device={} conversations={} messages={}",
+                    device_id,
+                    conversations.len(),
+                    messages.len()
+                );
+            }
             if sink.add(event.into()).is_err() {
                 break;
             }
@@ -490,6 +503,53 @@ impl From<KdeTelephonyEvent> for RsKdeTelephonyEvent {
             phone_number: value.phone_number,
             contact_name: value.contact_name,
             phone_thumbnail: value.phone_thumbnail,
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn sms_changed_crosses_the_bridge_without_narrowing_or_dropping_lists() {
+        let message = SmsMessage {
+            id: 9_223_372_036,
+            thread_id: 4_294_967_297,
+            addresses: vec!["+15550100".into()],
+            body: "test".into(),
+            date: 1_700_000_000_000,
+            message_type: 1,
+            read: Some(true),
+            sub_id: Some(2),
+            event: None,
+            attachments: Vec::new(),
+        };
+        let event = KdeConnectEvent::SmsChanged {
+            device_id: "phone-id".into(),
+            conversations: vec![KdeSmsConversation {
+                thread_id: message.thread_id,
+                participants: message.addresses.clone(),
+                latest_message: Some(message.clone()),
+                unread_count: 0,
+            }],
+            messages: vec![message],
+        };
+
+        match RsKdeConnectEvent::from(event) {
+            RsKdeConnectEvent::SmsChanged {
+                device_id,
+                conversations,
+                messages,
+            } => {
+                assert_eq!(device_id, "phone-id");
+                assert_eq!(conversations.len(), 1);
+                assert_eq!(conversations[0].thread_id, 4_294_967_297);
+                assert_eq!(messages.len(), 1);
+                assert_eq!(messages[0].id, 9_223_372_036);
+                assert_eq!(messages[0].date, 1_700_000_000_000);
+            }
+            _ => panic!("expected SmsChanged"),
         }
     }
 }

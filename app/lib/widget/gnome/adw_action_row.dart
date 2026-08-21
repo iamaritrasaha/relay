@@ -1,6 +1,27 @@
 import 'package:flutter/material.dart';
 import 'package:relay_app/config/relay_brand.dart';
 
+/// Optional row geometry supplied by a preference document.
+///
+/// The scope lets Settings use native desktop row metrics without changing
+/// action rows embedded in other GNOME views.
+class AdwRowGeometry extends InheritedWidget {
+  final EdgeInsetsGeometry padding;
+  final double minHeight;
+
+  const AdwRowGeometry({
+    super.key,
+    required this.padding,
+    required this.minHeight,
+    required super.child,
+  });
+
+  static AdwRowGeometry? maybeOf(BuildContext context) => context.dependOnInheritedWidgetOfExactType<AdwRowGeometry>();
+
+  @override
+  bool updateShouldNotify(AdwRowGeometry oldWidget) => padding != oldWidget.padding || minHeight != oldWidget.minHeight;
+}
+
 /// Libadwaita-styled Action Row for GNOME.
 class AdwActionRow extends StatelessWidget {
   final Widget? leading;
@@ -29,45 +50,49 @@ class AdwActionRow extends StatelessWidget {
 
     final titleColor = isDestructive ? palette.error : palette.textPrimary;
     final subtitleColor = palette.textSecondary;
+    final geometry = AdwRowGeometry.maybeOf(context);
 
-    Widget content = Padding(
-      padding: padding,
-      child: Row(
-        children: [
-          if (leading != null) ...[
-            IconTheme(
-              data: IconThemeData(
-                size: 20,
-                color: isDestructive ? palette.error : palette.textSecondary,
-              ),
-              child: leading!,
-            ),
-            const SizedBox(width: 14),
-          ],
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  title,
-                  style: RelayTypography.body(titleColor, isGnome: true, bold: true),
+    Widget content = ConstrainedBox(
+      constraints: BoxConstraints(minHeight: geometry?.minHeight ?? 0),
+      child: Padding(
+        padding: geometry?.padding ?? padding,
+        child: Row(
+          children: [
+            if (leading != null) ...[
+              IconTheme(
+                data: IconThemeData(
+                  size: 20,
+                  color: isDestructive ? palette.error : palette.textSecondary,
                 ),
-                if (subtitle != null) ...[
-                  const SizedBox(height: 2),
+                child: leading!,
+              ),
+              const SizedBox(width: 14),
+            ],
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
                   Text(
-                    subtitle!,
-                    style: RelayTypography.caption(subtitleColor, isGnome: true),
+                    title,
+                    style: RelayTypography.body(titleColor, isGnome: true, bold: true),
                   ),
+                  if (subtitle != null) ...[
+                    const SizedBox(height: 2),
+                    Text(
+                      subtitle!,
+                      style: RelayTypography.caption(subtitleColor, isGnome: true),
+                    ),
+                  ],
                 ],
-              ],
+              ),
             ),
-          ),
-          if (trailing != null) ...[
-            const SizedBox(width: 12),
-            trailing!,
+            if (trailing != null) ...[
+              const SizedBox(width: 12),
+              trailing!,
+            ],
           ],
-        ],
+        ),
       ),
     );
 
@@ -153,8 +178,6 @@ class AdwSwitchRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final palette = Theme.of(context).relayPalette;
-
     return AdwActionRow(
       leading: leading,
       title: title,
@@ -166,7 +189,6 @@ class AdwSwitchRow extends StatelessWidget {
         child: Switch(
           value: value,
           onChanged: onChanged,
-          activeTrackColor: palette.accent,
         ),
       ),
     );

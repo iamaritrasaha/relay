@@ -68,7 +68,10 @@ Future<void> initTray({bool suppressed = false}) async {
   }
 }
 
-Future<void> hideToTray() async {
+/// During pre-runApp bootstrap the container is not yet mounted in
+/// [RefenaScope]. The initial sleep value is supplied as a container override,
+/// so updating it through `defaultRef` here would race the scope mount.
+Future<void> hideToTray({bool updateSleepState = true}) async {
   await windowManager.hide();
   if (checkPlatform([TargetPlatform.macOS])) {
     // This will crash on Windows
@@ -76,15 +79,12 @@ Future<void> hideToTray() async {
     await windowManager.setSkipTaskbar(true);
   }
 
-  // Disable animations
-  try {
+  if (updateSleepState) {
     RefenaScope.defaultRef.notifier(sleepProvider).setState((_) => true);
-  } catch (e) {
-    _logger.warning('Failed to update sleep state (Refena not yet initialized)', e);
   }
 }
 
-Future<void> showFromTray() async {
+Future<void> showFromTray({bool updateSleepState = true}) async {
   await windowManager.show();
   await windowManager.focus();
   if (checkPlatform([TargetPlatform.macOS])) {
@@ -93,11 +93,8 @@ Future<void> showFromTray() async {
     await windowManager.setSkipTaskbar(false);
   }
 
-  // Enable animations
-  try {
+  if (updateSleepState) {
     RefenaScope.defaultRef.notifier(sleepProvider).setState((_) => false);
-  } catch (e) {
-    _logger.warning('Failed to update sleep state (Refena not yet initialized)', e);
   }
 }
 

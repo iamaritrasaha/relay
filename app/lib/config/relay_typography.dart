@@ -31,70 +31,70 @@ abstract final class RelayTypography {
     'monospace',
   ];
 
-  static TextStyle largeTitle(Color color, {bool isGnome = false}) => TextStyle(
-    fontFamily: 'Geist',
-    fontSize: isGnome ? 22 : 22,
+  static TextStyle largeTitle(Color color, {bool isGnome = true}) => TextStyle(
+    fontFamily: isGnome ? null : 'Geist',
+    fontSize: 22,
     height: 1.25,
     fontWeight: semiBold,
     letterSpacing: -0.3,
     color: color,
-    fontFamilyFallback: isGnome ? gnomeFontFallbacks : null,
+    fontFamilyFallback: gnomeFontFallbacks,
   );
 
-  static TextStyle title(Color color, {bool isGnome = false}) => TextStyle(
-    fontFamily: 'Geist',
-    fontSize: isGnome ? 17 : 17,
+  static TextStyle title(Color color, {bool isGnome = true}) => TextStyle(
+    fontFamily: isGnome ? null : 'Geist',
+    fontSize: 17,
     height: 1.3,
     fontWeight: semiBold,
     letterSpacing: -0.2,
     color: color,
-    fontFamilyFallback: isGnome ? gnomeFontFallbacks : null,
+    fontFamilyFallback: gnomeFontFallbacks,
   );
 
-  static TextStyle heading(Color color, {bool isGnome = false}) => TextStyle(
-    fontFamily: 'Geist',
-    fontSize: isGnome ? 15 : 15.5,
+  static TextStyle heading(Color color, {bool isGnome = true}) => TextStyle(
+    fontFamily: isGnome ? null : 'Geist',
+    fontSize: 15,
     height: 1.35,
     fontWeight: medium,
     color: color,
-    fontFamilyFallback: isGnome ? gnomeFontFallbacks : null,
+    fontFamilyFallback: gnomeFontFallbacks,
   );
 
-  static TextStyle body(Color color, {bool isGnome = false, bool bold = false}) => TextStyle(
-    fontFamily: 'Geist',
-    fontSize: isGnome ? 14 : 14.5,
+  static TextStyle body(Color color, {bool isGnome = true, bool bold = false}) => TextStyle(
+    fontFamily: isGnome ? null : 'Geist',
+    fontSize: 14,
     height: 1.45,
     fontWeight: bold ? medium : regular,
     color: color,
-    fontFamilyFallback: isGnome ? gnomeFontFallbacks : null,
+    fontFamilyFallback: gnomeFontFallbacks,
   );
 
-  static TextStyle subtitle(Color color, {bool isGnome = false}) => TextStyle(
-    fontFamily: 'Geist',
-    fontSize: isGnome ? 13 : 13.5,
+  static TextStyle subtitle(Color color, {bool isGnome = true}) => TextStyle(
+    fontFamily: isGnome ? null : 'Geist',
+    fontSize: 13,
     height: 1.4,
     fontWeight: regular,
     color: color,
-    fontFamilyFallback: isGnome ? gnomeFontFallbacks : null,
+    fontFamilyFallback: gnomeFontFallbacks,
   );
 
-  static TextStyle caption(Color color, {bool isGnome = false}) => TextStyle(
-    fontFamily: 'Geist',
-    fontSize: isGnome ? 12.5 : 12.5,
+  static TextStyle caption(Color color, {bool isGnome = true}) => TextStyle(
+    fontFamily: isGnome ? null : 'Geist',
+    fontSize: 12.5,
     height: 1.35,
     fontWeight: regular,
     color: color,
-    fontFamilyFallback: isGnome ? gnomeFontFallbacks : null,
+    fontFamilyFallback: gnomeFontFallbacks,
   );
 
-  static TextStyle sectionHeader(Color color, {bool isGnome = false}) => TextStyle(
-    fontFamily: 'Geist',
-    fontSize: isGnome ? 11 : 11.5,
+  static TextStyle sectionHeader(Color color, {bool isGnome = true}) => TextStyle(
+    fontFamily: isGnome ? null : 'Geist',
+    fontSize: 11,
     height: 1.3,
     fontWeight: medium,
-    letterSpacing: isGnome ? 1.1 : 0.7,
+    letterSpacing: 1.1,
     color: color,
-    fontFamilyFallback: isGnome ? gnomeFontFallbacks : null,
+    fontFamilyFallback: gnomeFontFallbacks,
   );
 
   static TextStyle monospace(Color color) => TextStyle(
@@ -105,30 +105,31 @@ abstract final class RelayTypography {
     color: color,
   );
 
-  static TextStyle wordmark(Color color) => TextStyle(
-    fontFamily: 'Geist',
+  static TextStyle wordmark(Color color, {bool isGnome = true}) => TextStyle(
+    fontFamily: isGnome ? null : 'Geist',
     fontSize: 16,
     height: 1.2,
     fontWeight: semiBold,
     letterSpacing: -0.2,
     color: color,
+    fontFamilyFallback: gnomeFontFallbacks,
   );
 
   /// The focused device's name. The single loudest string on the page.
-  static TextStyle deviceName(Color color) => TextStyle(
-    fontFamily: 'Geist',
-    fontSize: 31,
+  static TextStyle deviceName(Color color, {bool isGnome = true}) => TextStyle(
+    fontFamily: isGnome ? null : 'Geist',
+    fontSize: 28,
     height: 1.15,
     fontWeight: semiBold,
-    letterSpacing: -0.7,
+    letterSpacing: -0.5,
     color: color,
     fontFamilyFallback: gnomeFontFallbacks,
   );
 
   /// A live number that carries meaning on its own: battery, signal, progress.
-  static TextStyle metric(Color color) => TextStyle(
-    fontFamily: 'Geist',
-    fontSize: 19,
+  static TextStyle metric(Color color, {bool isGnome = true}) => TextStyle(
+    fontFamily: isGnome ? null : 'Geist',
+    fontSize: 18,
     height: 1.2,
     fontWeight: semiBold,
     letterSpacing: -0.2,
@@ -137,8 +138,8 @@ abstract final class RelayTypography {
   );
 
   /// Sidebar navigation entries.
-  static TextStyle navLabel(Color color, {bool selected = false}) => TextStyle(
-    fontFamily: 'Geist',
+  static TextStyle navLabel(Color color, {bool selected = false, bool isGnome = true}) => TextStyle(
+    fontFamily: isGnome ? null : 'Geist',
     fontSize: 14,
     height: 1.2,
     fontWeight: medium,

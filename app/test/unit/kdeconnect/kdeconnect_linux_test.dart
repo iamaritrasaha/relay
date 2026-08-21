@@ -321,6 +321,40 @@ void main() {
     expect(it.state.notifications[_phoneId]?.single.title, 'Bob');
   });
 
+  test('SmsChanged stores conversations and messages under the raw Rust device ID', () {
+    final it = service();
+    final message = RsKdeSmsMessage(
+      id: 9_223_372_036,
+      threadId: 4_294_967_297,
+      addresses: const ['+15550100'],
+      body: 'private body not logged',
+      date: 1_700_000_000_000,
+      messageType: 1,
+      read: false,
+      attachments: const [],
+    );
+
+    it.dispatch(
+      KdeConnectApplyEventAction(
+        RsKdeConnectEvent.smsChanged(
+          deviceId: _phoneId,
+          conversations: [
+            RsKdeSmsConversation(threadId: message.threadId, participants: message.addresses, latestMessage: message, unreadCount: 1),
+          ],
+          messages: [message],
+        ),
+      ),
+    );
+
+    expect(it.state.smsConversations[_phoneId]?.single.threadId, 4_294_967_297);
+    expect(it.state.smsMessages[_phoneId]?[4_294_967_297]?.single.id, 9_223_372_036);
+  });
+
+  test('GNOME-prefixed device key normalizes to the Rust event map key', () {
+    expect(kdeConnectDeviceIdFromKey('kdeconnect:$_phoneId'), _phoneId);
+    expect(kdeConnectDeviceIdFromKey(_phoneId), _phoneId);
+  });
+
   test('Actions when runtime is disconnected throw no uncaught exception', () async {
     final it = service();
     await expectLater(it.dispatchAsync(KdeConnectPingAction(_phoneId)), completes);
