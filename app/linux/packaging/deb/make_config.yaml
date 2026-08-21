@@ -19,17 +19,30 @@ dependencies:
   - xdg-user-dirs
 
 postinstall_scripts:
-  # The GTK application id (and therefore the X11 WM_CLASS / Wayland app_id) is
-  # com.foresight.app.relay, which cannot change without relocating the
-  # user's settings directory. Desktop shells match a running window to its
-  # launcher by that id, so the desktop entry has to advertise it explicitly or
-  # the dock and task switcher show a generic icon instead of Relay's.
+  # GNOME matches a running window to its launcher by the GTK application id
+  # (the X11 WM_CLASS / Wayland app_id), which is com.foresight.app.relay and
+  # cannot change without relocating the user's settings directory. A desktop
+  # entry is only found by that route when its own file name is the
+  # application id, so the entry generated from the package name is republished
+  # under the id and the original is kept as a hidden alias. Without this the
+  # shell has no entry to resolve and falls back to showing the raw id string
+  # and a generic icon instead of "Relay".
   - 'DESKTOP_ENTRY=/usr/share/applications/relay.desktop'
+  - 'APP_ID_ENTRY=/usr/share/applications/com.foresight.app.relay.desktop'
   - 'if [ -f "$DESKTOP_ENTRY" ] && ! grep -q "^StartupWMClass=" "$DESKTOP_ENTRY"; then echo "StartupWMClass=com.foresight.app.relay" >> "$DESKTOP_ENTRY"; fi'
+  # The icon has to be resolvable as "com.foresight.app.relay" in the hicolor
+  # theme, so every size the package installed under the package name is
+  # published under the application id as well.
+  - 'for icon in /usr/share/icons/hicolor/*/apps/relay.png /usr/share/icons/hicolor/*/apps/relay.svg; do [ -f "$icon" ] || continue; dir=$(dirname "$icon"); ext=${icon##*.}; cp -f "$icon" "$dir/com.foresight.app.relay.$ext"; done'
+  - 'if [ -f "$DESKTOP_ENTRY" ]; then sed -e "s/^Icon=.*/Icon=com.foresight.app.relay/" -e "s/^Name=.*/Name=Relay/" -e "/^NoDisplay=/d" "$DESKTOP_ENTRY" > "$APP_ID_ENTRY"; fi'
+  - 'if [ -f "$APP_ID_ENTRY" ] && ! grep -q "^NoDisplay=" "$DESKTOP_ENTRY"; then echo "NoDisplay=true" >> "$DESKTOP_ENTRY"; fi'
   - 'command -v update-desktop-database >/dev/null 2>&1 && update-desktop-database -q /usr/share/applications || true'
   - 'command -v gtk-update-icon-cache >/dev/null 2>&1 && gtk-update-icon-cache -q -t -f /usr/share/icons/hicolor || true'
 postuninstall_scripts:
+  - 'rm -f /usr/share/applications/com.foresight.app.relay.desktop'
+  - 'rm -f /usr/share/icons/hicolor/*/apps/com.foresight.app.relay.png /usr/share/icons/hicolor/*/apps/com.foresight.app.relay.svg'
   - 'command -v update-desktop-database >/dev/null 2>&1 && update-desktop-database -q /usr/share/applications || true'
+  - 'command -v gtk-update-icon-cache >/dev/null 2>&1 && gtk-update-icon-cache -q -t -f /usr/share/icons/hicolor || true'
 
 keywords:
   - Sharing

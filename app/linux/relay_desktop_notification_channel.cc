@@ -26,6 +26,35 @@ struct RelayDesktopNotificationService {
 
 RelayDesktopNotificationService* g_service = nullptr;
 
+// The icon the notification server should draw beside "Relay".
+//
+// The freedesktop specification lets app_icon be either a themed icon name or
+// a file URI. The themed name only resolves once the package has installed the
+// icon under the application id, so prefer the copy that ships inside the
+// Flutter bundle: that one is present for an uninstalled build too, and the
+// banner otherwise falls back to a generic placeholder.
+const char* relay_notification_icon() {
+  static gchar* icon = nullptr;
+  static gboolean resolved = FALSE;
+  if (!resolved) {
+    resolved = TRUE;
+    g_autofree gchar* exe_path = g_file_read_link("/proc/self/exe", nullptr);
+    if (exe_path != nullptr) {
+      g_autofree gchar* exe_dir = g_path_get_dirname(exe_path);
+      g_autofree gchar* icon_path = g_build_filename(
+          exe_dir, "data", "flutter_assets", "assets", "img",
+          "relay-icon-linux-512.png", nullptr);
+      if (g_file_test(icon_path, G_FILE_TEST_EXISTS)) {
+        icon = g_filename_to_uri(icon_path, nullptr, nullptr);
+      }
+    }
+    if (icon == nullptr) {
+      icon = g_strdup("com.foresight.app.relay");
+    }
+  }
+  return icon;
+}
+
 void relay_notify_action_invoked(GDBusConnection* connection,
                                  const gchar* sender_name,
                                  const gchar* object_path,
@@ -140,7 +169,7 @@ void relay_show_notification(RelayDesktopNotificationService* service, FlMethodC
   GVariant* parameters = g_variant_new("(susssasa{sv}i)",
                                        app_name,
                                        replaces_id,
-                                       "com.foresight.app.relay",
+                                       relay_notification_icon(),
                                        title,
                                        body,
                                        &actions_builder,
