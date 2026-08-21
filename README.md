@@ -2,7 +2,7 @@
 
 **One desktop for all the devices around you.**
 
-Relay is an open-source cross-device continuity application built desktop-first for Linux. It unifies phones, computers, and nearby devices through a coherent, restrained GNOME Libadwaita interface regardless of which supported protocol connects them.
+Relay is a Linux-first cross-device continuity application with a GNOME/Yaru-oriented Flutter interface and independent KDE Connect-compatible device interoperability. It unifies phones, computers, and nearby devices through a coherent, restrained interface regardless of which supported protocol connects them.
 
 ```
                     Relay Desktop
@@ -21,19 +21,19 @@ The user interacts with nearby and paired devices and their live capabilities; t
 
 ## Key Features
 
-### 🖥️ Native Linux & GNOME Experience
-- **Libadwaita Design System:** Built from the ground up for modern Linux desktop environments with a warm-carbon palette, Geist typography, and native GNOME navigation patterns.
-- **Ambient Motion & Liveliness:** Subtle ambient luminosity and breath animation on focal cards, paired with smooth edge sweeps on connection, selection, and transfers (fully respecting `prefers-reduced-motion`).
+### 🖥️ GNOME & Yaru Desktop Experience
+- **GNOME/Yaru Interface:** Built for modern Linux desktop environments with a native Yaru theme, Ubuntu typography, handy_window rounded GTK3 window integration, and GNOME navigation patterns.
+- **Ambient Motion & Liveliness:** Subtle multicolor device perimeter motion and breath animation on focal cards, paired with smooth edge sweeps on connection, selection, and transfers (fully respecting `prefers-reduced-motion` and Spatial Animations settings).
 - **GNOME Shell Extension:** Integrated top-bar pill showing connected phone status, battery percentage, notification indicator, and cellular network signal with configurable presentation options.
 
 ### 📱 KDE Connect Compatibility
-Relay embeds a complete, independent Rust implementation of the KDE Connect protocol (v8) without requiring `kdeconnectd`, KDE Plasma, Kirigami, or KDE Frameworks:
+Relay embeds an independent Rust implementation of KDE Connect LAN protocols (v8) without requiring `kdeconnectd`, KDE Plasma, Kirigami, or KDE Frameworks:
 - **LAN Discovery & Secure Pairing:** Mutual TLS handshake, persistent trust, and automatic reconnection.
 - **Battery & Power State:** Real-time battery percentage, charging state, full charge indicators, and stale state detection.
 - **Find Phone & Ping:** Audible ringing trigger (even when silent) and connection latency testing.
 - **Clipboard Sync:** Bidirectional clipboard text synchronization.
 - **Notification Mirroring:** Real-time phone notification streaming with action dismissing.
-- **Messages & SMS:** Desktop split-view conversation viewer with thread history, unread counters, date grouping, and a multiline composer that sends with `Ctrl+Enter`. Reading and sending are gated separately, on the SMS capabilities the phone actually advertises, so a phone that only permits reading still shows its conversations.
+- **Messages & SMS:** Desktop split-view conversation viewer with thread history, unread counters, date grouping, and a multiline composer that sends with `Ctrl+Enter`.
 - **Telephony & Call State:** Awareness of incoming ringing, active calls and missed calls, plus remote ringer muting, on phones that advertise telephony. Relay reports call state and silences the ringer; it does not place, answer or end calls from the desktop.
 
 ### ⚡ LocalSend Transfer Protocol
