@@ -1,44 +1,116 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:relay_app/config/relay_brand.dart';
+import 'package:relay_app/config/relay_motion.dart';
 import 'package:relay_app/model/ui/relay_device_vm.dart';
+import 'package:relay_app/pages/gnome/gnome_shell.dart';
 import 'package:relay_app/pages/relay_home_vm.dart';
-import 'package:relay_app/util/device_type_ext.dart';
-import 'package:relay_app/widget/gnome/adw_button.dart';
+import 'package:relay_app/widget/relay/relay_device_silhouette.dart';
+import 'package:relay_app/widget/relay_carbon/relay_surface.dart';
+import 'package:relay_app/widget/relay_symbol.dart';
 
-/// Libadwaita device list sidebar for GNOME desktop.
+/// One entry in the sidebar's main navigation.
+class GnomeNavDestination {
+  final IconData icon;
+  final String label;
+  final GnomeSubView? view;
+  final VoidCallback? action;
+  final int badge;
+
+  const GnomeNavDestination({
+    required this.icon,
+    required this.label,
+    this.view,
+    this.action,
+    this.badge = 0,
+  });
+}
+
+/// Relay's desktop sidebar: what you can do, then which devices you have.
 class GnomeDeviceSidebar extends StatelessWidget {
   final RelayHomeVm vm;
   final String? selectedDeviceKey;
+  final GnomeSubView subView;
+  final List<GnomeNavDestination> destinations;
   final ValueChanged<String> onSelectDevice;
+  final ValueChanged<GnomeNavDestination> onSelectDestination;
   final VoidCallback onAddDevice;
-  final VoidCallback onOpenSettings;
-  final VoidCallback onOpenActivity;
 
   const GnomeDeviceSidebar({
     super.key,
     required this.vm,
     required this.selectedDeviceKey,
+    required this.subView,
+    required this.destinations,
     required this.onSelectDevice,
+    required this.onSelectDestination,
     required this.onAddDevice,
-    required this.onOpenSettings,
-    required this.onOpenActivity,
   });
 
   @override
   Widget build(BuildContext context) {
     final palette = Theme.of(context).relayPalette;
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-
-    final relayDevices = vm.devices.where((d) => d.isAuthenticatedRelay).toList();
-    final kdeConnectDevices = vm.devices.where((d) => d.isKdeConnect).toList();
-    final localSendDevices = vm.devices.where((d) => d.isCompatibilityPeer).toList();
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        // Presence header
         Padding(
-          padding: const EdgeInsets.fromLTRB(16, 14, 16, 8),
+          padding: const EdgeInsets.fromLTRB(18, 22, 18, 20),
+          child: Row(
+            children: [
+              const RelaySymbol(size: 26),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  RelayProduct.name,
+                  style: RelayTypography.wordmark(palette.textPrimary),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+            ],
+          ),
+        ),
+        Expanded(
+          child: ListView(
+            padding: const EdgeInsets.symmetric(horizontal: 10),
+            children: [
+              for (final destination in destinations)
+                _NavItem(
+                  destination: destination,
+                  selected: destination.view != null && destination.view == subView,
+                  onTap: () => onSelectDestination(destination),
+                ),
+              const SizedBox(height: 30),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(10, 0, 6, 12),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        'DEVICES',
+                        style: RelayTypography.sectionHeader(palette.textTertiary, isGnome: true),
+                      ),
+                    ),
+                    _AddDeviceButton(onPressed: onAddDevice),
+                  ],
+                ),
+              ),
+              if (vm.devices.isEmpty)
+                _EmptySidebarState(presence: vm.presence)
+              else
+                for (final device in vm.devices)
+                  _DeviceSidebarCard(
+                    key: ValueKey('relay-sidebar-${device.key}'),
+                    device: device,
+                    selected: device.key == selectedDeviceKey && subView == GnomeSubView.overview,
+                    onTap: () => onSelectDevice(device.key),
+                  ),
+            ],
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(20, 12, 20, 18),
           child: Row(
             children: [
               Container(
@@ -46,97 +118,23 @@ class GnomeDeviceSidebar extends StatelessWidget {
                 height: 8,
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
-                  color: vm.presence == RelayPresence.offline
-                      ? palette.textTertiary
-                      : vm.presence == RelayPresence.discovering
-                      ? palette.warning
-                      : palette.success,
+                  color: switch (vm.presence) {
+                    RelayPresence.offline => palette.textTertiary,
+                    RelayPresence.discovering => palette.warning,
+                    RelayPresence.ready => palette.success,
+                  },
                 ),
               ),
-              const SizedBox(width: 8),
+              const SizedBox(width: 10),
               Expanded(
                 child: Text(
-                  vm.selfAlias,
-                  style: RelayTypography.heading(palette.textPrimary, isGnome: true),
+                  switch (vm.presence) {
+                    RelayPresence.offline => 'Offline',
+                    RelayPresence.discovering => 'Looking for devices',
+                    RelayPresence.ready => 'Ready',
+                  },
+                  style: RelayTypography.caption(palette.textSecondary, isGnome: true),
                   overflow: TextOverflow.ellipsis,
-                ),
-              ),
-            ],
-          ),
-        ),
-
-        const Divider(height: 1, thickness: 1, indent: 12, endIndent: 12),
-
-        // Nearby device list. Technical route details stay in Diagnostics.
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 12, 16, 6),
-          child: Text(
-            'NEARBY DEVICES',
-            style: RelayTypography.sectionHeader(palette.textSecondary, isGnome: true),
-          ),
-        ),
-
-        // Device list
-        Expanded(
-          child: vm.devices.isEmpty
-              ? _EmptySidebarState(presence: vm.presence)
-              : ListView(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                  children: [
-                    if (kdeConnectDevices.isNotEmpty) ...[
-                      for (final device in kdeConnectDevices)
-                        _DeviceSidebarItem(
-                          device: device,
-                          isSelected: device.key == selectedDeviceKey,
-                          onTap: () => onSelectDevice(device.key),
-                        ),
-                    ],
-                    if (relayDevices.isNotEmpty) ...[
-                      for (final device in relayDevices)
-                        _DeviceSidebarItem(
-                          device: device,
-                          isSelected: device.key == selectedDeviceKey,
-                          onTap: () => onSelectDevice(device.key),
-                        ),
-                    ],
-                    if (localSendDevices.isNotEmpty) ...[
-                      Padding(
-                        padding: const EdgeInsets.fromLTRB(12, 16, 12, 6),
-                        child: Text(
-                          'OTHER DEVICES',
-                          style: RelayTypography.sectionHeader(palette.textTertiary, isGnome: true),
-                        ),
-                      ),
-                      for (final device in localSendDevices)
-                        _DeviceSidebarItem(
-                          device: device,
-                          isSelected: device.key == selectedDeviceKey,
-                          onTap: () => onSelectDevice(device.key),
-                        ),
-                    ],
-                  ],
-                ),
-        ),
-
-        // Bottom Actions
-        Container(
-          padding: const EdgeInsets.all(12),
-          decoration: BoxDecoration(
-            border: Border(
-              top: BorderSide(
-                color: isDark ? const Color(0x14ffffff) : const Color(0x0f000000),
-                width: 1,
-              ),
-            ),
-          ),
-          child: Row(
-            children: [
-              Expanded(
-                child: AdwButton(
-                  icon: Icons.add_rounded,
-                  label: 'Add device',
-                  isPill: true,
-                  onPressed: onAddDevice,
                 ),
               ),
             ],
@@ -147,103 +145,245 @@ class GnomeDeviceSidebar extends StatelessWidget {
   }
 }
 
-class _DeviceSidebarItem extends StatelessWidget {
-  final RelayDeviceVm device;
-  final bool isSelected;
-  final VoidCallback onTap;
+class _AddDeviceButton extends StatelessWidget {
+  final VoidCallback onPressed;
 
-  const _DeviceSidebarItem({
-    required this.device,
-    required this.isSelected,
-    required this.onTap,
-  });
+  const _AddDeviceButton({required this.onPressed});
 
   @override
   Widget build(BuildContext context) {
     final palette = Theme.of(context).relayPalette;
-    final isDark = Theme.of(context).brightness == Brightness.dark;
+    return Tooltip(
+      message: 'Add device',
+      child: InkWell(
+        onTap: onPressed,
+        borderRadius: BorderRadius.circular(10),
+        child: Padding(
+          padding: const EdgeInsets.all(4),
+          child: Icon(Icons.add_rounded, size: 18, color: palette.textSecondary),
+        ),
+      ),
+    );
+  }
+}
 
-    Color statusDotColor;
-    if (device.phase == RelayDevicePhase.sending) {
-      statusDotColor = palette.accent;
-    } else if (device.phase == RelayDevicePhase.failed) {
-      statusDotColor = palette.error;
-    } else if (device.phase == RelayDevicePhase.waiting || device.phase == RelayDevicePhase.verifying) {
-      statusDotColor = palette.warning;
-    } else if (device.isPairedRelay) {
-      statusDotColor = palette.accentSecondary;
-    } else {
-      statusDotColor = palette.success;
-    }
+/// A navigation row. Selection reads as an elevated surface plus a short warm
+/// strip on the leading edge, never as a saturated fill.
+class _NavItem extends StatefulWidget {
+  final GnomeNavDestination destination;
+  final bool selected;
+  final VoidCallback onTap;
 
-    final selectedBg = isDark ? palette.accent.withValues(alpha: 0.22) : palette.accent.withValues(alpha: 0.12);
-    final selectedFg = palette.textPrimary;
+  const _NavItem({required this.destination, required this.selected, required this.onTap});
+
+  @override
+  State<_NavItem> createState() => _NavItemState();
+}
+
+class _NavItemState extends State<_NavItem> {
+  bool _hovered = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = Theme.of(context).relayPalette;
+    final reducedMotion = MediaQuery.disableAnimationsOf(context);
+    final selected = widget.selected;
 
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 2),
-      child: Material(
-        color: isSelected ? selectedBg : Colors.transparent,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(8),
-          side: isSelected ? BorderSide(color: palette.accent.withValues(alpha: 0.4), width: 1) : BorderSide.none,
-        ),
-        clipBehavior: Clip.antiAlias,
-        child: InkWell(
-          onTap: onTap,
-          borderRadius: BorderRadius.circular(8),
-          hoverColor: isDark ? const Color(0x10ffffff) : const Color(0x08000000),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-            child: Row(
-              children: [
-                // Status dot
-                Container(
-                  width: 7,
-                  height: 7,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: statusDotColor,
+      padding: const EdgeInsets.only(bottom: 4),
+      child: MouseRegion(
+        cursor: SystemMouseCursors.click,
+        onEnter: (_) => setState(() => _hovered = true),
+        onExit: (_) => setState(() => _hovered = false),
+        child: Semantics(
+          button: true,
+          selected: selected,
+          child: GestureDetector(
+            onTap: widget.onTap,
+            child: AnimatedContainer(
+              duration: reducedMotion ? Duration.zero : RelayMotion.hover,
+              curve: RelayMotion.curve,
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
+              decoration: BoxDecoration(
+                color: selected ? palette.softSurface : (_hovered ? palette.hoverSurface : Colors.transparent),
+                borderRadius: BorderRadius.circular(RelayRadius.nav),
+              ),
+              child: Row(
+                children: [
+                  AnimatedContainer(
+                    duration: reducedMotion ? Duration.zero : RelayMotion.state,
+                    width: 4,
+                    height: selected ? 16 : 0,
+                    decoration: BoxDecoration(
+                      color: palette.accent,
+                      borderRadius: BorderRadius.circular(2),
+                    ),
                   ),
-                ),
-                const SizedBox(width: 8),
-                // Device Icon
-                Icon(
-                  device.deviceType.icon,
-                  size: 18,
-                  color: isSelected ? palette.accent : palette.textSecondary,
-                ),
-                const SizedBox(width: 10),
-                // Alias and Subtitle
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(
-                        device.alias,
-                        style: RelayTypography.body(selectedFg, isGnome: true, bold: isSelected),
-                        overflow: TextOverflow.ellipsis,
+                  SizedBox(width: selected ? 10 : 14),
+                  Icon(
+                    widget.destination.icon,
+                    size: 18,
+                    color: selected ? palette.textPrimary : palette.textTertiary,
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Text(
+                      widget.destination.label,
+                      style: RelayTypography.navLabel(selected ? palette.textPrimary : palette.textSecondary),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                  if (widget.destination.badge > 0)
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: palette.accent.withValues(alpha: 0.2),
+                        borderRadius: BorderRadius.circular(RelayRadius.pill),
                       ),
-                      Text(
-                        device.statusSummary,
-                        style: RelayTypography.caption(palette.textSecondary, isGnome: true),
-                        overflow: TextOverflow.ellipsis,
+                      child: Text(
+                        '${widget.destination.badge}',
+                        style: RelayTypography.caption(palette.accent, isGnome: true),
                       ),
-                    ],
-                  ),
-                ),
-                if (device.battery.hasInfo) ...[
-                  const SizedBox(width: 6),
-                  Text(
-                    device.battery.displayString,
-                    style: RelayTypography.caption(palette.textTertiary, isGnome: true),
-                  ),
+                    ),
                 ],
-              ],
+              ),
             ),
           ),
         ),
       ),
+    );
+  }
+}
+
+/// A known device in the sidebar: what it is, whether it is here, and its
+/// battery when the device actually reports one.
+class _DeviceSidebarCard extends StatefulWidget {
+  final RelayDeviceVm device;
+  final bool selected;
+  final VoidCallback onTap;
+
+  const _DeviceSidebarCard({super.key, required this.device, required this.selected, required this.onTap});
+
+  @override
+  State<_DeviceSidebarCard> createState() => _DeviceSidebarCardState();
+}
+
+class _DeviceSidebarCardState extends State<_DeviceSidebarCard> with SingleTickerProviderStateMixin {
+  late final AnimationController _arrival;
+  bool _hovered = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _arrival = AnimationController(vsync: this, duration: RelayMotion.arrival);
+    unawaited(_arrival.forward());
+  }
+
+  @override
+  void dispose() {
+    _arrival.dispose();
+    super.dispose();
+  }
+
+  bool get _online => widget.device.isPresent;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = Theme.of(context).relayPalette;
+    final reducedMotion = MediaQuery.disableAnimationsOf(context);
+    final device = widget.device;
+    final selected = widget.selected;
+
+    final tone = switch (device.phase) {
+      RelayDevicePhase.failed => RelayPresenceTone.attention,
+      RelayDevicePhase.sending || RelayDevicePhase.waiting || RelayDevicePhase.verifying => RelayPresenceTone.busy,
+      _ => _online ? RelayPresenceTone.online : RelayPresenceTone.offline,
+    };
+
+    Widget card = AnimatedContainer(
+      duration: reducedMotion ? Duration.zero : RelayMotion.focus,
+      curve: RelayMotion.focusCurve,
+      margin: const EdgeInsets.only(bottom: 2),
+      padding: const EdgeInsets.fromLTRB(10, 10, 12, 10),
+      decoration: BoxDecoration(
+        color: selected ? palette.softSurface : (_hovered ? palette.hoverSurface : Colors.transparent),
+        borderRadius: BorderRadius.circular(RelayRadius.nav),
+      ),
+      child: Row(
+        children: [
+          AnimatedContainer(
+            duration: reducedMotion ? Duration.zero : RelayMotion.state,
+            width: 4,
+            height: selected ? 26 : 0,
+            decoration: BoxDecoration(
+              color: palette.accent,
+              borderRadius: BorderRadius.circular(2),
+            ),
+          ),
+          SizedBox(width: selected ? 10 : 14),
+          RelayDeviceSilhouette(
+            deviceType: device.deviceType,
+            color: _online ? palette.textSecondary : palette.textTertiary,
+            size: 20,
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  device.alias,
+                  style: RelayTypography.body(palette.textPrimary, isGnome: true),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                const SizedBox(height: 2),
+                RelayStatusPill(
+                  tone: tone,
+                  label: _online ? device.statusSummary : 'Offline',
+                  compact: true,
+                ),
+              ],
+            ),
+          ),
+          if (device.battery.hasInfo) ...[
+            const SizedBox(width: 8),
+            Text(
+              '${device.battery.percentage}%',
+              style: RelayTypography.caption(palette.textTertiary, isGnome: true),
+            ),
+          ],
+        ],
+      ),
+    );
+
+    card = MouseRegion(
+      cursor: SystemMouseCursors.click,
+      onEnter: (_) => setState(() => _hovered = true),
+      onExit: (_) => setState(() => _hovered = false),
+      child: Semantics(
+        button: true,
+        selected: selected,
+        child: GestureDetector(onTap: widget.onTap, child: card),
+      ),
+    );
+
+    if (reducedMotion) {
+      return card;
+    }
+
+    // Relay Arrival, in the sidebar: a newly discovered device rises in once.
+    return AnimatedBuilder(
+      animation: _arrival,
+      child: card,
+      builder: (context, child) {
+        final t = Curves.easeOutCubic.transform(_arrival.value);
+        return Opacity(
+          opacity: t,
+          child: Transform.translate(offset: Offset(0, 8 * (1 - t)), child: child),
+        );
+      },
     );
   }
 }
@@ -257,33 +397,23 @@ class _EmptySidebarState extends StatelessWidget {
   Widget build(BuildContext context) {
     final palette = Theme.of(context).relayPalette;
 
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(
-              Icons.devices_outlined,
-              size: 32,
-              color: palette.textTertiary,
-            ),
-            const SizedBox(height: 10),
-            Text(
-              presence == RelayPresence.offline ? 'Relay is offline' : 'No nearby devices',
-              style: RelayTypography.body(palette.textSecondary, isGnome: true, bold: true),
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: 4),
-            Text(
-              presence == RelayPresence.offline
-                  ? 'Turn on receiving to find devices on your network.'
-                  : 'Devices on your network and paired devices will appear here.',
-              style: RelayTypography.caption(palette.textTertiary, isGnome: true),
-              textAlign: TextAlign.center,
-            ),
-          ],
-        ),
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(10, 10, 10, 10),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(Icons.devices_other_outlined, size: 19, color: palette.textTertiary),
+          const SizedBox(height: 10),
+          Text(
+            presence == RelayPresence.offline ? 'Relay is offline' : 'No devices yet',
+            style: RelayTypography.body(palette.textSecondary, isGnome: true),
+          ),
+          const SizedBox(height: 3),
+          Text(
+            presence == RelayPresence.offline ? 'Turn on receiving to find devices.' : 'Devices on your network appear here.',
+            style: RelayTypography.caption(palette.textTertiary, isGnome: true),
+          ),
+        ],
       ),
     );
   }

@@ -31,10 +31,9 @@ class AdwHeaderBar extends StatelessWidget implements PreferredSizeWidget {
   @override
   Widget build(BuildContext context) {
     final palette = Theme.of(context).relayPalette;
-    final isDark = Theme.of(context).brightness == Brightness.dark;
 
-    final bgColor = backgroundColor ?? (isDark ? const Color(0xff181a20) : const Color(0xfff0f1f6));
-    final borderColor = isDark ? const Color(0x1fffffff) : const Color(0x18000000);
+    final bgColor = backgroundColor ?? Colors.transparent;
+    final borderColor = palette.hairline;
 
     return Container(
       height: 48,

@@ -31,7 +31,7 @@ class AdwPreferencesGroup extends StatelessWidget {
         children: [
           if (title != null) ...[
             Padding(
-              padding: const EdgeInsets.only(left: 16, bottom: 6),
+              padding: const EdgeInsets.only(left: 4, bottom: 10),
               child: Text(
                 title!.toUpperCase(),
                 style: RelayTypography.sectionHeader(palette.textSecondary, isGnome: true),
@@ -40,7 +40,7 @@ class AdwPreferencesGroup extends StatelessWidget {
           ],
           if (description != null) ...[
             Padding(
-              padding: const EdgeInsets.only(left: 16, bottom: 8),
+              padding: const EdgeInsets.only(left: 4, bottom: 8),
               child: Text(
                 description!,
                 style: RelayTypography.caption(palette.textTertiary, isGnome: true),
@@ -54,7 +54,11 @@ class AdwPreferencesGroup extends StatelessWidget {
   }
 }
 
-/// Libadwaita Boxed List container.
+/// A grouped list of rows.
+///
+/// Deliberately borderless: the rows are separated by hairlines and the group
+/// by space, so a page of these reads as sections of one document rather than
+/// as a stack of boxes.
 class AdwBoxedList extends StatelessWidget {
   final List<Widget> children;
   final double borderRadius;
@@ -62,16 +66,13 @@ class AdwBoxedList extends StatelessWidget {
   const AdwBoxedList({
     super.key,
     required this.children,
-    this.borderRadius = 10,
+    this.borderRadius = RelayRadius.panel,
   });
 
   @override
   Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-
-    final bgColor = isDark ? const Color(0xff1e2028) : const Color(0xffffffff);
-    final borderColor = isDark ? const Color(0x1fffffff) : const Color(0x14000000);
-    final dividerColor = isDark ? const Color(0x14ffffff) : const Color(0x0f000000);
+    final palette = Theme.of(context).relayPalette;
+    final dividerColor = palette.hairline;
 
     if (children.isEmpty) {
       return const SizedBox.shrink();
@@ -80,23 +81,15 @@ class AdwBoxedList extends StatelessWidget {
     final separated = <Widget>[];
     for (var i = 0; i < children.length; i++) {
       if (i > 0) {
-        separated.add(Divider(height: 1, thickness: 1, color: dividerColor, indent: 16, endIndent: 16));
+        separated.add(Divider(height: 1, thickness: 1, color: dividerColor, indent: 4, endIndent: 4));
       }
       separated.add(children[i]);
     }
 
-    return Container(
-      decoration: BoxDecoration(
-        color: bgColor,
-        borderRadius: BorderRadius.circular(borderRadius),
-        border: Border.all(color: borderColor, width: 1),
-      ),
-      clipBehavior: Clip.antiAlias,
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: separated,
-      ),
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: separated,
     );
   }
 }

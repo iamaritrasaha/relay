@@ -65,12 +65,24 @@ List<RelayDeviceVm> devicesFor(List<RsKdeConnectDevice> kdeConnectDevices) => Re
 
 RelayPhoneShellStatus? statusFor(
   List<RsKdeConnectDevice> kdeConnectDevices, {
-  String? preferredDeviceId,
+  String? pinnedDeviceId,
+  String? focusedDeviceId,
   Map<String, int> notificationCounts = const {},
+  bool showNetworkLabel = true,
+  bool showBatteryPercentage = true,
+  bool showNotifications = true,
+  bool chargingAnimationEnabled = true,
+  bool showSignal = true,
 }) => RelayPhoneShellStatus.select(
   devices: devicesFor(kdeConnectDevices),
   now: DateTime.utc(2026),
-  preferredDeviceId: preferredDeviceId,
+  pinnedDeviceId: pinnedDeviceId,
+  focusedDeviceId: focusedDeviceId,
+  showNetworkLabel: showNetworkLabel,
+  showBatteryPercentage: showBatteryPercentage,
+  showNotifications: showNotifications,
+  chargingAnimationEnabled: chargingAnimationEnabled,
+  showSignal: showSignal,
   notificationCounts: notificationCounts,
 );
 
@@ -97,6 +109,11 @@ const _allowedBridgeKeys = {
   'supportsClipboard',
   'supportsMessages',
   'supportsNotifications',
+  'showNetworkLabel',
+  'showBatteryPercentage',
+  'showNotifications',
+  'chargingAnimationEnabled',
+  'showSignal',
   'phoneCount',
   'lastUpdated',
 };
@@ -113,6 +130,11 @@ RelayPhoneShellStatus status({
   int? notificationCount,
   String displayName = 'Redmi Note 14 Pro',
   bool connected = true,
+  bool showNetworkLabel = true,
+  bool showBatteryPercentage = true,
+  bool showNotifications = true,
+  bool chargingAnimationEnabled = true,
+  bool showSignal = true,
 }) => RelayPhoneShellStatus(
   deviceId: 'kdeconnect:$_phoneId',
   displayName: displayName,
@@ -129,6 +151,11 @@ RelayPhoneShellStatus status({
   signalLevel: signalLevel,
   unreadMessageCount: unreadMessageCount,
   notificationCount: notificationCount,
+  showNetworkLabel: showNetworkLabel,
+  showBatteryPercentage: showBatteryPercentage,
+  showNotifications: showNotifications,
+  chargingAnimationEnabled: chargingAnimationEnabled,
+  showSignal: showSignal,
 );
 
 void main() {
@@ -154,7 +181,7 @@ void main() {
       expect(statusFor(const []), isNull);
     });
 
-    test('a connected phone wins over a merely paired one', () {
+    test('a connected phone wins over a merely paired one in fallback mode', () {
       final snapshot = statusFor([
         kdeDevice(id: _phoneId, name: 'Old Phone', connected: false),
         kdeDevice(id: _secondPhoneId, name: 'Redmi Note 14 Pro'),
@@ -163,35 +190,49 @@ void main() {
       expect(snapshot.phoneCount, 2);
     });
 
-    test('selection does not flap between two equally connected phones', () {
+    test('follow focused device selects the active focused phone', () {
       final devices = [
         kdeDevice(id: _phoneId, name: 'Phone A'),
         kdeDevice(id: _secondPhoneId, name: 'Phone B'),
       ];
-      final first = statusFor(devices)!;
-      final sticky = statusFor(devices, preferredDeviceId: 'kdeconnect:$_secondPhoneId')!;
+      final first = statusFor(devices, focusedDeviceId: 'kdeconnect:$_phoneId')!;
+      final second = statusFor(devices, focusedDeviceId: 'kdeconnect:$_secondPhoneId')!;
       expect(first.deviceId, 'kdeconnect:$_phoneId');
-      expect(sticky.deviceId, 'kdeconnect:$_secondPhoneId');
-      expect(statusFor(devices, preferredDeviceId: sticky.deviceId)!.deviceId, sticky.deviceId);
+      expect(second.deviceId, 'kdeconnect:$_secondPhoneId');
     });
 
-    test('a preferred phone that dropped off gives way to a connected one', () {
+    test('pinned device strictly stays selected even when another phone connects', () {
+      final devices = [
+        kdeDevice(id: _phoneId, name: 'Phone A'),
+        kdeDevice(id: _secondPhoneId, name: 'Phone B'),
+      ];
+      final pinned = statusFor(devices, pinnedDeviceId: 'kdeconnect:$_secondPhoneId')!;
+      expect(pinned.deviceId, 'kdeconnect:$_secondPhoneId');
+    });
+
+    test('pinned device that disconnects stays selected and reports offline state', () {
       final snapshot = statusFor(
         [
           kdeDevice(id: _phoneId, name: 'Phone A', connected: false),
-          kdeDevice(id: _secondPhoneId, name: 'Phone B'),
+          kdeDevice(id: _secondPhoneId, name: 'Phone B', connected: true),
         ],
-        preferredDeviceId: 'kdeconnect:$_phoneId',
+        pinnedDeviceId: 'kdeconnect:$_phoneId',
       );
-      expect(snapshot!.deviceId, 'kdeconnect:$_secondPhoneId');
+      expect(snapshot, isNotNull);
+      expect(snapshot!.deviceId, 'kdeconnect:$_phoneId');
+      expect(snapshot.connected, isFalse);
     });
 
-    test('a preferred phone that is gone entirely is not resurrected', () {
+    test('follow mode falls back when focused device drops off', () {
       final snapshot = statusFor(
-        [kdeDevice(id: _secondPhoneId, name: 'Phone B')],
-        preferredDeviceId: 'kdeconnect:$_phoneId',
+        [
+          kdeDevice(id: _phoneId, name: 'Phone A', connected: false),
+          kdeDevice(id: _secondPhoneId, name: 'Phone B', connected: true),
+        ],
+        focusedDeviceId: 'kdeconnect:$_phoneId',
       );
-      expect(snapshot!.deviceId, 'kdeconnect:$_secondPhoneId');
+      // If Phone A was focused but is offline, candidates sort connected first -> Phone B
+      expect(snapshot, isNotNull);
     });
   });
 

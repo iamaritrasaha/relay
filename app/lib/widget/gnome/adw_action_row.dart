@@ -19,7 +19,7 @@ class AdwActionRow extends StatelessWidget {
     this.trailing,
     this.onTap,
     this.isDestructive = false,
-    this.padding = const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+    this.padding = const EdgeInsets.symmetric(horizontal: 4, vertical: 13),
   });
 
   @override

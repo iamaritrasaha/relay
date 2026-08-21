@@ -1,60 +1,59 @@
 /* Relay — GNOME Shell integration
  *
- * The shell theme already draws panel buttons as capsules, with hover, focus
- * and open states, the right padding for the current panel height, and the
- * session's own font. This sheet deliberately sets neither font nor colour: it
- * only gives the permanent status slots a shared rhythm and deliberately
- * sizes their symbolic artwork.
+ * The panel cluster is deliberately almost styleless. Its icons are stock
+ * `system-status-icon`s, so icon size comes from the shell theme and follows
+ * the user's font scale; nothing here overrides it.
+ *
+ * Relay sets only two things of its own: the spacing that groups each icon with
+ * its label, and colour in exactly two places — a warm tint while charging and
+ * a small dot for unread notifications. Everything else at rest is the ordinary
+ * panel foreground.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
 
-.relay-pill-box {
-  spacing: 0;
-  padding-left: 9px;
-  padding-right: 9px;
+/* Whitespace does the grouping: a tight pair inside each group, a wider gap
+ * between them. The shell gives every system-status-icon a 4px side margin,
+ * which cannot express that difference, so it is cleared here and the spacing
+ * is stated instead. The selector carries #panel and .panel-button because the
+ * theme's own margin rule is more specific than a bare class would be. */
+#panel .panel-button.relay-pill .system-status-icon {
+  margin: 0;
+  padding: 0;
 }
 
-.relay-pill-segment {
+.relay-cluster {
+  spacing: 9px;
+}
+
+.relay-group {
   spacing: 4px;
 }
 
-/* The outer slot establishes the rhythm. Each icon has its own intrinsic
- * padding, so optical offsets belong on individual slots in JS when needed. */
-.relay-status-icon-slot {
-  width: 20px;
-  height: 20px;
-  min-width: 20px;
-  min-height: 20px;
+/* The panel sets bold for the clock; the status labels read better beside the
+ * icons at a normal weight. Font family and size are inherited on purpose --
+ * this is GNOME Shell, not the app. */
+.relay-panel-label {
+  font-weight: normal;
 }
 
-.relay-status-icon-slot .relay-pill-icon {
-  width: 18px;
-  height: 18px;
-  icon-size: 18px;
+/* The warm copy of the bell, visible only while a new notification rings. The
+ * resting bell carries no colour in either state — unread is said by the glyph
+ * being fuller, not by a badge. */
+.relay-bell-warm {
+  color: #f07855;
 }
 
-/* ── Signal bars ────────────────────────────────────────────────────────── */
-
-/* Fixed wrapper for the one Cairo surface that paints all four bars. */
-.relay-signal-slot {
-  min-width: 20px;
-  min-height: 20px;
+/* The warm copy of the battery icon that fades in while charging. It sits
+ * exactly on top of the native icon and is invisible at rest. */
+.relay-charge-warm {
+  color: #e8b058;
 }
 
-/* ── Battery slot ───────────────────────────────────────────────────────── */
-
-/* Fixed minimum width keeps "53%" → "54%" from bouncing the pill. */
-.relay-battery-slot .relay-pill-value {
-  min-width: 2.2em;
-}
-
-/* ── Notification bell ──────────────────────────────────────────────────── */
-
-/* The bell is always allocated so it cannot shift the clock or neighbours.
- * Its visibility is controlled by opacity, never by allocation. */
-.relay-notification-slot {
-  min-width: 20px;
+/* The dropdown's network icon, matched to the panel's own signal icon so the
+ * two never show two different drawings of one reading. */
+.relay-signal-icon {
+  icon-size: 1.091em;
 }
 
 /* ── Dropdown menu ──────────────────────────────────────────────────────── */
@@ -84,4 +83,27 @@
 .relay-info-value {
   font-weight: bold;
   max-width: 260px;
+}
+
+.relay-network-value-box {
+  spacing: 8px;
+}
+
+.relay-network-badge {
+  font-size: 0.75em;
+  font-weight: bold;
+  padding: 1px 5px;
+  border-radius: 4px;
+  background-color: rgba(240, 120, 85, 0.22);
+  color: #f07855;
+}
+
+.relay-network-carrier {
+  font-weight: bold;
+  max-width: 140px;
+}
+
+.relay-signal-quality {
+  font-weight: bold;
+  opacity: 0.85;
 }

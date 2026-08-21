@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mockito/mockito.dart';
@@ -5,6 +6,7 @@ import 'package:refena_flutter/refena_flutter.dart';
 import 'package:relay_app/config/theme.dart';
 import 'package:relay_app/model/persistence/color_mode.dart';
 import 'package:relay_app/model/persistence/quick_save_mode.dart';
+import 'package:relay_app/model/persistence/relay_paired_address.dart';
 import 'package:relay_app/model/ui/relay_capability_vm.dart';
 import 'package:relay_app/model/ui/relay_device_vm.dart';
 import 'package:relay_app/pages/gnome/gnome_settings_view.dart';
@@ -25,6 +27,9 @@ import '../../mocks.mocks.dart';
 class _TestPersistenceService extends MockPersistenceService {
   @override
   bool getRemoteRelayEnabled() => false;
+
+  @override
+  List<RelayPairedAddress> getRelayPairedAddresses() => [];
 }
 
 class _TestIsolateController extends IsolateController {
@@ -88,6 +93,12 @@ void main() {
     when(mockPersistence.getCreateChecksums()).thenReturn(true);
     when(mockPersistence.getVerifyChecksums()).thenReturn(true);
     when(mockPersistence.getAdvancedSettingsEnabled()).thenReturn(false);
+    when(mockPersistence.getGnomePanelDeviceId()).thenReturn(null);
+    when(mockPersistence.getGnomePanelShowNetworkType()).thenReturn(true);
+    when(mockPersistence.getGnomePanelShowBatteryPercentage()).thenReturn(true);
+    when(mockPersistence.getGnomePanelShowNotifications()).thenReturn(true);
+    when(mockPersistence.getGnomePanelChargingAnimation()).thenReturn(true);
+    when(mockPersistence.getGnomePanelShowSignal()).thenReturn(true);
     when(mockPersistence.setAlias(any)).thenAnswer((_) async {});
     when(mockPersistence.setQuickSave(any)).thenAnswer((_) async {});
     when(mockPersistence.setEnableAnimations(any)).thenAnswer((_) async {});
@@ -141,7 +152,7 @@ void main() {
           home: const Scaffold(
             body: GnomeShell(
               vm: testVm,
-              animationsEnabled: true,
+              animationsEnabled: false,
             ),
           ),
         ),
@@ -152,7 +163,7 @@ void main() {
     await tester.pump(const Duration(milliseconds: 500));
 
     // Verify presence of sidebar, spatial scene and device details
-    expect(find.text('NEARBY DEVICES'), findsOneWidget);
+    expect(find.text('DEVICES'), findsOneWidget);
     expect(find.text('Pixel 8 Pro'), findsWidgets);
     expect(find.text('Send Files'), findsWidgets);
     expect(find.text('Send Folder'), findsOneWidget);
@@ -161,69 +172,91 @@ void main() {
   });
 
   testWidgets('GnomeSettingsView renders all 5 reconstructed semantic groups with truthful labels', (tester) async {
-    tester.view.physicalSize = const Size(1200, 1000);
-    tester.view.devicePixelRatio = 1.0;
-    addTearDown(() => tester.view.resetPhysicalSize());
+    debugDefaultTargetPlatformOverride = TargetPlatform.linux;
+    try {
+      tester.view.physicalSize = const Size(1200, 1000);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(() => tester.view.resetPhysicalSize());
 
-    await tester.pumpWidget(
-      RefenaScope(
-        overrides: [
-          persistenceProvider.overrideWithValue(mockPersistence),
-          dynamicColorsProvider.overrideWithValue(null),
-          deviceRawInfoProvider.overrideWithValue(
-            DeviceInfoResult(deviceType: DeviceType.desktop, deviceModel: 'Linux', androidSdkInt: null),
-          ),
-          parentIsolateProvider.overrideWithNotifier((ref) => _TestIsolateController()),
-        ],
-        child: MaterialApp(
-          theme: darkTheme,
-          home: const Scaffold(
-            body: GnomeSettingsView(),
+      await tester.pumpWidget(
+        RefenaScope(
+          overrides: [
+            persistenceProvider.overrideWithValue(mockPersistence),
+            dynamicColorsProvider.overrideWithValue(null),
+            deviceRawInfoProvider.overrideWithValue(
+              DeviceInfoResult(deviceType: DeviceType.desktop, deviceModel: 'Linux', androidSdkInt: null),
+            ),
+            parentIsolateProvider.overrideWithNotifier((ref) => _TestIsolateController()),
+          ],
+          child: MaterialApp(
+            theme: darkTheme,
+            home: const Scaffold(
+              body: GnomeSettingsView(),
+            ),
           ),
         ),
-      ),
-    );
+      );
 
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 200));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 200));
 
-    // 1. THIS DEVICE Hero (truthful identity, no false live readiness)
-    expect(find.text('THIS DEVICE'), findsOneWidget);
-    expect(find.byType(RelayDeviceSilhouette), findsOneWidget);
-    expect(find.text('Fedora Workstation'), findsOneWidget);
-    expect(find.text('Desktop · Relay Device'), findsOneWidget);
-    expect(find.text('Ready on Local Network'), findsNothing);
+      // 1. THIS DEVICE Hero (truthful identity, no false live readiness)
+      expect(find.text('THIS DEVICE'), findsOneWidget);
+      expect(find.byType(RelayDeviceSilhouette), findsOneWidget);
+      expect(find.text('Fedora Workstation'), findsOneWidget);
+      expect(find.text('Desktop · Relay Device'), findsOneWidget);
+      expect(find.text('Ready on Local Network'), findsNothing);
 
-    // 2. RELAY EXPERIENCE (truthful favorites semantics)
-    expect(find.text('RELAY EXPERIENCE'), findsOneWidget);
-    expect(find.text('Pair New Device'), findsOneWidget);
-    expect(find.text('Quick Save'), findsOneWidget);
-    expect(find.text('Quick Save from Favorites'), findsOneWidget);
-    expect(find.text('Automatically accept transfers from devices marked as favorites'), findsOneWidget);
-    expect(find.text('Quick Save from Paired Only'), findsNothing);
-    expect(find.text('Auto-accept only from verified trusted peers'), findsNothing);
-    expect(find.text('Spatial Animations'), findsOneWidget);
+      // 2. GENERAL
+      expect(find.text('General'), findsOneWidget);
+      expect(find.text('Spatial Animations'), findsOneWidget);
 
-    // 3. TRANSFERS
-    expect(find.text('TRANSFERS'), findsOneWidget);
-    expect(find.text('Destination Directory'), findsOneWidget);
-    expect(find.text('Save to History'), findsOneWidget);
-    expect(find.text('Auto-Finish'), findsOneWidget);
+      // 3. DEVICES (truthful pairing entry point)
+      expect(find.text('Devices'), findsOneWidget);
+      expect(find.text('Pair New Device'), findsOneWidget);
 
-    // 4. APPEARANCE
-    expect(find.text('APPEARANCE'), findsOneWidget);
-    expect(find.text('Theme'), findsOneWidget);
-    expect(find.text('Color Theme'), findsOneWidget);
-    expect(find.text('Language'), findsOneWidget);
+      // GNOME Panel (Linux only)
+      expect(find.text('GNOME Panel'), findsOneWidget);
+      expect(find.text('Panel device'), findsOneWidget);
+      expect(find.text('Show network type'), findsOneWidget);
+      expect(find.text('Show battery percentage'), findsOneWidget);
+      expect(find.text('Show notifications indicator'), findsOneWidget);
+      expect(find.text('Charging animation'), findsOneWidget);
 
-    // 5. ABOUT RELAY
-    expect(find.text('ABOUT RELAY'), findsOneWidget);
-    expect(find.text('About'), findsOneWidget);
-    expect(find.text('Changelog'), findsOneWidget);
+      // 4. TRANSFERS (truthful favorites semantics)
+      expect(find.text('Transfers'), findsOneWidget);
+      expect(find.text('Destination Directory'), findsOneWidget);
+      expect(find.text('Quick Save'), findsOneWidget);
+      expect(find.text('Quick Save from Favorites'), findsOneWidget);
+      expect(find.text('Automatically accept transfers from devices marked as favorites'), findsOneWidget);
+      expect(find.text('Quick Save from Paired Only'), findsNothing);
+      expect(find.text('Auto-accept only from verified trusted peers'), findsNothing);
+      expect(find.text('Save to History'), findsOneWidget);
+      expect(find.text('Auto-Finish'), findsOneWidget);
 
-    // Interactivity: Randomize alias writes to settings
-    await tester.tap(find.byTooltip('Random Name'));
-    await tester.pump();
-    verify(mockPersistence.setAlias(any)).called(1);
+      // 5. PRIVACY & SECURITY — reported state plus the two real checksum toggles
+      expect(find.text('Privacy & Security'), findsOneWidget);
+      expect(find.text('Transport encryption'), findsOneWidget);
+      expect(find.text('Create checksums'), findsOneWidget);
+      expect(find.text('Verify checksums'), findsOneWidget);
+
+      // 6. APPEARANCE
+      expect(find.text('Appearance'), findsOneWidget);
+      expect(find.text('Theme'), findsOneWidget);
+      expect(find.text('Color Theme'), findsOneWidget);
+      expect(find.text('Language'), findsOneWidget);
+
+      // 7. ABOUT RELAY
+      expect(find.text('About Relay'), findsOneWidget);
+      expect(find.text('About'), findsOneWidget);
+      expect(find.text('Changelog'), findsOneWidget);
+
+      // Interactivity: Randomize alias writes to settings
+      await tester.tap(find.byTooltip('Random Name'));
+      await tester.pump();
+      verify(mockPersistence.setAlias(any)).called(1);
+    } finally {
+      debugDefaultTargetPlatformOverride = null;
+    }
   });
 }

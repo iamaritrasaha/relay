@@ -78,6 +78,11 @@ constexpr FieldSpec kAllowedFields[] = {
     {"supportsClipboard", FieldType::kBool},
     {"supportsMessages", FieldType::kBool},
     {"supportsNotifications", FieldType::kBool},
+    {"showNetworkLabel", FieldType::kBool},
+    {"showBatteryPercentage", FieldType::kBool},
+    {"showNotifications", FieldType::kBool},
+    {"chargingAnimationEnabled", FieldType::kBool},
+    {"showSignal", FieldType::kBool},
     {"phoneCount", FieldType::kInt32},
     {"lastUpdated", FieldType::kInt64},
 };

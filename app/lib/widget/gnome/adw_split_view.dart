@@ -25,9 +25,8 @@ class AdwSplitView extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final palette = Theme.of(context).relayPalette;
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final dividerColor = isDark ? const Color(0x18ffffff) : const Color(0x14000000);
-    final sidebarBg = isDark ? const Color(0xff15171e) : const Color(0xfff2f3f7);
+    final dividerColor = palette.hairline;
+    final sidebarBg = palette.canvas;
 
     return LayoutBuilder(
       builder: (context, constraints) {
@@ -49,21 +48,13 @@ class AdwSplitView extends StatelessWidget {
                 thickness: 1,
                 color: dividerColor,
               ),
-              Expanded(
-                child: ColoredBox(
-                  color: palette.canvas,
-                  child: content,
-                ),
-              ),
+              Expanded(child: content),
             ],
           );
         }
 
         // Narrow mode: show either sidebar or content
-        return ColoredBox(
-          color: palette.canvas,
-          child: showSidebarOnNarrow ? sidebar : content,
-        );
+        return showSidebarOnNarrow ? sidebar : content;
       },
     );
   }

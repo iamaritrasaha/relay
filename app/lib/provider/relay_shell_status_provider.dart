@@ -5,11 +5,14 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:logging/logging.dart';
 import 'package:refena_flutter/refena_flutter.dart';
+import 'package:relay_app/model/state/settings_state.dart';
 import 'package:relay_app/model/ui/relay_device_vm.dart';
 import 'package:relay_app/model/ui/relay_phone_shell_status.dart';
 import 'package:relay_app/pages/relay_home_vm.dart';
 import 'package:relay_app/provider/kdeconnect_provider.dart';
 import 'package:relay_app/provider/relay_desktop_notification_service.dart';
+import 'package:relay_app/provider/selected_device_provider.dart';
+import 'package:relay_app/provider/settings_provider.dart';
 import 'package:relay_app/util/native/tray_helper.dart';
 
 final _logger = Logger('RelayShellStatus');
@@ -50,6 +53,14 @@ class RelayShellStatusBridge {
 
   List<RelayDeviceVm> _devices = const [];
   Map<String, int> _notificationCounts = const {};
+  Map<String, int> _unreadMessageCounts = const {};
+  String? _pinnedDeviceId;
+  String? _focusedDeviceId;
+  bool _showNetworkLabel = true;
+  bool _showBatteryPercentage = true;
+  bool _showNotifications = true;
+  bool _chargingAnimationEnabled = true;
+  bool _showSignal = true;
 
   RelayShellStatusBridge({
     required Future<void> Function(Map<String, Object?>? snapshot) publish,
@@ -74,15 +85,43 @@ class RelayShellStatusBridge {
   /// Transfer progress and discovery churn constantly rebuild the device list
   /// while describing the very same phone, so identical snapshots are dropped
   /// here rather than being turned into shell repaints.
-  Future<void> apply({List<RelayDeviceVm>? devices, Map<String, int>? notificationCounts}) async {
+  Future<void> apply({
+    List<RelayDeviceVm>? devices,
+    Map<String, int>? notificationCounts,
+    Map<String, int>? unreadMessageCounts,
+    String? pinnedDeviceId,
+    bool updatePinnedDeviceId = false,
+    String? focusedDeviceId,
+    bool updateFocusedDeviceId = false,
+    bool? showNetworkLabel,
+    bool? showBatteryPercentage,
+    bool? showNotifications,
+    bool? chargingAnimationEnabled,
+    bool? showSignal,
+  }) async {
     _devices = devices ?? _devices;
     _notificationCounts = notificationCounts ?? _notificationCounts;
+    _unreadMessageCounts = unreadMessageCounts ?? _unreadMessageCounts;
+    if (updatePinnedDeviceId) _pinnedDeviceId = pinnedDeviceId;
+    if (updateFocusedDeviceId) _focusedDeviceId = focusedDeviceId;
+    if (showNetworkLabel != null) _showNetworkLabel = showNetworkLabel;
+    if (showBatteryPercentage != null) _showBatteryPercentage = showBatteryPercentage;
+    if (showNotifications != null) _showNotifications = showNotifications;
+    if (chargingAnimationEnabled != null) _chargingAnimationEnabled = chargingAnimationEnabled;
+    if (showSignal != null) _showSignal = showSignal;
 
     final next = RelayPhoneShellStatus.select(
       devices: _devices,
       now: _now(),
-      preferredDeviceId: _published?.deviceId,
+      pinnedDeviceId: _pinnedDeviceId,
+      focusedDeviceId: _focusedDeviceId,
+      showNetworkLabel: _showNetworkLabel,
+      showBatteryPercentage: _showBatteryPercentage,
+      showNotifications: _showNotifications,
+      chargingAnimationEnabled: _chargingAnimationEnabled,
+      showSignal: _showSignal,
       notificationCounts: _notificationCounts,
+      unreadMessageCounts: _unreadMessageCounts,
     );
     if (_hasPublished && (next == null) == (_published == null) && (next == null || next.sameStateAs(_published))) {
       return;
@@ -123,6 +162,9 @@ class RelayShellStatusBridge {
   void attachTo({
     required Stream<List<RelayDeviceVm>> devices,
     required Stream<Map<String, int>> notificationCounts,
+    required Stream<Map<String, int>> unreadMessageCounts,
+    required Stream<String?> focusedDeviceId,
+    required Stream<SettingsState> settings,
     RelayDesktopNotificationService? desktopNotificationService,
   }) {
     unawaited(dispose());
@@ -134,9 +176,37 @@ class RelayShellStatusBridge {
       ),
     );
     _subscriptions.add(
+      unreadMessageCounts.listen(
+        (counts) => unawaited(apply(unreadMessageCounts: counts)),
+        onError: (Object error, StackTrace stack) => _logger.fine('Relay SMS stream failed', error, stack),
+      ),
+    );
+    _subscriptions.add(
       notificationCounts.listen(
         (counts) => unawaited(apply(notificationCounts: counts)),
         onError: (Object error, StackTrace stack) => _logger.fine('Relay notification stream failed', error, stack),
+      ),
+    );
+    _subscriptions.add(
+      focusedDeviceId.listen(
+        (key) => unawaited(apply(focusedDeviceId: key, updateFocusedDeviceId: true)),
+        onError: (Object error, StackTrace stack) => _logger.fine('Relay focused device stream failed', error, stack),
+      ),
+    );
+    _subscriptions.add(
+      settings.listen(
+        (s) => unawaited(
+          apply(
+            pinnedDeviceId: s.gnomePanelDeviceId,
+            updatePinnedDeviceId: true,
+            showNetworkLabel: s.gnomePanelShowNetworkType,
+            showBatteryPercentage: s.gnomePanelShowBatteryPercentage,
+            showNotifications: s.gnomePanelShowNotifications,
+            chargingAnimationEnabled: s.gnomePanelChargingAnimation,
+            showSignal: s.gnomePanelShowSignal,
+          ),
+        ),
+        onError: (Object error, StackTrace stack) => _logger.fine('Relay settings stream failed', error, stack),
       ),
     );
   }
@@ -157,6 +227,12 @@ class RelayShellStatusBridge {
 /// inside Relay.
 Map<String, int> relayNotificationCounts(Map<String, List<Object?>> notifications) => {
   for (final entry in notifications.entries) '$_kdeConnectKeyPrefix${entry.key}': entry.value.length,
+};
+
+/// The shell receives only a count, never message contents or addresses.
+Map<String, int> relaySmsUnreadCounts(Map<String, List<dynamic>> conversations) => {
+  for (final entry in conversations.entries)
+    '$_kdeConnectKeyPrefix${entry.key}': entry.value.fold<int>(0, (sum, conversation) => sum + (conversation.unreadCount as int)),
 };
 
 /// Reads the platform-side ShellSurface watch before Relay creates its tray.
@@ -253,11 +329,25 @@ Future<RelayShellStatusBridge?> startRelayShellStatusBridge(Ref ref) async {
   bridge.attachTo(
     devices: ref.stream(relayHomeVmProvider).map((event) => event.next.devices),
     notificationCounts: ref.stream(kdeConnectProvider).map((event) => relayNotificationCounts(event.next.notifications)),
+    unreadMessageCounts: ref.stream(kdeConnectProvider).map((event) => relaySmsUnreadCounts(event.next.smsConversations)),
+    focusedDeviceId: ref.stream(selectedDeviceProvider).map((event) => event.next),
+    settings: ref.stream(settingsProvider).map((event) => event.next),
     desktopNotificationService: desktopNotificationService,
   );
+  final initialSettings = ref.read(settingsProvider);
   await bridge.apply(
     devices: ref.read(relayHomeVmProvider).devices,
     notificationCounts: relayNotificationCounts(ref.read(kdeConnectProvider).notifications),
+    unreadMessageCounts: relaySmsUnreadCounts(ref.read(kdeConnectProvider).smsConversations),
+    pinnedDeviceId: initialSettings.gnomePanelDeviceId,
+    updatePinnedDeviceId: true,
+    focusedDeviceId: ref.read(selectedDeviceProvider),
+    updateFocusedDeviceId: true,
+    showNetworkLabel: initialSettings.gnomePanelShowNetworkType,
+    showBatteryPercentage: initialSettings.gnomePanelShowBatteryPercentage,
+    showNotifications: initialSettings.gnomePanelShowNotifications,
+    chargingAnimationEnabled: initialSettings.gnomePanelChargingAnimation,
+    showSignal: initialSettings.gnomePanelShowSignal,
   );
 
   return bridge;
