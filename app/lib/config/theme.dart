@@ -12,7 +12,7 @@ import 'package:yaru/yaru.dart' as yaru;
 final _borderRadius = BorderRadius.circular(RelayRadius.button);
 
 ThemeData getTheme(ColorMode colorMode, Color customColor, Brightness brightness, DynamicColors? dynamicColors) {
-  if (colorMode == ColorMode.yaru) {
+  if (colorMode == ColorMode.yaru || (checkPlatform([TargetPlatform.linux]) && colorMode != ColorMode.custom)) {
     return _getYaruTheme(brightness);
   }
 
@@ -45,7 +45,7 @@ ThemeData getTheme(ColorMode colorMode, Color customColor, Brightness brightness
       AppLocale.ko => 'Noto Sans CJK KR',
       AppLocale.zhCn => 'Noto Sans CJK SC',
       AppLocale.zhHk || AppLocale.zhTw => 'Noto Sans CJK TC',
-      _ => 'Geist',
+      _ => null,
     };
   } else {
     fontFamily = null;
@@ -198,7 +198,7 @@ ColorScheme _determineColorScheme(ColorMode mode, Color customColor, Brightness 
     ColorMode.oled => (dynamicColors?.dark ?? defaultColorScheme).copyWith(
       surface: Colors.black,
     ),
-    ColorMode.yaru => throw 'Should reach here',
+    ColorMode.yaru => (brightness == Brightness.light ? yaru.yaruLight : yaru.yaruDark).colorScheme,
     ColorMode.custom => ColorScheme.fromSeed(seedColor: customColor, brightness: brightness),
   };
 

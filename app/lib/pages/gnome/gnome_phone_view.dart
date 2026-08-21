@@ -1,17 +1,16 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
-import 'package:relay_app/config/relay_brand.dart';
+import 'package:refena_flutter/refena_flutter.dart';
 import 'package:relay_app/model/continuity/continuity_runtime.dart';
 import 'package:relay_app/model/persistence/relay_continuity_settings.dart';
 import 'package:relay_app/model/ui/relay_device_vm.dart';
 import 'package:relay_app/provider/continuity/continuity_provider.dart';
 import 'package:relay_app/widget/gnome/adw_action_row.dart';
 import 'package:relay_app/widget/gnome/adw_boxed_list.dart';
-import 'package:relay_app/widget/gnome/adw_button.dart';
 import 'package:relay_app/widget/gnome/adw_status_page.dart';
 import 'package:relay_isolates/rust/api/continuity.dart' as rust;
-import 'package:refena_flutter/refena_flutter.dart';
+import 'package:yaru/yaru.dart';
 
 /// GNOME phone continuity surface.
 ///
@@ -38,28 +37,28 @@ class _GnomePhoneViewState extends State<GnomePhoneView> {
 
   @override
   Widget build(BuildContext context) {
-    final palette = Theme.of(context).relayPalette;
+    final theme = Theme.of(context);
     final relayId = widget.device.relayId;
 
     return SingleChildScrollView(
-      padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 28),
+      padding: const EdgeInsets.fromLTRB(24, 24, 24, 36),
       child: Center(
         child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 680),
+          constraints: const BoxConstraints(maxWidth: 760),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               Row(
                 children: [
-                  AdwButton.flat(icon: Icons.arrow_back_rounded, label: 'Back', onPressed: widget.onBack),
-                  const SizedBox(width: 12),
-                  Text('Phone', style: RelayTypography.largeTitle(palette.textPrimary, isGnome: true)),
+                  YaruBackButton(onPressed: widget.onBack),
+                  const SizedBox(width: 10),
+                  Text('Phone', style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600)),
                 ],
               ),
-              const SizedBox(height: 24),
+              const SizedBox(height: 20),
               if (relayId == null)
                 AdwStatusPage(
-                  icon: Icons.call_outlined,
+                  icon: YaruIcons.phone,
                   title: 'Not a Relay device',
                   description: '${widget.device.alias} is a Relay-compatible peer.',
                 )
@@ -75,19 +74,17 @@ class _GnomePhoneViewState extends State<GnomePhoneView> {
   Widget _body(String relayId) {
     return Consumer(
       builder: (context, ref) {
-        final palette = Theme.of(context).relayPalette;
+        final theme = Theme.of(context);
         final continuity = ref.watch(continuityProvider);
         final settings = continuity.settingsFor(relayId);
         final device = continuity.deviceFor(relayId);
 
         if (!settings.isEnabled(ContinuityCapabilityKind.phone)) {
           return AdwStatusPage(
-            icon: Icons.call_outlined,
+            icon: YaruIcons.phone,
             title: 'Phone is off',
             description: 'Turn on Phone for ${widget.device.alias} to see call status here.',
-            action: AdwButton(
-              label: settings.trusted ? 'Turn on Phone' : 'Trust this device first',
-              isPill: true,
+            action: FilledButton(
               onPressed: settings.trusted
                   ? () => unawaited(
                       ref
@@ -101,13 +98,14 @@ class _GnomePhoneViewState extends State<GnomePhoneView> {
                           ),
                     )
                   : null,
+              child: Text(settings.trusted ? 'Turn on Phone' : 'Trust this device first'),
             ),
           );
         }
 
         if (!device.connected) {
           return AdwStatusPage(
-            icon: Icons.cloud_off_rounded,
+            icon: YaruIcons.network_offline,
             title: '${widget.device.alias} is not connected',
             description: 'Call status appears here once the device reconnects.',
           );
@@ -122,15 +120,17 @@ class _GnomePhoneViewState extends State<GnomePhoneView> {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             AdwPreferencesGroup(
+              title: 'Call Status',
+              uppercaseTitle: false,
               children: [
                 AdwActionRow(
-                  leading: Icon(ringing ? Icons.ring_volume_rounded : Icons.call_outlined),
-                  title: call == null || call.isIdle ? 'No active call' : call.title,
-                  subtitle: call?.statusLabel,
+                  leading: Icon(ringing ? YaruIcons.bell : YaruIcons.phone),
+                  title: call == null || call.isIdle ? widget.device.alias : call.title,
+                  subtitle: call == null || call.isIdle ? 'No active call' : call.statusLabel,
                   trailing: switch (call?.activeDuration) {
                     final Duration duration => Text(
                       _duration(duration),
-                      style: RelayTypography.caption(palette.textSecondary, isGnome: true),
+                      style: theme.textTheme.labelSmall?.copyWith(color: theme.colorScheme.onSurface.withValues(alpha: 0.5)),
                     ),
                     null => null,
                   },
@@ -143,32 +143,31 @@ class _GnomePhoneViewState extends State<GnomePhoneView> {
               Row(
                 children: [
                   Expanded(
-                    child: AdwButton(
-                      label: 'Decline',
-                      isPill: true,
+                    child: OutlinedButton(
                       onPressed: () => _act(ref, relayId, rust.RsCallAction.reject),
+                      child: const Text('Decline'),
                     ),
                   ),
                   const SizedBox(width: 12),
                   Expanded(
-                    child: AdwButton(
-                      label: 'Answer',
-                      isPill: true,
+                    child: FilledButton(
                       onPressed: () => _act(ref, relayId, rust.RsCallAction.answer),
+                      child: const Text('Answer'),
                     ),
                   ),
                 ],
               )
             else if (onCall)
-              AdwButton(
-                label: 'Hang up',
-                isPill: true,
+              FilledButton(
+                style: FilledButton.styleFrom(backgroundColor: theme.colorScheme.error),
                 onPressed: () => _act(ref, relayId, rust.RsCallAction.hangUp),
+                child: const Text('Hang up'),
               )
             else
               AdwPreferencesGroup(
                 title: 'Call from this computer',
                 description: 'The call is placed on ${widget.device.alias}.',
+                uppercaseTitle: false,
                 children: [
                   Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
@@ -186,10 +185,9 @@ class _GnomePhoneViewState extends State<GnomePhoneView> {
                           ),
                         ),
                         const SizedBox(width: 12),
-                        AdwButton(
-                          label: 'Call',
-                          isPill: true,
+                        FilledButton(
                           onPressed: () => _dial(ref, relayId),
+                          child: const Text('Call'),
                         ),
                       ],
                     ),
@@ -198,21 +196,35 @@ class _GnomePhoneViewState extends State<GnomePhoneView> {
               ),
 
             const SizedBox(height: 16),
-            // The one limitation worth stating plainly, and only once.
-            AdwPreferencesGroup(
-              children: [
-                AdwActionRow(
-                  leading: const Icon(Icons.headset_off_outlined),
-                  title: 'Call audio on this computer — not available',
-                  subtitle:
-                      remote?.reason ??
-                      'Android only allows capturing call audio with a system-only permission, '
-                          'so the call stays on the phone.',
-                ),
-              ],
+            Padding(
+              key: const ValueKey('relay-phone-inline-info-note'),
+              padding: const EdgeInsets.symmetric(horizontal: 4),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Icon(YaruIcons.information, size: 18, color: theme.colorScheme.onSurfaceVariant),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Call audio remains on your phone',
+                          style: theme.textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w600, color: theme.colorScheme.onSurfaceVariant),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          remote?.reason ?? 'Android only allows capturing call audio with a system-only permission, so the call stays on the phone.',
+                          style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurface.withValues(alpha: 0.6)),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
             ),
 
-            if (device.lastError != null) Text(device.lastError!, style: RelayTypography.caption(palette.error, isGnome: true)),
+            if (device.lastError != null) Text(device.lastError!, style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.error)),
           ],
         );
       },

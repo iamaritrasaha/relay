@@ -66,40 +66,41 @@ static void my_application_activate(GApplication* application) {
     }
   }
 
-  // If have GTK_CSD in env and it is equal to 1 then add the gtk header bar
-  // to always use client side decorations
-  const char* GTK_CSD = getenv("GTK_CSD");
-  if (GTK_CSD && strcmp(GTK_CSD, "1") == 0) {
-    GtkHeaderBar* header_bar = GTK_HEADER_BAR(gtk_header_bar_new());
-    gtk_widget_show(GTK_WIDGET(header_bar));
-    gtk_header_bar_set_title(header_bar, "Relay");
-    gtk_header_bar_set_show_close_button(header_bar, TRUE);
-    gtk_window_set_titlebar(window, GTK_WIDGET(header_bar));
-  } else {
-    gtk_window_set_title(window, "Relay");
-  }
-
   gtk_window_set_default_size(window, 400, 500);
-
-  if (!start_hidden) {
-    gtk_widget_show(GTK_WIDGET(window));
-  } else {
-    // Realize the window so plugins (like tray) can initialize, 
-    // but don't map it to the screen.
-    gtk_widget_realize(GTK_WIDGET(window));
-  }
 
   g_autoptr(FlDartProject) project = fl_dart_project_new();
   fl_dart_project_set_dart_entrypoint_arguments(project, self->dart_entrypoint_arguments);
 
   FlView* view = fl_view_new(project);
-  gtk_widget_show(GTK_WIDGET(view));
   gtk_container_add(GTK_CONTAINER(window), GTK_WIDGET(view));
 
+  // handy_window must see an added, unrealized FlView inside an unmapped
+  // GtkWindow. Its registrar installs the bundled HdyWindowMixin, which owns
+  // the four-corner shape and maximized/fullscreen drawing behavior.
   fl_register_plugins(FL_PLUGIN_REGISTRY(view));
   relay_identity_secret_channel_register(fl_engine_get_binary_messenger(fl_view_get_engine(view)));
   relay_shell_status_channel_register(fl_engine_get_binary_messenger(fl_view_get_engine(view)));
   relay_desktop_notification_channel_register(fl_engine_get_binary_messenger(fl_view_get_engine(view)));
+
+  const bool handy_window_active =
+      g_object_get_data(G_OBJECT(window), "hdy_window_mixin") != nullptr;
+  g_message("Relay native window: %s",
+            handy_window_active ? "HdyWindowMixin active" : "GTK fallback");
+
+  // Set the WM title only after Handy registration. Before registration a
+  // title makes handy_window synthesize a native HdyHeaderBar, which would sit
+  // above Relay's in-scene YaruWindowTitleBar as a duplicate decoration.
+  gtk_window_set_title(window, "Relay");
+  gtk_widget_show(GTK_WIDGET(view));
+
+  if (!start_hidden) {
+    gtk_widget_show(GTK_WIDGET(window));
+  } else {
+    // handy_window shows its rebuilt hierarchy while registering. Put a
+    // start-hidden window back into the requested unmapped state.
+    gtk_widget_hide(GTK_WIDGET(window));
+    gtk_widget_realize(GTK_WIDGET(window));
+  }
 
   if (!start_hidden) {
     gtk_widget_grab_focus(GTK_WIDGET(view));

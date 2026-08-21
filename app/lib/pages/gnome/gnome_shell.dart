@@ -3,9 +3,9 @@ import 'dart:async';
 import 'package:collection/collection.dart';
 import 'package:flutter/material.dart';
 import 'package:refena_flutter/refena_flutter.dart';
-import 'package:relay_app/config/relay_brand.dart';
 import 'package:relay_app/model/cross_file.dart';
 import 'package:relay_app/model/ui/relay_device_vm.dart';
+import 'package:relay_app/pages/about/about_page.dart';
 import 'package:relay_app/pages/gnome/gnome_activity_view.dart';
 import 'package:relay_app/pages/gnome/gnome_clipboard_view.dart';
 import 'package:relay_app/pages/gnome/gnome_device_detail_view.dart';
@@ -27,12 +27,13 @@ import 'package:relay_app/provider/selection/selected_sending_files_provider.dar
 import 'package:relay_app/util/native/file_picker.dart';
 import 'package:relay_app/widget/dialogs/cancel_session_dialog.dart';
 import 'package:relay_app/widget/dialogs/relay_pair_device_dialog.dart';
+import 'package:relay_app/config/relay_brand.dart';
 import 'package:relay_app/config/relay_motion.dart';
-import 'package:relay_app/widget/gnome/adw_header_bar.dart';
 import 'package:relay_app/widget/gnome/adw_split_view.dart';
-import 'package:relay_app/widget/gnome/adw_status_page.dart';
-import 'package:relay_app/widget/relay_carbon/relay_surface.dart';
+import 'package:relay_app/widget/relay_motion/relay_ambient_background.dart';
+import 'package:relay_app/widget/relay_motion/relay_ambient_clock.dart';
 import 'package:routerino/routerino.dart';
+import 'package:yaru/yaru.dart';
 
 enum GnomeSubView {
   overview,
@@ -41,6 +42,7 @@ enum GnomeSubView {
   phone,
   activity,
   settings,
+  about,
 }
 
 /// Root GNOME presentation shell for Linux desktop.
@@ -122,35 +124,34 @@ class _GnomeShellState extends State<GnomeShell> with Refena {
   List<GnomeNavDestination> _destinations(RelayDeviceVm? selectedDevice) {
     final canSendFiles = selectedDevice != null && !selectedDevice.isKdeConnect;
     return [
-      const GnomeNavDestination(icon: Icons.grid_view_rounded, label: 'Overview', view: GnomeSubView.overview),
+      const GnomeNavDestination(icon: YaruIcons.app_grid, label: 'Overview', view: GnomeSubView.overview),
       if (canSendFiles)
         GnomeNavDestination(
-          icon: Icons.send_rounded,
+          icon: YaruIcons.send,
           label: 'Send Files',
           action: () => unawaited(_pickAndSendFiles(selectedDevice)),
         ),
-      if (selectedDevice != null) const GnomeNavDestination(icon: Icons.content_paste_rounded, label: 'Clipboard', view: GnomeSubView.clipboard),
-      if (selectedDevice != null) const GnomeNavDestination(icon: Icons.forum_rounded, label: 'Messages', view: GnomeSubView.messages),
+      if (selectedDevice != null) const GnomeNavDestination(icon: YaruIcons.copy, label: 'Clipboard', view: GnomeSubView.clipboard),
+      if (selectedDevice != null) const GnomeNavDestination(icon: YaruIcons.chat_bubble, label: 'Messages', view: GnomeSubView.messages),
       if (selectedDevice != null && (!selectedDevice.isCompatibilityPeer || selectedDevice.isKdeConnect))
-        const GnomeNavDestination(icon: Icons.call_rounded, label: 'Phone', view: GnomeSubView.phone),
-      const GnomeNavDestination(icon: Icons.history_rounded, label: 'Activity', view: GnomeSubView.activity),
-      const GnomeNavDestination(icon: Icons.settings_rounded, label: 'Settings', view: GnomeSubView.settings),
+        const GnomeNavDestination(icon: YaruIcons.phone, label: 'Phone', view: GnomeSubView.phone),
+      const GnomeNavDestination(icon: YaruIcons.clock, label: 'Activity', view: GnomeSubView.activity),
+      const GnomeNavDestination(icon: YaruIcons.gear, label: 'Settings', view: GnomeSubView.settings),
+      const GnomeNavDestination(icon: YaruIcons.information, label: 'About', view: GnomeSubView.about),
     ];
   }
 
   @override
   Widget build(BuildContext context) {
-    final palette = Theme.of(context).relayPalette;
-
     final activeDeviceKey = _selectedDeviceKey ?? (widget.vm.devices.isNotEmpty ? widget.vm.devices.first.key : null);
 
     final selectedDevice =
         widget.vm.devices.firstWhereOrNull((d) => d.key == activeDeviceKey) ?? (widget.vm.devices.isNotEmpty ? widget.vm.devices.first : null);
 
-    return Scaffold(
-      backgroundColor: palette.canvas,
-      body: RelayCanvas(
-        child: SafeArea(
+    return RelayAmbientClock(
+      animationsEnabled: widget.animationsEnabled,
+      child: Scaffold(
+        body: SafeArea(
           child: LayoutBuilder(
             builder: (context, constraints) {
               final isWide = constraints.maxWidth >= 720;
@@ -189,11 +190,9 @@ class _GnomeShellState extends State<GnomeShell> with Refena {
 
               final content = Column(
                 children: [
-                  AdwHeaderBar(
+                  YaruWindowTitleBar(
                     leading: (!isWide && _narrowShowDetail)
-                        ? AdwIconButton(
-                            icon: Icons.arrow_back_rounded,
-                            tooltip: 'Back to Devices',
+                        ? YaruBackButton(
                             onPressed: () {
                               setState(() {
                                 _narrowShowDetail = false;
@@ -202,11 +201,10 @@ class _GnomeShellState extends State<GnomeShell> with Refena {
                             },
                           )
                         : null,
-                    titleText: _getHeaderTitle(selectedDevice),
-                    subtitleText: _getHeaderSubtitle(selectedDevice),
+                    title: Text(_getHeaderTitle(selectedDevice)),
                     actions: [
-                      AdwIconButton(
-                        icon: Icons.add_link_rounded,
+                      YaruIconButton(
+                        icon: const Icon(YaruIcons.plus),
                         tooltip: 'Add Device',
                         onPressed: () {
                           if (widget.onPairDevice != null) {
@@ -216,10 +214,9 @@ class _GnomeShellState extends State<GnomeShell> with Refena {
                           }
                         },
                       ),
-                      AdwIconButton(
-                        icon: Icons.settings_outlined,
+                      YaruIconButton(
+                        icon: const Icon(YaruIcons.gear),
                         tooltip: 'Preferences',
-                        isPrimary: _subView == GnomeSubView.settings,
                         onPressed: () {
                           setState(() {
                             _subView = _subView == GnomeSubView.settings ? GnomeSubView.overview : GnomeSubView.settings;
@@ -230,9 +227,14 @@ class _GnomeShellState extends State<GnomeShell> with Refena {
                     ],
                   ),
                   Expanded(
-                    child: _PageTransition(
-                      destinationKey: '${_subView.name}:${selectedDevice?.key ?? '-'}',
-                      child: _buildDetailContent(selectedDevice),
+                    child: RelayAmbientBackground(
+                      palette: RelayDevicePalette.fromDevice(selectedDevice, brightness: Theme.of(context).brightness),
+                      animationsEnabled: widget.animationsEnabled,
+                      child: _PageTransition(
+                        destinationKey: '${_subView.name}:${selectedDevice?.key ?? '-'}',
+                        enabled: widget.animationsEnabled,
+                        child: _buildDetailContent(selectedDevice),
+                      ),
                     ),
                   ),
                 ],
@@ -257,18 +259,28 @@ class _GnomeShellState extends State<GnomeShell> with Refena {
       GnomeSubView.clipboard => 'Clipboard',
       GnomeSubView.messages => 'Messages',
       GnomeSubView.phone => 'Phone',
+      GnomeSubView.about => 'About Relay',
       GnomeSubView.overview => selectedDevice?.alias ?? 'Relay',
     };
   }
 
-  String? _getHeaderSubtitle(RelayDeviceVm? selectedDevice) {
-    if (_subView != GnomeSubView.overview) {
-      return null;
-    }
-    return selectedDevice?.statusSummary;
-  }
-
   Widget _buildDetailContent(RelayDeviceVm? selectedDevice) {
+    if (_subView == GnomeSubView.about) {
+      return Scaffold(
+        body: SingleChildScrollView(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 32),
+            child: Center(
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 600),
+                child: const RelayAboutIdentity(),
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
     if (_subView == GnomeSubView.settings) {
       return GnomeSettingsView(
         onBack: () => setState(() => _subView = GnomeSubView.overview),
@@ -281,10 +293,31 @@ class _GnomeShellState extends State<GnomeShell> with Refena {
     }
 
     if (selectedDevice == null) {
-      return const AdwStatusPage(
-        icon: Icons.devices_other_rounded,
-        title: 'No devices yet',
-        description: 'Pair a device, or open Relay on another device on this network, and it will appear here.',
+      final theme = Theme.of(context);
+      final colorScheme = theme.colorScheme;
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(32),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(YaruIcons.computer, size: 48, color: colorScheme.onSurface.withValues(alpha: 0.3)),
+              const SizedBox(height: 16),
+              Text(
+                'No devices yet',
+                style: theme.textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w600),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'Pair a device, or open Relay on another device on this network, and it will appear here.',
+                textAlign: TextAlign.center,
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  color: colorScheme.onSurface.withValues(alpha: 0.6),
+                ),
+              ),
+            ],
+          ),
+        ),
       );
     }
 
@@ -425,24 +458,25 @@ class _GnomeShellState extends State<GnomeShell> with Refena {
 /// and a plain swap when the platform asks for reduced motion.
 class _PageTransition extends StatelessWidget {
   final String destinationKey;
+  final bool enabled;
   final Widget child;
 
-  const _PageTransition({required this.destinationKey, required this.child});
+  const _PageTransition({required this.destinationKey, required this.enabled, required this.child});
 
   @override
   Widget build(BuildContext context) {
-    if (MediaQuery.disableAnimationsOf(context)) {
+    if (!enabled || MediaQuery.disableAnimationsOf(context)) {
       return KeyedSubtree(key: ValueKey(destinationKey), child: child);
     }
 
     return AnimatedSwitcher(
       duration: RelayMotion.navigation,
       switchInCurve: RelayMotion.curve,
-      switchOutCurve: Curves.easeIn,
+      switchOutCurve: RelayMotion.focusCurve,
       transitionBuilder: (child, animation) => FadeTransition(
         opacity: animation,
         child: SlideTransition(
-          position: Tween<Offset>(begin: const Offset(0, 0.010), end: Offset.zero).animate(animation),
+          position: Tween<Offset>(begin: const Offset(0.012, 0), end: Offset.zero).animate(animation),
           child: child,
         ),
       ),

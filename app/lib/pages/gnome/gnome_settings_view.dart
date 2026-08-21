@@ -1,15 +1,17 @@
 import 'dart:async';
 
+import 'package:collection/collection.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:refena_flutter/refena_flutter.dart';
 import 'package:relay_app/config/relay_brand.dart';
 import 'package:relay_app/model/persistence/color_mode.dart';
+import 'package:relay_app/model/ui/relay_device_vm.dart';
 import 'package:relay_app/pages/about/about_page.dart';
 import 'package:relay_app/pages/changelog_page.dart';
+import 'package:relay_app/pages/relay_home_vm.dart';
 import 'package:relay_app/pages/tabs/settings_tab_controller.dart';
 import 'package:relay_app/pages/tabs/settings_tab_vm.dart';
-import 'package:relay_app/pages/relay_home_vm.dart';
 import 'package:relay_app/provider/settings_provider.dart';
 import 'package:relay_app/util/alias_generator.dart';
 import 'package:relay_app/util/i18n.dart';
@@ -17,21 +19,16 @@ import 'package:relay_app/util/native/macos_channel.dart';
 import 'package:relay_app/util/native/pick_directory_path.dart';
 import 'package:relay_app/util/native/platform_check.dart';
 import 'package:relay_app/util/ui/theme_mode_ext.dart';
-import 'package:relay_app/widget/custom_dropdown_button.dart';
 import 'package:relay_app/widget/dialogs/file_name_input_dialog.dart';
 import 'package:relay_app/widget/dialogs/relay_pair_device_dialog.dart';
-import 'package:relay_app/widget/gnome/adw_button.dart';
-import 'package:relay_app/widget/relay/relay_device_silhouette.dart';
-import 'package:relay_app/widget/relay_carbon/relay_settings.dart';
-import 'package:relay_app/widget/relay_carbon/relay_surface.dart';
+import 'package:relay_app/widget/gnome/adw_action_row.dart';
+import 'package:relay_app/widget/gnome/adw_boxed_list.dart';
+import 'package:relay_app/widget/relay_motion/relay_section_reveal.dart';
 import 'package:relay_isolates/model/device.dart';
 import 'package:routerino/routerino.dart';
+import 'package:yaru/yaru.dart';
 
-/// Relay's settings, in Relay's own visual language.
-///
-/// Sections are headings and rules rather than boxes, which is what keeps this
-/// page reading as the same product as the overview. Every row here maps to a
-/// setting that already exists — nothing is surfaced that Relay cannot act on.
+/// Relay's settings in GNOME / Yaru design system.
 class GnomeSettingsView extends StatelessWidget {
   final VoidCallback? onBack;
 
@@ -39,356 +36,357 @@ class GnomeSettingsView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final palette = Theme.of(context).relayPalette;
+    final theme = Theme.of(context);
 
     return ViewModelBuilder(
       provider: (ref) => settingsTabControllerProvider,
       builder: (context, vm) {
         final ref = context.ref;
         final deviceType = vm.settings.deviceType ?? DeviceType.desktop;
+        final panelDevices = defaultTargetPlatform == TargetPlatform.linux
+            ? ref.watch(relayHomeVmProvider).devices.where((device) => device.deviceType == DeviceType.mobile && device.isPaired).toList()
+            : const <RelayDeviceVm>[];
+        final currentPanelId = vm.settings.gnomePanelDeviceId;
+        final panelValue = currentPanelId ?? _followSelectedDevice;
+        final hasCurrentPanelDevice = currentPanelId == null || panelDevices.any((device) => device.key == currentPanelId);
 
-        return SingleChildScrollView(
-          padding: const EdgeInsets.fromLTRB(44, 30, 44, 56),
-          child: Center(
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 760),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Row(
+        Widget group(String title, List<Widget> children, {int index = 0}) => RelaySectionReveal(
+          index: index,
+          animationsEnabled: vm.settings.enableAnimations,
+          child: AdwPreferencesGroup(
+            key: ValueKey('settings-group-${title.toLowerCase().replaceAll(' ', '-')}'),
+            title: title,
+            uppercaseTitle: false,
+            margin: const EdgeInsets.only(bottom: 26),
+            rowPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+            rowMinHeight: 54,
+            children: children,
+          ),
+        );
+
+        return LayoutBuilder(
+          builder: (context, constraints) {
+            final horizontalPadding = constraints.maxWidth < 600 ? 16.0 : 32.0;
+            return SingleChildScrollView(
+              padding: EdgeInsets.fromLTRB(horizontalPadding, 24, horizontalPadding, 36),
+              child: Align(
+                alignment: Alignment.topCenter,
+                child: ConstrainedBox(
+                  key: const ValueKey('gnome-settings-document'),
+                  constraints: const BoxConstraints(maxWidth: 760),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      if (onBack != null) ...[
-                        AdwButton.flat(icon: Icons.arrow_back_rounded, label: 'Back', onPressed: onBack),
-                        const SizedBox(width: 14),
-                      ],
-                      Expanded(
-                        child: Text('Settings', style: RelayTypography.deviceName(palette.textPrimary)),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 32),
-
-                  _ThisDevice(vm: vm, deviceType: deviceType),
-                  const SizedBox(height: 34),
-
-                  RelaySettingsSection(
-                    title: 'General',
-                    children: [
-                      if (checkPlatformHasTray())
-                        RelaySettingsSwitchRow(
-                          title: 'Minimize to tray',
-                          subtitle: 'Closing the window keeps Relay running in the background',
-                          value: vm.settings.minimizeToTray,
-                          onChanged: (b) async => ref.notifier(settingsProvider).setMinimizeToTray(b),
-                        ),
-                      RelaySettingsSwitchRow(
-                        title: 'Start Relay at login',
-                        subtitle: 'Relay is ready as soon as you sign in',
-                        value: vm.autoStart,
-                        onChanged: (_) => vm.onToggleAutoStart(context),
-                      ),
-                      if (vm.autoStart)
-                        RelaySettingsSwitchRow(
-                          title: 'Start hidden',
-                          subtitle: 'Launch into the background without opening the window',
-                          value: vm.autoStartLaunchHidden,
-                          onChanged: (_) => vm.onToggleAutoStartLaunchHidden(context),
-                        ),
-                      RelaySettingsSwitchRow(
-                        title: 'Spatial Animations',
-                        subtitle: 'Devices move between the hero and the dock as you switch between them',
-                        value: vm.settings.enableAnimations,
-                        onChanged: (b) async => ref.notifier(settingsProvider).setEnableAnimations(b),
-                      ),
-                    ],
-                  ),
-
-                  RelaySettingsSection(
-                    title: 'Devices',
-                    children: [
-                      RelaySettingsNavRow(
-                        title: 'Pair New Device',
-                        subtitle: 'Establish a trusted connection with another device',
-                        onTap: () => unawaited(
-                          showDialog<void>(context: context, builder: (_) => const RelayPairDeviceDialog()),
-                        ),
-                      ),
-                    ],
-                  ),
-
-                  if (defaultTargetPlatform == TargetPlatform.linux) ...[
-                    () {
-                      final homeVm = ref.watch(relayHomeVmProvider);
-                      final pairedPhones = homeVm.devices.where((d) => d.deviceType == DeviceType.mobile && d.isPaired).toList();
-                      final currentPanelId = vm.settings.gnomePanelDeviceId;
-                      final hasCurrentInList = currentPanelId == null || pairedPhones.any((d) => d.key == currentPanelId);
-
-                      return RelaySettingsSection(
-                        title: 'GNOME Panel',
-                        children: [
-                          RelaySettingsDropdownRow<String?>(
-                            title: 'Panel device',
-                            subtitle: 'Choose which phone appears in the GNOME top bar',
-                            value: currentPanelId,
-                            items: [
-                              const DropdownMenuItem<String?>(
-                                value: null,
-                                child: Text('Follow selected device'),
-                              ),
-                              for (final device in pairedPhones)
-                                DropdownMenuItem<String?>(
-                                  value: device.key,
-                                  child: Text(device.alias),
-                                ),
-                              if (!hasCurrentInList && currentPanelId != null)
-                                DropdownMenuItem<String?>(
-                                  value: currentPanelId,
-                                  child: Text(currentPanelId),
-                                ),
-                            ],
-                            onChanged: (key) async => ref.notifier(settingsProvider).setGnomePanelDeviceId(key),
+                      group('General', [
+                        if (checkPlatformHasTray())
+                          AdwSwitchRow(
+                            title: 'Minimize to tray',
+                            subtitle: 'Closing the window keeps Relay running in the background',
+                            value: vm.settings.minimizeToTray,
+                            onChanged: (b) async => ref.notifier(settingsProvider).setMinimizeToTray(b),
                           ),
-                          RelaySettingsSwitchRow(
-                            title: 'Show network type',
-                            subtitle: 'Present mobile generation (LTE, 5G) in the top bar',
+                        AdwSwitchRow(
+                          title: 'Start Relay at login',
+                          subtitle: 'Launch Relay automatically when you sign in',
+                          value: vm.autoStart,
+                          onChanged: (_) => vm.onToggleAutoStart(context),
+                        ),
+                        if (vm.autoStart)
+                          AdwSwitchRow(
+                            title: 'Start hidden',
+                            subtitle: 'Launch into the background without opening the window',
+                            value: vm.autoStartLaunchHidden,
+                            onChanged: (_) => vm.onToggleAutoStartLaunchHidden(context),
+                          ),
+                        AdwSwitchRow(
+                          title: 'Spatial animations',
+                          subtitle: 'Animate device and page transitions',
+                          value: vm.settings.enableAnimations,
+                          onChanged: (b) async => ref.notifier(settingsProvider).setEnableAnimations(b),
+                        ),
+                        _SettingsChoiceRow<ThemeMode>(
+                          title: 'Theme',
+                          value: vm.settings.theme,
+                          valueLabel: vm.settings.theme.humanName,
+                          choices: [for (final value in vm.themeModes) _SettingsChoice(value: value, label: value.humanName)],
+                          onSelected: (value) => vm.onChangeTheme(context, value),
+                        ),
+                        _SettingsChoiceRow<ColorMode>(
+                          title: 'Color theme',
+                          value: vm.settings.colorMode,
+                          valueLabel: vm.settings.colorMode.humanName,
+                          choices: [for (final value in vm.colorModes) _SettingsChoice(value: value, label: value.humanName)],
+                          onSelected: (value) => vm.onChangeColorMode(context, value),
+                        ),
+                        AdwNavigationRow(
+                          leading: const Icon(YaruIcons.globe),
+                          title: 'Language',
+                          valueText: vm.settings.locale?.getLocaleName() ?? 'System',
+                          onTap: () => vm.onTapLanguage(context),
+                        ),
+                      ]),
+
+                      group('Devices', [
+                        AdwNavigationRow(
+                          leading: const Icon(YaruIcons.desktop),
+                          title: 'Device name',
+                          subtitle: _deviceDescription(deviceType),
+                          valueText: vm.settings.alias,
+                          onTap: () => unawaited(_editDeviceName(context, vm)),
+                        ),
+                        AdwActionRow(
+                          leading: const Icon(YaruIcons.refresh),
+                          title: 'Generate a random device name',
+                          onTap: () => unawaited(_randomizeDeviceName(context, vm)),
+                          trailing: const Icon(Icons.chevron_right_rounded, size: 18),
+                        ),
+                        AdwNavigationRow(
+                          leading: const Icon(YaruIcons.plus),
+                          title: 'Pair new device',
+                          subtitle: 'Establish a trusted connection',
+                          onTap: () => unawaited(
+                            showDialog<void>(context: context, builder: (_) => const RelayPairDeviceDialog()),
+                          ),
+                        ),
+                      ]),
+
+                      group('Transfers', [
+                        AdwNavigationRow(
+                          leading: const Icon(YaruIcons.folder),
+                          title: 'Destination directory',
+                          valueText: vm.settings.destination ?? 'Default (Downloads)',
+                          onTap: () async {
+                            if (vm.settings.destination != null) {
+                              await ref.notifier(settingsProvider).setDestination(null);
+                              if (defaultTargetPlatform == TargetPlatform.macOS) {
+                                await removeExistingDestinationAccess();
+                              }
+                              return;
+                            }
+                            final directory = await pickDirectoryPath();
+                            if (directory != null) {
+                              if (defaultTargetPlatform == TargetPlatform.macOS) {
+                                await persistDestinationFolderAccess(directory);
+                              }
+                              await ref.notifier(settingsProvider).setDestination(directory);
+                            }
+                          },
+                        ),
+                        AdwSwitchRow(
+                          title: 'Quick save',
+                          subtitle: 'Accept incoming transfers without confirmation',
+                          value: vm.settings.quickSave,
+                          onChanged: (b) async => ref.notifier(settingsProvider).setQuickSave(b),
+                        ),
+                        AdwSwitchRow(
+                          title: 'Quick save from favorites',
+                          subtitle: 'Accept transfers automatically from favorite devices',
+                          value: vm.settings.quickSaveFromFavorites,
+                          onChanged: (b) async => ref.notifier(settingsProvider).setQuickSaveFromFavorites(b),
+                        ),
+                        AdwSwitchRow(
+                          title: 'Save to history',
+                          value: vm.settings.saveToHistory,
+                          onChanged: (b) async => ref.notifier(settingsProvider).setSaveToHistory(b),
+                        ),
+                        AdwSwitchRow(
+                          title: 'Finish completed transfers automatically',
+                          value: vm.settings.autoFinish,
+                          onChanged: (b) async => ref.notifier(settingsProvider).setAutoFinish(b),
+                        ),
+                      ]),
+
+                      if (defaultTargetPlatform == TargetPlatform.linux)
+                        group('GNOME Panel', [
+                          _SettingsChoiceRow<String>(
+                            title: 'Panel device',
+                            leading: const Icon(YaruIcons.smartphone),
+                            value: panelValue,
+                            valueLabel: currentPanelId == null
+                                ? 'Follow selected device'
+                                : panelDevices.where((device) => device.key == currentPanelId).firstOrNull?.alias ?? currentPanelId,
+                            choices: [
+                              const _SettingsChoice(value: _followSelectedDevice, label: 'Follow selected device'),
+                              for (final device in panelDevices) _SettingsChoice(value: device.key, label: device.alias),
+                              if (!hasCurrentPanelDevice) _SettingsChoice(value: currentPanelId, label: currentPanelId),
+                            ],
+                            onSelected: (value) async =>
+                                ref.notifier(settingsProvider).setGnomePanelDeviceId(value == _followSelectedDevice ? null : value),
+                          ),
+                          AdwSwitchRow(
+                            title: 'Network type',
                             value: vm.settings.gnomePanelShowNetworkType,
                             onChanged: (b) async => ref.notifier(settingsProvider).setGnomePanelShowNetworkType(b),
                           ),
-                          RelaySettingsSwitchRow(
-                            title: 'Show battery percentage',
-                            subtitle: 'Display numerical charge alongside the battery icon',
+                          AdwSwitchRow(
+                            title: 'Battery percentage',
                             value: vm.settings.gnomePanelShowBatteryPercentage,
                             onChanged: (b) async => ref.notifier(settingsProvider).setGnomePanelShowBatteryPercentage(b),
                           ),
-                          RelaySettingsSwitchRow(
-                            title: 'Show notifications indicator',
-                            subtitle: 'Display the notification bell when messages or alerts arrive',
+                          AdwSwitchRow(
+                            title: 'Notifications',
                             value: vm.settings.gnomePanelShowNotifications,
                             onChanged: (b) async => ref.notifier(settingsProvider).setGnomePanelShowNotifications(b),
                           ),
-                          RelaySettingsSwitchRow(
+                          AdwSwitchRow(
                             title: 'Charging animation',
-                            subtitle: 'Subtle warmth glow on the battery icon while charging',
+                            subtitle: 'Animate battery status in the GNOME top bar',
                             value: vm.settings.gnomePanelChargingAnimation,
                             onChanged: (b) async => ref.notifier(settingsProvider).setGnomePanelChargingAnimation(b),
                           ),
-                        ],
-                      );
-                    }(),
-                  ],
+                        ]),
 
-                  RelaySettingsSection(
-                    title: 'Transfers',
-                    children: [
-                      RelaySettingsNavRow(
-                        title: 'Destination Directory',
-                        valueText: vm.settings.destination ?? 'Default (Downloads)',
-                        onTap: () async {
-                          if (vm.settings.destination != null) {
-                            await ref.notifier(settingsProvider).setDestination(null);
-                            if (defaultTargetPlatform == TargetPlatform.macOS) {
-                              await removeExistingDestinationAccess();
-                            }
-                            return;
-                          }
-                          final directory = await pickDirectoryPath();
-                          if (directory != null) {
-                            if (defaultTargetPlatform == TargetPlatform.macOS) {
-                              await persistDestinationFolderAccess(directory);
-                            }
-                            await ref.notifier(settingsProvider).setDestination(directory);
-                          }
-                        },
-                      ),
-                      RelaySettingsSwitchRow(
-                        title: 'Quick Save',
-                        subtitle: 'Automatically accept incoming transfers without manual confirmation',
-                        value: vm.settings.quickSave,
-                        onChanged: (b) async => ref.notifier(settingsProvider).setQuickSave(b),
-                      ),
-                      RelaySettingsSwitchRow(
-                        title: 'Quick Save from Favorites',
-                        subtitle: 'Automatically accept transfers from devices marked as favorites',
-                        value: vm.settings.quickSaveFromFavorites,
-                        onChanged: (b) async => ref.notifier(settingsProvider).setQuickSaveFromFavorites(b),
-                      ),
-                      RelaySettingsSwitchRow(
-                        title: 'Save to History',
-                        subtitle: 'Record completed file transfers in Activity',
-                        value: vm.settings.saveToHistory,
-                        onChanged: (b) async => ref.notifier(settingsProvider).setSaveToHistory(b),
-                      ),
-                      RelaySettingsSwitchRow(
-                        title: 'Auto-Finish',
-                        subtitle: 'Close completed transfer sessions on their own',
-                        value: vm.settings.autoFinish,
-                        onChanged: (b) async => ref.notifier(settingsProvider).setAutoFinish(b),
-                      ),
-                    ],
-                  ),
-
-                  RelaySettingsSection(
-                    title: 'Privacy & Security',
-                    children: [
-                      // Reported, not offered: turning transport encryption off
-                      // restarts the server, so that decision stays where it
-                      // already lives rather than becoming a one-tap switch here.
-                      RelaySettingsValueRow(
-                        title: 'Transport encryption',
-                        subtitle: 'Transfers between devices are encrypted in flight',
-                        value: vm.settings.https ? 'Enabled' : 'Disabled',
-                        tint: vm.settings.https ? palette.success : palette.warning,
-                      ),
-                      RelaySettingsSwitchRow(
-                        title: 'Create checksums',
-                        subtitle: 'Attach a checksum to files you send so the other device can verify them',
-                        value: vm.settings.createChecksums,
-                        onChanged: (b) async => ref.notifier(settingsProvider).setCreateChecksums(b),
-                      ),
-                      RelaySettingsSwitchRow(
-                        title: 'Verify checksums',
-                        subtitle: 'Check received files against the checksum the sender provided',
-                        value: vm.settings.verifyChecksums,
-                        onChanged: (b) async => ref.notifier(settingsProvider).setVerifyChecksums(b),
-                      ),
-                    ],
-                  ),
-
-                  RelaySettingsSection(
-                    title: 'Appearance',
-                    children: [
-                      RelaySettingsRow(
-                        title: 'Theme',
-                        trailing: CustomDropdownButton<ThemeMode>(
-                          expanded: false,
-                          value: vm.settings.theme,
-                          items: vm.themeModes.map((theme) {
-                            return DropdownMenuItem(value: theme, child: Text(theme.humanName));
-                          }).toList(),
-                          onChanged: (theme) => vm.onChangeTheme(context, theme),
+                      group('Advanced', [
+                        AdwActionRow(
+                          leading: const Icon(YaruIcons.shield),
+                          title: 'Transport encryption',
+                          subtitle: 'Transfers between devices are encrypted in flight',
+                          trailing: Text(
+                            vm.settings.https ? 'Enabled' : 'Disabled',
+                            style: theme.textTheme.bodyMedium?.copyWith(
+                              color: vm.settings.https ? YaruColors.of(context).success : YaruColors.of(context).warning,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
                         ),
-                      ),
-                      RelaySettingsRow(
-                        title: 'Color Theme',
-                        trailing: CustomDropdownButton<ColorMode>(
-                          expanded: false,
-                          value: vm.settings.colorMode,
-                          items: vm.colorModes.map((colorMode) {
-                            return DropdownMenuItem(
-                              value: colorMode,
-                              child: Text(colorMode.humanName, overflow: TextOverflow.ellipsis),
-                            );
-                          }).toList(),
-                          onChanged: (colorMode) => vm.onChangeColorMode(context, colorMode),
+                        AdwSwitchRow(
+                          title: 'Create checksums',
+                          subtitle: 'Attach verification data to files you send',
+                          value: vm.settings.createChecksums,
+                          onChanged: (b) async => ref.notifier(settingsProvider).setCreateChecksums(b),
                         ),
-                      ),
-                      RelaySettingsNavRow(
-                        title: 'Language',
-                        valueText: vm.settings.locale?.getLocaleName() ?? 'System',
-                        onTap: () => vm.onTapLanguage(context),
-                      ),
-                    ],
-                  ),
+                        AdwSwitchRow(
+                          title: 'Verify checksums',
+                          subtitle: 'Verify received files against sender checksums',
+                          value: vm.settings.verifyChecksums,
+                          onChanged: (b) async => ref.notifier(settingsProvider).setVerifyChecksums(b),
+                        ),
+                      ]),
 
-                  RelaySettingsSection(
-                    title: 'About Relay',
-                    children: [
-                      RelaySettingsNavRow(
-                        title: 'About',
-                        valueText: RelayProduct.name,
-                        onTap: () => context.push(() => const AboutPage()),
-                      ),
-                      RelaySettingsNavRow(
-                        title: 'Changelog',
-                        onTap: () => context.push(() => const ChangelogPage()),
-                      ),
+                      group('About Relay', [
+                        AdwNavigationRow(
+                          leading: const Icon(YaruIcons.information),
+                          title: 'About',
+                          valueText: RelayProduct.name,
+                          onTap: () => context.push(() => const AboutPage()),
+                        ),
+                        AdwNavigationRow(
+                          leading: const Icon(YaruIcons.document),
+                          title: 'Changelog',
+                          onTap: () => context.push(() => const ChangelogPage()),
+                        ),
+                      ]),
                     ],
                   ),
-                ],
+                ),
               ),
-            ),
-          ),
+            );
+          },
         );
       },
     );
   }
 }
 
-/// This machine's own identity, at the head of Settings where it belongs.
-class _ThisDevice extends StatelessWidget {
-  final SettingsTabVm vm;
-  final DeviceType deviceType;
+const _followSelectedDevice = '__follow_selected_device__';
 
-  const _ThisDevice({required this.vm, required this.deviceType});
+String _deviceDescription(DeviceType deviceType) => switch (deviceType) {
+  DeviceType.mobile => 'Mobile · Relay device',
+  DeviceType.desktop => 'Desktop · Relay device',
+  DeviceType.web => 'Web · Relay device',
+  DeviceType.headless || DeviceType.server => 'Server · Relay device',
+};
+
+Future<void> _randomizeDeviceName(BuildContext context, SettingsTabVm vm) async {
+  final newAlias = generateRandomAlias();
+  vm.aliasController.text = newAlias;
+  await context.ref.notifier(settingsProvider).setAlias(newAlias);
+}
+
+Future<void> _editDeviceName(BuildContext context, SettingsTabVm vm) async {
+  final result = await showDialog<String>(
+    context: context,
+    builder: (_) => FileNameInputDialog(originalName: vm.settings.alias, initialName: vm.settings.alias),
+  );
+  if (result != null && result.trim().isNotEmpty && context.mounted) {
+    vm.aliasController.text = result.trim();
+    await context.ref.notifier(settingsProvider).setAlias(result.trim());
+  }
+}
+
+class _SettingsChoice<T> {
+  final T value;
+  final String label;
+
+  const _SettingsChoice({required this.value, required this.label});
+}
+
+class _SettingsChoiceRow<T> extends StatefulWidget {
+  final Widget? leading;
+  final String title;
+  final T value;
+  final String valueLabel;
+  final List<_SettingsChoice<T>> choices;
+  final ValueChanged<T> onSelected;
+
+  const _SettingsChoiceRow({
+    this.leading,
+    required this.title,
+    required this.value,
+    required this.valueLabel,
+    required this.choices,
+    required this.onSelected,
+  });
+
+  @override
+  State<_SettingsChoiceRow<T>> createState() => _SettingsChoiceRowState<T>();
+}
+
+class _SettingsChoiceRowState<T> extends State<_SettingsChoiceRow<T>> {
+  final _menuKey = GlobalKey<PopupMenuButtonState<T>>();
 
   @override
   Widget build(BuildContext context) {
-    final palette = Theme.of(context).relayPalette;
-    final ref = context.ref;
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const RelaySectionLabel(label: 'This Device'),
-        const SizedBox(height: 16),
-        Row(
-          children: [
-            Container(
-              width: 52,
-              height: 52,
-              decoration: BoxDecoration(color: palette.softSurface, shape: BoxShape.circle),
-              alignment: Alignment.center,
-              child: RelayDeviceSilhouette(deviceType: deviceType, color: palette.textSecondary, size: 30),
-            ),
-            const SizedBox(width: 18),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(vm.settings.alias, style: RelayTypography.title(palette.textPrimary, isGnome: true)),
-                  const SizedBox(height: 3),
-                  Text(
-                    switch (deviceType) {
-                      DeviceType.mobile => 'Mobile · Relay Device',
-                      DeviceType.desktop => 'Desktop · Relay Device',
-                      DeviceType.web => 'Web · Relay Device',
-                      DeviceType.headless || DeviceType.server => 'Server · Relay Device',
-                    },
-                    style: RelayTypography.caption(palette.textTertiary, isGnome: true),
-                  ),
-                ],
+    final theme = Theme.of(context);
+    return AdwActionRow(
+      leading: widget.leading,
+      title: widget.title,
+      onTap: () => _menuKey.currentState?.showButtonMenu(),
+      trailing: IgnorePointer(
+        child: PopupMenuButton<T>(
+          key: _menuKey,
+          initialValue: widget.value,
+          tooltip: '',
+          onSelected: widget.onSelected,
+          itemBuilder: (context) => [
+            for (final choice in widget.choices)
+              PopupMenuItem<T>(
+                value: choice.value,
+                child: Row(
+                  children: [
+                    Expanded(child: Text(choice.label)),
+                    if (choice.value == widget.value) Icon(YaruIcons.ok, size: 18, color: theme.colorScheme.primary),
+                  ],
+                ),
               ),
-            ),
-            IconButton(
-              icon: const Icon(Icons.casino_outlined, size: 18),
-              tooltip: 'Random Name',
-              onPressed: () async {
-                final newAlias = generateRandomAlias();
-                vm.aliasController.text = newAlias;
-                await ref.notifier(settingsProvider).setAlias(newAlias);
-              },
-            ),
-            IconButton(
-              icon: const Icon(Icons.edit_rounded, size: 18),
-              tooltip: 'Edit Device Name',
-              onPressed: () async {
-                final result = await showDialog<String>(
-                  context: context,
-                  builder: (_) => FileNameInputDialog(
-                    originalName: vm.settings.alias,
-                    initialName: vm.settings.alias,
-                  ),
-                );
-                if (result != null && result.trim().isNotEmpty) {
-                  vm.aliasController.text = result.trim();
-                  await ref.notifier(settingsProvider).setAlias(result.trim());
-                }
-              },
-            ),
           ],
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 240),
+                child: Text(
+                  widget.valueLabel,
+                  overflow: TextOverflow.ellipsis,
+                  style: theme.textTheme.bodyMedium?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Icon(Icons.chevron_right_rounded, size: 18, color: theme.colorScheme.onSurfaceVariant),
+            ],
+          ),
         ),
-      ],
+      ),
     );
   }
 }

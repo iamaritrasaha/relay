@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:refena_flutter/refena_flutter.dart';
+import 'package:relay_app/config/relay_device_palette.dart';
 import 'package:relay_app/config/theme.dart';
 import 'package:relay_app/model/persistence/color_mode.dart';
 import 'package:relay_app/model/ui/relay_capability_vm.dart';
@@ -10,7 +12,6 @@ import 'package:relay_app/provider/device_info_provider.dart';
 import 'package:relay_app/provider/kdeconnect_provider.dart';
 import 'package:relay_app/provider/persistence_provider.dart';
 import 'package:relay_app/util/ui/dynamic_colors.dart';
-import 'package:relay_app/widget/gnome/adw_button.dart';
 import 'package:relay_isolates/model/device.dart';
 import 'package:relay_isolates/model/device_info_result.dart';
 import 'package:relay_isolates/rust/api/kdeconnect.dart';
@@ -74,7 +75,7 @@ void main() {
   final persistence = ReviewPersistenceService();
   stubReviewPersistence(persistence);
 
-  Future<void> pump(WidgetTester tester) async {
+  Future<void> pump(WidgetTester tester, {Brightness brightness = Brightness.dark}) async {
     tester.view.physicalSize = const Size(1440, 900);
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.resetPhysicalSize);
@@ -91,7 +92,7 @@ void main() {
           kdeConnectProvider.overrideWithNotifier((ref) => _SeededKdeConnectService()),
         ],
         child: MaterialApp(
-          theme: getTheme(ColorMode.relay, Colors.blue, Brightness.dark, null),
+          theme: getTheme(ColorMode.relay, Colors.blue, brightness, null),
           home: Scaffold(
             body: GnomeKdeMessagesView(device: phone, onBack: () {}),
           ),
@@ -126,7 +127,49 @@ void main() {
   });
 
   testWidgets('the field corner radius is rounded but not a pill', (tester) async {
-    expect(relayComposerFieldRadius, inInclusiveRange(14, 18));
+    expect(relayComposerFieldRadius, inInclusiveRange(10, 12));
+  });
+
+  testWidgets('the TextField owns the composer boundary and the system focus ring', (tester) async {
+    await pump(tester);
+    await tester.tap(find.text('+15550100').first);
+    await tester.pumpAndSettle();
+
+    final fieldBox = tester.widget<ConstrainedBox>(find.byKey(const ValueKey('kde-composer-field')));
+    expect(fieldBox.child, isA<TextField>(), reason: 'no decorated input container may wrap another outlined TextField');
+
+    final field = fieldBox.child! as TextField;
+    final decoration = field.decoration!;
+    final theme = Theme.of(tester.element(find.byType(TextField)));
+    final devicePalette = RelayDevicePalette.fromDevice(phone, brightness: theme.brightness);
+    expect(decoration.filled, isTrue);
+    expect(decoration.border, isA<OutlineInputBorder>());
+    expect(decoration.enabledBorder, isA<OutlineInputBorder>());
+    expect(decoration.focusedBorder, isA<OutlineInputBorder>());
+    expect((decoration.focusedBorder! as OutlineInputBorder).borderSide.color, devicePalette.primary);
+    expect(field.minLines, 1);
+    expect(field.maxLines, 4);
+  });
+
+  testWidgets('Ctrl+Enter remains the composer send shortcut', (tester) async {
+    await pump(tester);
+    await tester.tap(find.text('+15550100').first);
+    await tester.pumpAndSettle();
+
+    final shortcuts = tester.widget<CallbackShortcuts>(find.byType(CallbackShortcuts));
+    expect(shortcuts.bindings.keys, contains(const SingleActivator(LogicalKeyboardKey.enter, control: true)));
+  });
+
+  testWidgets('the single composer boundary builds and focuses in light mode', (tester) async {
+    await pump(tester, brightness: Brightness.light);
+    await tester.tap(find.text('+15550100').first);
+    await tester.pumpAndSettle();
+    await tester.tap(find.byType(TextField));
+    await tester.pump();
+
+    expect(tester.takeException(), isNull);
+    expect(find.byKey(const ValueKey('kde-composer-field')), findsOneWidget);
+    expect(FocusManager.instance.primaryFocus, isNotNull);
   });
 
   testWidgets('the laid-out field and Send button match the intended metrics', (tester) async {
@@ -182,10 +225,12 @@ void main() {
 
   testWidgets('the Send button keeps a visible surface when disabled', (tester) async {
     await pump(tester);
+    await tester.tap(find.text('+15550100').first);
+    await tester.pumpAndSettle();
 
-    // Every AdwButton rendered here should still be findable; the disabled
-    // treatment is a surface behind it, never removal from the tree.
+    // The selected thread starts with an empty draft, so Send is disabled but
+    // its normal Yaru surface remains visible.
     expect(tester.takeException(), isNull);
-    expect(find.byType(AdwButton), findsWidgets);
+    expect(find.byType(FilledButton), findsWidgets);
   });
 }

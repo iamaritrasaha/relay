@@ -26,6 +26,26 @@ abstract final class RelayMotion {
   /// Relay Stream: progress that is backed by a real transfer.
   static const stream = Duration(milliseconds: 240);
 
+  /// Ambient motion periods
+  static const ambientHeroPerimeter = Duration(milliseconds: 7500);
+  static const ambientHeroDrift = Duration(milliseconds: 14000);
+  static const ambientHeroBreath = Duration(milliseconds: 5000);
+  static const ambientGlowCycle = Duration(milliseconds: 4800);
+  static const ambientBackground = Duration(milliseconds: 18000);
+
+  /// Coordinated event durations
+  static const connectionEvent = Duration(milliseconds: 1100);
+  static const pingRipple = Duration(milliseconds: 800);
+  static const findPhoneVibrate = Duration(milliseconds: 500);
+
+  /// Section reveals
+  static const sectionStagger = Duration(milliseconds: 45);
+  static const sectionDuration = Duration(milliseconds: 220);
+
+  /// Tactile interaction
+  static const tactilePress = Duration(milliseconds: 100);
+  static const double tactileScale = 0.978;
+
   static const deviceTransition = arrival;
   static const presenceTransition = focus;
   static const progressTransition = stream;

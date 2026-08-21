@@ -3,14 +3,14 @@ import 'dart:async';
 import 'package:collection/collection.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:logging/logging.dart';
 import 'package:refena_flutter/refena_flutter.dart';
 import 'package:relay_app/config/relay_brand.dart';
+import 'package:relay_app/config/relay_motion.dart';
 import 'package:relay_app/model/ui/relay_device_vm.dart';
 import 'package:relay_app/provider/kdeconnect_provider.dart';
-import 'package:relay_app/widget/gnome/adw_button.dart';
-import 'package:relay_app/widget/relay_carbon/relay_surface.dart';
-import 'package:relay_app/widget/relay_motion/relay_edge_sweep.dart';
 import 'package:relay_isolates/rust/api/kdeconnect.dart';
+import 'package:yaru/yaru.dart';
 
 /// Full-height desktop split Messages continuity surface for KDE Connect peers.
 ///
@@ -22,12 +22,14 @@ import 'package:relay_isolates/rust/api/kdeconnect.dart';
 
 /// Height of the input at rest. A desktop composer, not a search field.
 const double relayComposerFieldMinHeight = 52;
-const double relayComposerFieldRadius = 16;
+const double relayComposerFieldRadius = 12;
 const double relayComposerSendHeight = 52;
 const double relayComposerSendWidth = 88;
 const double relayComposerGap = 12;
 const double relayComposerVerticalPadding = 18;
 const double relayComposerHorizontalPadding = 18;
+
+final _smsLogger = Logger('RelaySmsBridge');
 
 class GnomeKdeMessagesView extends StatefulWidget {
   final RelayDeviceVm device;
@@ -50,8 +52,9 @@ class _GnomeKdeMessagesViewState extends State<GnomeKdeMessagesView> {
   final ScrollController _scrollController = ScrollController();
   final Map<int, String> _draftsByThread = {};
   bool _hasInitialScrolled = false;
+  String? _lastSmsKeyTrace;
 
-  String get _deviceId => widget.device.key.replaceFirst('kdeconnect:', '');
+  String get _deviceId => kdeConnectDeviceIdFromKey(widget.device.key);
   bool get _connected => widget.device.detail == 'Connected';
   bool get _canSend => _connected && widget.device.canSendSms;
 
@@ -60,14 +63,6 @@ class _GnomeKdeMessagesViewState extends State<GnomeKdeMessagesView> {
     if (!_connected) return 'Reconnect to ${widget.device.alias} to send messages.';
     if (!widget.device.canSendSms) return '${widget.device.alias} does not accept send requests from Relay.';
     return null;
-  }
-
-  @override
-  void initState() {
-    super.initState();
-    // The field's focus border is painted by this widget, so focus changes have
-    // to reach it the same way text changes do.
-    _composerFocus.addListener(_onComposerFocusChanged);
   }
 
   bool _requestedConversations = false;
@@ -82,18 +77,12 @@ class _GnomeKdeMessagesViewState extends State<GnomeKdeMessagesView> {
       return;
     }
     _requestedConversations = true;
+    _smsLogger.info('UI request deviceKey=${widget.device.key} providerDeviceId=$_deviceId');
     unawaited(context.redux(kdeConnectProvider).dispatchAsync(KdeConnectRequestSmsConversationsAction(_deviceId)));
-  }
-
-  void _onComposerFocusChanged() {
-    if (mounted) {
-      setState(() {});
-    }
   }
 
   @override
   void dispose() {
-    _composerFocus.removeListener(_onComposerFocusChanged);
     _composerController.dispose();
     _composerFocus.dispose();
     _scrollController.dispose();
@@ -122,10 +111,12 @@ class _GnomeKdeMessagesViewState extends State<GnomeKdeMessagesView> {
     if (!_scrollController.hasClients) return;
     final target = _scrollController.position.maxScrollExtent;
     if (animated && !(MediaQuery.maybeDisableAnimationsOf(context) ?? false)) {
-      _scrollController.animateTo(
-        target,
-        duration: const Duration(milliseconds: 200),
-        curve: Curves.easeOut,
+      unawaited(
+        _scrollController.animateTo(
+          target,
+          duration: const Duration(milliseconds: 200),
+          curve: Curves.easeOut,
+        ),
       );
     } else {
       _scrollController.jumpTo(target);
@@ -169,12 +160,19 @@ class _GnomeKdeMessagesViewState extends State<GnomeKdeMessagesView> {
 
   @override
   Widget build(BuildContext context) {
-    final palette = Theme.of(context).relayPalette;
-    final conversations = context.watch(kdeConnectProvider).smsConversations[_deviceId] ?? const <RsKdeSmsConversation>[];
+    final theme = Theme.of(context);
+    final kdeState = context.watch(kdeConnectProvider);
+    final conversations = kdeState.smsConversations[_deviceId] ?? const <RsKdeSmsConversation>[];
+    final trace = '${kdeState.smsConversations.keys.join(',')}|${kdeState.smsMessages.keys.join(',')}';
+    if (_lastSmsKeyTrace != trace) {
+      _lastSmsKeyTrace = trace;
+      _smsLogger.info(
+        'UI state device=$_deviceId conversationKeyMatch=${kdeState.smsConversations.containsKey(_deviceId)} '
+        'messageKeyMatch=${kdeState.smsMessages.containsKey(_deviceId)} conversations=${conversations.length}',
+      );
+    }
     final selected = conversations.firstWhereOrNull((item) => item.threadId == _threadId);
-    final messages = _threadId == null
-        ? const <RsKdeSmsMessage>[]
-        : context.watch(kdeConnectProvider).smsMessages[_deviceId]?[_threadId] ?? const <RsKdeSmsMessage>[];
+    final messages = _threadId == null ? const <RsKdeSmsMessage>[] : kdeState.smsMessages[_deviceId]?[_threadId] ?? const <RsKdeSmsMessage>[];
 
     if (_threadId != null && !_hasInitialScrolled && messages.isNotEmpty) {
       _hasInitialScrolled = true;
@@ -182,12 +180,12 @@ class _GnomeKdeMessagesViewState extends State<GnomeKdeMessagesView> {
     }
 
     return Padding(
-      padding: const EdgeInsets.fromLTRB(24, 16, 24, 24),
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          _buildHeader(context, palette),
-          const SizedBox(height: 16),
+          _buildHeader(context, theme),
+          const SizedBox(height: 12),
           Expanded(
             child: LayoutBuilder(
               builder: (context, constraints) {
@@ -195,30 +193,24 @@ class _GnomeKdeMessagesViewState extends State<GnomeKdeMessagesView> {
 
                 if (!isWide) {
                   return selected == null
-                      ? _buildConversationList(context, palette, conversations, isWide: false)
-                      : _buildConversationPanel(context, palette, selected, messages, isWide: false);
+                      ? _buildConversationList(context, theme, conversations, isWide: false)
+                      : _buildConversationPanel(context, theme, selected, messages, isWide: false);
                 }
 
                 return Row(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
                     SizedBox(
-                      width: 320,
-                      child: RelaySurface(
-                        radius: RelayRadius.panel,
-                        inset: true,
-                        padding: const EdgeInsets.symmetric(vertical: 12),
-                        child: _buildConversationList(context, palette, conversations, isWide: true),
+                      width: 300,
+                      child: YaruBorderContainer(
+                        padding: const EdgeInsets.symmetric(vertical: 8),
+                        child: _buildConversationList(context, theme, conversations, isWide: true),
                       ),
                     ),
-                    const SizedBox(width: 16),
+                    const SizedBox(width: 14),
                     Expanded(
-                      child: RelaySurface(
-                        radius: RelayRadius.card,
-                        outlined: true,
-                        child: selected == null
-                            ? _buildEmptyPanel(palette)
-                            : _buildConversationPanel(context, palette, selected, messages, isWide: true),
+                      child: YaruBorderContainer(
+                        child: selected == null ? _buildEmptyPanel(theme) : _buildConversationPanel(context, theme, selected, messages, isWide: true),
                       ),
                     ),
                   ],
@@ -231,33 +223,35 @@ class _GnomeKdeMessagesViewState extends State<GnomeKdeMessagesView> {
     );
   }
 
-  Widget _buildHeader(BuildContext context, RelayPalette palette) {
+  Widget _buildHeader(BuildContext context, ThemeData theme) {
+    final yaruColors = YaruColors.of(context);
     return Row(
       children: [
-        AdwButton.flat(
-          icon: Icons.arrow_back_rounded,
-          label: 'Devices',
+        YaruBackButton(
           onPressed: widget.onBack,
         ),
-        const SizedBox(width: 14),
-        Text('Messages', style: RelayTypography.title(palette.textPrimary, isGnome: true)),
-        const SizedBox(width: 12),
+        const SizedBox(width: 10),
+        Text('Messages', style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600)),
+        const SizedBox(width: 10),
         if (!_connected)
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
             decoration: BoxDecoration(
-              color: palette.warning.withValues(alpha: 0.15),
+              color: yaruColors.warning.withValues(alpha: 0.15),
               borderRadius: BorderRadius.circular(RelayRadius.pill),
             ),
             child: Text(
               'Offline',
-              style: RelayTypography.caption(palette.warning, isGnome: true),
+              style: theme.textTheme.labelSmall?.copyWith(
+                color: yaruColors.warning,
+                fontWeight: FontWeight.w600,
+              ),
             ),
           ),
         const Spacer(),
-        AdwButton.flat(
-          icon: Icons.refresh_rounded,
-          label: 'Refresh',
+        YaruIconButton(
+          icon: const Icon(YaruIcons.refresh),
+          tooltip: 'Refresh',
           onPressed: _connected
               ? () => unawaited(
                   context
@@ -272,21 +266,24 @@ class _GnomeKdeMessagesViewState extends State<GnomeKdeMessagesView> {
     );
   }
 
-  Widget _buildEmptyPanel(RelayPalette palette) {
+  Widget _buildEmptyPanel(ThemeData theme) {
+    final colorScheme = theme.colorScheme;
     return Center(
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(Icons.chat_bubble_outline_rounded, size: 48, color: palette.textTertiary),
+          Icon(YaruIcons.chat_bubble, size: 48, color: colorScheme.onSurface.withValues(alpha: 0.3)),
           const SizedBox(height: 14),
           Text(
             'Select a conversation',
-            style: RelayTypography.heading(palette.textSecondary, isGnome: true),
+            style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600),
           ),
-          const SizedBox(height: 6),
+          const SizedBox(height: 4),
           Text(
             'Read and reply to SMS from ${widget.device.alias}',
-            style: RelayTypography.body(palette.textTertiary, isGnome: true),
+            style: theme.textTheme.bodyMedium?.copyWith(
+              color: colorScheme.onSurface.withValues(alpha: 0.6),
+            ),
           ),
         ],
       ),
@@ -295,17 +292,20 @@ class _GnomeKdeMessagesViewState extends State<GnomeKdeMessagesView> {
 
   Widget _buildConversationList(
     BuildContext context,
-    RelayPalette palette,
+    ThemeData theme,
     List<RsKdeSmsConversation> conversations, {
     required bool isWide,
   }) {
+    final colorScheme = theme.colorScheme;
     if (conversations.isEmpty) {
       return Center(
         child: Padding(
           padding: const EdgeInsets.all(24),
           child: Text(
             _connected ? 'Loading conversations…' : 'No conversations cached',
-            style: RelayTypography.body(palette.textSecondary, isGnome: true),
+            style: theme.textTheme.bodyMedium?.copyWith(
+              color: colorScheme.onSurface.withValues(alpha: 0.6),
+            ),
             textAlign: TextAlign.center,
           ),
         ),
@@ -313,95 +313,69 @@ class _GnomeKdeMessagesViewState extends State<GnomeKdeMessagesView> {
     }
 
     return ListView.separated(
-      padding: const EdgeInsets.symmetric(horizontal: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 6),
       itemCount: conversations.length,
-      separatorBuilder: (_, __) => const SizedBox(height: 2),
+      separatorBuilder: (_, _) => const SizedBox(height: 2),
       itemBuilder: (context, index) {
         final conversation = conversations[index];
         final isSelected = conversation.threadId == _threadId;
         final latest = conversation.latestMessage;
         final participant = conversation.participants.isEmpty ? 'Unknown' : conversation.participants.join(', ');
 
-        return Material(
-          color: isSelected ? palette.accent.withValues(alpha: 0.12) : Colors.transparent,
-          borderRadius: BorderRadius.circular(RelayRadius.action),
-          child: InkWell(
-            borderRadius: BorderRadius.circular(RelayRadius.action),
-            onTap: () => _onSelectThread(conversation.threadId),
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-              child: Row(
-                children: [
-                  CircleAvatar(
-                    radius: 18,
-                    backgroundColor: isSelected ? palette.accent.withValues(alpha: 0.25) : palette.softSurface,
-                    child: Text(
-                      participant.characters.firstOrNull?.toUpperCase() ?? '#',
-                      style: TextStyle(
-                        color: isSelected ? palette.accent : palette.textSecondary,
-                        fontWeight: FontWeight.w600,
-                        fontSize: 14,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          children: [
-                            Expanded(
-                              child: Text(
-                                participant,
-                                style: RelayTypography.heading(palette.textPrimary, isGnome: true),
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                            ),
-                            if (latest != null) ...[
-                              const SizedBox(width: 8),
-                              Text(
-                                _formatTime(latest.date),
-                                style: RelayTypography.caption(palette.textTertiary, isGnome: true),
-                              ),
-                            ],
-                          ],
-                        ),
-                        const SizedBox(height: 3),
-                        Text(
-                          latest?.body.isNotEmpty == true ? latest!.body : (latest?.attachments.isNotEmpty == true ? 'Attachment' : 'No preview'),
-                          style: RelayTypography.caption(
-                            conversation.unreadCount > 0 ? palette.textPrimary : palette.textSecondary,
-                            isGnome: true,
-                          ),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ],
-                    ),
-                  ),
-                  if (conversation.unreadCount > 0) ...[
-                    const SizedBox(width: 8),
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                      decoration: BoxDecoration(
-                        color: palette.accent,
-                        borderRadius: BorderRadius.circular(RelayRadius.pill),
-                      ),
-                      child: Text(
-                        '${conversation.unreadCount}',
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 11,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                    ),
-                  ],
-                ],
+        return YaruMasterTile(
+          selected: isSelected,
+          onTap: () => _onSelectThread(conversation.threadId),
+          leading: CircleAvatar(
+            radius: 16,
+            backgroundColor: isSelected ? colorScheme.primary.withValues(alpha: 0.25) : colorScheme.surfaceContainerHighest,
+            child: Text(
+              participant.characters.firstOrNull?.toUpperCase() ?? '#',
+              style: TextStyle(
+                color: isSelected ? colorScheme.primary : colorScheme.onSurface,
+                fontWeight: FontWeight.w600,
+                fontSize: 13,
               ),
             ),
+          ),
+          title: Text(
+            participant,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+          subtitle: Text(
+            latest?.body.isNotEmpty == true ? latest!.body : (latest?.attachments.isNotEmpty == true ? 'Attachment' : 'No preview'),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+          trailing: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (latest != null)
+                Text(
+                  _formatTime(latest.date),
+                  style: theme.textTheme.labelSmall?.copyWith(
+                    color: colorScheme.onSurface.withValues(alpha: 0.5),
+                  ),
+                ),
+              if (conversation.unreadCount > 0) ...[
+                const SizedBox(width: 6),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: colorScheme.primary,
+                    borderRadius: BorderRadius.circular(RelayRadius.pill),
+                  ),
+                  child: Text(
+                    '${conversation.unreadCount}',
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 11,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+              ],
+            ],
           ),
         );
       },
@@ -410,121 +384,115 @@ class _GnomeKdeMessagesViewState extends State<GnomeKdeMessagesView> {
 
   Widget _buildConversationPanel(
     BuildContext context,
-    RelayPalette palette,
+    ThemeData theme,
     RsKdeSmsConversation conversation,
     List<RsKdeSmsMessage> messages, {
     required bool isWide,
   }) {
+    final colorScheme = theme.colorScheme;
     final participant = conversation.participants.isEmpty ? 'Conversation' : conversation.participants.join(', ');
 
-    // Sweeps when a message actually lands, rather than once when the thread is
-    // first opened: the id changes on every new message, a bool does not.
-    final latestIncoming = messages
-        .where((message) => message.messageType == 1)
-        .map((message) => message.id)
-        .fold<int?>(
-          null,
-          (highest, id) => highest == null || id > highest ? id : highest,
-        );
-
-    return RelayEdgeSweep(
-      burstKey: latestIncoming,
-      radius: RelayRadius.card,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          // Thread Header
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
-            decoration: BoxDecoration(
-              border: Border(bottom: BorderSide(color: palette.hairline)),
-            ),
-            child: Row(
-              children: [
-                if (!isWide)
-                  IconButton(
-                    icon: const Icon(Icons.arrow_back_rounded),
-                    onPressed: () => setState(() => _threadId = null),
-                  ),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        participant,
-                        style: RelayTypography.title(palette.textPrimary, isGnome: true),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                      const SizedBox(height: 2),
-                      Text(
-                        _connected ? 'SMS via ${widget.device.alias}' : 'Phone disconnected',
-                        style: RelayTypography.caption(palette.textSecondary, isGnome: true),
-                      ),
-                    ],
-                  ),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        // Thread Header
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          decoration: BoxDecoration(
+            border: Border(bottom: BorderSide(color: theme.dividerColor)),
+          ),
+          child: Row(
+            children: [
+              if (!isWide)
+                YaruBackButton(
+                  onPressed: () => setState(() => _threadId = null),
                 ),
-              ],
-            ),
-          ),
-
-          // Message History
-          Expanded(
-            child: messages.isEmpty
-                ? Center(
-                    child: Text(
-                      _connected ? 'Loading messages…' : 'No history loaded',
-                      style: RelayTypography.body(palette.textSecondary, isGnome: true),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      participant,
+                      style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                     ),
-                  )
-                : ListView.builder(
-                    controller: _scrollController,
-                    padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
-                    itemCount: messages.length,
-                    itemBuilder: (context, index) {
-                      final msg = messages[index];
-                      final showDate = index == 0 || !_isSameDay(messages[index - 1].date, msg.date);
-
-                      return Column(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                          if (showDate) _buildDateSeparator(palette, msg.date),
-                          _buildMessageBubble(palette, msg),
-                        ],
-                      );
-                    },
-                  ),
+                    const SizedBox(height: 2),
+                    Text(
+                      _connected ? 'SMS via ${widget.device.alias}' : 'Phone disconnected',
+                      style: theme.textTheme.bodySmall?.copyWith(color: colorScheme.onSurface.withValues(alpha: 0.6)),
+                    ),
+                  ],
+                ),
+              ),
+            ],
           ),
+        ),
 
-          // Composer Box
-          _buildComposer(palette, conversation),
-        ],
-      ),
+        // Message History
+        Expanded(
+          child: messages.isEmpty
+              ? Center(
+                  child: Text(
+                    _connected ? 'Loading messages…' : 'No history loaded',
+                    style: theme.textTheme.bodyMedium?.copyWith(color: colorScheme.onSurface.withValues(alpha: 0.6)),
+                  ),
+                )
+              : ListView.builder(
+                  controller: _scrollController,
+                  padding: const EdgeInsets.fromLTRB(16, 14, 16, 20),
+                  itemCount: messages.length,
+                  itemBuilder: (context, index) {
+                    final msg = messages[index];
+                    final showDate = index == 0 || !_isSameDay(messages[index - 1].date, msg.date);
+
+                    return Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        if (showDate) _buildDateSeparator(theme, msg.date),
+                        _MessageArrival(
+                          key: ValueKey('message-arrival-${msg.id}'),
+                          animate: _hasInitialScrolled && index == messages.length - 1,
+                          child: _buildMessageBubble(theme, msg),
+                        ),
+                      ],
+                    );
+                  },
+                ),
+        ),
+
+        // Composer Box
+        _buildComposer(theme, conversation),
+      ],
     );
   }
 
-  Widget _buildDateSeparator(RelayPalette palette, int timestamp) {
+  Widget _buildDateSeparator(ThemeData theme, int timestamp) {
+    final colorScheme = theme.colorScheme;
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 14),
+      padding: const EdgeInsets.symmetric(vertical: 12),
       child: Center(
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
           decoration: BoxDecoration(
-            color: palette.softSurface,
+            color: colorScheme.surfaceContainerHighest,
             borderRadius: BorderRadius.circular(RelayRadius.pill),
           ),
           child: Text(
             _formatDateHeader(timestamp),
-            style: RelayTypography.caption(palette.textTertiary, isGnome: true),
+            style: theme.textTheme.labelSmall?.copyWith(color: colorScheme.onSurface.withValues(alpha: 0.6)),
           ),
         ),
       ),
     );
   }
 
-  Widget _buildMessageBubble(RelayPalette palette, RsKdeSmsMessage message) {
+  Widget _buildMessageBubble(ThemeData theme, RsKdeSmsMessage message) {
+    final colorScheme = theme.colorScheme;
     final isOutgoing = message.messageType == 2;
     final isPending = message.id < 0;
+    final devicePalette = RelayDevicePalette.fromDevice(widget.device, brightness: theme.brightness);
+    final accent = devicePalette.primary;
 
     return Align(
       alignment: isOutgoing ? Alignment.centerRight : Alignment.centerLeft,
@@ -532,10 +500,10 @@ class _GnomeKdeMessagesViewState extends State<GnomeKdeMessagesView> {
         margin: const EdgeInsets.only(bottom: 8),
         constraints: const BoxConstraints(maxWidth: 480),
         decoration: BoxDecoration(
-          color: isOutgoing ? palette.accent.withValues(alpha: isPending ? 0.12 : 0.20) : palette.softSurface,
-          borderRadius: BorderRadius.circular(RelayRadius.panel),
+          color: isOutgoing ? accent.withValues(alpha: isPending ? 0.10 : 0.18) : colorScheme.surfaceContainerHighest,
+          borderRadius: BorderRadius.circular(RelayRadius.card),
           border: Border.all(
-            color: isOutgoing ? palette.accent.withValues(alpha: isPending ? 0.2 : 0.35) : palette.hairline,
+            color: isOutgoing ? accent.withValues(alpha: isPending ? 0.35 : 0.45) : theme.dividerColor,
             width: 1,
           ),
         ),
@@ -545,7 +513,7 @@ class _GnomeKdeMessagesViewState extends State<GnomeKdeMessagesView> {
           children: [
             Text(
               message.body.isEmpty && message.attachments.isNotEmpty ? 'Attachment' : message.body,
-              style: RelayTypography.body(palette.textPrimary, isGnome: true),
+              style: theme.textTheme.bodyMedium,
             ),
             const SizedBox(height: 4),
             Row(
@@ -553,7 +521,9 @@ class _GnomeKdeMessagesViewState extends State<GnomeKdeMessagesView> {
               children: [
                 Text(
                   _formatTime(message.date),
-                  style: RelayTypography.caption(palette.textTertiary, isGnome: true),
+                  style: theme.textTheme.labelSmall?.copyWith(
+                    color: colorScheme.onSurface.withValues(alpha: 0.5),
+                  ),
                 ),
                 if (isPending) ...[
                   const SizedBox(width: 6),
@@ -562,7 +532,7 @@ class _GnomeKdeMessagesViewState extends State<GnomeKdeMessagesView> {
                     height: 10,
                     child: CircularProgressIndicator(
                       strokeWidth: 1.5,
-                      color: palette.accent,
+                      color: accent,
                     ),
                   ),
                 ],
@@ -574,10 +544,11 @@ class _GnomeKdeMessagesViewState extends State<GnomeKdeMessagesView> {
     );
   }
 
-  Widget _buildComposer(RelayPalette palette, RsKdeSmsConversation conversation) {
+  Widget _buildComposer(ThemeData theme, RsKdeSmsConversation conversation) {
+    final colorScheme = theme.colorScheme;
     final hasDraft = _composerController.text.trim().isNotEmpty;
     final canSendNow = _canSend && hasDraft;
-    final focused = _composerFocus.hasFocus;
+    final devicePalette = RelayDevicePalette.fromDevice(widget.device, brightness: theme.brightness);
 
     return Container(
       padding: const EdgeInsets.fromLTRB(
@@ -586,45 +557,53 @@ class _GnomeKdeMessagesViewState extends State<GnomeKdeMessagesView> {
         relayComposerHorizontalPadding,
         relayComposerVerticalPadding,
       ),
-      decoration: BoxDecoration(
-        color: palette.canvasTonalHigh,
-        border: Border(top: BorderSide(color: palette.hairline)),
-      ),
+      color: colorScheme.surface,
       child: CallbackShortcuts(
         bindings: {
           const SingleActivator(LogicalKeyboardKey.enter, control: true): () => _sendSms(conversation),
         },
         child: Row(
-          // Bottom-aligned so a growing message pushes the field upwards and
-          // leaves Send sitting on the same line it started on.
           crossAxisAlignment: CrossAxisAlignment.end,
           children: [
             Expanded(
-              child: ConstrainedBox(
-                key: const ValueKey('kde-composer-field'),
-                constraints: const BoxConstraints(minHeight: relayComposerFieldMinHeight),
-                child: Container(
-                  decoration: BoxDecoration(
-                    color: palette.elevated,
-                    borderRadius: BorderRadius.circular(relayComposerFieldRadius),
-                    // Focus is a warm border and nothing more: no glow, no ring.
-                    border: Border.all(color: focused ? palette.accent.withValues(alpha: 0.55) : palette.hairline),
-                  ),
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+              child: AnimatedSize(
+                duration: MediaQuery.disableAnimationsOf(context) ? Duration.zero : RelayMotion.state,
+                curve: RelayMotion.focusCurve,
+                alignment: Alignment.bottomCenter,
+                child: ConstrainedBox(
+                  key: const ValueKey('kde-composer-field'),
+                  constraints: const BoxConstraints(minHeight: relayComposerFieldMinHeight),
                   child: TextField(
                     controller: _composerController,
                     focusNode: _composerFocus,
-                    // Grows to four lines, then scrolls inside itself rather
-                    // than pushing the conversation off the top of the pane.
                     maxLines: 4,
                     minLines: 1,
-                    style: RelayTypography.body(palette.textPrimary, isGnome: true),
+                    style: theme.textTheme.bodyMedium,
                     decoration: InputDecoration(
                       hintText: _sendBlockedReason ?? 'Message',
-                      hintStyle: RelayTypography.body(palette.textTertiary, isGnome: true),
-                      border: InputBorder.none,
+                      hintStyle: theme.textTheme.bodyMedium?.copyWith(
+                        color: colorScheme.onSurface.withValues(alpha: 0.5),
+                      ),
+                      filled: true,
+                      fillColor: colorScheme.surfaceContainerHighest,
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(relayComposerFieldRadius),
+                        borderSide: BorderSide(color: theme.dividerColor),
+                      ),
+                      enabledBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(relayComposerFieldRadius),
+                        borderSide: BorderSide(color: theme.dividerColor),
+                      ),
+                      focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(relayComposerFieldRadius),
+                        borderSide: BorderSide(color: devicePalette.primary, width: 1.5),
+                      ),
+                      disabledBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(relayComposerFieldRadius),
+                        borderSide: BorderSide(color: theme.dividerColor.withValues(alpha: 0.6)),
+                      ),
                       isDense: true,
-                      contentPadding: EdgeInsets.zero,
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
                     ),
                     enabled: _canSend,
                     onChanged: (_) => setState(() {}),
@@ -692,21 +671,64 @@ class _RelaySendButton extends StatefulWidget {
   State<_RelaySendButton> createState() => _RelaySendButtonState();
 }
 
-class _RelaySendButtonState extends State<_RelaySendButton> with SingleTickerProviderStateMixin {
+class _RelaySendButtonState extends State<_RelaySendButton> {
+  bool _pressed = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedScale(
+      scale: _pressed ? RelayMotion.tactileScale : 1.0,
+      duration: RelayMotion.press,
+      curve: RelayMotion.curve,
+      child: SizedBox(
+        key: const ValueKey('kde-composer-send'),
+        height: widget.height,
+        width: widget.width,
+        child: Listener(
+          onPointerDown: (_) => setState(() => _pressed = true),
+          onPointerUp: (_) => setState(() => _pressed = false),
+          onPointerCancel: (_) => setState(() => _pressed = false),
+          child: FilledButton(
+            style: FilledButton.styleFrom(
+              padding: EdgeInsets.zero,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(RelayRadius.button),
+              ),
+            ),
+            onPressed: widget.enabled ? widget.onPressed : null,
+            child: const Text('Send'),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Animates only the newest bubble once a conversation is already open.
+class _MessageArrival extends StatefulWidget {
+  final bool animate;
+  final Widget child;
+
+  const _MessageArrival({super.key, required this.animate, required this.child});
+
+  @override
+  State<_MessageArrival> createState() => _MessageArrivalState();
+}
+
+class _MessageArrivalState extends State<_MessageArrival> with SingleTickerProviderStateMixin {
   late final AnimationController _controller;
-  late final Animation<double> _scaleAnimation;
 
   @override
   void initState() {
     super.initState();
     _controller = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 140),
+      duration: RelayMotion.navigation,
+      value: widget.animate ? 0 : 1,
     );
-    _scaleAnimation = TweenSequence<double>([
-      TweenSequenceItem(tween: Tween(begin: 1.0, end: 0.96).chain(CurveTween(curve: Curves.easeOut)), weight: 50),
-      TweenSequenceItem(tween: Tween(begin: 0.96, end: 1.0).chain(CurveTween(curve: Curves.easeOutCubic)), weight: 50),
-    ]).animate(_controller);
+    if (widget.animate) {
+      unawaited(_controller.forward());
+    }
   }
 
   @override
@@ -715,37 +737,19 @@ class _RelaySendButtonState extends State<_RelaySendButton> with SingleTickerPro
     super.dispose();
   }
 
-  void _handleTap() {
-    if (!widget.enabled || widget.onPressed == null) return;
-    if (!MediaQuery.disableAnimationsOf(context)) {
-      _controller.forward(from: 0.0);
-    }
-    widget.onPressed!();
-  }
-
   @override
   Widget build(BuildContext context) {
-    final palette = Theme.of(context).relayPalette;
-
-    return ScaleTransition(
-      scale: _scaleAnimation,
-      child: SizedBox(
-        key: const ValueKey('kde-composer-send'),
-        height: widget.height,
-        width: widget.width,
-        child: DecoratedBox(
-          decoration: BoxDecoration(
-            color: widget.enabled ? Colors.transparent : palette.softSurface,
-            borderRadius: BorderRadius.circular(RelayRadius.button),
-          ),
-          child: AdwButton(
-            label: 'Send',
-            style: AdwButtonStyle.suggested,
-            padding: EdgeInsets.zero,
-            onPressed: widget.enabled ? _handleTap : null,
-          ),
-        ),
-      ),
+    if (!widget.animate || MediaQuery.disableAnimationsOf(context)) return widget.child;
+    return AnimatedBuilder(
+      animation: _controller,
+      child: widget.child,
+      builder: (context, child) {
+        final value = RelayMotion.curve.transform(_controller.value);
+        return Opacity(
+          opacity: value,
+          child: Transform.translate(offset: Offset(0, 6 * (1 - value)), child: child),
+        );
+      },
     );
   }
 }

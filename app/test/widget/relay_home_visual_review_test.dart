@@ -114,9 +114,12 @@ void main() {
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.reset);
     await tester.pumpWidget(
-      MaterialApp(
-        theme: getTheme(ColorMode.relay, Colors.blue, Brightness.dark, null),
-        home: RelayShell(vm: vm, animationsEnabled: false, onSelectPayload: () {}),
+      MediaQuery(
+        data: const MediaQueryData(disableAnimations: true),
+        child: MaterialApp(
+          theme: getTheme(ColorMode.relay, Colors.blue, Brightness.dark, null),
+          home: RelayShell(vm: vm, animationsEnabled: false, onSelectPayload: () {}),
+        ),
       ),
     );
     await tester.pumpAndSettle();

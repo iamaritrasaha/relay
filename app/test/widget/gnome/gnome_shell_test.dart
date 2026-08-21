@@ -3,6 +3,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mockito/mockito.dart';
 import 'package:refena_flutter/refena_flutter.dart';
+import 'package:relay_app/config/relay_brand.dart';
+import 'package:relay_app/config/relay_motion.dart';
 import 'package:relay_app/config/theme.dart';
 import 'package:relay_app/model/persistence/color_mode.dart';
 import 'package:relay_app/model/persistence/quick_save_mode.dart';
@@ -15,7 +17,9 @@ import 'package:relay_app/pages/relay_home_vm.dart';
 import 'package:relay_app/provider/device_info_provider.dart';
 import 'package:relay_app/provider/persistence_provider.dart';
 import 'package:relay_app/util/ui/dynamic_colors.dart';
-import 'package:relay_app/widget/relay/relay_device_silhouette.dart';
+import 'package:relay_app/widget/gnome/adw_boxed_list.dart';
+import 'package:relay_app/widget/relay_motion/relay_breath.dart';
+import 'package:relay_app/widget/relay_motion/relay_edge_sweep.dart';
 import 'package:relay_isolates/isolate.dart';
 import 'package:relay_isolates/model/device.dart';
 import 'package:relay_isolates/model/device_info_result.dart';
@@ -64,6 +68,7 @@ class _TestIsolateController extends IsolateController {
 
 void main() {
   final darkTheme = getTheme(ColorMode.relay, Colors.teal, Brightness.dark, null);
+  final lightTheme = getTheme(ColorMode.relay, Colors.teal, Brightness.light, null);
 
   late _TestPersistenceService mockPersistence;
 
@@ -104,6 +109,7 @@ void main() {
     when(mockPersistence.setEnableAnimations(any)).thenAnswer((_) async {});
     when(mockPersistence.setSaveToHistory(any)).thenAnswer((_) async {});
     when(mockPersistence.setAutoFinish(any)).thenAnswer((_) async {});
+    when(mockPersistence.setGnomePanelShowNetworkType(any)).thenAnswer((_) async {});
   });
 
   const testDevice = RelayDeviceVm(
@@ -171,7 +177,56 @@ void main() {
     expect(find.text('Messages'), findsWidgets);
   });
 
-  testWidgets('GnomeSettingsView renders all 5 reconstructed semantic groups with truthful labels', (tester) async {
+  testWidgets('GNOME navigation transition is finite and honours the motion preference', (tester) async {
+    tester.view.physicalSize = const Size(1200, 800);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(() => tester.view.resetPhysicalSize());
+
+    await tester.pumpWidget(
+      RefenaScope(
+        overrides: [
+          persistenceProvider.overrideWithValue(mockPersistence),
+          dynamicColorsProvider.overrideWithValue(null),
+          deviceRawInfoProvider.overrideWithValue(
+            DeviceInfoResult(deviceType: DeviceType.desktop, deviceModel: 'Linux', androidSdkInt: null),
+          ),
+          parentIsolateProvider.overrideWithNotifier((ref) => _TestIsolateController()),
+        ],
+        child: MaterialApp(
+          theme: darkTheme,
+          home: const GnomeShell(vm: testVm, animationsEnabled: true),
+        ),
+      ),
+    );
+    expect(
+      tester.widgetList<AnimatedSwitcher>(find.byType(AnimatedSwitcher)).where((switcher) => switcher.duration == RelayMotion.navigation),
+      hasLength(1),
+    );
+    expect(RelayMotion.navigation, const Duration(milliseconds: 220));
+
+    await tester.pumpWidget(
+      RefenaScope(
+        overrides: [
+          persistenceProvider.overrideWithValue(mockPersistence),
+          dynamicColorsProvider.overrideWithValue(null),
+          deviceRawInfoProvider.overrideWithValue(
+            DeviceInfoResult(deviceType: DeviceType.desktop, deviceModel: 'Linux', androidSdkInt: null),
+          ),
+          parentIsolateProvider.overrideWithNotifier((ref) => _TestIsolateController()),
+        ],
+        child: MaterialApp(
+          theme: darkTheme,
+          home: const GnomeShell(vm: testVm, animationsEnabled: false),
+        ),
+      ),
+    );
+    expect(
+      tester.widgetList<AnimatedSwitcher>(find.byType(AnimatedSwitcher)).where((switcher) => switcher.duration == RelayMotion.navigation),
+      isEmpty,
+    );
+  });
+
+  testWidgets('GnomeSettingsView uses a constrained native preference document with unchanged controls', (tester) async {
     debugDefaultTargetPlatformOverride = TargetPlatform.linux;
     try {
       tester.view.physicalSize = const Size(1200, 1000);
@@ -200,61 +255,110 @@ void main() {
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 200));
 
-      // 1. THIS DEVICE Hero (truthful identity, no false live readiness)
-      expect(find.text('THIS DEVICE'), findsOneWidget);
-      expect(find.byType(RelayDeviceSilhouette), findsOneWidget);
+      // Identity is now an ordinary joined action row, not a hero card.
       expect(find.text('Fedora Workstation'), findsOneWidget);
-      expect(find.text('Desktop · Relay Device'), findsOneWidget);
+      expect(find.text('Desktop · Relay device'), findsOneWidget);
       expect(find.text('Ready on Local Network'), findsNothing);
 
-      // 2. GENERAL
       expect(find.text('General'), findsOneWidget);
-      expect(find.text('Spatial Animations'), findsOneWidget);
+      expect(find.text('GENERAL'), findsNothing);
+      expect(find.text('Spatial animations'), findsOneWidget);
+      expect(find.text('Theme'), findsOneWidget);
+      expect(find.text('Color theme'), findsOneWidget);
+      expect(find.text('Language'), findsOneWidget);
 
-      // 3. DEVICES (truthful pairing entry point)
       expect(find.text('Devices'), findsOneWidget);
-      expect(find.text('Pair New Device'), findsOneWidget);
+      expect(find.text('Pair new device'), findsOneWidget);
 
-      // GNOME Panel (Linux only)
+      // One continuous GNOME Panel group contains the selector and four switches.
       expect(find.text('GNOME Panel'), findsOneWidget);
       expect(find.text('Panel device'), findsOneWidget);
-      expect(find.text('Show network type'), findsOneWidget);
-      expect(find.text('Show battery percentage'), findsOneWidget);
-      expect(find.text('Show notifications indicator'), findsOneWidget);
+      expect(find.text('Network type'), findsOneWidget);
+      expect(find.text('Battery percentage'), findsOneWidget);
+      expect(find.text('Notifications'), findsOneWidget);
       expect(find.text('Charging animation'), findsOneWidget);
+      final panelGroup = find.byKey(const ValueKey('settings-group-gnome-panel'));
+      expect(find.descendant(of: panelGroup, matching: find.byType(AdwBoxedList)), findsOneWidget);
+      expect(find.descendant(of: panelGroup, matching: find.byType(Switch)), findsNWidgets(4));
 
-      // 4. TRANSFERS (truthful favorites semantics)
       expect(find.text('Transfers'), findsOneWidget);
-      expect(find.text('Destination Directory'), findsOneWidget);
-      expect(find.text('Quick Save'), findsOneWidget);
-      expect(find.text('Quick Save from Favorites'), findsOneWidget);
-      expect(find.text('Automatically accept transfers from devices marked as favorites'), findsOneWidget);
+      expect(find.text('Destination directory'), findsOneWidget);
+      expect(find.text('Quick save'), findsOneWidget);
+      expect(find.text('Quick save from favorites'), findsOneWidget);
+      expect(find.text('Accept transfers automatically from favorite devices'), findsOneWidget);
       expect(find.text('Quick Save from Paired Only'), findsNothing);
       expect(find.text('Auto-accept only from verified trusted peers'), findsNothing);
-      expect(find.text('Save to History'), findsOneWidget);
-      expect(find.text('Auto-Finish'), findsOneWidget);
+      expect(find.text('Save to history'), findsOneWidget);
+      expect(find.text('Finish completed transfers automatically'), findsOneWidget);
 
-      // 5. PRIVACY & SECURITY — reported state plus the two real checksum toggles
-      expect(find.text('Privacy & Security'), findsOneWidget);
+      expect(find.text('Advanced'), findsOneWidget);
       expect(find.text('Transport encryption'), findsOneWidget);
       expect(find.text('Create checksums'), findsOneWidget);
       expect(find.text('Verify checksums'), findsOneWidget);
 
-      // 6. APPEARANCE
-      expect(find.text('Appearance'), findsOneWidget);
-      expect(find.text('Theme'), findsOneWidget);
-      expect(find.text('Color Theme'), findsOneWidget);
-      expect(find.text('Language'), findsOneWidget);
-
-      // 7. ABOUT RELAY
       expect(find.text('About Relay'), findsOneWidget);
       expect(find.text('About'), findsOneWidget);
       expect(find.text('Changelog'), findsOneWidget);
 
-      // Interactivity: Randomize alias writes to settings
-      await tester.tap(find.byTooltip('Random Name'));
+      final document = tester.widget<ConstrainedBox>(find.byKey(const ValueKey('gnome-settings-document')));
+      expect(document.constraints.maxWidth, 760);
+      expect(tester.widget<SingleChildScrollView>(find.byType(SingleChildScrollView)).padding, const EdgeInsets.fromLTRB(32, 24, 32, 36));
+      expect(find.byType(AdwBoxedList), findsNWidgets(6));
+      expect(find.byType(RelayBreath), findsNothing);
+      expect(find.byType(RelayEdgeSweep), findsNothing);
+      expect(find.byType(DropdownButton), findsNothing);
+      for (final toggle in tester.widgetList<Switch>(find.byType(Switch))) {
+        expect(toggle.activeTrackColor, isNull);
+      }
+
+      // Preference rows form one clipped surface: only the group's outer
+      // geometry is rounded, so dividers and Ink effects stay inside it.
+      final group = find.byType(AdwBoxedList).first;
+      final material = tester.widget<Material>(find.descendant(of: group, matching: find.byType(Material)).first);
+      expect(material.clipBehavior, Clip.antiAlias);
+      expect((material.shape! as RoundedRectangleBorder).borderRadius, BorderRadius.circular(RelayRadius.panel));
+      expect(RelayRadius.hero, lessThanOrEqualTo(18));
+
+      // Interactivity and persistence behavior remain wired to the same setting.
+      await tester.tap(find.text('Generate a random device name'));
       await tester.pump();
       verify(mockPersistence.setAlias(any)).called(1);
+
+      await tester.ensureVisible(find.text('Network type'));
+      await tester.tap(find.text('Network type'));
+      await tester.pump();
+      verify(mockPersistence.setGnomePanelShowNetworkType(false)).called(1);
+
+      // The whole value row opens the native popup selector.
+      await tester.ensureVisible(find.text('Panel device'));
+      await tester.tap(find.text('Panel device'));
+      await tester.pumpAndSettle();
+      expect(find.text('Follow selected device'), findsNWidgets(2));
+      Navigator.of(tester.element(find.text('Follow selected device').last)).pop();
+      await tester.pumpAndSettle();
+
+      // The same document builds in Yaru light and switches to compact padding.
+      tester.view.physicalSize = const Size(560, 1000);
+      await tester.pumpWidget(
+        RefenaScope(
+          overrides: [
+            persistenceProvider.overrideWithValue(mockPersistence),
+            dynamicColorsProvider.overrideWithValue(null),
+            deviceRawInfoProvider.overrideWithValue(
+              DeviceInfoResult(deviceType: DeviceType.desktop, deviceModel: 'Linux', androidSdkInt: null),
+            ),
+            parentIsolateProvider.overrideWithNotifier((ref) => _TestIsolateController()),
+          ],
+          child: MaterialApp(
+            theme: lightTheme,
+            home: const Scaffold(body: GnomeSettingsView()),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+      expect(find.byType(AdwBoxedList), findsNWidgets(6));
+      expect(tester.widget<SingleChildScrollView>(find.byType(SingleChildScrollView)).padding, const EdgeInsets.fromLTRB(16, 24, 16, 36));
     } finally {
       debugDefaultTargetPlatformOverride = null;
     }

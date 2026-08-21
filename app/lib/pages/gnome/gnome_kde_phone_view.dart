@@ -1,14 +1,15 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:refena_flutter/refena_flutter.dart';
 import 'package:relay_app/config/relay_brand.dart';
 import 'package:relay_app/model/ui/relay_device_vm.dart';
+import 'package:relay_app/provider/animation_provider.dart';
 import 'package:relay_app/provider/kdeconnect_provider.dart';
-import 'package:relay_app/widget/gnome/adw_button.dart';
-import 'package:relay_app/widget/relay_carbon/relay_surface.dart';
-import 'package:relay_app/widget/relay_motion/relay_breath.dart';
-import 'package:relay_app/widget/relay_motion/relay_edge_sweep.dart';
+import 'package:relay_app/widget/gnome/adw_action_row.dart';
+import 'package:relay_app/widget/gnome/adw_boxed_list.dart';
+import 'package:yaru/yaru.dart';
 
 /// Telephony and call-awareness surface for KDE Connect peers.
 ///
@@ -29,30 +30,40 @@ class GnomeKdePhoneView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final palette = Theme.of(context).relayPalette;
+    final theme = Theme.of(context);
     final kdeState = context.watch(kdeConnectProvider);
     final activeCall = kdeState.activeCalls[_deviceId];
     final recentEvents = kdeState.recentTelephonyEvents[_deviceId] ?? const <KdeTelephonyState>[];
+    final animationsEnabled = context.watch(animationProvider) && !MediaQuery.disableAnimationsOf(context);
 
     final isRinging = activeCall?.event == 'ringing';
     final isInCall = activeCall?.event == 'talking';
     final hasActive = activeCall != null && !activeCall.isCancel;
 
     return SingleChildScrollView(
-      padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 28),
+      padding: const EdgeInsets.fromLTRB(24, 24, 24, 36),
       child: Center(
         child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 680),
+          key: const ValueKey('phone-document'),
+          constraints: const BoxConstraints(maxWidth: 760),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              _buildHeader(context, palette),
+              _buildHeader(theme),
               const SizedBox(height: 24),
-              _buildActiveCallCard(context, palette, activeCall, isRinging, isInCall, hasActive),
-              const SizedBox(height: 20),
-              _buildCallLimitationsNote(palette),
-              const SizedBox(height: 28),
-              _buildRecentActivity(palette, recentEvents),
+              _buildCallStatus(
+                context,
+                theme,
+                activeCall,
+                isRinging: isRinging,
+                isInCall: isInCall,
+                hasActive: hasActive,
+                animationsEnabled: animationsEnabled,
+              ),
+              const SizedBox(height: 14),
+              _buildCallLimitationsNote(theme),
+              const SizedBox(height: 26),
+              _buildRecentCalls(theme, recentEvents),
             ],
           ),
         ),
@@ -60,153 +71,102 @@ class GnomeKdePhoneView extends StatelessWidget {
     );
   }
 
-  Widget _buildHeader(BuildContext context, RelayPalette palette) {
+  Widget _buildHeader(ThemeData theme) {
     return Row(
       children: [
-        AdwButton.flat(
-          icon: Icons.arrow_back_rounded,
-          label: 'Devices',
-          onPressed: onBack,
-        ),
-        const SizedBox(width: 14),
-        Text('Phone & Calls', style: RelayTypography.largeTitle(palette.textPrimary, isGnome: true)),
+        YaruBackButton(onPressed: onBack),
+        const SizedBox(width: 10),
+        Text('Phone & Calls', style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600)),
       ],
     );
   }
 
-  Widget _buildActiveCallCard(
+  Widget _buildCallStatus(
     BuildContext context,
-    RelayPalette palette,
-    KdeTelephonyState? activeCall,
-    bool isRinging,
-    bool isInCall,
-    bool hasActive,
-  ) {
+    ThemeData theme,
+    KdeTelephonyState? activeCall, {
+    required bool isRinging,
+    required bool isInCall,
+    required bool hasActive,
+    required bool animationsEnabled,
+  }) {
     final caller = activeCall?.contactName ?? activeCall?.phoneNumber ?? 'Unknown caller';
     final number = activeCall?.phoneNumber;
+    final stateLabel = isRinging ? 'Incoming call' : (isInCall ? 'In call' : 'No active call');
+    final subtitle = hasActive && number != null && number != caller ? '$stateLabel · $number' : stateLabel;
+    final stateKey = hasActive ? '${activeCall!.event}-${activeCall.timestamp}' : 'idle';
 
-    final cardContent = RelaySurface(
-      radius: RelayRadius.card,
-      accented: hasActive,
-      outlined: true,
-      padding: const EdgeInsets.all(24),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Row(
-            children: [
-              Container(
-                width: 48,
-                height: 48,
-                decoration: BoxDecoration(
-                  color: isRinging
-                      ? palette.accent.withValues(alpha: 0.18)
-                      : (isInCall ? palette.success.withValues(alpha: 0.18) : palette.softSurface),
-                  shape: BoxShape.circle,
-                ),
-                child: Icon(
-                  isRinging ? Icons.ring_volume_rounded : (isInCall ? Icons.phone_in_talk_rounded : Icons.phone_outlined),
-                  color: isRinging ? palette.accent : (isInCall ? palette.success : palette.textSecondary),
-                  size: 24,
-                ),
-              ),
-              const SizedBox(width: 18),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      isRinging ? 'Incoming Call…' : (isInCall ? 'In Call' : 'No Active Call'),
-                      style: RelayTypography.caption(
-                        isRinging ? palette.accent : (isInCall ? palette.success : palette.textTertiary),
-                        isGnome: true,
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      hasActive ? caller : device.alias,
-                      style: RelayTypography.title(palette.textPrimary, isGnome: true),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                    if (hasActive && number != null && number != caller) ...[
-                      const SizedBox(height: 2),
-                      Text(
-                        number,
-                        style: RelayTypography.caption(palette.textSecondary, isGnome: true),
-                      ),
-                    ],
-                  ],
-                ),
-              ),
-            ],
-          ),
-          if (isRinging && device.canMuteRinger) ...[
-            const SizedBox(height: 20),
-            Row(
-              children: [
-                Expanded(
-                  child: AdwButton(
-                    icon: Icons.volume_off_rounded,
-                    label: 'Mute Phone Ringer',
-                    style: AdwButtonStyle.destructive,
-                    isPill: true,
-                    onPressed: () => unawaited(
-                      context
-                          .redux(kdeConnectProvider)
-                          .dispatchAsync(
-                            KdeConnectMuteCallAction(_deviceId),
-                          ),
-                    ),
-                  ),
-                ),
-              ],
+    final devicePalette = RelayDevicePalette.fromDevice(device, brightness: theme.brightness);
+
+    return AdwPreferencesGroup(
+      key: const ValueKey('phone-call-status-section'),
+      title: 'Call Status',
+      uppercaseTitle: false,
+      margin: EdgeInsets.zero,
+      rowPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+      rowMinHeight: 68,
+      children: [
+        AnimatedSwitcher(
+          key: const ValueKey('phone-call-state-switcher'),
+          duration: animationsEnabled ? const Duration(milliseconds: 200) : Duration.zero,
+          reverseDuration: animationsEnabled ? const Duration(milliseconds: 180) : Duration.zero,
+          switchInCurve: Curves.easeOutCubic,
+          switchOutCurve: Curves.easeInOutCubic,
+          transitionBuilder: (child, animation) => FadeTransition(
+            opacity: animation,
+            child: SlideTransition(
+              position: Tween<Offset>(begin: const Offset(0, 0.1), end: Offset.zero).animate(animation),
+              child: child,
             ),
-          ],
-        ],
-      ),
-    );
-
-    if (hasActive) {
-      // A ringing phone is a state, not an event: the segment travels for as
-      // long as it rings. In call the card only breathes, which is calmer and
-      // stops the page competing with the conversation.
-      return RelayEdgeSweep(
-        ambient: isRinging,
-        radius: RelayRadius.card,
-        child: RelayBreath(
-          active: true,
-          radius: RelayRadius.card,
-          child: cardContent,
+          ),
+          child: AdwActionRow(
+            key: ValueKey('phone-call-state-$stateKey'),
+            leading: _CallStateIcon(
+              eventKey: stateKey,
+              ringing: isRinging,
+              inCall: isInCall,
+              palette: devicePalette,
+              animationsEnabled: animationsEnabled,
+            ),
+            title: hasActive ? caller : device.alias,
+            subtitle: subtitle,
+            trailing: isRinging && device.canMuteRinger
+                ? TextButton.icon(
+                    icon: const Icon(YaruIcons.speaker_muted, size: 16),
+                    label: const Text('Mute'),
+                    onPressed: () => unawaited(
+                      context.redux(kdeConnectProvider).dispatchAsync(KdeConnectMuteCallAction(_deviceId)),
+                    ),
+                  )
+                : null,
+          ),
         ),
-      );
-    }
-
-    return cardContent;
+      ],
+    );
   }
 
-  Widget _buildCallLimitationsNote(RelayPalette palette) {
-    return RelaySurface(
-      radius: RelayRadius.panel,
-      inset: true,
-      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
+  Widget _buildCallLimitationsNote(ThemeData theme) {
+    final colorScheme = theme.colorScheme;
+    return Padding(
+      key: const ValueKey('phone-inline-info-note'),
+      padding: const EdgeInsets.symmetric(horizontal: 4),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(Icons.info_outline_rounded, size: 20, color: palette.textTertiary),
-          const SizedBox(width: 14),
+          Icon(YaruIcons.information, size: 18, color: colorScheme.onSurfaceVariant),
+          const SizedBox(width: 10),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  'Call audio & dialing remain on your phone',
-                  style: RelayTypography.heading(palette.textSecondary, isGnome: true),
+                  'Call audio and dialing remain on your phone',
+                  style: theme.textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w600, color: colorScheme.onSurfaceVariant),
                 ),
-                const SizedBox(height: 4),
+                const SizedBox(height: 2),
                 Text(
-                  'Standard companion protocols broadcast call events and ringer control. Cellular voice audio is handled directly by ${device.alias}.',
-                  style: RelayTypography.caption(palette.textTertiary, isGnome: true),
+                  'Relay mirrors call events and available companion controls. Cellular voice audio stays on ${device.alias}.',
+                  style: theme.textTheme.bodySmall?.copyWith(color: colorScheme.onSurface.withValues(alpha: 0.6)),
                 ),
               ],
             ),
@@ -216,70 +176,129 @@ class GnomeKdePhoneView extends StatelessWidget {
     );
   }
 
-  Widget _buildRecentActivity(RelayPalette palette, List<KdeTelephonyState> recentEvents) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
+  Widget _buildRecentCalls(ThemeData theme, List<KdeTelephonyState> recentEvents) {
+    final colorScheme = theme.colorScheme;
+
+    return AdwPreferencesGroup(
+      key: const ValueKey('phone-recent-calls-section'),
+      title: 'Recent Calls',
+      description: 'This session',
+      uppercaseTitle: false,
+      margin: EdgeInsets.zero,
+      rowPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+      rowMinHeight: 60,
       children: [
-        RelaySectionLabel(label: 'Recent Call Activity (This Session)'),
-        const SizedBox(height: 12),
         if (recentEvents.isEmpty)
-          RelaySurface(
-            radius: RelayRadius.panel,
-            inset: true,
-            padding: const EdgeInsets.all(20),
-            child: Center(
-              child: Text(
-                'No recent calls observed during this session',
-                style: RelayTypography.body(palette.textTertiary, isGnome: true),
-              ),
-            ),
+          const AdwActionRow(
+            leading: Icon(YaruIcons.phone),
+            title: 'No recent calls',
+            subtitle: 'Calls from this device will appear here.',
           )
         else
-          RelaySurface(
-            radius: RelayRadius.panel,
-            outlined: true,
-            child: ListView.separated(
-              shrinkWrap: true,
-              physics: const NeverScrollableScrollPhysics(),
-              itemCount: recentEvents.length.clamp(0, 15),
-              separatorBuilder: (_, __) => Divider(color: palette.hairline, height: 1),
-              itemBuilder: (context, index) {
-                final item = recentEvents[index];
-                final isMissed = item.event == 'missedCall';
-                final isTalking = item.event == 'talking';
-                final title = item.contactName ?? item.phoneNumber ?? 'Unknown caller';
-
-                return ListTile(
-                  contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-                  leading: Icon(
-                    isMissed ? Icons.phone_missed_rounded : (isTalking ? Icons.phone_in_talk_rounded : Icons.ring_volume_rounded),
-                    color: isMissed ? palette.error : (isTalking ? palette.success : palette.accent),
-                    size: 20,
-                  ),
-                  title: Text(
-                    title,
-                    style: RelayTypography.heading(palette.textPrimary, isGnome: true),
-                  ),
-                  subtitle: Text(
-                    isMissed ? 'Missed call' : (isTalking ? 'Call connected' : 'Ringing'),
-                    style: RelayTypography.caption(palette.textSecondary, isGnome: true),
-                  ),
-                  trailing: Text(
-                    _formatTime(item.timestamp),
-                    style: RelayTypography.caption(palette.textTertiary, isGnome: true),
-                  ),
-                );
-              },
+          for (final item in recentEvents.take(15))
+            AdwActionRow(
+              key: ValueKey('phone-call-history-${item.timestamp}-${item.event}'),
+              leading: Icon(_callIcon(item.event)),
+              title: item.contactName ?? item.phoneNumber ?? 'Unknown caller',
+              subtitle: _callLabel(item.event),
+              trailing: SizedBox(
+                width: 48,
+                child: Text(
+                  _formatTime(item.timestamp),
+                  textAlign: TextAlign.end,
+                  style: theme.textTheme.labelSmall?.copyWith(color: colorScheme.onSurface.withValues(alpha: 0.5)),
+                ),
+              ),
             ),
-          ),
       ],
     );
   }
+
+  static IconData _callIcon(String event) => switch (event) {
+    'missedCall' => YaruIcons.call_stop,
+    'talking' => YaruIcons.call_incoming,
+    _ => YaruIcons.bell,
+  };
+
+  static String _callLabel(String event) => switch (event) {
+    'missedCall' => 'Missed call',
+    'talking' => 'Call connected',
+    _ => 'Ringing',
+  };
 
   static String _formatTime(int timestampMs) {
     final dt = DateTime.fromMillisecondsSinceEpoch(timestampMs);
     final hour = dt.hour.toString().padLeft(2, '0');
     final minute = dt.minute.toString().padLeft(2, '0');
     return '$hour:$minute';
+  }
+}
+
+/// A finite acknowledgement for a newly ringing call with subtle phone oscillation and palette tint.
+class _CallStateIcon extends StatelessWidget {
+  final String eventKey;
+  final bool ringing;
+  final bool inCall;
+  final RelayDevicePalette palette;
+  final bool animationsEnabled;
+
+  const _CallStateIcon({
+    required this.eventKey,
+    required this.ringing,
+    required this.inCall,
+    required this.palette,
+    required this.animationsEnabled,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final icon = ringing ? YaruIcons.bell : (inCall ? YaruIcons.call_incoming : YaruIcons.phone);
+    final accent = ringing || inCall ? palette.primary : colorScheme.onSurfaceVariant;
+    final motionOn = animationsEnabled && !(MediaQuery.maybeDisableAnimationsOf(context) ?? false);
+
+    return SizedBox(
+      width: 36,
+      height: 36,
+      child: TweenAnimationBuilder<double>(
+        key: ValueKey('phone-call-indicator-$eventKey'),
+        tween: Tween(begin: 0, end: 1),
+        duration: ringing && motionOn ? const Duration(milliseconds: 750) : Duration.zero,
+        curve: Curves.easeOutCubic,
+        builder: (context, value, child) {
+          final angle = (ringing && motionOn && value < 1.0) ? 0.05 * math.sin(value * 4 * math.pi) : 0.0;
+
+          return Stack(
+            alignment: Alignment.center,
+            children: [
+              if (ringing && motionOn && value < 1.0)
+                Container(
+                  width: 10 + (18 * value),
+                  height: 10 + (18 * value),
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    border: Border.all(color: accent.withValues(alpha: 0.45 * (1 - value)), width: 1.5),
+                  ),
+                ),
+              Transform.rotate(
+                angle: angle,
+                child: child!,
+              ),
+            ],
+          );
+        },
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            color: accent.withValues(alpha: 0.12),
+          ),
+          child: SizedBox(
+            width: 34,
+            height: 34,
+            child: Center(child: Icon(icon, size: 18, color: accent)),
+          ),
+        ),
+      ),
+    );
   }
 }
