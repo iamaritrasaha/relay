@@ -141,34 +141,4 @@ void main() {
   testWidgets('desktop About', (tester) async {
     await render(tester, const Size(1440, 900), RelayDesktopFixtures.about(), 'goldens/relay_product_review/desktop_about.png');
   });
-
-  testWidgets('Android Home', (tester) async {
-    await render(
-      tester,
-      const Size(393, 873),
-      RelayDesktopFixtures.home(state: RelayHomeState.nearby),
-      'goldens/relay_product_review/android_home.png',
-    );
-  });
-
-  testWidgets('Android Home sending', (tester) async {
-    await render(
-      tester,
-      const Size(393, 873),
-      RelayDesktopFixtures.home(state: RelayHomeState.sending),
-      'goldens/relay_product_review/android_home_sending.png',
-    );
-  });
-
-  testWidgets('Android Add to selection', (tester) async {
-    await render(tester, const Size(393, 873), picker(mobile: true), 'goldens/relay_product_review/android_add_selection.png');
-  });
-
-  testWidgets('Android Settings', (tester) async {
-    await render(tester, const Size(393, 873), RelayDesktopFixtures.settings(), 'goldens/relay_product_review/android_settings.png');
-  });
-
-  testWidgets('Android About', (tester) async {
-    await render(tester, const Size(393, 873), RelayDesktopFixtures.about(), 'goldens/relay_product_review/android_about.png');
-  });
 }

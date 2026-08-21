@@ -174,6 +174,37 @@ class SettingsStateMapper extends ClassMapperBase<SettingsState> {
     'remoteRelayEnabled',
     _$remoteRelayEnabled,
   );
+  static String? _$gnomePanelDeviceId(SettingsState v) => v.gnomePanelDeviceId;
+  static const Field<SettingsState, String> _f$gnomePanelDeviceId = Field(
+    'gnomePanelDeviceId',
+    _$gnomePanelDeviceId,
+  );
+  static bool _$gnomePanelShowNetworkType(SettingsState v) =>
+      v.gnomePanelShowNetworkType;
+  static const Field<SettingsState, bool> _f$gnomePanelShowNetworkType = Field(
+    'gnomePanelShowNetworkType',
+    _$gnomePanelShowNetworkType,
+  );
+  static bool _$gnomePanelShowBatteryPercentage(SettingsState v) =>
+      v.gnomePanelShowBatteryPercentage;
+  static const Field<SettingsState, bool> _f$gnomePanelShowBatteryPercentage =
+      Field(
+        'gnomePanelShowBatteryPercentage',
+        _$gnomePanelShowBatteryPercentage,
+      );
+  static bool _$gnomePanelShowNotifications(SettingsState v) =>
+      v.gnomePanelShowNotifications;
+  static const Field<SettingsState, bool> _f$gnomePanelShowNotifications =
+      Field('gnomePanelShowNotifications', _$gnomePanelShowNotifications);
+  static bool _$gnomePanelChargingAnimation(SettingsState v) =>
+      v.gnomePanelChargingAnimation;
+  static const Field<SettingsState, bool> _f$gnomePanelChargingAnimation =
+      Field('gnomePanelChargingAnimation', _$gnomePanelChargingAnimation);
+  static bool _$gnomePanelShowSignal(SettingsState v) => v.gnomePanelShowSignal;
+  static const Field<SettingsState, bool> _f$gnomePanelShowSignal = Field(
+    'gnomePanelShowSignal',
+    _$gnomePanelShowSignal,
+  );
 
   @override
   final MappableFields<SettingsState> fields = const {
@@ -208,6 +239,12 @@ class SettingsStateMapper extends ClassMapperBase<SettingsState> {
     #discoveryTimeout: _f$discoveryTimeout,
     #advancedSettings: _f$advancedSettings,
     #remoteRelayEnabled: _f$remoteRelayEnabled,
+    #gnomePanelDeviceId: _f$gnomePanelDeviceId,
+    #gnomePanelShowNetworkType: _f$gnomePanelShowNetworkType,
+    #gnomePanelShowBatteryPercentage: _f$gnomePanelShowBatteryPercentage,
+    #gnomePanelShowNotifications: _f$gnomePanelShowNotifications,
+    #gnomePanelChargingAnimation: _f$gnomePanelChargingAnimation,
+    #gnomePanelShowSignal: _f$gnomePanelShowSignal,
   };
 
   static SettingsState _instantiate(DecodingData data) {
@@ -243,6 +280,14 @@ class SettingsStateMapper extends ClassMapperBase<SettingsState> {
       discoveryTimeout: data.dec(_f$discoveryTimeout),
       advancedSettings: data.dec(_f$advancedSettings),
       remoteRelayEnabled: data.dec(_f$remoteRelayEnabled),
+      gnomePanelDeviceId: data.dec(_f$gnomePanelDeviceId),
+      gnomePanelShowNetworkType: data.dec(_f$gnomePanelShowNetworkType),
+      gnomePanelShowBatteryPercentage: data.dec(
+        _f$gnomePanelShowBatteryPercentage,
+      ),
+      gnomePanelShowNotifications: data.dec(_f$gnomePanelShowNotifications),
+      gnomePanelChargingAnimation: data.dec(_f$gnomePanelChargingAnimation),
+      gnomePanelShowSignal: data.dec(_f$gnomePanelShowSignal),
     );
   }
 
@@ -344,6 +389,12 @@ abstract class SettingsStateCopyWith<$R, $In extends SettingsState, $Out>
     int? discoveryTimeout,
     bool? advancedSettings,
     bool? remoteRelayEnabled,
+    String? gnomePanelDeviceId,
+    bool? gnomePanelShowNetworkType,
+    bool? gnomePanelShowBatteryPercentage,
+    bool? gnomePanelShowNotifications,
+    bool? gnomePanelChargingAnimation,
+    bool? gnomePanelShowSignal,
   });
   SettingsStateCopyWith<$R2, $In, $Out2> $chain<$R2, $Out2>(Then<$Out2, $R2> t);
 }
@@ -407,6 +458,12 @@ class _SettingsStateCopyWithImpl<$R, $Out>
     int? discoveryTimeout,
     bool? advancedSettings,
     bool? remoteRelayEnabled,
+    Object? gnomePanelDeviceId = $none,
+    bool? gnomePanelShowNetworkType,
+    bool? gnomePanelShowBatteryPercentage,
+    bool? gnomePanelShowNotifications,
+    bool? gnomePanelChargingAnimation,
+    bool? gnomePanelShowSignal,
   }) => $apply(
     FieldCopyWithData({
       if (showToken != null) #showToken: showToken,
@@ -444,6 +501,17 @@ class _SettingsStateCopyWithImpl<$R, $Out>
       if (discoveryTimeout != null) #discoveryTimeout: discoveryTimeout,
       if (advancedSettings != null) #advancedSettings: advancedSettings,
       if (remoteRelayEnabled != null) #remoteRelayEnabled: remoteRelayEnabled,
+      if (gnomePanelDeviceId != $none) #gnomePanelDeviceId: gnomePanelDeviceId,
+      if (gnomePanelShowNetworkType != null)
+        #gnomePanelShowNetworkType: gnomePanelShowNetworkType,
+      if (gnomePanelShowBatteryPercentage != null)
+        #gnomePanelShowBatteryPercentage: gnomePanelShowBatteryPercentage,
+      if (gnomePanelShowNotifications != null)
+        #gnomePanelShowNotifications: gnomePanelShowNotifications,
+      if (gnomePanelChargingAnimation != null)
+        #gnomePanelChargingAnimation: gnomePanelChargingAnimation,
+      if (gnomePanelShowSignal != null)
+        #gnomePanelShowSignal: gnomePanelShowSignal,
     }),
   );
   @override
@@ -493,6 +561,30 @@ class _SettingsStateCopyWithImpl<$R, $Out>
     remoteRelayEnabled: data.get(
       #remoteRelayEnabled,
       or: $value.remoteRelayEnabled,
+    ),
+    gnomePanelDeviceId: data.get(
+      #gnomePanelDeviceId,
+      or: $value.gnomePanelDeviceId,
+    ),
+    gnomePanelShowNetworkType: data.get(
+      #gnomePanelShowNetworkType,
+      or: $value.gnomePanelShowNetworkType,
+    ),
+    gnomePanelShowBatteryPercentage: data.get(
+      #gnomePanelShowBatteryPercentage,
+      or: $value.gnomePanelShowBatteryPercentage,
+    ),
+    gnomePanelShowNotifications: data.get(
+      #gnomePanelShowNotifications,
+      or: $value.gnomePanelShowNotifications,
+    ),
+    gnomePanelChargingAnimation: data.get(
+      #gnomePanelChargingAnimation,
+      or: $value.gnomePanelChargingAnimation,
+    ),
+    gnomePanelShowSignal: data.get(
+      #gnomePanelShowSignal,
+      or: $value.gnomePanelShowSignal,
     ),
   );
 

@@ -76,6 +76,12 @@ class SettingsService extends PureNotifier<SettingsState> {
     discoveryTimeout: _persistence.getDiscoveryTimeout(),
     advancedSettings: _persistence.getAdvancedSettingsEnabled(),
     remoteRelayEnabled: _persistence.getRemoteRelayEnabled(),
+    gnomePanelDeviceId: _persistence.getGnomePanelDeviceId(),
+    gnomePanelShowNetworkType: _persistence.getGnomePanelShowNetworkType(),
+    gnomePanelShowBatteryPercentage: _persistence.getGnomePanelShowBatteryPercentage(),
+    gnomePanelShowNotifications: _persistence.getGnomePanelShowNotifications(),
+    gnomePanelChargingAnimation: _persistence.getGnomePanelChargingAnimation(),
+    gnomePanelShowSignal: _persistence.getGnomePanelShowSignal(),
   );
 
   Future<void> setAlias(String alias) async {
@@ -301,6 +307,48 @@ class SettingsService extends PureNotifier<SettingsState> {
     await _persistence.setVerifyChecksums(verifyChecksums);
     state = state.copyWith(
       verifyChecksums: verifyChecksums,
+    );
+  }
+
+  Future<void> setGnomePanelDeviceId(String? deviceId) async {
+    await _persistence.setGnomePanelDeviceId(deviceId);
+    state = state.copyWith(
+      gnomePanelDeviceId: deviceId,
+    );
+  }
+
+  Future<void> setGnomePanelShowNetworkType(bool show) async {
+    await _persistence.setGnomePanelShowNetworkType(show);
+    state = state.copyWith(
+      gnomePanelShowNetworkType: show,
+    );
+  }
+
+  Future<void> setGnomePanelShowBatteryPercentage(bool show) async {
+    await _persistence.setGnomePanelShowBatteryPercentage(show);
+    state = state.copyWith(
+      gnomePanelShowBatteryPercentage: show,
+    );
+  }
+
+  Future<void> setGnomePanelShowNotifications(bool show) async {
+    await _persistence.setGnomePanelShowNotifications(show);
+    state = state.copyWith(
+      gnomePanelShowNotifications: show,
+    );
+  }
+
+  Future<void> setGnomePanelChargingAnimation(bool enable) async {
+    await _persistence.setGnomePanelChargingAnimation(enable);
+    state = state.copyWith(
+      gnomePanelChargingAnimation: enable,
+    );
+  }
+
+  Future<void> setGnomePanelShowSignal(bool show) async {
+    await _persistence.setGnomePanelShowSignal(show);
+    state = state.copyWith(
+      gnomePanelShowSignal: show,
     );
   }
 }

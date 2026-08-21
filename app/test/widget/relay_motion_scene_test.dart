@@ -7,7 +7,6 @@ import 'package:relay_app/model/persistence/color_mode.dart';
 import 'package:relay_app/model/state/nearby_devices_state.dart';
 import 'package:relay_app/model/ui/relay_capability_vm.dart';
 import 'package:relay_app/model/ui/relay_device_vm.dart';
-import 'package:relay_app/pages/android/android_home_page.dart';
 import 'package:relay_app/pages/relay_home_vm.dart';
 import 'package:relay_app/provider/file_transfer_provider.dart';
 import 'package:relay_app/provider/persistence_provider.dart';
@@ -108,7 +107,7 @@ void main() {
       expect(polarVerified.radius, lessThan(polarCompat.radius));
     });
 
-    test('deterministic idle orbit advances angular position continuously over time', () {
+    test('resting device positions remain stable across ambient phases', () {
       const sceneSize = Size(400, 600);
 
       final pos1 = RelaySpatialLayoutEngine.computeRemotePosition(
@@ -131,8 +130,8 @@ void main() {
         focusProgress: 0.0,
       );
 
-      expect(pos1.offset, isNot(equals(pos2.offset)));
-      expect(pos1.angle, isNot(equals(pos2.angle)));
+      expect(pos1.offset, equals(pos2.offset));
+      expect(pos1.angle, equals(pos2.angle));
     });
 
     test('different devices revolve at distinct deterministic velocities', () {
@@ -315,10 +314,13 @@ void main() {
           child: MaterialApp(
             theme: darkTheme,
             home: Scaffold(
-              body: AndroidHomePage(
-                vm: homeVm,
+              body: RelaySpatialScene(
+                selfAlias: 'Linux Workstation',
+                selfDeviceType: DeviceType.desktop,
+                presence: homeVm.presence,
+                devices: homeVm.devices,
+                activeTransfer: null,
                 animationsEnabled: true,
-                onAddDevice: () {},
               ),
             ),
           ),
@@ -332,10 +334,6 @@ void main() {
       expect(find.byType(RelaySpatialScene), findsOneWidget);
       final sceneBox = tester.renderObject<RenderBox>(find.byType(RelaySpatialScene));
       expect(sceneBox.size.height, equals(800));
-
-      // Floating header is present
-      expect(find.text('Relay'), findsOneWidget);
-      expect(find.byIcon(Icons.add_link_rounded), findsWidgets);
     });
 
     testWidgets('renders active SEND transfer from center to remote device', (tester) async {
@@ -719,7 +717,7 @@ void main() {
       expect(find.text('60%'), findsOneWidget);
     });
 
-    testWidgets('compatibility peer remains visually classified with LS badge', (tester) async {
+    testWidgets('nearby compatibility peer remains visually distinct without protocol jargon', (tester) async {
       tester.view.physicalSize = const Size(500, 800);
       tester.view.devicePixelRatio = 1.0;
       addTearDown(() => tester.view.resetPhysicalSize());
@@ -743,7 +741,7 @@ void main() {
       await tester.pump(const Duration(milliseconds: 500));
 
       expect(find.text('Guest Phone'), findsOneWidget);
-      expect(find.text('LS'), findsOneWidget);
+      expect(find.byIcon(Icons.near_me_outlined), findsOneWidget);
     });
 
     testWidgets('no duplicate source/destination nodes in scene', (tester) async {

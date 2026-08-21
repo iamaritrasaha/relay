@@ -10,7 +10,7 @@ import 'package:relay_app/widget/relay_motion/relay_motion_controller.dart';
 import 'package:relay_app/widget/relay_motion/relay_transfer_stream.dart';
 import 'package:relay_isolates/model/device.dart';
 
-/// Background universe orbital guides and radial grid painter.
+/// Background guide painter for the Relay Spatial Scene.
 class RelaySpatialUniversePainter extends CustomPainter {
   final Color primaryGuideColor;
   final Color secondaryGuideColor;
@@ -29,12 +29,12 @@ class RelaySpatialUniversePainter extends CustomPainter {
     final center = Offset(size.width / 2, size.height / 2);
     final maxRadius = math.min(size.width, size.height) / 2;
 
-    // Faint center gravitational ambient glow
+    // Quiet focal wash: the background stays still while events animate.
     final glowRadius = (maxRadius * 0.75).clamp(80.0, 260.0);
     final glowPaint = Paint()
       ..shader = RadialGradient(
         colors: [
-          centerGlowColor.withValues(alpha: 0.09 + 0.03 * math.sin(ambientPhase * 4 * math.pi)),
+          centerGlowColor.withValues(alpha: 0.07),
           centerGlowColor.withValues(alpha: 0.0),
         ],
       ).createShader(Rect.fromCircle(center: center, radius: glowRadius));
@@ -97,10 +97,8 @@ class RelaySpatialUniversePainter extends CustomPainter {
 
 /// The core spatial device experience scene.
 ///
-/// Places THIS DEVICE at the visual center of a motion universe with remote devices
-/// continuously orbiting deterministically around it. Real transfers trigger a signature perspective
-/// orbit with directional payload streams, curved orbital bridges, depth layering,
-/// and distinct terminal epilogue states (success, failure, cancellation).
+/// Places this desktop at the centre of a calm, relationship-oriented device scene.
+/// Resting devices stay still; motion is reserved for focus and real events.
 class RelaySpatialScene extends StatefulWidget {
   final String selfAlias;
   final DeviceType selfDeviceType;
@@ -158,7 +156,7 @@ class _RelaySpatialSceneState extends State<RelaySpatialScene> with TickerProvid
 
     _focusController = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 400),
+      duration: const Duration(milliseconds: 300),
     );
 
     _epilogueController = AnimationController(
@@ -181,10 +179,6 @@ class _RelaySpatialSceneState extends State<RelaySpatialScene> with TickerProvid
       reverseCurve: Curves.easeInCubic,
     );
 
-    if (widget.animationsEnabled) {
-      unawaited(_ambientController.repeat());
-    }
-
     if (_internalFocusedKey != null) {
       _focusController.value = 1.0;
     }
@@ -200,15 +194,8 @@ class _RelaySpatialSceneState extends State<RelaySpatialScene> with TickerProvid
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.resumed) {
-      if (widget.animationsEnabled && !_ambientController.isAnimating) {
-        unawaited(_ambientController.repeat());
-      }
-    } else if (state == AppLifecycleState.paused || state == AppLifecycleState.inactive || state == AppLifecycleState.hidden) {
-      if (_ambientController.isAnimating) {
-        _ambientController.stop();
-      }
-    }
+    // No ambient animation survives lifecycle changes: Relay does not animate
+    // unless a real event or a user action requires it.
   }
 
   @override
@@ -216,9 +203,7 @@ class _RelaySpatialSceneState extends State<RelaySpatialScene> with TickerProvid
     super.didUpdateWidget(oldWidget);
 
     if (widget.animationsEnabled != oldWidget.animationsEnabled) {
-      if (widget.animationsEnabled) {
-        unawaited(_ambientController.repeat());
-      } else {
+      if (!widget.animationsEnabled) {
         _ambientController.stop();
         _epilogueController.stop();
         _epilogueTransfer = null;
@@ -382,7 +367,7 @@ class _RelaySpatialSceneState extends State<RelaySpatialScene> with TickerProvid
                         primaryGuideColor: palette.accent,
                         secondaryGuideColor: palette.textTertiary,
                         centerGlowColor: palette.accent,
-                        ambientPhase: reducedMotion ? 0.0 : _ambientController.value,
+                        ambientPhase: 0.0,
                       ),
                     );
                   },
@@ -394,7 +379,7 @@ class _RelaySpatialSceneState extends State<RelaySpatialScene> with TickerProvid
                 animation: Listenable.merge([_ambientController, _focusController, _epilogueController]),
                 builder: (context, child) {
                   final focusVal = reducedMotion ? (_internalFocusedKey != null ? 1.0 : 0.0) : _focusCurve.value;
-                  final ambientVal = reducedMotion ? 0.0 : _ambientController.value;
+                  const ambientVal = 0.0;
 
                   final isTransferActive = transferringDevice != null;
                   final transferProgress = effectiveTransfer?.progress ?? transferringDevice?.progress;

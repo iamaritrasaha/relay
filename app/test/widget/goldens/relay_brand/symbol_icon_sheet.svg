@@ -1,14 +1,14 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 1076" width="1280" height="1076" font-family="Inter, 'Segoe UI', 'Helvetica Neue', Arial, sans-serif">
   <defs>
     <linearGradient id="relayGrad" x1="16" y1="16" x2="112" y2="112" gradientUnits="userSpaceOnUse">
-      <stop offset="0" stop-color="#5B8CFF"/>
-      <stop offset="0.55" stop-color="#6E79FB"/>
-      <stop offset="1" stop-color="#8B5CF6"/>
+      <stop offset="0" stop-color="#F07855"/>
+      <stop offset="0.55" stop-color="#E08A52"/>
+      <stop offset="1" stop-color="#C89A55"/>
     </linearGradient>
     <linearGradient id="plate" x1="54" y1="0" x2="54" y2="108" gradientUnits="userSpaceOnUse">
-      <stop offset="0" stop-color="#272C34"/>
-      <stop offset="0.52" stop-color="#1A1E25"/>
-      <stop offset="1" stop-color="#10131A"/>
+      <stop offset="0" stop-color="#2A2620"/>
+      <stop offset="0.52" stop-color="#1D1A16"/>
+      <stop offset="1" stop-color="#12100E"/>
     </linearGradient>
     <radialGradient id="sheen" cx="54" cy="11" r="70" gradientUnits="userSpaceOnUse">
       <stop offset="0" stop-color="#FFFFFF" stop-opacity="0.07"/>
@@ -46,13 +46,13 @@
     <symbol id="markConstruct" viewBox="0 0 128 128">
       <line x1="6" y1="6" x2="122" y2="122" stroke="#39435A" stroke-width="1" stroke-dasharray="4 5"/>
       <circle cx="64" cy="64" r="34" fill="none" stroke="#232B39" stroke-width="1"/>
-      <g fill="none" stroke="#7E93FF" stroke-width="1.4">
+      <g fill="none" stroke="#F0A085" stroke-width="1.4">
         <rect x="10.5" y="10.5" width="41" height="41" rx="15.5"/>
         <rect x="76.5" y="76.5" width="41" height="41" rx="15.5"/>
         <rect x="21.5" y="21.5" width="19" height="19" rx="4.5"/>
         <rect x="87.5" y="87.5" width="19" height="19" rx="4.5"/>
       </g>
-      <rect x="53" y="53" width="22" height="22" rx="6" transform="rotate(45 64 64)" fill="none" stroke="#CBD6FF" stroke-width="1.4"/>
+      <rect x="53" y="53" width="22" height="22" rx="6" transform="rotate(45 64 64)" fill="none" stroke="#F7D2BE" stroke-width="1.4"/>
       <line x1="55.5" y1="55.5" x2="43.5" y2="43.5" stroke="#F2B455" stroke-width="1.4"/>
       <line x1="72.5" y1="72.5" x2="84.5" y2="84.5" stroke="#F2B455" stroke-width="1.4"/>
     </symbol>
@@ -184,5 +184,5 @@
     <text x="900" y="998" font-size="11.5" fill="#4E5866">16 px uses the solid treatment on both grounds.</text>
   </g>
 
-  <text x="60" y="1064" font-size="11.5" fill="#454F5D">Endpoints and packet #5B8CFF → #8B5CF6 · plate #272C34 → #10131A · grid 128 u · handoff axis 45° · packet rotated 45° — the only tilted element</text>
+  <text x="60" y="1064" font-size="11.5" fill="#454F5D">Endpoints and packet #F07855 → #C89A55 · plate #2A2620 → #12100E · grid 128 u · handoff axis 45° · packet rotated 45° — the only tilted element</text>
 </svg>

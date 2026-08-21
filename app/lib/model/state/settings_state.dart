@@ -40,6 +40,12 @@ class SettingsState with SettingsStateMappable {
   final int discoveryTimeout;
   final bool advancedSettings;
   final bool remoteRelayEnabled;
+  final String? gnomePanelDeviceId;
+  final bool gnomePanelShowNetworkType;
+  final bool gnomePanelShowBatteryPercentage;
+  final bool gnomePanelShowNotifications;
+  final bool gnomePanelChargingAnimation;
+  final bool gnomePanelShowSignal;
 
   const SettingsState({
     required this.showToken,
@@ -73,5 +79,11 @@ class SettingsState with SettingsStateMappable {
     required this.discoveryTimeout,
     required this.advancedSettings,
     required this.remoteRelayEnabled,
+    required this.gnomePanelDeviceId,
+    required this.gnomePanelShowNetworkType,
+    required this.gnomePanelShowBatteryPercentage,
+    required this.gnomePanelShowNotifications,
+    required this.gnomePanelChargingAnimation,
+    required this.gnomePanelShowSignal,
   });
 }
