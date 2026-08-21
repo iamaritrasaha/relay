@@ -112,5 +112,11 @@ flutter:
     - CHANGELOG_RELAY.md
     - assets/CHANGELOG.md
 
+  fonts:
+    # Geist Sans, SIL Open Font License 1.1 — see assets/fonts/OFL.txt.
+    - family: Geist
+      fonts:
+        - asset: assets/fonts/Geist-VariableFont_wght.ttf
+
 flutter_gen:
   line_length: 150

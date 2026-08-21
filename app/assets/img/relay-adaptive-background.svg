@@ -2,9 +2,9 @@
   <!-- Android adaptive BACKGROUND layer: full-bleed graphite plate, mild tonal shaping only -->
   <defs>
     <linearGradient id="plate" x1="54" y1="0" x2="54" y2="108" gradientUnits="userSpaceOnUse">
-      <stop offset="0" stop-color="#272C34"/>
-      <stop offset="0.52" stop-color="#1A1E25"/>
-      <stop offset="1" stop-color="#10131A"/>
+      <stop offset="0" stop-color="#2A2620"/>
+      <stop offset="0.52" stop-color="#1D1A16"/>
+      <stop offset="1" stop-color="#12100E"/>
     </linearGradient>
     <radialGradient id="sheen" cx="54" cy="11" r="70" gradientUnits="userSpaceOnUse">
       <stop offset="0" stop-color="#FFFFFF" stop-opacity="0.075"/>

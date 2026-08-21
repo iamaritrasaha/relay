@@ -38,18 +38,86 @@ class $AssetsImgGen {
   /// File path: assets/img/logo.ico
   String get logo => 'assets/img/logo.ico';
 
+  /// File path: assets/img/relay-adaptive-background.svg
+  String get relayAdaptiveBackground => 'assets/img/relay-adaptive-background.svg';
+
+  /// File path: assets/img/relay-adaptive-foreground.svg
+  String get relayAdaptiveForeground => 'assets/img/relay-adaptive-foreground.svg';
+
+  /// File path: assets/img/relay-icon-linux-512.png
+  AssetGenImage get relayIconLinux512 => const AssetGenImage('assets/img/relay-icon-linux-512.png');
+
+  /// File path: assets/img/relay-icon-linux.svg
+  String get relayIconLinux => 'assets/img/relay-icon-linux.svg';
+
+  /// File path: assets/img/relay-icon-sheet.svg
+  String get relayIconSheet => 'assets/img/relay-icon-sheet.svg';
+
+  /// File path: assets/img/relay-icon.ico
+  String get relayIconIco => 'assets/img/relay-icon.ico';
+
+  /// File path: assets/img/relay-icon.png
+  AssetGenImage get relayIconPng => const AssetGenImage('assets/img/relay-icon.png');
+
+  /// File path: assets/img/relay-launcher-android-512.png
+  AssetGenImage get relayLauncherAndroid512 => const AssetGenImage('assets/img/relay-launcher-android-512.png');
+
+  /// File path: assets/img/relay-launcher-android.svg
+  String get relayLauncherAndroid => 'assets/img/relay-launcher-android.svg';
+
+  /// File path: assets/img/relay-symbol-compact.svg
+  String get relaySymbolCompact => 'assets/img/relay-symbol-compact.svg';
+
+  /// File path: assets/img/relay-symbol-mono.svg
+  String get relaySymbolMono => 'assets/img/relay-symbol-mono.svg';
+
+  /// File path: assets/img/relay-symbol-sheet.png
+  AssetGenImage get relaySymbolSheet => const AssetGenImage('assets/img/relay-symbol-sheet.png');
+
+  /// File path: assets/img/relay-symbol.svg
+  String get relaySymbol => 'assets/img/relay-symbol.svg';
+
+  /// File path: assets/img/relay-tray-black.png
+  AssetGenImage get relayTrayBlack => const AssetGenImage('assets/img/relay-tray-black.png');
+
+  /// File path: assets/img/relay-tray-white.png
+  AssetGenImage get relayTrayWhite => const AssetGenImage('assets/img/relay-tray-white.png');
+
   /// List of all assets
-  List<dynamic> get values => [logo128, logo256, logo32Black, logo32White, logo32, logo512White, logo512, logo];
+  List<dynamic> get values => [
+    logo128,
+    logo256,
+    logo32Black,
+    logo32White,
+    logo32,
+    logo512White,
+    logo512,
+    logo,
+    relayAdaptiveBackground,
+    relayAdaptiveForeground,
+    relayIconLinux512,
+    relayIconLinux,
+    relayIconSheet,
+    relayIconIco,
+    relayIconPng,
+    relayLauncherAndroid512,
+    relayLauncherAndroid,
+    relaySymbolCompact,
+    relaySymbolMono,
+    relaySymbolSheet,
+    relaySymbol,
+    relayTrayBlack,
+    relayTrayWhite,
+  ];
 }
 
-class Assets {
-  const Assets._();
-
+abstract final class Assets {
+  static const String changelogRelay = 'CHANGELOG_RELAY.md';
   static const String changelog = 'assets/CHANGELOG.md';
   static const $AssetsImgGen img = $AssetsImgGen();
 
   /// List of all assets
-  static List<String> get values => [changelog];
+  static List<String> get values => [changelogRelay, changelog];
 }
 
 class AssetGenImage {

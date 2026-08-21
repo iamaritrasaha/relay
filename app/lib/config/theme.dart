@@ -9,7 +9,7 @@ import 'package:relay_app/util/ui/dynamic_colors.dart';
 import 'package:refena_flutter/refena_flutter.dart';
 import 'package:yaru/yaru.dart' as yaru;
 
-final _borderRadius = BorderRadius.circular(5);
+final _borderRadius = BorderRadius.circular(RelayRadius.button);
 
 ThemeData getTheme(ColorMode colorMode, Color customColor, Brightness brightness, DynamicColors? dynamicColors) {
   if (colorMode == ColorMode.yaru) {
@@ -45,7 +45,7 @@ ThemeData getTheme(ColorMode colorMode, Color customColor, Brightness brightness
       AppLocale.ko => 'Noto Sans CJK KR',
       AppLocale.zhCn => 'Noto Sans CJK SC',
       AppLocale.zhHk || AppLocale.zhTw => 'Noto Sans CJK TC',
-      _ => 'Noto Sans',
+      _ => 'Geist',
     };
   } else {
     fontFamily = null;
@@ -73,15 +73,17 @@ ThemeData getTheme(ColorMode colorMode, Color customColor, Brightness brightness
     elevatedButtonTheme: ElevatedButtonThemeData(
       style: ElevatedButton.styleFrom(
         foregroundColor: palette.accentSoft,
-        backgroundColor: palette.accent.withValues(alpha: 0.2),
-        side: BorderSide(color: palette.accentSoft.withValues(alpha: 0.45)),
-        shape: const StadiumBorder(),
+        backgroundColor: palette.accent.withValues(alpha: 0.18),
+        side: BorderSide(color: palette.accent.withValues(alpha: 0.4)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(RelayRadius.button)),
         elevation: 0,
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
       ),
     ),
     textButtonTheme: TextButtonThemeData(
       style: TextButton.styleFrom(
+        foregroundColor: palette.accentSoft,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(RelayRadius.button)),
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       ),
     ),
@@ -89,13 +91,14 @@ ThemeData getTheme(ColorMode colorMode, Color customColor, Brightness brightness
       style: OutlinedButton.styleFrom(
         foregroundColor: palette.textPrimary,
         side: BorderSide(color: palette.hairline),
-        shape: const StadiumBorder(),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(RelayRadius.button)),
       ),
     ),
     iconButtonTheme: IconButtonThemeData(
       style: IconButton.styleFrom(
         foregroundColor: palette.textSecondary,
         backgroundColor: palette.softSurface,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(RelayRadius.button)),
       ),
     ),
     switchTheme: SwitchThemeData(
