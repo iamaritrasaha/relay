@@ -14,8 +14,9 @@ unexpected_cfgs = { level = "warn", check-cfg = ['cfg(frb_expand)'] }
 # without this the MPRIS start-up call is silently compiled out of the app even
 # though relay_core has the feature on. Forwarded, and on by default.
 [features]
-default = ["mpris"]
+default = ["mpris", "remote-input"]
 mpris = ["relay_core/mpris"]
+remote-input = ["relay_core/remote-input"]
 
 [dependencies]
 anyhow = "1.0"

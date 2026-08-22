@@ -5,6 +5,7 @@
 
 mod capabilities;
 pub mod commands;
+pub mod input;
 pub mod media;
 mod identity;
 mod lan;
@@ -19,7 +20,8 @@ pub use capabilities::{
     PACKET_TYPE_FINDMYPHONE_REQUEST, PACKET_TYPE_IDENTITY, PACKET_TYPE_NOTIFICATION,
     PACKET_TYPE_NOTIFICATION_REQUEST, PACKET_TYPE_PAIR, PACKET_TYPE_PING,
     PACKET_TYPE_RELAY_DEVICE_STATE, PACKET_TYPE_RELAY_PING, PACKET_TYPE_RELAY_PONG,
-    PACKET_TYPE_MPRIS, PACKET_TYPE_MPRIS_REQUEST, PACKET_TYPE_RELAY_WAN_IDENTITY,
+    PACKET_TYPE_MOUSEPAD_REQUEST, PACKET_TYPE_MPRIS, PACKET_TYPE_MPRIS_REQUEST,
+    PACKET_TYPE_RELAY_WAN_IDENTITY,
     PACKET_TYPE_RUNCOMMAND, PACKET_TYPE_RUNCOMMAND_REQUEST,
     PACKET_TYPE_SMS_MESSAGES, PACKET_TYPE_SMS_REQUEST,
     PACKET_TYPE_SMS_REQUEST_CONVERSATION, PACKET_TYPE_SMS_REQUEST_CONVERSATIONS,
@@ -35,7 +37,7 @@ pub use packet::{
     filter_device_name, is_valid_device_id, BatteryBody, ClipboardBody, ConnectivityReportBody,
     ConnectivitySignal, FindMyPhoneBody, IdentityBody, NetworkPacket, NotificationBody,
     PacketError, PairBody, PingBody, RelayDeviceStateBody, RelayHeartbeatBody,
-    MprisBody, MprisRequestBody, RelayWanIdentityBody, RunCommandListBody,
+    MousePadRequestBody, MprisBody, MprisRequestBody, RelayWanIdentityBody, RunCommandListBody,
     RunCommandRequestBody, SmsAttachmentMetadata, SmsMessage, SmsMessagesBody, SmsRequestBody,
     SmsRequestConversationBody, SmsRequestConversationsBody, TelephonyBody,
     TelephonyRequestMuteBody, PROTOCOL_VERSION,
@@ -356,6 +358,42 @@ impl KdeConnectHandle {
         self.inner.set_media_host(Arc::new(host)).await;
         tracing::info!("[Relay MPRIS] media control enabled; {players} player(s) on the session bus");
         Ok(())
+    }
+
+    /// Turns remote input on or off. Off by default and never implied by
+    /// pairing: a paired phone still needs this *and* an authorised OS input
+    /// session before a single event is injected.
+    pub fn set_remote_input_enabled(&self, enabled: bool) {
+        self.inner.set_input_enabled(enabled);
+    }
+
+    pub fn remote_input_enabled(&self) -> bool {
+        self.inner.input_enabled()
+    }
+
+    /// Whether an authorised input session currently exists.
+    pub async fn remote_input_ready(&self) -> bool {
+        self.inner.input_ready().await
+    }
+
+    /// Requests an OS-level remote-input session.
+    ///
+    /// This is what raises the desktop's own approval dialog, so it must only
+    /// ever run in response to a deliberate action by the person at the
+    /// keyboard -- never at startup, and never because a phone asked.
+    #[cfg(all(target_os = "linux", feature = "remote-input"))]
+    pub async fn authorize_remote_input(&self) -> Result<()> {
+        let backend = input::portal::PortalRemoteInputBackend::start().await?;
+        self.inner.set_input_backend(Some(Arc::new(backend))).await;
+        tracing::info!("[Relay Input] remote-input session authorised");
+        Ok(())
+    }
+
+    /// Drops the input session. The OS-level grant is released and every later
+    /// packet is refused until the user authorises again.
+    pub async fn revoke_remote_input(&self) {
+        self.inner.set_input_backend(None).await;
+        tracing::info!("[Relay Input] remote-input session revoked");
     }
 
     /// Installs the desktop's RunCommand allow-list. The phone can only ever

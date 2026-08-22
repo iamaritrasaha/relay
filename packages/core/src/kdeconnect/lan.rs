@@ -222,8 +222,53 @@ struct HeartbeatState {
     last_seen_unix: Option<i64>,
 }
 
+/// How long a route may go unheard before it is dropped when it is the device's
+/// *only* route.
+///
+/// Deliberately generous: dropping the sole route takes the device Offline, and
+/// a brief stall on an otherwise healthy link should not do that.
 #[cfg(feature = "kdeconnect-wan")]
 const HEARTBEAT_TIMEOUT_SECS: i64 = 60;
+
+/// How long a route may go unheard before it is dropped when the device has
+/// *another* route available.
+///
+/// Much shorter than [`HEARTBEAT_TIMEOUT_SECS`], because the consequence is
+/// different in kind: failing over LAN -> Relay WAN keeps the device connected
+/// and reverses itself the moment LAN answers again (LAN outranks WAN at
+/// priority 20 vs 15). Waiting the full sole-route budget here is what made a
+/// Local -> Remote handoff look stalled after Wi-Fi disappeared, since a TCP
+/// socket whose network is gone stays writable and produces no error to react
+/// to.
+///
+/// Sized above the heartbeat probe interval so a single missed probe cannot
+/// trigger a failover.
+#[cfg(feature = "kdeconnect-wan")]
+const FAILOVER_TIMEOUT_SECS: i64 = 12;
+
+/// How often stale routes are re-examined. Cheap -- an in-memory scan over
+/// trusted devices, no I/O -- so it runs far more often than the heartbeat
+/// probe. Previously this ran every 15s, which added itself to whichever
+/// timeout applied.
+#[cfg(feature = "kdeconnect-wan")]
+const ROUTE_SWEEP_INTERVAL: Duration = Duration::from_secs(3);
+
+/// How often a live route is probed with a relay ping.
+#[cfg(feature = "kdeconnect-wan")]
+const HEARTBEAT_PROBE_INTERVAL: Duration = Duration::from_secs(15);
+
+// The handoff budgets only behave as intended in a particular order, and each
+// is easy to retune in isolation. Checked at compile time so a change that
+// breaks the relationship fails the build rather than quietly reintroducing
+// route flapping or a stalled Local -> Remote transition.
+#[cfg(feature = "kdeconnect-wan")]
+const _: () = {
+    // Failing over must be cheaper than declaring the device Offline.
+    assert!(FAILOVER_TIMEOUT_SECS < HEARTBEAT_TIMEOUT_SECS);
+    // The sweep has to run several times inside the failover budget, or the
+    // sweep interval becomes the real (and much coarser) transition latency.
+    assert!(ROUTE_SWEEP_INTERVAL.as_secs() * 2 < FAILOVER_TIMEOUT_SECS as u64);
+};
 
 fn now_unix_millis() -> i64 {
     std::time::SystemTime::now()
@@ -333,6 +378,16 @@ pub(crate) struct LanInner {
     /// which case media requests are answered with an empty player list rather
     /// than being ignored.
     media: Mutex<Option<Arc<dyn crate::kdeconnect::media::MediaPlayerHost>>>,
+    /// Remote-input backend, present only once the desktop user has authorised
+    /// an input session. `None` means every input packet is refused.
+    input: Mutex<Option<Arc<dyn crate::kdeconnect::input::RemoteInputBackend>>>,
+    /// Desktop-side switch. Separate from the backend so a user can turn the
+    /// feature off without tearing down an authorised session, and so being
+    /// paired never implies permission to move the cursor.
+    input_enabled: std::sync::atomic::AtomicBool,
+    /// One input queue per logical device, so a burst from one phone cannot
+    /// delay another's clicks.
+    input_queues: Mutex<HashMap<String, Arc<crate::kdeconnect::input::InputQueue>>>,
     heartbeat: Mutex<HashMap<String, HeartbeatState>>,
     /// Last packet observed on each concrete route. This must remain
     /// transport-specific: WAN traffic is proof that the device is alive, but
@@ -393,6 +448,9 @@ impl LanInner {
             commands: Arc::new(crate::kdeconnect::commands::RunCommandRegistry::default()),
             command_runner: Mutex::new(Arc::new(crate::kdeconnect::commands::ShellCommandRunner)),
             media: Mutex::new(None),
+            input: Mutex::new(None),
+            input_enabled: std::sync::atomic::AtomicBool::new(false),
+            input_queues: Mutex::new(HashMap::new()),
             identity,
             config,
             tcp_port,
@@ -756,6 +814,100 @@ impl LanInner {
         self.commands.replace(entries);
     }
 
+    /// Installs the remote-input backend, which only exists once the desktop
+    /// user has approved an input session.
+    pub(crate) async fn set_input_backend(
+        &self,
+        backend: Option<Arc<dyn crate::kdeconnect::input::RemoteInputBackend>>,
+    ) {
+        *self.input.lock().await = backend;
+    }
+
+    pub(crate) fn set_input_enabled(&self, enabled: bool) {
+        self.input_enabled
+            .store(enabled, std::sync::atomic::Ordering::SeqCst);
+    }
+
+    pub(crate) fn input_enabled(&self) -> bool {
+        self.input_enabled.load(std::sync::atomic::Ordering::SeqCst)
+    }
+
+    pub(crate) async fn input_ready(&self) -> bool {
+        self.input
+            .lock()
+            .await
+            .as_ref()
+            .is_some_and(|backend| backend.is_ready())
+    }
+
+    /// Decides whether `device_id` may inject input right now.
+    ///
+    /// All three conditions are required, and being paired is only one of them:
+    /// a trusted phone still cannot touch the desktop unless the user switched
+    /// the feature on *and* approved an OS-level input session. Transport is
+    /// deliberately not consulted -- a WAN peer is already bound to a trusted
+    /// KDE device id before any packet is dispatched, so it can neither gain nor
+    /// lose permission by being remote.
+    async fn remote_input_gate(
+        &self,
+        device_id: &str,
+    ) -> Result<Arc<dyn crate::kdeconnect::input::RemoteInputBackend>, crate::kdeconnect::input::RemoteInputRejection>
+    {
+        use crate::kdeconnect::input::RemoteInputRejection;
+        if self.trust.lock().await.get(device_id).is_none() {
+            return Err(RemoteInputRejection::DeviceNotTrusted);
+        }
+        if !self.input_enabled() {
+            return Err(RemoteInputRejection::Disabled);
+        }
+        let backend = self.input.lock().await.clone();
+        match backend {
+            Some(backend) if backend.is_ready() => Ok(backend),
+            _ => Err(RemoteInputRejection::NoSession),
+        }
+    }
+
+    /// The input queue for `device_id`, started on first use.
+    async fn input_queue_for(
+        &self,
+        device_id: &str,
+        backend: Arc<dyn crate::kdeconnect::input::RemoteInputBackend>,
+    ) -> Arc<crate::kdeconnect::input::InputQueue> {
+        let mut queues = self.input_queues.lock().await;
+        queues
+            .entry(device_id.to_owned())
+            .or_insert_with(|| Arc::new(crate::kdeconnect::input::InputQueue::start(backend)))
+            .clone()
+    }
+
+    /// Handles one `kdeconnect.mousepad.request`.
+    ///
+    /// Pointer motion arrives at touch-sample rates, so events are handed to a
+    /// per-device queue that coalesces consecutive motion while preserving every
+    /// click and keystroke in order. Injection happens on that queue's task, off
+    /// the packet-dispatch path, so a slow compositor cannot stall the link.
+    async fn handle_remote_input(
+        self: &Arc<Self>,
+        device_id: &str,
+        request: crate::kdeconnect::packet::MousePadRequestBody,
+    ) {
+        let backend = match self.remote_input_gate(device_id).await {
+            Ok(backend) => backend,
+            Err(rejection) => {
+                tracing::warn!("[Relay Input] device={device_id} refused: {rejection}");
+                return;
+            }
+        };
+        let events = crate::kdeconnect::input::events_for(&request);
+        if events.is_empty() {
+            return;
+        }
+        self.input_queue_for(device_id, backend)
+            .await
+            .submit(events)
+            .await;
+    }
+
     /// Answers one `kdeconnect.mpris.request` from `device_id`.
     ///
     /// Talking to D-Bus can block for as long as the slowest player takes to
@@ -1079,6 +1231,8 @@ impl LanInner {
             }
         } else if let Ok(request) = packet.as_mpris_request() {
             read_inner.handle_mpris_request(&read_id, request, reply).await;
+        } else if let Ok(request) = packet.as_mousepad_request() {
+            read_inner.handle_remote_input(&read_id, request).await;
         } else if let Ok(request) = packet.as_runcommand_request() {
             read_inner.handle_runcommand_request(&read_id, request, reply).await;
         } else if let Ok(telephony) = packet.as_telephony() {
@@ -1220,7 +1374,11 @@ impl LanInner {
             loop {
                 tokio::select! {
                     _ = sweep_cancel.cancelled() => break,
-                    _ = tokio::time::sleep(std::time::Duration::from_secs(15)) => {
+                    _ = tokio::time::sleep(ROUTE_SWEEP_INTERVAL) => {
+                        // Both sweeps run on this fast cadence. Evicting a dead
+                        // route is what makes the router pick the surviving one,
+                        // so it must not wait for the next heartbeat probe.
+                        sweep_inner.sweep_stale_routes().await;
                         sweep_inner.sweep_stale_wan_links().await;
                     }
                 }
@@ -1236,7 +1394,7 @@ impl LanInner {
             loop {
                 tokio::select! {
                     _ = heartbeat_cancel.cancelled() => break,
-                    _ = tokio::time::sleep(std::time::Duration::from_secs(15)) => {
+                    _ = tokio::time::sleep(HEARTBEAT_PROBE_INTERVAL) => {
                         let device_ids: Vec<_> = heartbeat_inner
                             .trust.lock().await.snapshot().into_iter()
                             .map(|device| device.device_id).collect();
@@ -1328,10 +1486,20 @@ impl LanInner {
             let trusted = self.trust.lock().await.snapshot();
             let mut stale = Vec::new();
             for device in trusted {
-                for kind in self.router.available_transports(&device.device_id) {
+                let transports = self.router.available_transports(&device.device_id);
+                // A route with a live alternative is failed over quickly; the
+                // last remaining route keeps the generous budget so a hiccup
+                // does not present the device as Offline.
+                let has_alternative = transports.len() > 1;
+                let budget = if has_alternative {
+                    FAILOVER_TIMEOUT_SECS
+                } else {
+                    HEARTBEAT_TIMEOUT_SECS
+                };
+                for kind in transports {
                     if route_last_seen
                         .get(&(device.device_id.clone(), kind))
-                        .is_none_or(|last_seen| now - *last_seen > HEARTBEAT_TIMEOUT_SECS)
+                        .is_none_or(|last_seen| now - *last_seen > budget)
                     {
                         stale.push((device.device_id.clone(), kind));
                     }
@@ -4805,6 +4973,427 @@ mod tests {
             TransportKind::KdeLan.priority() > TransportKind::RelayWan.priority(),
             "LAN must outrank WAN once it returns"
         );
+    }
+
+    #[cfg(feature = "kdeconnect-wan")]
+    struct TestRouteLink {
+        device_id: String,
+        kind: crate::kdeconnect::wan::TransportKind,
+    }
+
+    #[cfg(feature = "kdeconnect-wan")]
+    impl crate::kdeconnect::wan::TransportLink for TestRouteLink {
+        fn device_id(&self) -> &str {
+            &self.device_id
+        }
+        fn kind(&self) -> crate::kdeconnect::wan::TransportKind {
+            self.kind
+        }
+        fn state(&self) -> crate::kdeconnect::wan::TransportState {
+            crate::kdeconnect::wan::TransportState::Local
+        }
+        fn metadata(&self) -> crate::kdeconnect::wan::TransportMetadata {
+            crate::kdeconnect::wan::TransportMetadata {
+                kind: self.kind,
+                state: self.state(),
+                last_seen_unix: None,
+                last_transition_reason: None,
+            }
+        }
+        fn send_packet<'a>(
+            &'a self,
+            _packet: &'a NetworkPacket,
+        ) -> crate::kdeconnect::wan::transport::LinkFuture<'a, Result<()>> {
+            Box::pin(async move { Ok(()) })
+        }
+        fn send_payload<'a>(
+            &'a self,
+            _request: crate::kdeconnect::wan::PayloadRequest<'a>,
+        ) -> crate::kdeconnect::wan::transport::LinkFuture<'a, Result<crate::kdeconnect::wan::PayloadOutcome>> {
+            Box::pin(async move { Ok(crate::kdeconnect::wan::PayloadOutcome::Sent) })
+        }
+        fn disconnect(&self) -> crate::kdeconnect::wan::transport::LinkFuture<'_, ()> {
+            Box::pin(async move {})
+        }
+        fn health(&self) -> crate::kdeconnect::wan::transport::LinkFuture<'_, bool> {
+            Box::pin(async move { true })
+        }
+    }
+
+    // --- Remote input ------------------------------------------------------
+
+    /// Records what would have been injected instead of touching the desktop.
+    #[derive(Default)]
+    struct RecordingInput {
+        events: std::sync::Mutex<Vec<crate::kdeconnect::input::InputEvent>>,
+        ready: bool,
+        fail: bool,
+    }
+
+    impl crate::kdeconnect::input::RemoteInputBackend for RecordingInput {
+        fn is_ready(&self) -> bool {
+            self.ready
+        }
+        fn dispatch<'a>(
+            &'a self,
+            events: &'a [crate::kdeconnect::input::InputEvent],
+        ) -> crate::kdeconnect::input::InputFuture<'a, Result<()>> {
+            Box::pin(async move {
+                self.events.lock().unwrap().extend_from_slice(events);
+                if self.fail {
+                    anyhow::bail!("simulated input backend failure");
+                }
+                Ok(())
+            })
+        }
+    }
+
+    fn mousepad_request(pairs: &[(&str, serde_json::Value)]) -> NetworkPacket {
+        let mut body = serde_json::Map::new();
+        for (key, value) in pairs {
+            body.insert((*key).to_owned(), value.clone());
+        }
+        NetworkPacket::new(crate::kdeconnect::PACKET_TYPE_MOUSEPAD_REQUEST, body)
+    }
+
+    async fn injected(backend: &Arc<RecordingInput>) -> Vec<crate::kdeconnect::input::InputEvent> {
+        for _ in 0..50 {
+            if !backend.events.lock().unwrap().is_empty() {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+        tokio::time::sleep(Duration::from_millis(20)).await;
+        backend.events.lock().unwrap().clone()
+    }
+
+    /// Enabled + authorised + trusted: the only state that injects anything.
+    async fn armed_input(inner: &Arc<LanInner>) -> Arc<RecordingInput> {
+        let backend = Arc::new(RecordingInput { ready: true, ..Default::default() });
+        inner.set_input_enabled(true);
+        inner
+            .set_input_backend(Some(
+                Arc::clone(&backend) as Arc<dyn crate::kdeconnect::input::RemoteInputBackend>
+            ))
+            .await;
+        backend
+    }
+
+    #[tokio::test]
+    async fn pointer_motion_reaches_the_backend_when_fully_authorised() {
+        let (inner, _events) = multi_device_harness(&[PHONE_A]);
+        let backend = armed_input(&inner).await;
+        let (tx, _rx) = tokio::sync::mpsc::channel(16);
+
+        let packet = mousepad_request(&[("dx", 5.0.into()), ("dy", (-2.0).into())]);
+        assert!(
+            inner
+                .handle_transport_packet(PHONE_A, &packet, &PacketReplyRoute::Lan(tx))
+                .await
+        );
+
+        assert_eq!(
+            injected(&backend).await,
+            vec![crate::kdeconnect::input::InputEvent::PointerMotion { dx: 5.0, dy: -2.0 }]
+        );
+    }
+
+    #[tokio::test]
+    async fn a_trusted_device_injects_nothing_while_remote_input_is_switched_off() {
+        let (inner, _events) = multi_device_harness(&[PHONE_A]);
+        let backend = Arc::new(RecordingInput { ready: true, ..Default::default() });
+        inner
+            .set_input_backend(Some(
+                Arc::clone(&backend) as Arc<dyn crate::kdeconnect::input::RemoteInputBackend>
+            ))
+            .await;
+        inner.set_input_enabled(false); // the default
+
+        let (tx, _rx) = tokio::sync::mpsc::channel(16);
+        inner
+            .handle_transport_packet(
+                PHONE_A,
+                &mousepad_request(&[("singleclick", true.into())]),
+                &PacketReplyRoute::Lan(tx),
+            )
+            .await;
+
+        tokio::time::sleep(Duration::from_millis(60)).await;
+        assert!(
+            backend.events.lock().unwrap().is_empty(),
+            "pairing must never by itself grant input control"
+        );
+    }
+
+    #[tokio::test]
+    async fn nothing_is_injected_without_an_authorised_session() {
+        let (inner, _events) = multi_device_harness(&[PHONE_A]);
+        // Enabled, but the user never approved an OS input session.
+        inner.set_input_enabled(true);
+        let backend = Arc::new(RecordingInput { ready: false, ..Default::default() });
+        inner
+            .set_input_backend(Some(
+                Arc::clone(&backend) as Arc<dyn crate::kdeconnect::input::RemoteInputBackend>
+            ))
+            .await;
+
+        let (tx, _rx) = tokio::sync::mpsc::channel(16);
+        inner
+            .handle_transport_packet(
+                PHONE_A,
+                &mousepad_request(&[("dx", 5.0.into()), ("dy", 5.0.into())]),
+                &PacketReplyRoute::Lan(tx),
+            )
+            .await;
+
+        tokio::time::sleep(Duration::from_millis(60)).await;
+        assert!(backend.events.lock().unwrap().is_empty());
+        assert!(!inner.input_ready().await);
+    }
+
+    #[tokio::test]
+    async fn an_untrusted_device_can_never_inject_input() {
+        let (inner, _events) = multi_device_harness(&[PHONE_A]);
+        let backend = armed_input(&inner).await;
+        let (tx, _rx) = tokio::sync::mpsc::channel(16);
+
+        inner
+            .handle_transport_packet(
+                "dddddddddddddddddddddddddddddddd",
+                &mousepad_request(&[("dx", 5.0.into()), ("dy", 5.0.into())]),
+                &PacketReplyRoute::Lan(tx),
+            )
+            .await;
+
+        tokio::time::sleep(Duration::from_millis(60)).await;
+        assert!(backend.events.lock().unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn a_malformed_input_packet_injects_nothing() {
+        let (inner, _events) = multi_device_harness(&[PHONE_A]);
+        let backend = armed_input(&inner).await;
+        let (tx, _rx) = tokio::sync::mpsc::channel(16);
+
+        for packet in [
+            mousepad_request(&[("dx", 99_999.0.into()), ("dy", 0.0.into())]),
+            mousepad_request(&[("specialKey", 999.into())]),
+            mousepad_request(&[("ctrl", true.into())]),
+            mousepad_request(&[]),
+        ] {
+            inner
+                .handle_transport_packet(PHONE_A, &packet, &PacketReplyRoute::Lan(tx.clone()))
+                .await;
+        }
+
+        tokio::time::sleep(Duration::from_millis(60)).await;
+        assert!(
+            backend.events.lock().unwrap().is_empty(),
+            "an unintelligible packet must move nothing"
+        );
+    }
+
+    #[cfg(feature = "kdeconnect-wan")]
+    #[tokio::test]
+    async fn remote_input_works_over_relay_wan_under_the_same_gate() {
+        let (inner, _events) = multi_device_harness(&[PHONE_A]);
+        let backend = armed_input(&inner).await;
+        let (_link, route) = wan_route(PHONE_A);
+
+        inner
+            .handle_transport_packet(
+                PHONE_A,
+                &mousepad_request(&[("singleclick", true.into())]),
+                &route,
+            )
+            .await;
+
+        let events = injected(&backend).await;
+        assert_eq!(events.len(), 2, "a click is a press and a release");
+        // Being Remote grants nothing extra and costs nothing: identical gate.
+        let (inner2, _events2) = multi_device_harness(&[PHONE_A]);
+        let blocked = Arc::new(RecordingInput { ready: true, ..Default::default() });
+        inner2
+            .set_input_backend(Some(
+                Arc::clone(&blocked) as Arc<dyn crate::kdeconnect::input::RemoteInputBackend>
+            ))
+            .await;
+        let (_link2, route2) = wan_route(PHONE_A);
+        inner2
+            .handle_transport_packet(
+                PHONE_A,
+                &mousepad_request(&[("singleclick", true.into())]),
+                &route2,
+            )
+            .await;
+        tokio::time::sleep(Duration::from_millis(60)).await;
+        assert!(
+            blocked.events.lock().unwrap().is_empty(),
+            "WAN must not bypass the enable switch"
+        );
+    }
+
+    #[tokio::test]
+    async fn two_devices_inject_independently() {
+        let (inner, _events) = multi_device_harness(&[PHONE_A, PHONE_B]);
+        let backend = armed_input(&inner).await;
+        let (tx, _rx) = tokio::sync::mpsc::channel(16);
+
+        inner
+            .handle_transport_packet(
+                PHONE_A,
+                &mousepad_request(&[("dx", 1.0.into()), ("dy", 0.0.into())]),
+                &PacketReplyRoute::Lan(tx.clone()),
+            )
+            .await;
+        inner
+            .handle_transport_packet(
+                PHONE_B,
+                &mousepad_request(&[("rightclick", true.into())]),
+                &PacketReplyRoute::Lan(tx),
+            )
+            .await;
+
+        let events = injected(&backend).await;
+        assert!(events.iter().any(|e| matches!(e, crate::kdeconnect::input::InputEvent::PointerMotion { .. })));
+        assert!(events.iter().any(|e| matches!(
+            e,
+            crate::kdeconnect::input::InputEvent::PointerButton {
+                button: crate::kdeconnect::input::PointerButton::Right,
+                ..
+            }
+        )));
+    }
+
+    #[tokio::test]
+    async fn a_backend_failure_does_not_take_the_link_down() {
+        let (inner, _events) = multi_device_harness(&[PHONE_A]);
+        let backend = Arc::new(RecordingInput { ready: true, fail: true, ..Default::default() });
+        inner.set_input_enabled(true);
+        inner
+            .set_input_backend(Some(
+                Arc::clone(&backend) as Arc<dyn crate::kdeconnect::input::RemoteInputBackend>
+            ))
+            .await;
+        let (tx, mut rx) = tokio::sync::mpsc::channel(16);
+
+        inner
+            .handle_transport_packet(
+                PHONE_A,
+                &mousepad_request(&[("dx", 3.0.into()), ("dy", 3.0.into())]),
+                &PacketReplyRoute::Lan(tx.clone()),
+            )
+            .await;
+        tokio::time::sleep(Duration::from_millis(60)).await;
+
+        // The very next packet on the same route still works.
+        let ping = minimal_packet(crate::kdeconnect::PACKET_TYPE_RELAY_PING);
+        assert!(
+            inner
+                .handle_transport_packet(PHONE_A, &ping, &PacketReplyRoute::Lan(tx))
+                .await
+        );
+        assert!(rx.try_recv().is_ok(), "the link must still answer after a backend failure");
+    }
+
+    // --- Local -> Remote handoff timing -----------------------------------
+
+    #[cfg(feature = "kdeconnect-wan")]
+    async fn set_route_seen(inner: &Arc<LanInner>, device_id: &str, kind: crate::kdeconnect::wan::TransportKind, at: i64) {
+        inner
+            .route_last_seen
+            .lock()
+            .await
+            .insert((device_id.to_owned(), kind), at);
+    }
+
+    #[cfg(feature = "kdeconnect-wan")]
+    #[tokio::test]
+    async fn a_silent_lan_route_fails_over_to_wan_within_the_failover_budget() {
+        use crate::kdeconnect::wan::TransportKind;
+        let (inner, _events) = multi_device_harness(&[PHONE_A]);
+        let (lan, _lan_route) = wan_route(PHONE_A); // stands in as a registered link
+        let (wan, _wan_route) = wan_route(PHONE_A);
+        inner.router.register(Arc::new(TestRouteLink { device_id: PHONE_A.to_owned(), kind: TransportKind::KdeLan }));
+        inner.router.register(Arc::clone(&wan) as Arc<dyn crate::kdeconnect::wan::TransportLink>);
+        drop(lan);
+
+        let now = now_unix();
+        // LAN last heard from just past the failover budget; WAN is healthy.
+        set_route_seen(&inner, PHONE_A, TransportKind::KdeLan, now - FAILOVER_TIMEOUT_SECS - 1).await;
+        set_route_seen(&inner, PHONE_A, TransportKind::RelayWan, now).await;
+
+        inner.sweep_stale_routes().await;
+
+        assert_eq!(
+            inner.router.active_transport(PHONE_A),
+            Some(TransportKind::RelayWan),
+            "with WAN healthy, a silent LAN route must fail over on the short budget"
+        );
+    }
+
+    #[cfg(feature = "kdeconnect-wan")]
+    #[tokio::test]
+    async fn a_silent_lan_route_is_kept_below_the_failover_budget() {
+        use crate::kdeconnect::wan::TransportKind;
+        let (inner, _events) = multi_device_harness(&[PHONE_A]);
+        inner.router.register(Arc::new(TestRouteLink { device_id: PHONE_A.to_owned(), kind: TransportKind::KdeLan }));
+        let (wan, _wan_route) = wan_route(PHONE_A);
+        inner.router.register(Arc::clone(&wan) as Arc<dyn crate::kdeconnect::wan::TransportLink>);
+
+        let now = now_unix();
+        // One missed probe must not cause a failover, or routes would flap.
+        set_route_seen(&inner, PHONE_A, TransportKind::KdeLan, now - FAILOVER_TIMEOUT_SECS + 2).await;
+        set_route_seen(&inner, PHONE_A, TransportKind::RelayWan, now).await;
+
+        inner.sweep_stale_routes().await;
+
+        assert_eq!(
+            inner.router.active_transport(PHONE_A),
+            Some(TransportKind::KdeLan),
+            "LAN still within budget must keep priority"
+        );
+    }
+
+    #[cfg(feature = "kdeconnect-wan")]
+    #[tokio::test]
+    async fn a_sole_route_keeps_the_generous_budget_rather_than_going_offline_early() {
+        use crate::kdeconnect::wan::TransportKind;
+        let (inner, _events) = multi_device_harness(&[PHONE_A]);
+        inner.router.register(Arc::new(TestRouteLink { device_id: PHONE_A.to_owned(), kind: TransportKind::KdeLan }));
+
+        let now = now_unix();
+        // Past the failover budget but well inside the sole-route budget.
+        set_route_seen(&inner, PHONE_A, TransportKind::KdeLan, now - FAILOVER_TIMEOUT_SECS - 5).await;
+
+        inner.sweep_stale_routes().await;
+
+        assert_eq!(
+            inner.router.active_transport(PHONE_A),
+            Some(TransportKind::KdeLan),
+            "dropping the only route shows the device Offline; that needs the long budget"
+        );
+
+        // ...and it is still dropped once the sole-route budget really expires.
+        set_route_seen(&inner, PHONE_A, TransportKind::KdeLan, now - HEARTBEAT_TIMEOUT_SECS - 1).await;
+        inner.sweep_stale_routes().await;
+        assert_eq!(inner.router.active_transport(PHONE_A), None);
+    }
+
+    #[cfg(feature = "kdeconnect-wan")]
+    #[tokio::test]
+    async fn lan_returning_takes_priority_back_from_wan_immediately() {
+        use crate::kdeconnect::wan::TransportKind;
+        let (inner, _events) = multi_device_harness(&[PHONE_A]);
+        let (wan, _wan_route) = wan_route(PHONE_A);
+        inner.router.register(Arc::clone(&wan) as Arc<dyn crate::kdeconnect::wan::TransportLink>);
+        assert_eq!(inner.router.active_transport(PHONE_A), Some(TransportKind::RelayWan));
+
+        // LAN comes back; no sweep, no timer, no re-pair -- priority decides.
+        inner.router.register(Arc::new(TestRouteLink { device_id: PHONE_A.to_owned(), kind: TransportKind::KdeLan }));
+
+        assert_eq!(inner.router.active_transport(PHONE_A), Some(TransportKind::KdeLan));
+        assert_eq!(inner.router.available_transports(PHONE_A).len(), 2, "one logical device, two routes");
     }
 
     #[cfg(feature = "kdeconnect-wan")]

@@ -9,7 +9,7 @@ use std::collections::BTreeMap;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 pub use super::capabilities::{
-    PACKET_TYPE_MPRIS, PACKET_TYPE_MPRIS_REQUEST, PACKET_TYPE_RUNCOMMAND,
+    PACKET_TYPE_MOUSEPAD_REQUEST, PACKET_TYPE_MPRIS, PACKET_TYPE_MPRIS_REQUEST, PACKET_TYPE_RUNCOMMAND,
     PACKET_TYPE_RUNCOMMAND_REQUEST,
     PACKET_TYPE_BATTERY, PACKET_TYPE_CLIPBOARD, PACKET_TYPE_CLIPBOARD_CONNECT,
     PACKET_TYPE_CONNECTIVITY_REPORT, PACKET_TYPE_FINDMYPHONE_REQUEST, PACKET_TYPE_IDENTITY,
@@ -314,6 +314,13 @@ impl NetworkPacket {
             return Err(PacketError("mpris request carries no instruction".into()));
         }
         Ok(body)
+    }
+
+    pub fn as_mousepad_request(&self) -> Result<MousePadRequestBody, PacketError> {
+        if self.packet_type != PACKET_TYPE_MOUSEPAD_REQUEST {
+            return Err(PacketError("not a mousepad request packet".into()));
+        }
+        MousePadRequestBody::from_map(&self.body)
     }
 
     pub fn as_runcommand_request(&self) -> Result<RunCommandRequestBody, PacketError> {
@@ -1971,3 +1978,64 @@ impl RunCommandListBody {
         NetworkPacket::new(PACKET_TYPE_RUNCOMMAND, body)
     }
 }
+
+// ---------------------------------------------------------------------------
+// Remote input (mousepad)
+// ---------------------------------------------------------------------------
+
+/// One `kdeconnect.mousepad.request` from the phone's `MousePadPlugin`.
+///
+/// Field names come from the Android plugin verbatim. `dx`/`dy` mean relative
+/// pointer motion normally and scroll amounts when `scroll` is set, which is
+/// upstream's shape rather than a Relay choice.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct MousePadRequestBody {
+    pub dx: Option<f64>,
+    pub dy: Option<f64>,
+    pub scroll: bool,
+    pub single_click: bool,
+    pub double_click: bool,
+    pub middle_click: bool,
+    pub right_click: bool,
+    pub single_hold: bool,
+    pub single_release: bool,
+    /// Literal text to type.
+    pub key: Option<String>,
+    /// Index into KDE Connect's special-key table.
+    pub special_key: Option<i64>,
+    pub ctrl: bool,
+    pub alt: bool,
+    pub shift: bool,
+    pub super_key: bool,
+}
+
+impl MousePadRequestBody {
+    fn from_map(body: &Map<String, Value>) -> Result<Self, PacketError> {
+        let flag = |key: &str| body.get(key).and_then(Value::as_bool).unwrap_or(false);
+        let key = optional_string(body, "key");
+        if key.as_ref().is_some_and(|text| text.len() > MAX_MOUSEPAD_TEXT_LEN) {
+            return Err(PacketError("mousepad text exceeds its bound".into()));
+        }
+        Ok(Self {
+            dx: body.get("dx").and_then(Value::as_f64),
+            dy: body.get("dy").and_then(Value::as_f64),
+            scroll: flag("scroll"),
+            single_click: flag("singleclick"),
+            double_click: flag("doubleclick"),
+            middle_click: flag("middleclick"),
+            right_click: flag("rightclick"),
+            single_hold: flag("singlehold"),
+            single_release: flag("singlerelease"),
+            key,
+            special_key: body.get("specialKey").and_then(Value::as_i64),
+            ctrl: flag("ctrl"),
+            alt: flag("alt"),
+            shift: flag("shift"),
+            super_key: flag("super"),
+        })
+    }
+}
+
+/// Bound on a single text-injection payload, checked before the body is built
+/// so an oversized packet is refused at parse time rather than deeper in.
+const MAX_MOUSEPAD_TEXT_LEN: usize = 512;

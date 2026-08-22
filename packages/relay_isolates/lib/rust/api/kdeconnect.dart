@@ -31,6 +31,13 @@ Future<String> kdeconnectNewRunCommandId() => RustLib.instance.api.crateApiKdeco
 abstract class RsKdeConnect implements RustOpaqueInterface {
   Future<void> acceptPair({required String deviceId});
 
+  /// Asks the desktop for permission to inject input.
+  ///
+  /// Raises the compositor's own approval dialog, so it must only be called
+  /// from a deliberate user action in Settings -- never at startup, and never
+  /// because a phone sent something.
+  Future<void> authorizeRemoteInput();
+
   /// Dismisses one notification on the logical device that produced it.
   ///
   /// Both arguments are required: a remote notification id is unique only
@@ -52,6 +59,12 @@ abstract class RsKdeConnect implements RustOpaqueInterface {
 
   Future<void> rejectPair({required String deviceId});
 
+  /// Whether remote input is switched on for this desktop.
+  Future<bool> remoteInputEnabled();
+
+  /// Whether an OS-level input session is currently authorised.
+  Future<bool> remoteInputReady();
+
   Future<void> requestNotifications({required String deviceId});
 
   Future<void> requestPair({required String deviceId});
@@ -61,6 +74,8 @@ abstract class RsKdeConnect implements RustOpaqueInterface {
   Future<void> requestSmsConversation({required String deviceId, required PlatformInt64 threadId, PlatformInt64? before});
 
   Future<void> requestSmsConversations({required String deviceId});
+
+  Future<void> revokeRemoteInput();
 
   Future<List<RsRunCommand>> runCommands();
 
@@ -73,6 +88,8 @@ abstract class RsKdeConnect implements RustOpaqueInterface {
   Future<void> sendRelayPing({required String deviceId});
 
   Future<void> sendSms({required String deviceId, required List<String> addresses, required String body, int? subId});
+
+  Future<void> setRemoteInputEnabled({required bool enabled});
 
   /// Replaces the RunCommand allow-list. Effective immediately for every
   /// connected device, over both LAN and Relay WAN.

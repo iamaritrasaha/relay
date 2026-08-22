@@ -90,6 +90,13 @@ class KdeConnectState {
   /// The desktop's RunCommand allow-list. Owned by this machine, not by any
   /// device: which phone asked is carried in the request, never in the storage.
   final List<RsRunCommand> runCommands;
+
+  /// Whether the desktop user has switched remote input on.
+  final bool remoteInputEnabled;
+
+  /// Whether an OS-level input session is currently authorised. Being enabled
+  /// is not enough: the compositor must also have granted a session.
+  final bool remoteInputReady;
   final Map<String, List<RsKdeSmsConversation>> smsConversations;
   final Map<String, Map<int, List<RsKdeSmsMessage>>> smsMessages;
   final Map<String, KdeTelephonyState?> activeCalls;
@@ -103,6 +110,8 @@ class KdeConnectState {
     this.incoming,
     this.notifications = const {},
     this.runCommands = const [],
+    this.remoteInputEnabled = false,
+    this.remoteInputReady = false,
     this.smsConversations = const {},
     this.smsMessages = const {},
     this.activeCalls = const {},
@@ -149,6 +158,8 @@ class KdeConnectState {
     bool clearIncoming = false,
     Map<String, List<RsKdeNotification>>? notifications,
     List<RsRunCommand>? runCommands,
+    bool? remoteInputEnabled,
+    bool? remoteInputReady,
     Map<String, List<RsKdeSmsConversation>>? smsConversations,
     Map<String, Map<int, List<RsKdeSmsMessage>>>? smsMessages,
     Map<String, KdeTelephonyState?>? activeCalls,
@@ -161,6 +172,8 @@ class KdeConnectState {
     incoming: clearIncoming ? null : incoming ?? this.incoming,
     notifications: notifications ?? this.notifications,
     runCommands: runCommands ?? this.runCommands,
+    remoteInputEnabled: remoteInputEnabled ?? this.remoteInputEnabled,
+    remoteInputReady: remoteInputReady ?? this.remoteInputReady,
     smsConversations: smsConversations ?? this.smsConversations,
     smsMessages: smsMessages ?? this.smsMessages,
     activeCalls: activeCalls ?? this.activeCalls,
@@ -275,7 +288,13 @@ class KdeConnectStartAction extends AsyncReduxAction<KdeConnectService, KdeConne
         _logger.warning('KDE Connect event stream failed', error, stack);
       },
     );
-    return state.copyWith(runCommands: restoredCommands);
+    // Remote input is restored as a stored preference only. The OS-level
+    // session is deliberately never re-established automatically: input control
+    // must be granted by a present user, not inherited from a previous run.
+    final remoteInputEnabled = notifier.persistence.getKdeConnectRemoteInputEnabled();
+    runtime.setRemoteInputEnabled(enabled: remoteInputEnabled);
+
+    return state.copyWith(runCommands: restoredCommands, remoteInputEnabled: remoteInputEnabled, remoteInputReady: false);
   }
 }
 
@@ -464,6 +483,48 @@ class KdeConnectSetRunCommandsAction extends AsyncReduxAction<KdeConnectService,
       _logger.warning('Applying the RunCommand list failed', error, stack);
     }
     return state.copyWith(runCommands: commands);
+  }
+}
+
+/// Turns remote input on or off on this desktop.
+///
+/// Switching it on does not by itself let a phone move the cursor — an OS-level
+/// session still has to be authorised, which is a separate, explicit step.
+class KdeConnectSetRemoteInputEnabledAction extends AsyncReduxAction<KdeConnectService, KdeConnectState> {
+  final bool enabled;
+
+  KdeConnectSetRemoteInputEnabledAction(this.enabled);
+
+  @override
+  Future<KdeConnectState> reduce() async {
+    await notifier.persistence.setKdeConnectRemoteInputEnabled(enabled);
+    notifier._runtime?.setRemoteInputEnabled(enabled: enabled);
+    return state.copyWith(remoteInputEnabled: enabled);
+  }
+}
+
+/// Asks the desktop session for permission to inject input.
+///
+/// Triggers the compositor's own approval dialog, so it is only ever dispatched
+/// from a deliberate action in Settings.
+class KdeConnectAuthorizeRemoteInputAction extends AsyncReduxAction<KdeConnectService, KdeConnectState> {
+  @override
+  Future<KdeConnectState> reduce() async {
+    try {
+      await notifier._runtime?.authorizeRemoteInput();
+    } catch (error, stack) {
+      _logger.warning('Remote input authorization failed or was declined', error, stack);
+    }
+    final ready = await notifier._runtime?.remoteInputReady() ?? false;
+    return state.copyWith(remoteInputReady: ready);
+  }
+}
+
+class KdeConnectRevokeRemoteInputAction extends AsyncReduxAction<KdeConnectService, KdeConnectState> {
+  @override
+  Future<KdeConnectState> reduce() async {
+    await notifier._runtime?.revokeRemoteInput();
+    return state.copyWith(remoteInputReady: false);
   }
 }
 

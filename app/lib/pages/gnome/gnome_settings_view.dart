@@ -239,6 +239,39 @@ class GnomeSettingsView extends StatelessWidget {
                         ]),
 
                       if (defaultTargetPlatform == TargetPlatform.linux)
+                        group('Remote input', [
+                          AdwSwitchRow(
+                            title: 'Allow remote input',
+                            subtitle: 'Let a paired phone act as a trackpad and keyboard',
+                            value: ref.watch(kdeConnectProvider).remoteInputEnabled,
+                            onChanged: (enabled) async =>
+                                ref.redux(kdeConnectProvider).dispatchAsync(KdeConnectSetRemoteInputEnabledAction(enabled)),
+                          ),
+                          // Enabling is not sufficient: the desktop session has
+                          // to grant input control, and only a person at this
+                          // machine can approve that.
+                          if (ref.watch(kdeConnectProvider).remoteInputEnabled)
+                            AdwActionRow(
+                              leading: const Icon(YaruIcons.keyboard),
+                              title: 'Desktop permission',
+                              subtitle: ref.watch(kdeConnectProvider).remoteInputReady
+                                  ? 'Granted for this session'
+                                  : 'Required before a phone can control this computer',
+                              trailing: ref.watch(kdeConnectProvider).remoteInputReady
+                                  ? OutlinedButton(
+                                      onPressed: () async =>
+                                          ref.redux(kdeConnectProvider).dispatchAsync(KdeConnectRevokeRemoteInputAction()),
+                                      child: const Text('Revoke'),
+                                    )
+                                  : FilledButton(
+                                      onPressed: () async =>
+                                          ref.redux(kdeConnectProvider).dispatchAsync(KdeConnectAuthorizeRemoteInputAction()),
+                                      child: const Text('Allow'),
+                                    ),
+                            ),
+                        ]),
+
+                      if (defaultTargetPlatform == TargetPlatform.linux)
                         group('Remote commands', [
                           for (final command in ref.watch(kdeConnectProvider).runCommands)
                             AdwActionRow(

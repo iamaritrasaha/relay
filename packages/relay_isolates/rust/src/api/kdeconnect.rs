@@ -356,6 +356,40 @@ impl RsKdeConnect {
             .await
     }
 
+    /// Whether remote input is switched on for this desktop.
+    pub fn remote_input_enabled(&self) -> bool {
+        self.handle.remote_input_enabled()
+    }
+
+    pub fn set_remote_input_enabled(&self, enabled: bool) {
+        self.handle.set_remote_input_enabled(enabled);
+    }
+
+    /// Whether an OS-level input session is currently authorised.
+    pub async fn remote_input_ready(&self) -> bool {
+        self.handle.remote_input_ready().await
+    }
+
+    /// Asks the desktop for permission to inject input.
+    ///
+    /// Raises the compositor's own approval dialog, so it must only be called
+    /// from a deliberate user action in Settings -- never at startup, and never
+    /// because a phone sent something.
+    pub async fn authorize_remote_input(&self) -> anyhow::Result<()> {
+        #[cfg(all(target_os = "linux", feature = "remote-input"))]
+        {
+            return self.handle.authorize_remote_input().await;
+        }
+        #[cfg(not(all(target_os = "linux", feature = "remote-input")))]
+        {
+            anyhow::bail!("remote input is not supported on this platform")
+        }
+    }
+
+    pub async fn revoke_remote_input(&self) {
+        self.handle.revoke_remote_input().await;
+    }
+
     /// Replaces the RunCommand allow-list. Effective immediately for every
     /// connected device, over both LAN and Relay WAN.
     pub fn set_run_commands(&self, commands: Vec<RsRunCommand>) {

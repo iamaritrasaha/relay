@@ -309,7 +309,11 @@ void main() {
       final document = tester.widget<ConstrainedBox>(find.byKey(const ValueKey('gnome-settings-document')));
       expect(document.constraints.maxWidth, 760);
       expect(tester.widget<SingleChildScrollView>(find.byType(SingleChildScrollView)).padding, const EdgeInsets.fromLTRB(32, 24, 32, 36));
-      expect(find.byType(AdwBoxedList), findsNWidgets(7));
+      // Linux also gains the Remote Input permission group; input control is a
+      // user-granted capability and has to be visible and revocable.
+      expect(find.text('Remote input'), findsOneWidget);
+      expect(find.text('Allow remote input'), findsOneWidget);
+      expect(find.byType(AdwBoxedList), findsNWidgets(8));
       expect(find.byType(RelayBreath), findsNothing);
       expect(find.byType(RelayEdgeSweep), findsNothing);
       expect(find.byType(DropdownButton), findsNothing);
@@ -363,7 +367,7 @@ void main() {
       );
       await tester.pumpAndSettle();
       expect(tester.takeException(), isNull);
-      expect(find.byType(AdwBoxedList), findsNWidgets(7));
+      expect(find.byType(AdwBoxedList), findsNWidgets(8));
       expect(tester.widget<SingleChildScrollView>(find.byType(SingleChildScrollView)).padding, const EdgeInsets.fromLTRB(16, 24, 16, 36));
     } finally {
       debugDefaultTargetPlatformOverride = null;
