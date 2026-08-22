@@ -171,12 +171,12 @@ void main() {
     intents: const RelayHomeIntents(canSelectPayload: true, canChooseTarget: true),
   );
 
-  Future<void> render(WidgetTester tester, RelayHomeVm vm, Size viewport) async {
+  Future<void> render(WidgetTester tester, RelayHomeVm vm, Size viewport, {Brightness brightness = Brightness.dark}) async {
     tester.view.physicalSize = viewport;
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.reset);
 
-    final theme = getTheme(ColorMode.relay, Colors.blue, Brightness.dark, null);
+    final theme = getTheme(ColorMode.relay, Colors.blue, brightness, null);
 
     await tester.pumpWidget(
       RefenaScope(
@@ -214,6 +214,21 @@ void main() {
       );
     });
   }
+
+  testWidgets('yaru connected tablet wide 1920x1080', (tester) async {
+    await render(tester, vmWith(const [tablet]), const Size(1920, 1080));
+    await expectLater(find.byType(MaterialApp), matchesGoldenFile('goldens/relay_yaru/connected_tablet_1920x1080.png'));
+  });
+
+  testWidgets('yaru narrow vertical stage 460x800', (tester) async {
+    await render(tester, vmWith(const [phone]), const Size(460, 800));
+    await expectLater(find.byType(MaterialApp), matchesGoldenFile('goldens/relay_yaru/narrow_stage_460x800.png'));
+  });
+
+  testWidgets('yaru light mode 1440x900', (tester) async {
+    await render(tester, vmWith(const [phone]), const Size(1440, 900), brightness: Brightness.light);
+    await expectLater(find.byType(MaterialApp), matchesGoldenFile('goldens/relay_yaru/light_mode_1440x900.png'));
+  });
 
   testWidgets('yaru multi device dock 1920x1080', (tester) async {
     await render(tester, vmWith(const [phone, tablet, laptop, offlinePhone]), const Size(1920, 1080));

@@ -32,6 +32,7 @@ use socket2::{Domain, Protocol, Socket, Type};
 use std::collections::HashMap;
 use std::io;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -149,6 +150,11 @@ struct Conn {
     name: String,
     device_type: String,
     protocol_version: i64,
+    /// Distinguishes this `Conn` from any other ever installed for the same
+    /// device_id, so a closing reader task can only evict the entry it
+    /// itself installed rather than a newer connection that has since
+    /// replaced it (see the reader-task cleanup in `finish_secure_link`).
+    epoch: u64,
 }
 
 pub(crate) struct LanInner {
@@ -170,6 +176,7 @@ pub(crate) struct LanInner {
     incoming: Mutex<std::collections::HashSet<String>>,
     event_tx: mpsc::UnboundedSender<KdeConnectEvent>,
     pub cancel: CancellationToken,
+    conn_epoch: AtomicU64,
 }
 
 impl LanInner {
@@ -204,6 +211,7 @@ impl LanInner {
             incoming: Mutex::new(std::collections::HashSet::new()),
             event_tx,
             cancel,
+            conn_epoch: AtomicU64::new(0),
         })
     }
 
@@ -1007,6 +1015,49 @@ async fn handle_udp(
         .await
         .contains_key(&identity.device_id)
     {
+        // Already connected. The plaintext UDP identity is unauthenticated and
+        // must never be written into `peer_capabilities` directly — but if it
+        // advertises a capability set that differs from what we cached from the
+        // last *secure* identity exchange, that's a signal worth treating as a
+        // hint: re-run the TLS handshake so `finish_secure_link` can refresh the
+        // authoritative cache from an authenticated source. Typical trigger:
+        // the phone just got a permission granted/revoked and re-announced.
+        let capabilities_changed = {
+            let cached = inner.peer_capabilities.lock().await;
+            match cached.get(&identity.device_id) {
+                Some((cached_in, cached_out)) => {
+                    !same_capability_set(cached_in, &identity.incoming_capabilities)
+                        || !same_capability_set(cached_out, &identity.outgoing_capabilities)
+                }
+                // Connected without a cached entry shouldn't happen in practice;
+                // don't force a refresh on a guess either way.
+                None => false,
+            }
+        };
+        if capabilities_changed {
+            tracing::info!(
+                "[KDE Connect] UDP identity from {} advertises different capabilities while \
+                 already connected; scheduling a secure capability refresh",
+                identity.device_id
+            );
+            let refresh_inner = Arc::clone(inner);
+            let refresh_ip = addr.ip();
+            let refresh_device_id = identity.device_id.clone();
+            tokio::spawn(async move {
+                if let Err(err) = outbound_connect(
+                    refresh_inner,
+                    refresh_ip,
+                    tcp_port,
+                    Some(refresh_device_id.clone()),
+                )
+                .await
+                {
+                    tracing::debug!(
+                        "[KDE Connect] capability-refresh reconnect to {refresh_device_id} failed: {err:#}"
+                    );
+                }
+            });
+        }
         return Ok(());
     }
     match outbound_connect(
@@ -1043,6 +1094,16 @@ async fn rate_ok(inner: &LanInner, device_id: &str) -> bool {
     }
     last.insert(device_id.to_string(), now);
     true
+}
+
+/// Order-insensitive comparison of two capability lists.
+fn same_capability_set(a: &[String], b: &[String]) -> bool {
+    if a.len() != b.len() {
+        return false;
+    }
+    let a_set: std::collections::HashSet<&str> = a.iter().map(String::as_str).collect();
+    let b_set: std::collections::HashSet<&str> = b.iter().map(String::as_str).collect();
+    a_set == b_set
 }
 
 fn is_usable_address(ip: IpAddr, allow_loopback: bool) -> bool {
@@ -1341,6 +1402,7 @@ async fn finish_secure_link(
     });
     let (mut reader, mut writer) = tokio::io::split(tls);
     let (tx, mut rx) = mpsc::channel::<Vec<u8>>(16);
+    let conn_epoch = inner.conn_epoch.fetch_add(1, Ordering::SeqCst) + 1;
     {
         let mut connections = inner.connections.lock().await;
         connections.insert(
@@ -1351,6 +1413,7 @@ async fn finish_secure_link(
                 name: secure.device_name.clone(),
                 device_type: secure.device_type.clone(),
                 protocol_version: secure.protocol_version,
+                epoch: conn_epoch,
             },
         );
     }
@@ -1619,7 +1682,19 @@ async fn finish_secure_link(
                 }
             }
         }
-        read_inner.connections.lock().await.remove(&read_id);
+        // Only evict the Conn this reader task itself installed: if a newer
+        // secure link has since replaced it (e.g. a capability-refresh
+        // reconnect while this older connection was still tearing down),
+        // that newer Conn must survive.
+        {
+            let mut connections = read_inner.connections.lock().await;
+            if connections
+                .get(&read_id)
+                .is_some_and(|conn| conn.epoch == conn_epoch)
+            {
+                connections.remove(&read_id);
+            }
+        }
         if let Some(state) = read_inner.connectivity.lock().await.get_mut(&read_id) {
             state.stale = true;
         }
@@ -2858,5 +2933,419 @@ mod tests {
 
         let _ = relay_task.await;
         let _ = phone_task.await;
+    }
+
+    #[test]
+    fn same_capability_set_is_order_insensitive() {
+        let a = vec![
+            "kdeconnect.ping".to_string(),
+            "kdeconnect.sms.request".to_string(),
+        ];
+        let b = vec![
+            "kdeconnect.sms.request".to_string(),
+            "kdeconnect.ping".to_string(),
+        ];
+        assert!(same_capability_set(&a, &b));
+
+        let c = vec!["kdeconnect.ping".to_string()];
+        assert!(!same_capability_set(&a, &c));
+
+        let empty: Vec<String> = Vec::new();
+        assert!(same_capability_set(&empty, &empty));
+    }
+
+    #[tokio::test]
+    async fn rate_ok_gates_rapid_repeated_calls_for_the_same_device() {
+        let (event_tx, _event_rx) = tokio::sync::mpsc::unbounded_channel();
+        let inner = LanInner::new(
+            crate::kdeconnect::LocalIdentity::generate("Relay").unwrap(),
+            Vec::new(),
+            LanConfig {
+                bind: BindMode::Any,
+                allow_loopback: true,
+            },
+            1716,
+            event_tx,
+            tokio_util::sync::CancellationToken::new(),
+        );
+
+        // handle_udp calls rate_ok unconditionally before ever reaching the
+        // capability-refresh logic, so this same cooldown already protects the
+        // new code path against a UDP identity storm re-triggering a secure
+        // handshake many times a second.
+        assert!(rate_ok(&inner, "phone-a").await, "first call should pass");
+        assert!(
+            !rate_ok(&inner, "phone-a").await,
+            "immediate repeat within the cooldown should be gated"
+        );
+        assert!(
+            rate_ok(&inner, "phone-b").await,
+            "a different device_id must not share phone-a's cooldown"
+        );
+
+        tokio::time::sleep(CONNECT_COOLDOWN + Duration::from_millis(50)).await;
+        assert!(
+            rate_ok(&inner, "phone-a").await,
+            "call after the cooldown elapses should pass again"
+        );
+    }
+
+    /// Reproduces the exact scenario from the capability-refresh bug report: a
+    /// phone that is already connected re-broadcasts a plaintext UDP identity
+    /// advertising a different capability set (e.g. SEND_SMS was just granted,
+    /// so `kdeconnect.sms.request` newly appears). Before the fix, `handle_udp`
+    /// returned immediately for any already-connected peer and `peer_capabilities`
+    /// stayed stale forever. This drives `handle_udp` directly with a synthetic
+    /// UDP datagram and asserts the cache is refreshed via a real secure
+    /// (TLS-authenticated) reconnect -- never by trusting the UDP payload
+    /// directly -- and that the stale first connection's reader-task cleanup
+    /// cannot evict the newer connection the refresh installs.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn capability_refresh_completes_end_to_end_and_survives_stale_reader_cleanup() {
+        let relay_identity = crate::kdeconnect::LocalIdentity::generate("Relay").unwrap();
+        let phone_identity = crate::kdeconnect::LocalIdentity::generate("Phone").unwrap();
+        let phone_id = phone_identity.device_id.clone();
+        let relay_id = relay_identity.device_id.clone();
+
+        let listener = TcpListener::bind("127.0.0.1:1740").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+
+        let relay_inner = LanInner::new(
+            relay_identity.clone(),
+            Vec::new(),
+            LanConfig {
+                bind: BindMode::Any,
+                allow_loopback: true,
+            },
+            1716,
+            tokio::sync::mpsc::unbounded_channel().0,
+            tokio_util::sync::CancellationToken::new(),
+        );
+
+        let phone_identity_clone = phone_identity.clone();
+        let (hold_tx, hold_rx) = tokio::sync::oneshot::channel::<()>();
+        let (closed_tx, closed_rx) = tokio::sync::oneshot::channel::<()>();
+        let (go_tx, go_rx) = tokio::sync::oneshot::channel::<()>();
+        let phone_task = tokio::spawn(async move {
+            // Phase 1: initial secure link, phone advertises capability set A.
+            let (mut stream, _) = tokio::time::timeout(Duration::from_secs(2), listener.accept())
+                .await
+                .expect("phase1 accept timeout")
+                .unwrap();
+            let line = tokio::time::timeout(
+                Duration::from_secs(2),
+                read_line_bounded(&mut stream, MAX_IDENTITY_PACKET_BYTES),
+            )
+            .await
+            .expect("phase1 read pre-TLS timeout")
+            .unwrap();
+            let _ = NetworkPacket::parse(&line).unwrap().as_identity().unwrap();
+
+            let mut tls = tokio::time::timeout(
+                Duration::from_secs(2),
+                start_tls_as_client(&phone_identity_clone, stream, &relay_id, None),
+            )
+            .await
+            .expect("phase1 TLS timeout")
+            .unwrap();
+
+            let mut body_a = phone_identity_clone.identity_packet(None);
+            body_a.incoming_capabilities = vec!["kdeconnect.ping".to_string()];
+            body_a.outgoing_capabilities = vec!["kdeconnect.ping".to_string()];
+            tls.write_all(&body_a.to_packet().serialize())
+                .await
+                .unwrap();
+            tls.flush().await.unwrap();
+
+            let line = tokio::time::timeout(
+                Duration::from_secs(2),
+                read_line_bounded(&mut tls, MAX_IDENTITY_PACKET_BYTES),
+            )
+            .await
+            .expect("phase1 read relay secure identity timeout")
+            .unwrap();
+            let _ = NetworkPacket::parse(&line).unwrap().as_identity().unwrap();
+
+            // Phase 2: accept the capability-refresh reconnect, advertise B.
+            let (mut stream2, _) = tokio::time::timeout(Duration::from_secs(2), listener.accept())
+                .await
+                .expect("phase2 accept timeout")
+                .unwrap();
+            let line2 = tokio::time::timeout(
+                Duration::from_secs(2),
+                read_line_bounded(&mut stream2, MAX_IDENTITY_PACKET_BYTES),
+            )
+            .await
+            .expect("phase2 read pre-TLS timeout")
+            .unwrap();
+            let _ = NetworkPacket::parse(&line2).unwrap().as_identity().unwrap();
+
+            let mut tls2 = tokio::time::timeout(
+                Duration::from_secs(2),
+                start_tls_as_client(&phone_identity_clone, stream2, &relay_id, None),
+            )
+            .await
+            .expect("phase2 TLS timeout")
+            .unwrap();
+
+            let mut body_b = phone_identity_clone.identity_packet(None);
+            body_b.incoming_capabilities = vec!["kdeconnect.sms.request".to_string()];
+            body_b.outgoing_capabilities = vec!["kdeconnect.sms.request".to_string()];
+            tls2.write_all(&body_b.to_packet().serialize())
+                .await
+                .unwrap();
+            tls2.flush().await.unwrap();
+
+            let line3 = tokio::time::timeout(
+                Duration::from_secs(2),
+                read_line_bounded(&mut tls2, MAX_IDENTITY_PACKET_BYTES),
+            )
+            .await
+            .expect("phase2 read relay secure identity timeout")
+            .unwrap();
+            let _ = NetworkPacket::parse(&line3).unwrap().as_identity().unwrap();
+
+            // The newer (phase 2) connection is now fully established. Close the
+            // STALE phase-1 connection to exercise the reader-task cleanup race:
+            // its closing must not evict the newer Conn the refresh just installed.
+            // `tls2` is deliberately kept alive (not dropped) until the test signals
+            // it's done asserting, so the phase-2 connection can't be mistaken for
+            // closed by its own reader task while the assertion is still pending.
+            let _ = hold_rx.await;
+            drop(tls);
+            let _ = closed_tx.send(());
+            let _ = go_rx.await;
+            drop(tls2);
+
+            Ok::<(), anyhow::Error>(())
+        });
+
+        let relay_res = tokio::time::timeout(
+            Duration::from_secs(2),
+            outbound_connect(
+                Arc::clone(&relay_inner),
+                addr.ip(),
+                addr.port(),
+                Some(phone_id.clone()),
+            ),
+        )
+        .await
+        .expect("relay initial outbound_connect timeout");
+        assert!(relay_res.is_ok(), "{relay_res:?}");
+
+        let snapshot_a = relay_inner.snapshot().await;
+        let dev_a = snapshot_a
+            .iter()
+            .find(|d| d.device_id == phone_id)
+            .expect("phone present in snapshot after phase1");
+        assert_eq!(
+            dev_a.incoming_capabilities,
+            vec!["kdeconnect.ping".to_string()]
+        );
+
+        let first_epoch = {
+            let connections = relay_inner.connections.lock().await;
+            connections
+                .get(&phone_id)
+                .expect("phase1 Conn present")
+                .epoch
+        };
+
+        // Fire a synthetic UDP identity broadcast advertising DIFFERENT
+        // capabilities while already connected -- the exact scenario `handle_udp`
+        // used to silently drop.
+        let mut udp_identity = phone_identity.identity_packet(Some(addr.port()));
+        udp_identity.incoming_capabilities = vec!["kdeconnect.sms.request".to_string()];
+        udp_identity.outgoing_capabilities = vec!["kdeconnect.sms.request".to_string()];
+        let datagram = udp_identity.to_packet().serialize();
+
+        let probe_udp = UdpSocket::bind("127.0.0.1:0").await.unwrap();
+        let fake_udp_src = SocketAddr::new(addr.ip(), 0);
+        handle_udp(&relay_inner, &probe_udp, &datagram, fake_udp_src)
+            .await
+            .expect("handle_udp must not error on a capability-change datagram");
+
+        // Poll until the background refresh reconnect completes.
+        let mut refreshed = false;
+        for _ in 0..40 {
+            tokio::time::sleep(Duration::from_millis(50)).await;
+            let snapshot = relay_inner.snapshot().await;
+            if let Some(dev) = snapshot.iter().find(|d| d.device_id == phone_id) {
+                if dev.incoming_capabilities == vec!["kdeconnect.sms.request".to_string()] {
+                    refreshed = true;
+                    break;
+                }
+            }
+        }
+        assert!(
+            refreshed,
+            "expected peer_capabilities to refresh to the newly-advertised set"
+        );
+
+        let second_epoch = {
+            let connections = relay_inner.connections.lock().await;
+            connections
+                .get(&phone_id)
+                .expect("refreshed Conn present")
+                .epoch
+        };
+        assert_ne!(
+            first_epoch, second_epoch,
+            "the refresh must install a new Conn via a real secure handshake, not mutate the old one in place"
+        );
+
+        // Let the stale phase-1 connection close and its reader task run its cleanup,
+        // while the phase-2 connection is deliberately still held open on the phone
+        // side (see `go_rx` above) so this assertion can't race its own teardown.
+        let _ = hold_tx.send(());
+        let _ = closed_rx.await;
+        tokio::time::sleep(Duration::from_millis(200)).await;
+
+        let connections = relay_inner.connections.lock().await;
+        let entry = connections
+            .get(&phone_id)
+            .expect("the refreshed connection must survive the stale reader's cleanup");
+        assert_eq!(
+            entry.epoch, second_epoch,
+            "the newer connection must not be evicted by the older connection's teardown"
+        );
+        drop(connections);
+
+        let _ = go_tx.send(());
+        let _ = phone_task.await.unwrap();
+    }
+
+    /// Companion to the refresh test above: when the UDP identity advertises the
+    /// SAME capability set already cached, no secure reconnect should be
+    /// attempted at all -- guards against a handshake storm on every routine
+    /// UDP re-broadcast from an already-connected peer.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn capability_refresh_is_skipped_when_udp_identity_capabilities_are_unchanged() {
+        let relay_identity = crate::kdeconnect::LocalIdentity::generate("Relay").unwrap();
+        let phone_identity = crate::kdeconnect::LocalIdentity::generate("Phone").unwrap();
+        let phone_id = phone_identity.device_id.clone();
+        let relay_id = relay_identity.device_id.clone();
+
+        let listener = TcpListener::bind("127.0.0.1:1741").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+
+        let relay_inner = LanInner::new(
+            relay_identity.clone(),
+            Vec::new(),
+            LanConfig {
+                bind: BindMode::Any,
+                allow_loopback: true,
+            },
+            1716,
+            tokio::sync::mpsc::unbounded_channel().0,
+            tokio_util::sync::CancellationToken::new(),
+        );
+
+        let phone_identity_clone = phone_identity.clone();
+        let (go_tx, go_rx) = tokio::sync::oneshot::channel::<()>();
+        let (result_tx, result_rx) = tokio::sync::oneshot::channel::<bool>();
+        let phone_task = tokio::spawn(async move {
+            let (mut stream, _) = tokio::time::timeout(Duration::from_secs(2), listener.accept())
+                .await
+                .expect("accept timeout")
+                .unwrap();
+            let line = tokio::time::timeout(
+                Duration::from_secs(2),
+                read_line_bounded(&mut stream, MAX_IDENTITY_PACKET_BYTES),
+            )
+            .await
+            .expect("read pre-TLS timeout")
+            .unwrap();
+            let _ = NetworkPacket::parse(&line).unwrap().as_identity().unwrap();
+
+            let mut tls = tokio::time::timeout(
+                Duration::from_secs(2),
+                start_tls_as_client(&phone_identity_clone, stream, &relay_id, None),
+            )
+            .await
+            .expect("TLS timeout")
+            .unwrap();
+
+            let mut body = phone_identity_clone.identity_packet(None);
+            body.incoming_capabilities = vec!["kdeconnect.ping".to_string()];
+            body.outgoing_capabilities = vec!["kdeconnect.ping".to_string()];
+            tls.write_all(&body.to_packet().serialize()).await.unwrap();
+            tls.flush().await.unwrap();
+
+            let line = tokio::time::timeout(
+                Duration::from_secs(2),
+                read_line_bounded(&mut tls, MAX_IDENTITY_PACKET_BYTES),
+            )
+            .await
+            .expect("read relay secure identity timeout")
+            .unwrap();
+            let _ = NetworkPacket::parse(&line).unwrap().as_identity().unwrap();
+
+            // No second connection should ever arrive. Prove it rather than assume
+            // it: keep accepting with a bounded timeout and report if anything shows up.
+            let second_connection_arrived =
+                tokio::time::timeout(Duration::from_millis(600), listener.accept())
+                    .await
+                    .is_ok();
+
+            let _ = result_tx.send(second_connection_arrived);
+
+            // `tls` (and thus this connection) is deliberately kept alive until the
+            // test signals it's done asserting on `connections`, so the entry can't
+            // be mistaken for closed by its own reader task mid-assertion.
+            let _ = go_rx.await;
+            drop(tls);
+        });
+
+        let relay_res = tokio::time::timeout(
+            Duration::from_secs(2),
+            outbound_connect(
+                Arc::clone(&relay_inner),
+                addr.ip(),
+                addr.port(),
+                Some(phone_id.clone()),
+            ),
+        )
+        .await
+        .expect("relay initial outbound_connect timeout");
+        assert!(relay_res.is_ok(), "{relay_res:?}");
+
+        let first_epoch = {
+            let connections = relay_inner.connections.lock().await;
+            connections.get(&phone_id).expect("Conn present").epoch
+        };
+
+        // Same capability set as the initial secure identity -- must be a no-op.
+        let mut udp_identity = phone_identity.identity_packet(Some(addr.port()));
+        udp_identity.incoming_capabilities = vec!["kdeconnect.ping".to_string()];
+        udp_identity.outgoing_capabilities = vec!["kdeconnect.ping".to_string()];
+        let datagram = udp_identity.to_packet().serialize();
+
+        let probe_udp = UdpSocket::bind("127.0.0.1:0").await.unwrap();
+        let fake_udp_src = SocketAddr::new(addr.ip(), 0);
+        handle_udp(&relay_inner, &probe_udp, &datagram, fake_udp_src)
+            .await
+            .expect("handle_udp must not error");
+
+        let second_connection_arrived = result_rx.await.unwrap();
+        assert!(
+            !second_connection_arrived,
+            "an unchanged capability set must not trigger a secure reconnect"
+        );
+
+        let epoch_after = {
+            let connections = relay_inner.connections.lock().await;
+            connections
+                .get(&phone_id)
+                .expect("Conn still present")
+                .epoch
+        };
+        assert_eq!(
+            first_epoch, epoch_after,
+            "the original connection must be untouched when nothing changed"
+        );
+
+        let _ = go_tx.send(());
+        let _ = phone_task.await.unwrap();
     }
 }

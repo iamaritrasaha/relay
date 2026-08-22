@@ -913,6 +913,38 @@ mod tests {
         );
     }
 
+    /// Pins `SmsRequestBody::to_packet()`'s output against the SAME JSON files
+    /// checked into the Android repo (`src/test/resources/fixtures/`), so the
+    /// two repos can't silently drift on the wire schema without a test on
+    /// this side failing too. Keep the two copies byte-identical when editing.
+    #[test]
+    fn sms_request_body_matches_the_shared_cross_repo_fixture() {
+        let packet = SmsRequestBody {
+            addresses: vec!["+15550100".into()],
+            message_body: "Hello from Relay".into(),
+            sub_id: Some(1),
+        }
+        .to_packet();
+
+        let expected: Value =
+            serde_json::from_str(include_str!("testdata/sms_request_v2.json")).unwrap();
+        assert_eq!(Value::Object(packet.body), expected);
+    }
+
+    #[test]
+    fn sms_request_body_without_sub_id_matches_the_shared_cross_repo_fixture() {
+        let packet = SmsRequestBody {
+            addresses: vec!["+15550100".into()],
+            message_body: "Hello from Relay".into(),
+            sub_id: None,
+        }
+        .to_packet();
+
+        let expected: Value =
+            serde_json::from_str(include_str!("testdata/sms_request_v2_no_subid.json")).unwrap();
+        assert_eq!(Value::Object(packet.body), expected);
+    }
+
     #[test]
     fn sms_request_omits_an_unknown_sim() {
         let packet = SmsRequestBody {

@@ -92,16 +92,16 @@ void main() {
 
     await tester.pumpWidget(_subject());
     await tester.pump();
-    final textRect = tester.getRect(find.text('Connected phone'));
+    final textRect = tester.getRect(find.text('Connected phone').first);
     final frame0 = await _captureHeader(tester);
 
     await tester.pump(const Duration(milliseconds: 1500));
     final frame1500 = await _captureHeader(tester);
-    expect(tester.getRect(find.text('Connected phone')), textRect);
+    expect(tester.getRect(find.text('Connected phone').first), textRect);
 
     await tester.pump(const Duration(milliseconds: 1500));
     final frame3000 = await _captureHeader(tester);
-    expect(tester.getRect(find.text('Connected phone')), textRect);
+    expect(tester.getRect(find.text('Connected phone').first), textRect);
 
     final first = _difference(frame0, frame1500);
     final second = _difference(frame1500, frame3000);
