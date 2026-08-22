@@ -1223,8 +1223,10 @@ class _NotificationsSection extends StatelessWidget {
       );
     }
 
-    final rawId = device.key.replaceFirst('kdeconnect:', '');
-    final notifications = context.watch(kdeConnectProvider.select((s) => s.notifications[rawId] ?? const []));
+    // Scoped strictly to this device: `notificationsForDevice` never falls back
+    // to another device's list, so Device Details for phone A can only ever
+    // show phone A's notifications.
+    final notifications = context.watch(kdeConnectProvider.select((s) => s.notificationsForDevice(device.key)));
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,

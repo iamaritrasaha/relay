@@ -9,7 +9,7 @@ import 'package:relay_isolates/rust/frb_generated.dart';
 
 part 'kdeconnect.freezed.dart';
 
-// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `try_from`
+// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `clone`, `eq`, `fmt`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `try_from`
 // These functions are ignored (category: IgnoreBecauseExplicitAttribute): `_keep_frb_imports`
 
 Future<RsKdeConnectIdentity> kdeconnectGenerateIdentity({required String deviceName}) =>
@@ -20,9 +20,20 @@ Future<Uint8List> kdeconnectGenerateWanSecret() => RustLib.instance.api.crateApi
 Future<RsKdeConnect> startKdeconnect({required RsKdeConnectIdentity identity, required List<RsKdeConnectTrustedDevice> trusted}) =>
     RustLib.instance.api.crateApiKdeconnectStartKdeconnect(identity: identity, trusted: trusted);
 
+/// Generates a stable id for a newly created command, so Dart never has to
+/// invent one and every entry is identified the same way.
+Future<String> kdeconnectNewRunCommandId() => RustLib.instance.api.crateApiKdeconnectKdeconnectNewRunCommandId();
+
 // Rust type: RustOpaqueMoi<flutter_rust_bridge::for_generated::RustAutoOpaqueInner<RsKdeConnect>>
 abstract class RsKdeConnect implements RustOpaqueInterface {
   Future<void> acceptPair({required String deviceId});
+
+  /// Dismisses one notification on the logical device that produced it.
+  ///
+  /// Both arguments are required: a remote notification id is unique only
+  /// within its own device, so dismissing by id alone would be ambiguous
+  /// across simultaneously connected phones.
+  Future<void> dismissNotification({required String deviceId, required String remoteNotificationId});
 
   Future<void> findPhone({required String deviceId});
 
@@ -48,6 +59,8 @@ abstract class RsKdeConnect implements RustOpaqueInterface {
 
   Future<void> requestSmsConversations({required String deviceId});
 
+  Future<List<RsRunCommand>> runCommands();
+
   Future<void> sendClipboard({required String deviceId, required String content, required PlatformInt64 timestampMs});
 
   Future<void> sendClipboardToAllPaired({required String content, required PlatformInt64 timestampMs});
@@ -57,6 +70,10 @@ abstract class RsKdeConnect implements RustOpaqueInterface {
   Future<void> sendRelayPing({required String deviceId});
 
   Future<void> sendSms({required String deviceId, required List<String> addresses, required String body, int? subId});
+
+  /// Replaces the RunCommand allow-list. Effective immediately for every
+  /// connected device, over both LAN and Relay WAN.
+  Future<void> setRunCommands({required List<RsRunCommand> commands});
 
   Future<List<RsKdeConnectDevice>> snapshot();
 
@@ -445,4 +462,36 @@ class RsKdeTelephonyEvent {
           phoneNumber == other.phoneNumber &&
           contactName == other.contactName &&
           phoneThumbnail == other.phoneThumbnail;
+}
+
+/// One entry in the desktop's RunCommand allow-list.
+///
+/// `id` is generated once and persisted, so a phone's cached id stays valid
+/// across restarts. The phone can only ever name an id -- it never supplies
+/// `command`.
+class RsRunCommand {
+  final String id;
+  final String name;
+  final String command;
+  final bool enabled;
+
+  const RsRunCommand({
+    required this.id,
+    required this.name,
+    required this.command,
+    required this.enabled,
+  });
+
+  @override
+  int get hashCode => id.hashCode ^ name.hashCode ^ command.hashCode ^ enabled.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is RsRunCommand &&
+          runtimeType == other.runtimeType &&
+          id == other.id &&
+          name == other.name &&
+          command == other.command &&
+          enabled == other.enabled;
 }

@@ -9,6 +9,8 @@ use std::collections::BTreeMap;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 pub use super::capabilities::{
+    PACKET_TYPE_MPRIS, PACKET_TYPE_MPRIS_REQUEST, PACKET_TYPE_RUNCOMMAND,
+    PACKET_TYPE_RUNCOMMAND_REQUEST,
     PACKET_TYPE_BATTERY, PACKET_TYPE_CLIPBOARD, PACKET_TYPE_CLIPBOARD_CONNECT,
     PACKET_TYPE_CONNECTIVITY_REPORT, PACKET_TYPE_FINDMYPHONE_REQUEST, PACKET_TYPE_IDENTITY,
     PACKET_TYPE_NOTIFICATION, PACKET_TYPE_NOTIFICATION_REQUEST, PACKET_TYPE_PAIR, PACKET_TYPE_PING,
@@ -301,6 +303,24 @@ impl NetworkPacket {
             return Err(PacketError("not a notification packet".into()));
         }
         NotificationBody::from_map(&self.body)
+    }
+
+    pub fn as_mpris_request(&self) -> Result<MprisRequestBody, PacketError> {
+        if self.packet_type != PACKET_TYPE_MPRIS_REQUEST {
+            return Err(PacketError("not an mpris request packet".into()));
+        }
+        let body = MprisRequestBody::from_map(&self.body)?;
+        if body.is_empty() {
+            return Err(PacketError("mpris request carries no instruction".into()));
+        }
+        Ok(body)
+    }
+
+    pub fn as_runcommand_request(&self) -> Result<RunCommandRequestBody, PacketError> {
+        if self.packet_type != PACKET_TYPE_RUNCOMMAND_REQUEST {
+            return Err(PacketError("not a runcommand request packet".into()));
+        }
+        RunCommandRequestBody::from_map(&self.body)
     }
 
     pub fn as_notification_request(&self) -> Result<(), PacketError> {
@@ -739,6 +759,25 @@ impl NotificationBody {
     pub fn request() -> NetworkPacket {
         let mut body = Map::new();
         body.insert("request".into(), Value::Bool(true));
+        NetworkPacket::new(PACKET_TYPE_NOTIFICATION_REQUEST, body)
+    }
+
+    /// Asks the peer to dismiss one of *its* notifications, addressed by the
+    /// remote notification id the peer itself assigned.
+    ///
+    /// The id is only unique within one device -- two phones can legitimately
+    /// both use `"0|com.whatsapp|42"` -- so this packet is meaningless without
+    /// the device it is sent to. Callers must therefore always pair it with the
+    /// originating device id; see `LanInner::dismiss_notification`.
+    ///
+    /// Wire shape matches the Android `NotificationsPlugin`, which dispatches on
+    /// `np.has("cancel")` within `kdeconnect.notification.request`.
+    pub fn dismiss(remote_notification_id: &str) -> NetworkPacket {
+        let mut body = Map::new();
+        body.insert(
+            "cancel".into(),
+            Value::String(remote_notification_id.to_owned()),
+        );
         NetworkPacket::new(PACKET_TYPE_NOTIFICATION_REQUEST, body)
     }
 
@@ -1601,6 +1640,29 @@ mod tests {
     }
 
     #[test]
+    fn notification_dismiss_carries_the_remote_id_and_no_request_flag() {
+        let packet = NotificationBody::dismiss("0|com.whatsapp|42");
+        assert_eq!(packet.packet_type, PACKET_TYPE_NOTIFICATION_REQUEST);
+        assert_eq!(
+            packet.body.get("cancel").and_then(Value::as_str),
+            Some("0|com.whatsapp|42")
+        );
+        // `request` would make Android re-send everything instead of cancelling.
+        assert!(packet.body.get("request").is_none());
+    }
+
+    #[test]
+    fn notification_dismiss_for_the_same_id_on_two_devices_builds_identical_packets() {
+        // The packet cannot distinguish devices -- the device id lives in the
+        // routing decision, never in the body. This is exactly why the store
+        // must key on (deviceId, notificationId).
+        assert_eq!(
+            NotificationBody::dismiss("42").serialize(),
+            NotificationBody::dismiss("42").serialize()
+        );
+    }
+
+    #[test]
     fn notification_request_roundtrip() {
         let req = NotificationBody::request();
         assert_eq!(req.packet_type, PACKET_TYPE_NOTIFICATION_REQUEST);
@@ -1674,5 +1736,238 @@ mod tests {
 
         let plain_ping = PingBody::new(None);
         assert!(NetworkPacket::parse(&plain_ping.serialize()).unwrap().as_relay_ping().is_err());
+    }
+}
+
+// ---------------------------------------------------------------------------
+// MPRIS media control
+// ---------------------------------------------------------------------------
+
+/// One request from the phone's `MprisPlugin`, carried in
+/// `kdeconnect.mpris.request`.
+///
+/// Field names and semantics are taken from the Android plugin verbatim (see
+/// `MprisPlugin.sendCommand` / `requestPlayerList` / `requestPlayerStatus`) --
+/// this is KDE Connect's protocol, not a Relay-specific one. Note the
+/// inconsistent casing (`setVolume` but `SetPosition`/`Seek`): that is upstream's
+/// shape and must be matched exactly.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct MprisRequestBody {
+    /// Which player the request addresses. Absent for a bare player-list request.
+    pub player: Option<String>,
+    pub request_player_list: bool,
+    pub request_now_playing: bool,
+    pub request_volume: bool,
+    /// `Play` / `Pause` / `PlayPause` / `Stop` / `Next` / `Previous`.
+    pub action: Option<String>,
+    pub set_volume: Option<i64>,
+    /// Absolute position in milliseconds.
+    pub set_position: Option<i64>,
+    /// Relative seek offset in **microseconds** (MPRIS `Seek` unit).
+    pub seek: Option<i64>,
+    pub set_loop_status: Option<String>,
+    pub set_shuffle: Option<bool>,
+    /// The phone asking us to transfer album art for this URL.
+    pub album_art_url: Option<String>,
+}
+
+impl MprisRequestBody {
+    fn from_map(body: &Map<String, Value>) -> Result<Self, PacketError> {
+        // A player name is free-form remote text; bound it so a hostile peer
+        // cannot use it as an unbounded allocation or log-flooding vector. It is
+        // only ever compared against the locally discovered player list, never
+        // used to construct a D-Bus name directly.
+        let player = optional_string(body, "player");
+        if player.as_ref().is_some_and(|name| name.len() > MAX_MPRIS_PLAYER_NAME_LEN) {
+            return Err(PacketError("mpris player name exceeds its bound".into()));
+        }
+        Ok(Self {
+            player,
+            request_player_list: body
+                .get("requestPlayerList")
+                .and_then(Value::as_bool)
+                .unwrap_or(false),
+            request_now_playing: body
+                .get("requestNowPlaying")
+                .and_then(Value::as_bool)
+                .unwrap_or(false),
+            request_volume: body
+                .get("requestVolume")
+                .and_then(Value::as_bool)
+                .unwrap_or(false),
+            action: optional_string(body, "action"),
+            set_volume: body.get("setVolume").and_then(Value::as_i64),
+            set_position: body.get("SetPosition").and_then(Value::as_i64),
+            seek: body.get("Seek").and_then(Value::as_i64),
+            set_loop_status: optional_string(body, "setLoopStatus"),
+            set_shuffle: body.get("setShuffle").and_then(Value::as_bool),
+            album_art_url: optional_string(body, "albumArtUrl"),
+        })
+    }
+
+    /// Whether this request carries no instruction at all. Such a packet is
+    /// meaningless and is rejected rather than silently treated as a refresh.
+    pub fn is_empty(&self) -> bool {
+        !self.request_player_list
+            && !self.request_now_playing
+            && !self.request_volume
+            && self.action.is_none()
+            && self.set_volume.is_none()
+            && self.set_position.is_none()
+            && self.seek.is_none()
+            && self.set_loop_status.is_none()
+            && self.set_shuffle.is_none()
+            && self.album_art_url.is_none()
+    }
+}
+
+const MAX_MPRIS_PLAYER_NAME_LEN: usize = 256;
+
+/// Outgoing `kdeconnect.mpris` state.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct MprisBody {
+    pub player: Option<String>,
+    pub title: Option<String>,
+    pub artist: Option<String>,
+    pub album: Option<String>,
+    pub url: Option<String>,
+    pub album_art_url: Option<String>,
+    pub loop_status: Option<String>,
+    pub shuffle: Option<bool>,
+    pub volume: Option<i64>,
+    /// Track length in milliseconds.
+    pub length: Option<i64>,
+    /// Current position in milliseconds.
+    pub pos: Option<i64>,
+    pub is_playing: Option<bool>,
+    pub can_play: Option<bool>,
+    pub can_pause: Option<bool>,
+    pub can_go_next: Option<bool>,
+    pub can_go_previous: Option<bool>,
+    pub can_seek: Option<bool>,
+}
+
+impl MprisBody {
+    /// The player-list packet. Sent on its own, exactly as upstream does, so the
+    /// phone can populate its player picker before asking for any state.
+    ///
+    /// `supportAlbumArtPayload` is reported false: album art travels as a
+    /// payload over a separate channel Relay does not carry yet, so claiming
+    /// support would make the phone request bytes that never arrive. The art
+    /// *URL* is still advertised per player, which is what a phone that can
+    /// resolve it itself uses.
+    pub fn player_list(players: &[String]) -> NetworkPacket {
+        let mut body = Map::new();
+        body.insert(
+            "playerList".into(),
+            Value::Array(players.iter().cloned().map(Value::String).collect()),
+        );
+        body.insert("supportAlbumArtPayload".into(), Value::Bool(false));
+        NetworkPacket::new(PACKET_TYPE_MPRIS, body)
+    }
+
+    pub fn to_packet(&self) -> NetworkPacket {
+        let mut body = Map::new();
+        let mut put_str = |key: &str, value: &Option<String>| {
+            if let Some(value) = value {
+                body.insert(key.into(), Value::String(value.clone()));
+            }
+        };
+        put_str("player", &self.player);
+        put_str("title", &self.title);
+        put_str("artist", &self.artist);
+        put_str("album", &self.album);
+        put_str("url", &self.url);
+        put_str("albumArtUrl", &self.album_art_url);
+        put_str("loopStatus", &self.loop_status);
+
+        let mut put_bool = |key: &str, value: Option<bool>| {
+            if let Some(value) = value {
+                body.insert(key.into(), Value::Bool(value));
+            }
+        };
+        put_bool("shuffle", self.shuffle);
+        put_bool("isPlaying", self.is_playing);
+        put_bool("canPlay", self.can_play);
+        put_bool("canPause", self.can_pause);
+        put_bool("canGoNext", self.can_go_next);
+        put_bool("canGoPrevious", self.can_go_previous);
+        put_bool("canSeek", self.can_seek);
+
+        let mut put_int = |key: &str, value: Option<i64>| {
+            if let Some(value) = value {
+                body.insert(key.into(), Value::Number(value.into()));
+            }
+        };
+        put_int("volume", self.volume);
+        put_int("length", self.length);
+        put_int("pos", self.pos);
+
+        NetworkPacket::new(PACKET_TYPE_MPRIS, body)
+    }
+}
+
+// ---------------------------------------------------------------------------
+// RunCommand
+// ---------------------------------------------------------------------------
+
+/// One request from the phone's `RunCommandPlugin`, carried in
+/// `kdeconnect.runcommand.request`.
+///
+/// There is deliberately no field carrying command *text*: the phone can only
+/// name an id that Relay already has configured. See
+/// [`super::commands::RunCommandRegistry`].
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct RunCommandRequestBody {
+    pub request_command_list: bool,
+    /// Id of a command to run, as previously advertised by Relay.
+    pub key: Option<String>,
+    /// The phone asking Relay to open its own command-configuration UI.
+    pub setup: bool,
+}
+
+impl RunCommandRequestBody {
+    fn from_map(body: &Map<String, Value>) -> Result<Self, PacketError> {
+        let key = optional_string(body, "key");
+        if key.as_ref().is_some_and(|key| key.len() > MAX_COMMAND_ID_LEN) {
+            return Err(PacketError("runcommand key exceeds its bound".into()));
+        }
+        Ok(Self {
+            request_command_list: body
+                .get("requestCommandList")
+                .and_then(Value::as_bool)
+                .unwrap_or(false),
+            key,
+            setup: body.get("setup").and_then(Value::as_bool).unwrap_or(false),
+        })
+    }
+}
+
+const MAX_COMMAND_ID_LEN: usize = 128;
+
+/// Outgoing `kdeconnect.runcommand`: the command list Relay is willing to run.
+///
+/// Upstream encodes the list as a JSON *string* keyed by command id, so this
+/// serializes to a string rather than a nested object -- the Android side does
+/// `new JSONObject(np.getString("commandList"))`.
+pub struct RunCommandListBody;
+
+impl RunCommandListBody {
+    pub fn to_packet(entries: &[(String, String, String)]) -> NetworkPacket {
+        let mut list = Map::new();
+        for (id, name, command) in entries {
+            let mut entry = Map::new();
+            entry.insert("name".into(), Value::String(name.clone()));
+            entry.insert("command".into(), Value::String(command.clone()));
+            list.insert(id.clone(), Value::Object(entry));
+        }
+        let mut body = Map::new();
+        body.insert(
+            "commandList".into(),
+            Value::String(Value::Object(list).to_string()),
+        );
+        // Relay does not accept command definitions pushed from the phone.
+        body.insert("canAddCommand".into(), Value::Bool(false));
+        NetworkPacket::new(PACKET_TYPE_RUNCOMMAND, body)
     }
 }

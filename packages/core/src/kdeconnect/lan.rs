@@ -72,11 +72,16 @@ impl Default for LanConfig {
 /// transport the packet itself arrived on. Answering a `kdeconnect.relay.ping`
 /// over a *different* route than it came in on would make one route's liveness
 /// look like the other's.
+#[derive(Clone)]
 pub(crate) enum PacketReplyRoute {
     /// The LAN writer channel belonging to the connection that delivered the packet.
     Lan(mpsc::Sender<Vec<u8>>),
+    /// Any registered non-LAN link, addressed through the transport trait
+    /// rather than a concrete type. Relay WAN is the only implementation in
+    /// production; keeping this abstract is also what lets a test drive a real
+    /// WAN-priority route without an Iroh connection.
     #[cfg(feature = "kdeconnect-wan")]
-    Wan(Arc<crate::kdeconnect::wan::WanLink>),
+    Wan(Arc<dyn crate::kdeconnect::wan::TransportLink>),
 }
 
 impl PacketReplyRoute {
@@ -87,7 +92,6 @@ impl PacketReplyRoute {
             }
             #[cfg(feature = "kdeconnect-wan")]
             PacketReplyRoute::Wan(link) => {
-                use crate::kdeconnect::wan::TransportLink as _;
                 let _ = link.send_packet(packet).await;
             }
         }
@@ -308,6 +312,16 @@ pub(crate) struct LanInner {
     event_tx: mpsc::UnboundedSender<KdeConnectEvent>,
     pub cancel: CancellationToken,
     conn_epoch: AtomicU64,
+    /// Desktop-configured RunCommand allow-list. Owned here (not per device)
+    /// because the commands belong to this machine; which device asked is
+    /// carried in the request, not in the storage key.
+    pub(crate) commands: Arc<crate::kdeconnect::commands::RunCommandRegistry>,
+    command_runner: Mutex<Arc<dyn crate::kdeconnect::commands::CommandRunner>>,
+    /// MPRIS players on this machine, once media support has been enabled.
+    /// `None` when there is no session bus (headless, or a non-Linux build), in
+    /// which case media requests are answered with an empty player list rather
+    /// than being ignored.
+    media: Mutex<Option<Arc<dyn crate::kdeconnect::media::MediaPlayerHost>>>,
     heartbeat: Mutex<HashMap<String, HeartbeatState>>,
     /// Last packet observed on each concrete route. This must remain
     /// transport-specific: WAN traffic is proof that the device is alive, but
@@ -365,6 +379,9 @@ impl LanInner {
             .map(|d| (d.device_id.clone(), PairingSession::new(true)))
             .collect();
         Arc::new(Self {
+            commands: Arc::new(crate::kdeconnect::commands::RunCommandRegistry::default()),
+            command_runner: Mutex::new(Arc::new(crate::kdeconnect::commands::ShellCommandRunner)),
+            media: Mutex::new(None),
             identity,
             config,
             tcp_port,
@@ -584,6 +601,265 @@ impl LanInner {
     }
 
 
+    /// Installs the MPRIS host. Idempotent; replacing it swaps the source of
+    /// player state without disturbing any link.
+    pub(crate) async fn set_media_host(
+        self: &Arc<Self>,
+        host: Arc<dyn crate::kdeconnect::media::MediaPlayerHost>,
+    ) {
+        *self.media.lock().await = Some(host.clone());
+        self.spawn_media_change_pusher(host).await;
+    }
+
+    /// Pushes fresh player state to every paired, connected device whenever the
+    /// desktop's players change.
+    ///
+    /// Without this the phone only ever sees state it explicitly asked for, so
+    /// its now-playing view goes stale the moment a track changes on the
+    /// desktop. Sends go through the `TransportRouter`, which picks LAN or Relay
+    /// WAN per device on its own -- this code never learns which was used, and a
+    /// Remote device is updated exactly like a Local one.
+    #[cfg(feature = "kdeconnect-wan")]
+    async fn spawn_media_change_pusher(
+        self: &Arc<Self>,
+        host: Arc<dyn crate::kdeconnect::media::MediaPlayerHost>,
+    ) {
+        let Some(mut changes) = host.subscribe().await else {
+            return;
+        };
+        let inner = Arc::clone(self);
+        tokio::spawn(async move {
+            let mut last: Vec<crate::kdeconnect::media::PlayerSnapshot> = Vec::new();
+            loop {
+                tokio::select! {
+                    _ = inner.cancel.cancelled() => break,
+                    tick = changes.recv() => {
+                        if tick.is_none() {
+                            break;
+                        }
+                    }
+                }
+                // Coalesce the burst a single track change produces (Metadata,
+                // PlaybackStatus and Position all fire within milliseconds).
+                tokio::time::sleep(Duration::from_millis(150)).await;
+                while changes.try_recv().is_ok() {}
+
+                let players = host.players().await;
+                let targets = inner.connected_paired_devices().await;
+                if targets.is_empty() {
+                    last = players;
+                    continue;
+                }
+
+                let names: Vec<String> = players.iter().map(|p| p.name.clone()).collect();
+                let last_names: Vec<String> = last.iter().map(|p| p.name.clone()).collect();
+                if names != last_names {
+                    let list = crate::kdeconnect::packet::MprisBody::player_list(&names);
+                    for device_id in &targets {
+                        let _ = inner.router.send_packet(device_id, &list).await;
+                    }
+                }
+                for player in &players {
+                    // Only actual changes go out; players are otherwise silent.
+                    if last.iter().any(|previous| previous == player) {
+                        continue;
+                    }
+                    let packet = player.to_body().to_packet();
+                    for device_id in &targets {
+                        let _ = inner.router.send_packet(device_id, &packet).await;
+                    }
+                }
+                last = players;
+            }
+        });
+    }
+
+    #[cfg(not(feature = "kdeconnect-wan"))]
+    async fn spawn_media_change_pusher(
+        self: &Arc<Self>,
+        _host: Arc<dyn crate::kdeconnect::media::MediaPlayerHost>,
+    ) {
+    }
+
+    /// Paired devices with at least one live route, in a stable order.
+    #[cfg(feature = "kdeconnect-wan")]
+    async fn connected_paired_devices(&self) -> Vec<String> {
+        let trusted: Vec<String> = self
+            .trust
+            .lock()
+            .await
+            .snapshot()
+            .into_iter()
+            .map(|device| device.device_id)
+            .collect();
+        let mut connected: Vec<String> = trusted
+            .into_iter()
+            .filter(|device_id| self.router.active_transport(device_id).is_some())
+            .collect();
+        connected.sort();
+        connected
+    }
+
+    /// Swaps the process launcher. Tests use this to assert *what would have
+    /// run* without running anything.
+    #[cfg(test)]
+    pub(crate) async fn set_command_runner(
+        &self,
+        runner: Arc<dyn crate::kdeconnect::commands::CommandRunner>,
+    ) {
+        *self.command_runner.lock().await = runner;
+    }
+
+    /// Replaces the RunCommand allow-list, as the desktop settings UI does.
+    /// Takes effect immediately for every connected device and both transports.
+    pub(crate) fn set_run_commands(
+        &self,
+        entries: Vec<crate::kdeconnect::commands::RunCommandEntry>,
+    ) {
+        self.commands.replace(entries);
+    }
+
+    /// Answers one `kdeconnect.mpris.request` from `device_id`.
+    ///
+    /// Talking to D-Bus can block for as long as the slowest player takes to
+    /// answer, so the work is moved onto its own task: the packet dispatcher
+    /// must not stall a device's whole link (nor every other device) behind one
+    /// unresponsive media player. The reply goes back over `reply`, the route
+    /// the request arrived on, which is what makes this work identically on LAN
+    /// and over Relay WAN with no transport-specific code.
+    async fn handle_mpris_request(
+        self: &Arc<Self>,
+        device_id: &str,
+        request: crate::kdeconnect::packet::MprisRequestBody,
+        reply: &PacketReplyRoute,
+    ) {
+        let Some(media) = self.media.lock().await.clone() else {
+            // No session bus: answer honestly with an empty list rather than
+            // leaving the phone waiting for a reply that never comes.
+            if request.request_player_list {
+                reply
+                    .send(&crate::kdeconnect::packet::MprisBody::player_list(&[]))
+                    .await;
+            }
+            return;
+        };
+
+        let reply = reply.clone();
+        let device_id = device_id.to_owned();
+        tokio::spawn(async move {
+            if request.request_player_list {
+                let players = media.players().await;
+                let names: Vec<String> = players.iter().map(|p| p.name.clone()).collect();
+                tracing::info!(
+                    "[Relay MPRIS] device={device_id} playerList players={}",
+                    names.len()
+                );
+                reply
+                    .send(&crate::kdeconnect::packet::MprisBody::player_list(&names))
+                    .await;
+            }
+
+            let Some(player_name) = request.player.clone() else {
+                return;
+            };
+
+            for command in crate::kdeconnect::media::PlayerCommand::from_request(&request) {
+                tracing::info!("[Relay MPRIS] device={device_id} command={command:?}");
+                if let Err(error) = media.control(&player_name, command).await {
+                    tracing::warn!("[Relay MPRIS] device={device_id} command failed: {error}");
+                }
+            }
+
+            // Any request naming a player gets fresh state back, whether it
+            // asked for it or not: the phone's UI has just acted and needs to
+            // see the result, and upstream behaves the same way.
+            match media.player(&player_name).await {
+                Some(snapshot) => reply.send(&snapshot.to_body().to_packet()).await,
+                None => {
+                    // The player disappeared (closed between request and
+                    // reply). Re-advertise the list so the phone drops it
+                    // instead of showing a player that is gone.
+                    tracing::info!("[Relay MPRIS] device={device_id} addressed an unknown player");
+                    let names: Vec<String> =
+                        media.players().await.into_iter().map(|p| p.name).collect();
+                    reply
+                        .send(&crate::kdeconnect::packet::MprisBody::player_list(&names))
+                        .await;
+                }
+            }
+        });
+    }
+
+    /// Answers one `kdeconnect.runcommand.request` from `device_id`.
+    ///
+    /// Every execution is gated on the requesting *logical device* being
+    /// trusted, on the id naming a configured entry, and on that entry being
+    /// enabled -- see [`crate::kdeconnect::commands`]. The transport the request
+    /// arrived on is deliberately not consulted: Relay WAN has already bound the
+    /// connection to a trusted KDE device id, so it can neither add nor remove
+    /// permission here.
+    async fn handle_runcommand_request(
+        self: &Arc<Self>,
+        device_id: &str,
+        request: crate::kdeconnect::packet::RunCommandRequestBody,
+        reply: &PacketReplyRoute,
+    ) {
+        let trusted = self.trust.lock().await.get(device_id).is_some();
+        if !trusted {
+            tracing::warn!(
+                "[Relay RunCommand] refused a request from untrusted device={device_id}"
+            );
+            return;
+        }
+
+        if request.request_command_list {
+            let advertised = self.commands.advertised();
+            tracing::info!(
+                "[Relay RunCommand] device={device_id} commandList commands={}",
+                advertised.len()
+            );
+            reply
+                .send(&crate::kdeconnect::packet::RunCommandListBody::to_packet(
+                    &advertised,
+                ))
+                .await;
+        }
+
+        if request.setup {
+            // Opening a settings window because a remote packet said so is a
+            // surprising thing to do to the person at the keyboard, so Relay
+            // acknowledges it in the log and does nothing else.
+            tracing::info!("[Relay RunCommand] device={device_id} requested setup; ignored");
+        }
+
+        let Some(id) = request.key.as_deref() else {
+            return;
+        };
+        match self.commands.resolve_for_execution(id, trusted) {
+            Ok(entry) => {
+                // Log the id and name only -- never the command line or its
+                // output, which routinely carry paths and secrets.
+                tracing::info!(
+                    "[Relay RunCommand] device={device_id} running id={} name={}",
+                    entry.id,
+                    entry.name
+                );
+                let runner = self.command_runner.lock().await.clone();
+                if let Err(error) = runner.spawn(&entry.command) {
+                    tracing::warn!(
+                        "[Relay RunCommand] device={device_id} id={} failed to start: {error}",
+                        entry.id
+                    );
+                }
+            }
+            Err(rejection) => {
+                tracing::warn!(
+                    "[Relay RunCommand] device={device_id} refused id={id}: {rejection}"
+                );
+            }
+        }
+    }
+
     /// Handles one KDE `NetworkPacket` that arrived over *any* transport.
     ///
     /// This is the single dispatch chain shared by the LAN reader task and the
@@ -748,6 +1024,10 @@ impl LanInner {
                     error
                 ),
             }
+        } else if let Ok(request) = packet.as_mpris_request() {
+            read_inner.handle_mpris_request(&read_id, request, reply).await;
+        } else if let Ok(request) = packet.as_runcommand_request() {
+            read_inner.handle_runcommand_request(&read_id, request, reply).await;
         } else if let Ok(telephony) = packet.as_telephony() {
             let event = crate::kdeconnect::KdeTelephonyEvent {
                 event: telephony.event,
@@ -1123,7 +1403,9 @@ impl LanInner {
                             .handle_transport_packet(
                                 &device_id,
                                 &packet,
-                                &PacketReplyRoute::Wan(Arc::clone(&link)),
+                                &PacketReplyRoute::Wan(
+                                    Arc::clone(&link) as Arc<dyn crate::kdeconnect::wan::TransportLink>,
+                                ),
                             )
                             .await
                         {
@@ -1342,6 +1624,50 @@ impl LanInner {
         if !peer_accepts {
             anyhow::bail!("peer does not advertise support for {packet_type}");
         }
+        Ok(())
+    }
+
+    /// Dismisses one notification on the device that produced it.
+    ///
+    /// `remote_notification_id` is only unique *within* `device_id` -- two phones
+    /// may both be showing id `42` -- so the pair is the real key, and this
+    /// method is the only way the rest of the app is allowed to dismiss. The
+    /// packet goes out via `send_packet`, so the TransportRouter picks LAN or
+    /// Relay WAN on its own; dismissal works identically while the device is
+    /// Local or Remote.
+    ///
+    /// The local record is dropped optimistically so the UI updates without
+    /// waiting for the phone's echo, and *only* the matching device's list is
+    /// touched.
+    pub async fn dismiss_notification(
+        &self,
+        device_id: &str,
+        remote_notification_id: &str,
+    ) -> Result<()> {
+        if self.trust.lock().await.get(device_id).is_none() {
+            anyhow::bail!("device not paired");
+        }
+        self.ensure_peer_accepts(
+            device_id,
+            crate::kdeconnect::PACKET_TYPE_NOTIFICATION_REQUEST,
+        )
+        .await?;
+
+        let packet = NotificationBody::dismiss(remote_notification_id).serialize();
+        self.send_packet(device_id, &packet).await?;
+
+        let remaining = {
+            let mut notifs = self.notifications.lock().await;
+            let Some(list) = notifs.get_mut(device_id) else {
+                return Ok(());
+            };
+            list.retain(|n| n.id != remote_notification_id);
+            list.clone()
+        };
+        let _ = self.event_tx.send(KdeConnectEvent::NotificationsChanged {
+            device_id: device_id.to_string(),
+            notifications: remaining,
+        });
         Ok(())
     }
 
@@ -3682,6 +4008,915 @@ mod tests {
             _ => {}
         }
         NetworkPacket::new(packet_type, body)
+    }
+
+    /// Builds a `LanInner` trusting several phones at once, for the multi-device
+    /// notification-ownership tests.
+    fn multi_device_harness(
+        device_ids: &[&str],
+    ) -> (
+        Arc<LanInner>,
+        tokio::sync::mpsc::UnboundedReceiver<KdeConnectEvent>,
+    ) {
+        let relay_identity = crate::kdeconnect::LocalIdentity::generate("Relay").unwrap();
+        let (event_tx, event_rx) = tokio::sync::mpsc::unbounded_channel();
+        let trusted = device_ids
+            .iter()
+            .map(|device_id| {
+                let peer = crate::kdeconnect::LocalIdentity::generate("Phone").unwrap();
+                crate::kdeconnect::TrustedDevice {
+                    device_id: (*device_id).to_owned(),
+                    certificate_pem: peer.certificate_pem,
+                    name: (*device_id).to_owned(),
+                    device_type: "phone".into(),
+                    protocol_version: PROTOCOL_VERSION,
+                    paired_at_unix: 123456,
+                    wan_endpoint_id: None,
+                }
+            })
+            .collect();
+        let inner = LanInner::new(
+            relay_identity,
+            trusted,
+            LanConfig {
+                bind: BindMode::Loopback,
+                allow_loopback: true,
+            },
+            0,
+            event_tx,
+            tokio_util::sync::CancellationToken::new(),
+        );
+        (inner, event_rx)
+    }
+
+    fn notification_packet(id: &str, title: &str, is_cancel: bool) -> NetworkPacket {
+        let mut body = serde_json::Map::new();
+        body.insert("id".into(), id.into());
+        body.insert("appName".into(), "WhatsApp".into());
+        body.insert("title".into(), title.into());
+        body.insert("text".into(), "body text".into());
+        if is_cancel {
+            body.insert("isCancel".into(), true.into());
+        }
+        NetworkPacket::new(crate::kdeconnect::PACKET_TYPE_NOTIFICATION, body)
+    }
+
+    /// Delivers `packet` as if it arrived from `device_id` over some transport.
+    async fn deliver(inner: &Arc<LanInner>, device_id: &str, packet: &NetworkPacket) {
+        let (tx, _rx) = tokio::sync::mpsc::channel(16);
+        assert!(
+            inner
+                .handle_transport_packet(device_id, packet, &PacketReplyRoute::Lan(tx))
+                .await
+        );
+    }
+
+    const PHONE_A: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+    const PHONE_B: &str = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
+    const TABLET: &str = "cccccccccccccccccccccccccccccccc";
+
+    // --- MPRIS / RunCommand over the shared dispatcher -------------------
+
+    /// A media host with no session bus behind it, so packet handling can be
+    /// tested end to end without a real player.
+    struct FakeMediaHost {
+        players: Vec<crate::kdeconnect::media::PlayerSnapshot>,
+        controls: std::sync::Mutex<Vec<(String, crate::kdeconnect::media::PlayerCommand)>>,
+    }
+
+    impl FakeMediaHost {
+        fn with(names: &[&str]) -> Arc<Self> {
+            Arc::new(Self {
+                players: names
+                    .iter()
+                    .map(|name| crate::kdeconnect::media::PlayerSnapshot {
+                        name: (*name).to_owned(),
+                        title: Some(format!("{name} track")),
+                        artist: Some("Artist".into()),
+                        is_playing: true,
+                        can_play: true,
+                        can_pause: true,
+                        can_go_next: true,
+                        can_go_previous: true,
+                        can_seek: true,
+                        volume: Some(50),
+                        length_ms: Some(200_000),
+                        position_ms: Some(1_000),
+                        ..Default::default()
+                    })
+                    .collect(),
+                controls: std::sync::Mutex::new(Vec::new()),
+            })
+        }
+    }
+
+    impl crate::kdeconnect::media::MediaPlayerHost for FakeMediaHost {
+        fn players(
+            &self,
+        ) -> crate::kdeconnect::media::HostFuture<'_, Vec<crate::kdeconnect::media::PlayerSnapshot>>
+        {
+            Box::pin(async move { self.players.clone() })
+        }
+        fn player<'a>(
+            &'a self,
+            name: &'a str,
+        ) -> crate::kdeconnect::media::HostFuture<
+            'a,
+            Option<crate::kdeconnect::media::PlayerSnapshot>,
+        > {
+            Box::pin(async move { self.players.iter().find(|p| p.name == name).cloned() })
+        }
+        fn control<'a>(
+            &'a self,
+            name: &'a str,
+            command: crate::kdeconnect::media::PlayerCommand,
+        ) -> crate::kdeconnect::media::HostFuture<'a, anyhow::Result<()>> {
+            Box::pin(async move {
+                if !self.players.iter().any(|p| p.name == name) {
+                    anyhow::bail!("no such MPRIS player");
+                }
+                self.controls
+                    .lock()
+                    .unwrap()
+                    .push((name.to_owned(), command));
+                Ok(())
+            })
+        }
+    }
+
+    #[derive(Default)]
+    struct FakeRunner {
+        spawned: std::sync::Mutex<Vec<String>>,
+        fail: bool,
+    }
+
+    impl crate::kdeconnect::commands::CommandRunner for FakeRunner {
+        fn spawn(&self, command_line: &str) -> anyhow::Result<()> {
+            self.spawned.lock().unwrap().push(command_line.to_owned());
+            if self.fail {
+                anyhow::bail!("simulated spawn failure");
+            }
+            Ok(())
+        }
+    }
+
+    fn mpris_request(pairs: &[(&str, serde_json::Value)]) -> NetworkPacket {
+        let mut body = serde_json::Map::new();
+        for (key, value) in pairs {
+            body.insert((*key).to_owned(), value.clone());
+        }
+        NetworkPacket::new(crate::kdeconnect::PACKET_TYPE_MPRIS_REQUEST, body)
+    }
+
+    fn runcommand_request(pairs: &[(&str, serde_json::Value)]) -> NetworkPacket {
+        let mut body = serde_json::Map::new();
+        for (key, value) in pairs {
+            body.insert((*key).to_owned(), value.clone());
+        }
+        NetworkPacket::new(crate::kdeconnect::PACKET_TYPE_RUNCOMMAND_REQUEST, body)
+    }
+
+    /// Drains everything the handler replied with on a LAN route.
+    async fn drain(rx: &mut tokio::sync::mpsc::Receiver<Vec<u8>>) -> Vec<NetworkPacket> {
+        // The MPRIS handler answers from a spawned task, so give it a moment.
+        let mut packets = Vec::new();
+        for _ in 0..50 {
+            while let Ok(bytes) = rx.try_recv() {
+                packets.push(NetworkPacket::parse(&bytes).unwrap());
+            }
+            if !packets.is_empty() {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+        tokio::time::sleep(Duration::from_millis(20)).await;
+        while let Ok(bytes) = rx.try_recv() {
+            packets.push(NetworkPacket::parse(&bytes).unwrap());
+        }
+        packets
+    }
+
+    #[tokio::test]
+    async fn a_player_list_request_is_answered_over_the_route_it_arrived_on() {
+        let (inner, _events) = multi_device_harness(&[PHONE_A]);
+        inner.set_media_host(FakeMediaHost::with(&["Lollypop", "Firefox"])).await;
+        let (tx, mut rx) = tokio::sync::mpsc::channel(16);
+
+        let packet = mpris_request(&[("requestPlayerList", true.into())]);
+        assert!(
+            inner
+                .handle_transport_packet(PHONE_A, &packet, &PacketReplyRoute::Lan(tx))
+                .await
+        );
+
+        let packets = drain(&mut rx).await;
+        let list = packets
+            .iter()
+            .find(|p| p.body.contains_key("playerList"))
+            .expect("a player list reply");
+        let names: Vec<&str> = list.body["playerList"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter_map(serde_json::Value::as_str)
+            .collect();
+        assert_eq!(names, vec!["Lollypop", "Firefox"]);
+    }
+
+    #[tokio::test]
+    async fn each_playback_action_reaches_the_addressed_player_and_returns_fresh_state() {
+        for (action, expected) in [
+            ("Play", crate::kdeconnect::media::PlayerCommand::Play),
+            ("Pause", crate::kdeconnect::media::PlayerCommand::Pause),
+            ("PlayPause", crate::kdeconnect::media::PlayerCommand::PlayPause),
+            ("Stop", crate::kdeconnect::media::PlayerCommand::Stop),
+            ("Next", crate::kdeconnect::media::PlayerCommand::Next),
+            ("Previous", crate::kdeconnect::media::PlayerCommand::Previous),
+        ] {
+            let (inner, _events) = multi_device_harness(&[PHONE_A]);
+            let host = FakeMediaHost::with(&["Lollypop"]);
+            inner.set_media_host(host.clone()).await;
+            let (tx, mut rx) = tokio::sync::mpsc::channel(16);
+
+            let packet = mpris_request(&[
+                ("player", "Lollypop".into()),
+                ("action", action.into()),
+            ]);
+            assert!(
+                inner
+                    .handle_transport_packet(PHONE_A, &packet, &PacketReplyRoute::Lan(tx))
+                    .await
+            );
+
+            let packets = drain(&mut rx).await;
+            assert_eq!(
+                host.controls.lock().unwrap().as_slice(),
+                &[("Lollypop".to_owned(), expected)],
+                "{action} did not reach the player"
+            );
+            // The phone always gets state back so its UI reflects the result.
+            let state = packets
+                .iter()
+                .find(|p| p.body.get("player").and_then(serde_json::Value::as_str) == Some("Lollypop"))
+                .expect("fresh player state");
+            assert_eq!(
+                state.body.get("title").and_then(serde_json::Value::as_str),
+                Some("Lollypop track")
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn a_request_for_an_unknown_player_re_advertises_the_list_instead_of_acting() {
+        let (inner, _events) = multi_device_harness(&[PHONE_A]);
+        let host = FakeMediaHost::with(&["Lollypop"]);
+        inner.set_media_host(host.clone()).await;
+        let (tx, mut rx) = tokio::sync::mpsc::channel(16);
+
+        let packet = mpris_request(&[
+            ("player", "APlayerThatClosed".into()),
+            ("action", "Play".into()),
+        ]);
+        inner
+            .handle_transport_packet(PHONE_A, &packet, &PacketReplyRoute::Lan(tx))
+            .await;
+
+        let packets = drain(&mut rx).await;
+        assert!(
+            host.controls.lock().unwrap().is_empty(),
+            "an unknown player must never be resolved to a different one"
+        );
+        assert!(packets.iter().any(|p| p.body.contains_key("playerList")));
+    }
+
+    #[tokio::test]
+    async fn a_malformed_mpris_packet_is_not_claimed_by_the_dispatcher() {
+        let (inner, _events) = multi_device_harness(&[PHONE_A]);
+        inner.set_media_host(FakeMediaHost::with(&["Lollypop"])).await;
+        let (tx, _rx) = tokio::sync::mpsc::channel(16);
+
+        // Names a player but asks for nothing at all.
+        let packet = mpris_request(&[("player", "Lollypop".into())]);
+        assert!(
+            !inner
+                .handle_transport_packet(PHONE_A, &packet, &PacketReplyRoute::Lan(tx))
+                .await,
+            "an instruction-free request must be reported unhandled, not acted on"
+        );
+    }
+
+    #[tokio::test]
+    async fn two_logical_devices_each_get_their_own_media_answer() {
+        let (inner, _events) = multi_device_harness(&[PHONE_A, PHONE_B]);
+        inner.set_media_host(FakeMediaHost::with(&["Lollypop"])).await;
+        let (tx_a, mut rx_a) = tokio::sync::mpsc::channel(16);
+        let (tx_b, mut rx_b) = tokio::sync::mpsc::channel(16);
+
+        let packet = mpris_request(&[("requestPlayerList", true.into())]);
+        inner
+            .handle_transport_packet(PHONE_A, &packet, &PacketReplyRoute::Lan(tx_a))
+            .await;
+        inner
+            .handle_transport_packet(PHONE_B, &packet, &PacketReplyRoute::Lan(tx_b))
+            .await;
+
+        // Each device's answer goes to that device's own route -- state is not
+        // keyed by transport, and one device's request never steals another's
+        // reply.
+        assert!(drain(&mut rx_a).await.iter().any(|p| p.body.contains_key("playerList")));
+        assert!(drain(&mut rx_b).await.iter().any(|p| p.body.contains_key("playerList")));
+    }
+
+    #[tokio::test]
+    async fn media_requests_are_answered_even_with_no_session_bus() {
+        let (inner, _events) = multi_device_harness(&[PHONE_A]);
+        // No media host installed at all.
+        let (tx, mut rx) = tokio::sync::mpsc::channel(16);
+
+        let packet = mpris_request(&[("requestPlayerList", true.into())]);
+        inner
+            .handle_transport_packet(PHONE_A, &packet, &PacketReplyRoute::Lan(tx))
+            .await;
+
+        let packets = drain(&mut rx).await;
+        let list = packets.iter().find(|p| p.body.contains_key("playerList")).unwrap();
+        assert_eq!(list.body["playerList"].as_array().map(Vec::len), Some(0));
+    }
+
+    fn sample_commands() -> Vec<crate::kdeconnect::commands::RunCommandEntry> {
+        vec![
+            crate::kdeconnect::commands::RunCommandEntry {
+                id: "cmd-enabled".into(),
+                name: "Marker".into(),
+                command: "touch /tmp/relay-marker".into(),
+                enabled: true,
+            },
+            crate::kdeconnect::commands::RunCommandEntry {
+                id: "cmd-disabled".into(),
+                name: "Disabled".into(),
+                command: "echo nope".into(),
+                enabled: false,
+            },
+        ]
+    }
+
+    #[tokio::test]
+    async fn only_enabled_commands_are_advertised_and_the_list_reaches_the_asking_device() {
+        let (inner, _events) = multi_device_harness(&[PHONE_A]);
+        inner.set_run_commands(sample_commands());
+        let (tx, mut rx) = tokio::sync::mpsc::channel(16);
+
+        let packet = runcommand_request(&[("requestCommandList", true.into())]);
+        assert!(
+            inner
+                .handle_transport_packet(PHONE_A, &packet, &PacketReplyRoute::Lan(tx))
+                .await
+        );
+
+        let packets = drain(&mut rx).await;
+        let list = packets.iter().find(|p| p.body.contains_key("commandList")).unwrap();
+        // Upstream encodes the list as a JSON *string*, keyed by command id.
+        let encoded = list.body["commandList"].as_str().unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(encoded).unwrap();
+        assert!(parsed.get("cmd-enabled").is_some());
+        assert!(parsed.get("cmd-disabled").is_none(), "a disabled command must not be visible");
+        assert_eq!(
+            list.body.get("canAddCommand").and_then(serde_json::Value::as_bool),
+            Some(false),
+            "the phone must never be told it can define commands"
+        );
+    }
+
+    #[tokio::test]
+    async fn an_enabled_command_runs_the_locally_configured_line() {
+        let (inner, _events) = multi_device_harness(&[PHONE_A]);
+        inner.set_run_commands(sample_commands());
+        let runner = Arc::new(FakeRunner::default());
+        inner.set_command_runner(runner.clone()).await;
+        let (tx, _rx) = tokio::sync::mpsc::channel(16);
+
+        let packet = runcommand_request(&[("key", "cmd-enabled".into())]);
+        inner
+            .handle_transport_packet(PHONE_A, &packet, &PacketReplyRoute::Lan(tx))
+            .await;
+
+        assert_eq!(
+            runner.spawned.lock().unwrap().as_slice(),
+            ["touch /tmp/relay-marker"]
+        );
+    }
+
+    #[tokio::test]
+    async fn a_disabled_or_unknown_command_never_runs() {
+        for key in ["cmd-disabled", "cmd-nonexistent", ""] {
+            let (inner, _events) = multi_device_harness(&[PHONE_A]);
+            inner.set_run_commands(sample_commands());
+            let runner = Arc::new(FakeRunner::default());
+            inner.set_command_runner(runner.clone()).await;
+            let (tx, _rx) = tokio::sync::mpsc::channel(16);
+
+            let packet = runcommand_request(&[("key", key.into())]);
+            inner
+                .handle_transport_packet(PHONE_A, &packet, &PacketReplyRoute::Lan(tx))
+                .await;
+
+            assert!(runner.spawned.lock().unwrap().is_empty(), "{key} ran");
+        }
+    }
+
+    #[tokio::test]
+    async fn command_text_in_a_packet_is_never_executed() {
+        let (inner, _events) = multi_device_harness(&[PHONE_A]);
+        inner.set_run_commands(sample_commands());
+        let runner = Arc::new(FakeRunner::default());
+        inner.set_command_runner(runner.clone()).await;
+        let (tx, _rx) = tokio::sync::mpsc::channel(16);
+
+        // Every shape a phone might try to smuggle a command line through.
+        for packet in [
+            runcommand_request(&[("key", "rm -rf ~".into())]),
+            runcommand_request(&[("command", "rm -rf ~".into())]),
+            runcommand_request(&[("key", "cmd-enabled; rm -rf ~".into())]),
+            runcommand_request(&[
+                ("key", "cmd-nonexistent".into()),
+                ("command", "rm -rf ~".into()),
+            ]),
+        ] {
+            inner
+                .handle_transport_packet(PHONE_A, &packet, &PacketReplyRoute::Lan(tx.clone()))
+                .await;
+        }
+
+        assert!(
+            runner.spawned.lock().unwrap().is_empty(),
+            "remote command text must never reach the runner"
+        );
+    }
+
+    #[tokio::test]
+    async fn an_untrusted_device_can_neither_list_nor_run_commands() {
+        // The harness trusts PHONE_A only.
+        let (inner, _events) = multi_device_harness(&[PHONE_A]);
+        inner.set_run_commands(sample_commands());
+        let runner = Arc::new(FakeRunner::default());
+        inner.set_command_runner(runner.clone()).await;
+        let (tx, mut rx) = tokio::sync::mpsc::channel(16);
+
+        let stranger = "dddddddddddddddddddddddddddddddd";
+        inner
+            .handle_transport_packet(
+                stranger,
+                &runcommand_request(&[("requestCommandList", true.into())]),
+                &PacketReplyRoute::Lan(tx.clone()),
+            )
+            .await;
+        inner
+            .handle_transport_packet(
+                stranger,
+                &runcommand_request(&[("key", "cmd-enabled".into())]),
+                &PacketReplyRoute::Lan(tx),
+            )
+            .await;
+
+        assert!(runner.spawned.lock().unwrap().is_empty());
+        assert!(
+            rx.try_recv().is_err(),
+            "an untrusted device must not even learn what commands exist"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_spawn_failure_is_contained_and_the_link_keeps_working() {
+        let (inner, _events) = multi_device_harness(&[PHONE_A]);
+        inner.set_run_commands(sample_commands());
+        inner
+            .set_command_runner(Arc::new(FakeRunner {
+                fail: true,
+                ..Default::default()
+            }))
+            .await;
+        let (tx, mut rx) = tokio::sync::mpsc::channel(16);
+
+        // The failing spawn must not unwind into the dispatcher...
+        inner
+            .handle_transport_packet(
+                PHONE_A,
+                &runcommand_request(&[("key", "cmd-enabled".into())]),
+                &PacketReplyRoute::Lan(tx.clone()),
+            )
+            .await;
+
+        // ...and the very next packet on the same route still works.
+        assert!(
+            inner
+                .handle_transport_packet(
+                    PHONE_A,
+                    &runcommand_request(&[("requestCommandList", true.into())]),
+                    &PacketReplyRoute::Lan(tx),
+                )
+                .await
+        );
+        assert!(drain(&mut rx).await.iter().any(|p| p.body.contains_key("commandList")));
+    }
+
+    #[tokio::test]
+    async fn two_devices_get_independent_command_lists_and_execution_is_attributed() {
+        let (inner, _events) = multi_device_harness(&[PHONE_A, PHONE_B]);
+        inner.set_run_commands(sample_commands());
+        let runner = Arc::new(FakeRunner::default());
+        inner.set_command_runner(runner.clone()).await;
+        let (tx_a, mut rx_a) = tokio::sync::mpsc::channel(16);
+        let (tx_b, mut rx_b) = tokio::sync::mpsc::channel(16);
+
+        inner
+            .handle_transport_packet(
+                PHONE_A,
+                &runcommand_request(&[("requestCommandList", true.into())]),
+                &PacketReplyRoute::Lan(tx_a),
+            )
+            .await;
+        inner
+            .handle_transport_packet(
+                PHONE_B,
+                &runcommand_request(&[("key", "cmd-enabled".into())]),
+                &PacketReplyRoute::Lan(tx_b),
+            )
+            .await;
+
+        // A asked for a list and got one; B asked to run and got no list.
+        assert!(drain(&mut rx_a).await.iter().any(|p| p.body.contains_key("commandList")));
+        assert!(rx_b.try_recv().is_err());
+        assert_eq!(runner.spawned.lock().unwrap().len(), 1);
+    }
+
+    /// A link registered at Relay WAN's real priority (15) that records what was
+    /// sent over it, so the WAN route can be exercised without an Iroh
+    /// connection. Behaviour under test is the dispatcher's, which is shared by
+    /// both transports by construction.
+    #[cfg(feature = "kdeconnect-wan")]
+    struct RecordingWanLink {
+        device_id: String,
+        sent: std::sync::Mutex<Vec<NetworkPacket>>,
+    }
+
+    #[cfg(feature = "kdeconnect-wan")]
+    impl crate::kdeconnect::wan::TransportLink for RecordingWanLink {
+        fn device_id(&self) -> &str {
+            &self.device_id
+        }
+        fn kind(&self) -> crate::kdeconnect::wan::TransportKind {
+            crate::kdeconnect::wan::TransportKind::RelayWan
+        }
+        fn state(&self) -> crate::kdeconnect::wan::TransportState {
+            crate::kdeconnect::wan::TransportState::RemoteDirect
+        }
+        fn metadata(&self) -> crate::kdeconnect::wan::TransportMetadata {
+            crate::kdeconnect::wan::TransportMetadata {
+                kind: self.kind(),
+                state: self.state(),
+                last_seen_unix: None,
+                last_transition_reason: None,
+            }
+        }
+        fn send_packet<'a>(
+            &'a self,
+            packet: &'a NetworkPacket,
+        ) -> crate::kdeconnect::wan::transport::LinkFuture<'a, Result<()>> {
+            Box::pin(async move {
+                self.sent.lock().unwrap().push(packet.clone());
+                Ok(())
+            })
+        }
+        fn send_payload<'a>(
+            &'a self,
+            _request: crate::kdeconnect::wan::PayloadRequest<'a>,
+        ) -> crate::kdeconnect::wan::transport::LinkFuture<
+            'a,
+            Result<crate::kdeconnect::wan::PayloadOutcome>,
+        > {
+            Box::pin(async move { Ok(crate::kdeconnect::wan::PayloadOutcome::Sent) })
+        }
+        fn disconnect(&self) -> crate::kdeconnect::wan::transport::LinkFuture<'_, ()> {
+            Box::pin(async move {})
+        }
+        fn health(&self) -> crate::kdeconnect::wan::transport::LinkFuture<'_, bool> {
+            Box::pin(async move { true })
+        }
+    }
+
+    #[cfg(feature = "kdeconnect-wan")]
+    fn wan_route(device_id: &str) -> (Arc<RecordingWanLink>, PacketReplyRoute) {
+        let link = Arc::new(RecordingWanLink {
+            device_id: device_id.to_owned(),
+            sent: std::sync::Mutex::new(Vec::new()),
+        });
+        let route = PacketReplyRoute::Wan(
+            Arc::clone(&link) as Arc<dyn crate::kdeconnect::wan::TransportLink>
+        );
+        (link, route)
+    }
+
+    #[cfg(feature = "kdeconnect-wan")]
+    async fn wan_sent(link: &Arc<RecordingWanLink>) -> Vec<NetworkPacket> {
+        // The MPRIS handler replies from a spawned task.
+        for _ in 0..50 {
+            if !link.sent.lock().unwrap().is_empty() {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+        tokio::time::sleep(Duration::from_millis(20)).await;
+        link.sent.lock().unwrap().clone()
+    }
+
+    #[cfg(feature = "kdeconnect-wan")]
+    #[tokio::test]
+    async fn media_control_works_identically_when_the_request_arrives_over_relay_wan() {
+        let (inner, _events) = multi_device_harness(&[PHONE_A]);
+        let host = FakeMediaHost::with(&["Lollypop"]);
+        inner.set_media_host(host.clone()).await;
+        let (link, route) = wan_route(PHONE_A);
+
+        let packet = mpris_request(&[
+            ("player", "Lollypop".into()),
+            ("action", "PlayPause".into()),
+        ]);
+        assert!(inner.handle_transport_packet(PHONE_A, &packet, &route).await);
+
+        let sent = wan_sent(&link).await;
+        assert_eq!(
+            host.controls.lock().unwrap().as_slice(),
+            &[(
+                "Lollypop".to_owned(),
+                crate::kdeconnect::media::PlayerCommand::PlayPause
+            )],
+            "the same handler must drive the player regardless of transport"
+        );
+        assert!(
+            sent.iter().any(|p| p.packet_type == crate::kdeconnect::PACKET_TYPE_MPRIS),
+            "fresh state must come back over the WAN route it arrived on"
+        );
+    }
+
+    #[cfg(feature = "kdeconnect-wan")]
+    #[tokio::test]
+    async fn a_run_command_executes_when_requested_over_relay_wan() {
+        let (inner, _events) = multi_device_harness(&[PHONE_A]);
+        inner.set_run_commands(sample_commands());
+        let runner = Arc::new(FakeRunner::default());
+        inner.set_command_runner(runner.clone()).await;
+        let (link, route) = wan_route(PHONE_A);
+
+        inner
+            .handle_transport_packet(
+                PHONE_A,
+                &runcommand_request(&[("requestCommandList", true.into())]),
+                &route,
+            )
+            .await;
+        inner
+            .handle_transport_packet(
+                PHONE_A,
+                &runcommand_request(&[("key", "cmd-enabled".into())]),
+                &route,
+            )
+            .await;
+
+        let sent = wan_sent(&link).await;
+        assert!(sent.iter().any(|p| p.body.contains_key("commandList")));
+        assert_eq!(
+            runner.spawned.lock().unwrap().as_slice(),
+            ["touch /tmp/relay-marker"]
+        );
+    }
+
+    #[cfg(feature = "kdeconnect-wan")]
+    #[tokio::test]
+    async fn relay_wan_does_not_widen_what_a_phone_may_run() {
+        // Same refusals over WAN as over LAN: the transport is not part of the
+        // permission decision.
+        let (inner, _events) = multi_device_harness(&[PHONE_A]);
+        inner.set_run_commands(sample_commands());
+        let runner = Arc::new(FakeRunner::default());
+        inner.set_command_runner(runner.clone()).await;
+
+        let (_link, trusted_route) = wan_route(PHONE_A);
+        for key in ["cmd-disabled", "cmd-nonexistent", "touch /tmp/relay-marker"] {
+            inner
+                .handle_transport_packet(
+                    PHONE_A,
+                    &runcommand_request(&[("key", key.into())]),
+                    &trusted_route,
+                )
+                .await;
+        }
+
+        // And an untrusted device is refused over WAN too.
+        let stranger = "dddddddddddddddddddddddddddddddd";
+        let (stranger_link, stranger_route) = wan_route(stranger);
+        inner
+            .handle_transport_packet(
+                stranger,
+                &runcommand_request(&[("key", "cmd-enabled".into())]),
+                &stranger_route,
+            )
+            .await;
+        inner
+            .handle_transport_packet(
+                stranger,
+                &runcommand_request(&[("requestCommandList", true.into())]),
+                &stranger_route,
+            )
+            .await;
+
+        assert!(runner.spawned.lock().unwrap().is_empty());
+        assert!(stranger_link.sent.lock().unwrap().is_empty());
+    }
+
+    #[cfg(feature = "kdeconnect-wan")]
+    #[tokio::test]
+    async fn lan_keeps_priority_over_wan_for_the_reply_when_both_routes_exist() {
+        // The reply always goes back on the route the request arrived on, but
+        // unsolicited sends go through the router, where LAN still wins.
+        use crate::kdeconnect::wan::TransportKind;
+        let (inner, _events) = multi_device_harness(&[PHONE_A]);
+        let (link, _route) = wan_route(PHONE_A);
+        inner.router.register(Arc::clone(&link) as Arc<dyn crate::kdeconnect::wan::TransportLink>);
+
+        assert_eq!(
+            inner.router.active_transport(PHONE_A),
+            Some(TransportKind::RelayWan),
+            "WAN carries the device while LAN is absent"
+        );
+        assert!(
+            TransportKind::KdeLan.priority() > TransportKind::RelayWan.priority(),
+            "LAN must outrank WAN once it returns"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_setup_request_never_runs_anything() {
+        let (inner, _events) = multi_device_harness(&[PHONE_A]);
+        inner.set_run_commands(sample_commands());
+        let runner = Arc::new(FakeRunner::default());
+        inner.set_command_runner(runner.clone()).await;
+        let (tx, _rx) = tokio::sync::mpsc::channel(16);
+
+        inner
+            .handle_transport_packet(
+                PHONE_A,
+                &runcommand_request(&[("setup", true.into())]),
+                &PacketReplyRoute::Lan(tx),
+            )
+            .await;
+
+        assert!(runner.spawned.lock().unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn notifications_from_three_devices_are_all_retained_and_filter_per_device() {
+        let (inner, _events) = multi_device_harness(&[PHONE_A, PHONE_B, TABLET]);
+
+        deliver(&inner, PHONE_A, &notification_packet("n1", "From A", false)).await;
+        deliver(&inner, PHONE_B, &notification_packet("n2", "From B", false)).await;
+        deliver(&inner, TABLET, &notification_packet("n3", "From Tablet", false)).await;
+
+        let a = inner.get_notifications(PHONE_A).await;
+        let b = inner.get_notifications(PHONE_B).await;
+        let tablet = inner.get_notifications(TABLET).await;
+
+        assert_eq!(a.len(), 1);
+        assert_eq!(a[0].title.as_deref(), Some("From A"));
+        assert_eq!(b.len(), 1);
+        assert_eq!(b[0].title.as_deref(), Some("From B"));
+        assert_eq!(tablet.len(), 1);
+        assert_eq!(tablet[0].title.as_deref(), Some("From Tablet"));
+    }
+
+    #[tokio::test]
+    async fn the_same_remote_notification_id_on_two_devices_does_not_collide() {
+        let (inner, _events) = multi_device_harness(&[PHONE_A, PHONE_B]);
+
+        // Both phones legitimately use id "42" for unrelated notifications.
+        deliver(&inner, PHONE_A, &notification_packet("42", "Alice", false)).await;
+        deliver(&inner, PHONE_B, &notification_packet("42", "Bob", false)).await;
+
+        let a = inner.get_notifications(PHONE_A).await;
+        let b = inner.get_notifications(PHONE_B).await;
+        assert_eq!(a.len(), 1);
+        assert_eq!(b.len(), 1);
+        assert_eq!(a[0].title.as_deref(), Some("Alice"));
+        assert_eq!(b[0].title.as_deref(), Some("Bob"), "B must not be overwritten by A");
+    }
+
+    #[tokio::test]
+    async fn updating_a_notification_on_one_device_leaves_the_same_id_on_another_untouched() {
+        let (inner, _events) = multi_device_harness(&[PHONE_A, PHONE_B]);
+        deliver(&inner, PHONE_A, &notification_packet("42", "Alice", false)).await;
+        deliver(&inner, PHONE_B, &notification_packet("42", "Bob", false)).await;
+
+        deliver(&inner, PHONE_A, &notification_packet("42", "Alice edited", false)).await;
+
+        assert_eq!(
+            inner.get_notifications(PHONE_A).await[0].title.as_deref(),
+            Some("Alice edited")
+        );
+        assert_eq!(
+            inner.get_notifications(PHONE_B).await[0].title.as_deref(),
+            Some("Bob")
+        );
+        assert_eq!(inner.get_notifications(PHONE_A).await.len(), 1, "update, not append");
+    }
+
+    #[tokio::test]
+    async fn cancelling_a_notification_on_one_device_leaves_the_same_id_on_another_alive() {
+        let (inner, _events) = multi_device_harness(&[PHONE_A, PHONE_B]);
+        deliver(&inner, PHONE_A, &notification_packet("42", "Alice", false)).await;
+        deliver(&inner, PHONE_B, &notification_packet("42", "Bob", false)).await;
+
+        deliver(&inner, PHONE_A, &notification_packet("42", "Alice", true)).await;
+
+        assert!(inner.get_notifications(PHONE_A).await.is_empty());
+        assert_eq!(
+            inner.get_notifications(PHONE_B).await.len(),
+            1,
+            "a cancel from A must never dismiss B's notification with the same id"
+        );
+    }
+
+    #[tokio::test]
+    async fn unpairing_one_device_never_clears_another_devices_notifications() {
+        let (inner, _events) = multi_device_harness(&[PHONE_A, PHONE_B]);
+        deliver(&inner, PHONE_A, &notification_packet("n1", "Alice", false)).await;
+        deliver(&inner, PHONE_B, &notification_packet("n2", "Bob", false)).await;
+
+        let _ = inner.unpair(PHONE_A).await;
+
+        assert!(inner.get_notifications(PHONE_A).await.is_empty());
+        assert_eq!(
+            inner.get_notifications(PHONE_B).await.len(),
+            1,
+            "unpairing A must not touch B's notification store"
+        );
+    }
+
+    #[cfg(feature = "kdeconnect-wan")]
+    #[tokio::test]
+    async fn a_local_to_remote_transition_neither_clears_nor_duplicates_notifications() {
+        use crate::kdeconnect::wan::TransportKind;
+        let (inner, _events) = multi_device_harness(&[PHONE_A, PHONE_B]);
+        deliver(&inner, PHONE_A, &notification_packet("n1", "Alice", false)).await;
+        deliver(&inner, PHONE_B, &notification_packet("n2", "Bob", false)).await;
+
+        // Wi-Fi drops: the LAN route for A goes away and WAN becomes authoritative.
+        // Notifications belong to the logical device, not to the route.
+        inner.router.unregister(PHONE_A, TransportKind::KdeLan);
+        inner.record_route_seen(PHONE_A, TransportKind::RelayWan).await;
+
+        assert_eq!(inner.get_notifications(PHONE_A).await.len(), 1);
+
+        // The same notification arriving again over the new route must update in
+        // place, not become a second copy.
+        deliver(&inner, PHONE_A, &notification_packet("n1", "Alice", false)).await;
+        assert_eq!(
+            inner.get_notifications(PHONE_A).await.len(),
+            1,
+            "a route change must not duplicate a notification"
+        );
+
+        // Wi-Fi returns.
+        inner.record_route_seen(PHONE_A, TransportKind::KdeLan).await;
+        assert_eq!(inner.get_notifications(PHONE_A).await.len(), 1);
+        assert_eq!(inner.get_notifications(PHONE_B).await.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn dismiss_targets_only_the_originating_device_and_refuses_an_unpaired_one() {
+        let (inner, mut events) = multi_device_harness(&[PHONE_A, PHONE_B]);
+        deliver(&inner, PHONE_A, &notification_packet("42", "Alice", false)).await;
+        deliver(&inner, PHONE_B, &notification_packet("42", "Bob", false)).await;
+        while events.try_recv().is_ok() {}
+
+        // Both phones advertise the notification-request capability.
+        for device_id in [PHONE_A, PHONE_B] {
+            inner.peer_capabilities.lock().await.insert(
+                device_id.to_owned(),
+                (
+                    vec![crate::kdeconnect::PACKET_TYPE_NOTIFICATION_REQUEST.to_owned()],
+                    vec![],
+                ),
+            );
+        }
+
+        // No transport is registered, so the send fails and nothing is removed --
+        // dismissal must never drop the local record on a failed send.
+        assert!(inner.dismiss_notification(PHONE_A, "42").await.is_err());
+        assert_eq!(inner.get_notifications(PHONE_A).await.len(), 1);
+
+        // An unknown device is refused outright rather than falling back to
+        // "dismiss id 42 wherever it is found".
+        assert!(inner.dismiss_notification("zzzz", "42").await.is_err());
+        assert_eq!(inner.get_notifications(PHONE_B).await.len(), 1);
     }
 
     #[tokio::test]

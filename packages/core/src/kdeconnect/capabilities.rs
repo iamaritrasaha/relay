@@ -17,6 +17,17 @@ pub const PACKET_TYPE_SMS_REQUEST_CONVERSATION: &str = "kdeconnect.sms.request_c
 pub const PACKET_TYPE_TELEPHONY: &str = "kdeconnect.telephony";
 pub const PACKET_TYPE_TELEPHONY_REQUEST_MUTE: &str = "kdeconnect.telephony.request_mute";
 
+/// MPRIS media control. Relay Linux is the *player host*: the phone sends
+/// `kdeconnect.mpris.request` and Relay answers with `kdeconnect.mpris`.
+pub const PACKET_TYPE_MPRIS: &str = "kdeconnect.mpris";
+pub const PACKET_TYPE_MPRIS_REQUEST: &str = "kdeconnect.mpris.request";
+
+/// RunCommand. Relay Linux hosts the command list; the phone can only ask for
+/// the list or ask to run an entry *by id*. See `commands.rs` -- remote command
+/// text is never executed.
+pub const PACKET_TYPE_RUNCOMMAND: &str = "kdeconnect.runcommand";
+pub const PACKET_TYPE_RUNCOMMAND_REQUEST: &str = "kdeconnect.runcommand.request";
+
 /// Relay-specific extension packets, carried over either KDE LAN or Relay WAN.
 /// Namespace must match the Android side exactly -- see
 /// `kdeconnect/wan/mod.rs` for the transport these travel over.
@@ -36,6 +47,9 @@ pub fn canonical_incoming_capabilities() -> Vec<String> {
         PACKET_TYPE_NOTIFICATION.to_string(),
         PACKET_TYPE_SMS_MESSAGES.to_string(),
         PACKET_TYPE_TELEPHONY.to_string(),
+        // Relay Linux receives the phone's media/command *requests*...
+        PACKET_TYPE_MPRIS_REQUEST.to_string(),
+        PACKET_TYPE_RUNCOMMAND_REQUEST.to_string(),
         PACKET_TYPE_RELAY_WAN_IDENTITY.to_string(),
         PACKET_TYPE_RELAY_DEVICE_STATE.to_string(),
         PACKET_TYPE_RELAY_PING.to_string(),
@@ -55,6 +69,9 @@ pub fn canonical_outgoing_capabilities() -> Vec<String> {
         PACKET_TYPE_SMS_REQUEST_CONVERSATIONS.to_string(),
         PACKET_TYPE_SMS_REQUEST_CONVERSATION.to_string(),
         PACKET_TYPE_TELEPHONY_REQUEST_MUTE.to_string(),
+        // ...and sends the resulting player state / command list back.
+        PACKET_TYPE_MPRIS.to_string(),
+        PACKET_TYPE_RUNCOMMAND.to_string(),
         PACKET_TYPE_RELAY_WAN_IDENTITY.to_string(),
         PACKET_TYPE_RELAY_DEVICE_STATE.to_string(),
         PACKET_TYPE_RELAY_PING.to_string(),
@@ -93,6 +110,18 @@ mod tests {
         assert!(outgoing.contains(&PACKET_TYPE_TELEPHONY_REQUEST_MUTE.to_string()));
         assert!(outgoing.contains(&PACKET_TYPE_RELAY_WAN_IDENTITY.to_string()));
         assert!(outgoing.contains(&PACKET_TYPE_RELAY_DEVICE_STATE.to_string()));
+
+        // Relay Linux hosts players and commands: it receives requests and
+        // sends state, never the other way round. Getting this backwards makes
+        // the phone silently refuse to send us anything.
+        assert!(incoming.contains(&PACKET_TYPE_MPRIS_REQUEST.to_string()));
+        assert!(incoming.contains(&PACKET_TYPE_RUNCOMMAND_REQUEST.to_string()));
+        assert!(outgoing.contains(&PACKET_TYPE_MPRIS.to_string()));
+        assert!(outgoing.contains(&PACKET_TYPE_RUNCOMMAND.to_string()));
+        assert!(!incoming.contains(&PACKET_TYPE_MPRIS.to_string()));
+        assert!(!incoming.contains(&PACKET_TYPE_RUNCOMMAND.to_string()));
+        assert!(!outgoing.contains(&PACKET_TYPE_MPRIS_REQUEST.to_string()));
+        assert!(!outgoing.contains(&PACKET_TYPE_RUNCOMMAND_REQUEST.to_string()));
 
         // Battery is receive only on Linux desktop
         assert!(!outgoing.contains(&PACKET_TYPE_BATTERY.to_string()));

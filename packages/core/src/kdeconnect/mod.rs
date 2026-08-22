@@ -4,6 +4,8 @@
 //! never produces a RelayId and never consults Relay-native trust records.
 
 mod capabilities;
+pub mod commands;
+pub mod media;
 mod identity;
 mod lan;
 mod packet;
@@ -17,7 +19,9 @@ pub use capabilities::{
     PACKET_TYPE_FINDMYPHONE_REQUEST, PACKET_TYPE_IDENTITY, PACKET_TYPE_NOTIFICATION,
     PACKET_TYPE_NOTIFICATION_REQUEST, PACKET_TYPE_PAIR, PACKET_TYPE_PING,
     PACKET_TYPE_RELAY_DEVICE_STATE, PACKET_TYPE_RELAY_PING, PACKET_TYPE_RELAY_PONG,
-    PACKET_TYPE_RELAY_WAN_IDENTITY, PACKET_TYPE_SMS_MESSAGES, PACKET_TYPE_SMS_REQUEST,
+    PACKET_TYPE_MPRIS, PACKET_TYPE_MPRIS_REQUEST, PACKET_TYPE_RELAY_WAN_IDENTITY,
+    PACKET_TYPE_RUNCOMMAND, PACKET_TYPE_RUNCOMMAND_REQUEST,
+    PACKET_TYPE_SMS_MESSAGES, PACKET_TYPE_SMS_REQUEST,
     PACKET_TYPE_SMS_REQUEST_CONVERSATION, PACKET_TYPE_SMS_REQUEST_CONVERSATIONS,
     PACKET_TYPE_TELEPHONY, PACKET_TYPE_TELEPHONY_REQUEST_MUTE,
 };
@@ -30,7 +34,8 @@ pub use packet::{
     filter_device_name, is_valid_device_id, BatteryBody, ClipboardBody, ConnectivityReportBody,
     ConnectivitySignal, FindMyPhoneBody, IdentityBody, NetworkPacket, NotificationBody,
     PacketError, PairBody, PingBody, RelayDeviceStateBody, RelayHeartbeatBody,
-    RelayWanIdentityBody, SmsAttachmentMetadata, SmsMessage, SmsMessagesBody, SmsRequestBody,
+    MprisBody, MprisRequestBody, RelayWanIdentityBody, RunCommandListBody,
+    RunCommandRequestBody, SmsAttachmentMetadata, SmsMessage, SmsMessagesBody, SmsRequestBody,
     SmsRequestConversationBody, SmsRequestConversationsBody, TelephonyBody,
     TelephonyRequestMuteBody, PROTOCOL_VERSION,
 };
@@ -280,6 +285,19 @@ impl KdeConnectHandle {
         self.inner.request_notifications(device_id).await
     }
 
+    /// Dismisses one notification on the logical device that produced it. The
+    /// `(device_id, remote_notification_id)` pair is the key -- the same remote
+    /// id on another device is a different notification and is unaffected.
+    pub async fn dismiss_notification(
+        &self,
+        device_id: &str,
+        remote_notification_id: &str,
+    ) -> Result<()> {
+        self.inner
+            .dismiss_notification(device_id, remote_notification_id)
+            .await
+    }
+
     pub async fn get_notifications(&self, device_id: &str) -> Vec<KdeNotification> {
         self.inner.get_notifications(device_id).await
     }
@@ -317,6 +335,28 @@ impl KdeConnectHandle {
 
     pub async fn send_mute_call(&self, device_id: &str) -> Result<()> {
         self.inner.send_mute_call(device_id).await
+    }
+
+    /// Starts MPRIS media support by connecting to the D-Bus session bus.
+    ///
+    /// Opt-in and fallible on purpose: a machine with no session bus (a headless
+    /// service, a container) simply runs without media control, and media
+    /// requests are answered with an empty player list instead of hanging.
+    #[cfg(all(target_os = "linux", feature = "mpris"))]
+    pub async fn enable_media(&self) -> Result<()> {
+        let host = media::dbus::DbusMediaPlayerHost::connect().await?;
+        self.inner.set_media_host(Arc::new(host)).await;
+        Ok(())
+    }
+
+    /// Installs the desktop's RunCommand allow-list. The phone can only ever
+    /// trigger entries from this list, by id -- see [`commands`].
+    pub fn set_run_commands(&self, entries: Vec<commands::RunCommandEntry>) {
+        self.inner.set_run_commands(entries);
+    }
+
+    pub fn run_commands(&self) -> Vec<commands::RunCommandEntry> {
+        self.inner.commands.snapshot()
     }
 
     pub fn stop(&self) {

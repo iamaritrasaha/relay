@@ -11,6 +11,7 @@ use relay_core::kdeconnect::{
     KdeSmsConversation, KdeTelephonyEvent, LanConfig, LocalIdentity, SmsAttachmentMetadata,
     SmsMessage, TrustedDevice,
 };
+use relay_core::kdeconnect::commands::RunCommandEntry;
 use relay_core::kdeconnect::wan::{TransportKind, TransportState, WanIdentity, WanRuntimeConfig};
 
 use crate::frb_generated::StreamSink;
@@ -180,9 +181,57 @@ pub async fn start_kdeconnect(
         app_version: env!("CARGO_PKG_VERSION").to_owned(),
         capability_digest: relay_core::kdeconnect::canonical_incoming_capabilities().join("\n"),
     }).await?;
+    // Media control is best-effort: a machine with no D-Bus session bus still
+    // runs Relay, just without MPRIS. Failing the whole KDE runtime over it
+    // would take LAN and WAN down with it.
+    #[cfg(all(target_os = "linux", feature = "mpris"))]
+    if let Err(error) = handle.enable_media().await {
+        tracing::warn!("[Relay MPRIS] media control unavailable: {error}");
+    }
     Ok(RsKdeConnect {
         handle: Arc::new(handle),
     })
+}
+
+/// One entry in the desktop's RunCommand allow-list.
+///
+/// `id` is generated once and persisted, so a phone's cached id stays valid
+/// across restarts. The phone can only ever name an id -- it never supplies
+/// `command`.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct RsRunCommand {
+    pub id: String,
+    pub name: String,
+    pub command: String,
+    pub enabled: bool,
+}
+
+impl From<RunCommandEntry> for RsRunCommand {
+    fn from(value: RunCommandEntry) -> Self {
+        Self {
+            id: value.id,
+            name: value.name,
+            command: value.command,
+            enabled: value.enabled,
+        }
+    }
+}
+
+impl From<RsRunCommand> for RunCommandEntry {
+    fn from(value: RsRunCommand) -> Self {
+        Self {
+            id: value.id,
+            name: value.name,
+            command: value.command,
+            enabled: value.enabled,
+        }
+    }
+}
+
+/// Generates a stable id for a newly created command, so Dart never has to
+/// invent one and every entry is identified the same way.
+pub fn kdeconnect_new_run_command_id() -> String {
+    RunCommandEntry::new(String::new(), String::new(), false).id
 }
 
 pub struct RsKdeConnect {
@@ -284,6 +333,32 @@ impl RsKdeConnect {
 
     pub async fn request_notifications(&self, device_id: String) -> anyhow::Result<()> {
         self.handle.request_notifications(&device_id).await
+    }
+
+    /// Dismisses one notification on the logical device that produced it.
+    ///
+    /// Both arguments are required: a remote notification id is unique only
+    /// within its own device, so dismissing by id alone would be ambiguous
+    /// across simultaneously connected phones.
+    pub async fn dismiss_notification(
+        &self,
+        device_id: String,
+        remote_notification_id: String,
+    ) -> anyhow::Result<()> {
+        self.handle
+            .dismiss_notification(&device_id, &remote_notification_id)
+            .await
+    }
+
+    /// Replaces the RunCommand allow-list. Effective immediately for every
+    /// connected device, over both LAN and Relay WAN.
+    pub fn set_run_commands(&self, commands: Vec<RsRunCommand>) {
+        self.handle
+            .set_run_commands(commands.into_iter().map(Into::into).collect());
+    }
+
+    pub fn run_commands(&self) -> Vec<RsRunCommand> {
+        self.handle.run_commands().into_iter().map(Into::into).collect()
     }
 
     pub async fn get_notifications(&self, device_id: String) -> Vec<RsKdeNotification> {

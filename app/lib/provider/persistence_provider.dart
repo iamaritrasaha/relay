@@ -113,6 +113,7 @@ const _relayPairedAddressesKey = 'ls_relay_paired_addresses_v1';
 const _relayContinuitySettingsKey = 'ls_relay_continuity_settings_v1';
 const _kdeConnectIdentityKey = 'kc_local_identity_v1';
 const _kdeConnectTrustedDevicesKey = 'kc_trusted_devices_v1';
+const _kdeConnectRunCommandsKey = 'kc_run_commands_v1';
 const _gnomePanelDeviceIdKey = 'ls_gnome_panel_device_id';
 const _gnomePanelShowNetworkTypeKey = 'ls_gnome_panel_show_network_type';
 const _gnomePanelShowBatteryPercentageKey = 'ls_gnome_panel_show_battery_percentage';
@@ -715,6 +716,22 @@ class PersistenceService {
 
   Future<void> setKdeConnectTrustedDevices(List<Map<String, dynamic>> devices) async {
     await _prefs.setStringList(_kdeConnectTrustedDevicesKey, [for (final device in devices) jsonEncode(device)]);
+  }
+
+  /// The desktop's RunCommand allow-list.
+  ///
+  /// Persisted with each entry's generated `id`, which is what keeps a phone's
+  /// cached command ids valid across restarts.
+  List<Map<String, dynamic>> getKdeConnectRunCommands() {
+    final raw = _prefs.getStringList(_kdeConnectRunCommandsKey) ?? const [];
+    return [
+      for (final item in raw)
+        if (jsonDecode(item) is Map<String, dynamic>) jsonDecode(item) as Map<String, dynamic>,
+    ];
+  }
+
+  Future<void> setKdeConnectRunCommands(List<Map<String, dynamic>> commands) async {
+    await _prefs.setStringList(_kdeConnectRunCommandsKey, [for (final command in commands) jsonEncode(command)]);
   }
 
   String? getGnomePanelDeviceId() {

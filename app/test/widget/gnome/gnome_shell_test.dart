@@ -291,6 +291,12 @@ void main() {
       expect(find.text('Save to history'), findsOneWidget);
       expect(find.text('Finish completed transfers automatically'), findsOneWidget);
 
+      // Linux gains the RunCommand allow-list group; the phone can only run
+      // what is listed here, so the surface has to exist for the feature to be
+      // usable at all.
+      expect(find.text('Remote commands'), findsOneWidget);
+      expect(find.text('Add command'), findsOneWidget);
+
       expect(find.text('Advanced'), findsOneWidget);
       expect(find.text('Transport encryption'), findsOneWidget);
       expect(find.text('Create checksums'), findsOneWidget);
@@ -303,7 +309,7 @@ void main() {
       final document = tester.widget<ConstrainedBox>(find.byKey(const ValueKey('gnome-settings-document')));
       expect(document.constraints.maxWidth, 760);
       expect(tester.widget<SingleChildScrollView>(find.byType(SingleChildScrollView)).padding, const EdgeInsets.fromLTRB(32, 24, 32, 36));
-      expect(find.byType(AdwBoxedList), findsNWidgets(6));
+      expect(find.byType(AdwBoxedList), findsNWidgets(7));
       expect(find.byType(RelayBreath), findsNothing);
       expect(find.byType(RelayEdgeSweep), findsNothing);
       expect(find.byType(DropdownButton), findsNothing);
@@ -357,7 +363,7 @@ void main() {
       );
       await tester.pumpAndSettle();
       expect(tester.takeException(), isNull);
-      expect(find.byType(AdwBoxedList), findsNWidgets(6));
+      expect(find.byType(AdwBoxedList), findsNWidgets(7));
       expect(tester.widget<SingleChildScrollView>(find.byType(SingleChildScrollView)).padding, const EdgeInsets.fromLTRB(16, 24, 16, 36));
     } finally {
       debugDefaultTargetPlatformOverride = null;
