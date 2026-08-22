@@ -94,7 +94,7 @@ void main() {
     redux: KdeConnectService(
       persistence: MockPersistenceService(),
       generateIdentity: ({required String deviceName}) async => throw UnimplementedError(),
-      startRuntime: (identity, trusted) async => throw UnimplementedError(),
+      startRuntime: (identity, trusted, runCommands) async => throw UnimplementedError(),
     ),
   );
 

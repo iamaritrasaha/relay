@@ -28,7 +28,7 @@ class _SeededKdeConnectService extends KdeConnectService {
     : super(
         persistence: ReviewPersistenceService(),
         generateIdentity: ({required String deviceName}) async => throw UnimplementedError(),
-        startRuntime: (identity, trusted) async => throw UnimplementedError(),
+        startRuntime: (identity, trusted, runCommands) async => throw UnimplementedError(),
       );
 
   static const _deviceId = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';

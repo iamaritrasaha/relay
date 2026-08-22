@@ -157,6 +157,7 @@ pub fn kdeconnect_generate_wan_secret() -> Vec<u8> {
 pub async fn start_kdeconnect(
     identity: RsKdeConnectIdentity,
     trusted: Vec<RsKdeConnectTrustedDevice>,
+    run_commands: Vec<RsRunCommand>,
 ) -> anyhow::Result<RsKdeConnect> {
     let _ = tracing_subscriber::fmt()
         .with_max_level(tracing::Level::INFO)
@@ -171,6 +172,11 @@ pub async fn start_kdeconnect(
             bind: BindMode::Any,
             allow_loopback: false,
         },
+        // Seeded here rather than set after start: a phone asks for the command
+        // list once when its plugin starts, and it connects fast enough to beat
+        // a post-start call -- it would then cache an empty list until the next
+        // reconnect.
+        run_commands: run_commands.into_iter().map(Into::into).collect(),
     })
     .await?;
     handle.enable_wan(WanRuntimeConfig {

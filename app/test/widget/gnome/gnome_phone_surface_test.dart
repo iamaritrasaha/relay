@@ -23,7 +23,7 @@ class _PhoneKdeService extends KdeConnectService {
     : super(
         persistence: ReviewPersistenceService(),
         generateIdentity: ({required String deviceName}) async => throw UnimplementedError(),
-        startRuntime: (identity, trusted) async => throw UnimplementedError(),
+        startRuntime: (identity, trusted, runCommands) async => throw UnimplementedError(),
       );
 
   @override

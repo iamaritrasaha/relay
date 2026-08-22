@@ -617,7 +617,11 @@ abstract class RustLibApi extends BaseApi {
     required BigInt timeoutMs,
   });
 
-  Future<RsKdeConnect> crateApiKdeconnectStartKdeconnect({required RsKdeConnectIdentity identity, required List<RsKdeConnectTrustedDevice> trusted});
+  Future<RsKdeConnect> crateApiKdeconnectStartKdeconnect({
+    required RsKdeConnectIdentity identity,
+    required List<RsKdeConnectTrustedDevice> trusted,
+    required List<RsRunCommand> runCommands,
+  });
 
   Future<RsHttpServer> crateApiServerStartServer({
     required int port,
@@ -4878,13 +4882,18 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   );
 
   @override
-  Future<RsKdeConnect> crateApiKdeconnectStartKdeconnect({required RsKdeConnectIdentity identity, required List<RsKdeConnectTrustedDevice> trusted}) {
+  Future<RsKdeConnect> crateApiKdeconnectStartKdeconnect({
+    required RsKdeConnectIdentity identity,
+    required List<RsKdeConnectTrustedDevice> trusted,
+    required List<RsRunCommand> runCommands,
+  }) {
     return handler.executeNormal(
       NormalTask(
         callFfi: (port_) {
           final serializer = SseSerializer(generalizedFrbRustBinding);
           sse_encode_box_autoadd_rs_kde_connect_identity(identity, serializer);
           sse_encode_list_rs_kde_connect_trusted_device(trusted, serializer);
+          sse_encode_list_rs_run_command(runCommands, serializer);
           pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 142, port: port_);
         },
         codec: SseCodec(
@@ -4892,7 +4901,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           decodeErrorData: sse_decode_AnyhowException,
         ),
         constMeta: kCrateApiKdeconnectStartKdeconnectConstMeta,
-        argValues: [identity, trusted],
+        argValues: [identity, trusted, runCommands],
         apiImpl: this,
       ),
     );
@@ -4900,7 +4909,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
 
   TaskConstMeta get kCrateApiKdeconnectStartKdeconnectConstMeta => const TaskConstMeta(
     debugName: 'start_kdeconnect',
-    argNames: ['identity', 'trusted'],
+    argNames: ['identity', 'trusted', 'runCommands'],
   );
 
   @override

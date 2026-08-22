@@ -85,6 +85,17 @@ pub(crate) enum PacketReplyRoute {
 }
 
 impl PacketReplyRoute {
+    /// Human-readable name of the transport that delivered the request, for
+    /// logs. This is the evidence that a feature is genuinely running over the
+    /// route it appears to -- a surviving stale LAN link would show up here.
+    pub(crate) fn label(&self) -> &'static str {
+        match self {
+            PacketReplyRoute::Lan(_) => "KdeLan",
+            #[cfg(feature = "kdeconnect-wan")]
+            PacketReplyRoute::Wan(_) => "RelayWan",
+        }
+    }
+
     async fn send(&self, packet: &NetworkPacket) {
         match self {
             PacketReplyRoute::Lan(tx) => {
@@ -711,9 +722,35 @@ impl LanInner {
     }
 
     /// Replaces the RunCommand allow-list, as the desktop settings UI does.
-    /// Takes effect immediately for every connected device and both transports.
+    ///
+    /// The new list is pushed to every connected paired device straight away.
+    /// A phone only asks for the list when its plugin starts, so without this
+    /// push it keeps showing whatever was configured at connect time -- a
+    /// command added while the phone is already connected would stay invisible
+    /// until it reconnected. The push goes through the `TransportRouter`, so a
+    /// Local device gets it over LAN and a Remote one over Relay WAN, with no
+    /// transport-specific code here.
+    #[cfg(feature = "kdeconnect-wan")]
     pub(crate) fn set_run_commands(
-        &self,
+        self: &Arc<Self>,
+        entries: Vec<crate::kdeconnect::commands::RunCommandEntry>,
+    ) {
+        self.commands.replace(entries);
+        let inner = Arc::clone(self);
+        tokio::spawn(async move {
+            let packet = crate::kdeconnect::packet::RunCommandListBody::to_packet(
+                &inner.commands.advertised(),
+            );
+            for device_id in inner.connected_paired_devices().await {
+                tracing::info!("[Relay RunCommand] device={device_id} pushing updated commandList");
+                let _ = inner.router.send_packet(&device_id, &packet).await;
+            }
+        });
+    }
+
+    #[cfg(not(feature = "kdeconnect-wan"))]
+    pub(crate) fn set_run_commands(
+        self: &Arc<Self>,
         entries: Vec<crate::kdeconnect::commands::RunCommandEntry>,
     ) {
         self.commands.replace(entries);
@@ -736,6 +773,10 @@ impl LanInner {
         let Some(media) = self.media.lock().await.clone() else {
             // No session bus: answer honestly with an empty list rather than
             // leaving the phone waiting for a reply that never comes.
+            tracing::warn!(
+                "[Relay MPRIS] device={device_id} route={} request arrived but media control is not available",
+                reply.label()
+            );
             if request.request_player_list {
                 reply
                     .send(&crate::kdeconnect::packet::MprisBody::player_list(&[]))
@@ -744,6 +785,7 @@ impl LanInner {
             return;
         };
 
+        let route = reply.label();
         let reply = reply.clone();
         let device_id = device_id.to_owned();
         tokio::spawn(async move {
@@ -751,7 +793,7 @@ impl LanInner {
                 let players = media.players().await;
                 let names: Vec<String> = players.iter().map(|p| p.name.clone()).collect();
                 tracing::info!(
-                    "[Relay MPRIS] device={device_id} playerList players={}",
+                    "[Relay MPRIS] device={device_id} route={route} playerList players={}",
                     names.len()
                 );
                 reply
@@ -764,7 +806,7 @@ impl LanInner {
             };
 
             for command in crate::kdeconnect::media::PlayerCommand::from_request(&request) {
-                tracing::info!("[Relay MPRIS] device={device_id} command={command:?}");
+                tracing::info!("[Relay MPRIS] device={device_id} route={route} command={command:?}");
                 if let Err(error) = media.control(&player_name, command).await {
                     tracing::warn!("[Relay MPRIS] device={device_id} command failed: {error}");
                 }
@@ -774,12 +816,19 @@ impl LanInner {
             // asked for it or not: the phone's UI has just acted and needs to
             // see the result, and upstream behaves the same way.
             match media.player(&player_name).await {
-                Some(snapshot) => reply.send(&snapshot.to_body().to_packet()).await,
+                Some(snapshot) => {
+                    tracing::info!(
+                        "[Relay MPRIS] device={device_id} route={route} state player={} playing={}",
+                        snapshot.name,
+                        snapshot.is_playing
+                    );
+                    reply.send(&snapshot.to_body().to_packet()).await
+                }
                 None => {
                     // The player disappeared (closed between request and
                     // reply). Re-advertise the list so the phone drops it
                     // instead of showing a player that is gone.
-                    tracing::info!("[Relay MPRIS] device={device_id} addressed an unknown player");
+                    tracing::info!("[Relay MPRIS] device={device_id} route={route} addressed an unknown player");
                     let names: Vec<String> =
                         media.players().await.into_iter().map(|p| p.name).collect();
                     reply
@@ -807,7 +856,8 @@ impl LanInner {
         let trusted = self.trust.lock().await.get(device_id).is_some();
         if !trusted {
             tracing::warn!(
-                "[Relay RunCommand] refused a request from untrusted device={device_id}"
+                "[Relay RunCommand] route={} refused a request from untrusted device={device_id}",
+                reply.label()
             );
             return;
         }
@@ -815,7 +865,8 @@ impl LanInner {
         if request.request_command_list {
             let advertised = self.commands.advertised();
             tracing::info!(
-                "[Relay RunCommand] device={device_id} commandList commands={}",
+                "[Relay RunCommand] device={device_id} route={} commandList commands={}",
+                reply.label(),
                 advertised.len()
             );
             reply
@@ -840,7 +891,8 @@ impl LanInner {
                 // Log the id and name only -- never the command line or its
                 // output, which routinely carry paths and secrets.
                 tracing::info!(
-                    "[Relay RunCommand] device={device_id} running id={} name={}",
+                    "[Relay RunCommand] device={device_id} route={} running id={} name={}",
+                    reply.label(),
                     entry.id,
                     entry.name
                 );
@@ -854,7 +906,8 @@ impl LanInner {
             }
             Err(rejection) => {
                 tracing::warn!(
-                    "[Relay RunCommand] device={device_id} refused id={id}: {rejection}"
+                    "[Relay RunCommand] device={device_id} route={} refused id={id}: {rejection}",
+                    reply.label()
                 );
             }
         }
@@ -4752,6 +4805,55 @@ mod tests {
             TransportKind::KdeLan.priority() > TransportKind::RelayWan.priority(),
             "LAN must outrank WAN once it returns"
         );
+    }
+
+    #[cfg(feature = "kdeconnect-wan")]
+    #[tokio::test]
+    async fn changing_the_command_list_pushes_it_to_already_connected_devices() {
+        // A phone asks for the list only when its plugin starts, so a command
+        // added later has to be pushed or it stays invisible until reconnect.
+        let (inner, _events) = multi_device_harness(&[PHONE_A, PHONE_B]);
+        let (link_a, _route_a) = wan_route(PHONE_A);
+        let (link_b, _route_b) = wan_route(PHONE_B);
+        inner.router.register(Arc::clone(&link_a) as Arc<dyn crate::kdeconnect::wan::TransportLink>);
+        inner.router.register(Arc::clone(&link_b) as Arc<dyn crate::kdeconnect::wan::TransportLink>);
+
+        inner.set_run_commands(sample_commands());
+
+        for link in [&link_a, &link_b] {
+            let sent = wan_sent(link).await;
+            let list = sent
+                .iter()
+                .find(|packet| packet.body.contains_key("commandList"))
+                .expect("every connected device must be told the list changed");
+            let encoded = list.body["commandList"].as_str().unwrap();
+            let parsed: serde_json::Value = serde_json::from_str(encoded).unwrap();
+            assert!(parsed.get("cmd-enabled").is_some());
+            assert!(parsed.get("cmd-disabled").is_none());
+        }
+    }
+
+    #[cfg(feature = "kdeconnect-wan")]
+    #[tokio::test]
+    async fn removing_a_command_pushes_the_shortened_list_too() {
+        let (inner, _events) = multi_device_harness(&[PHONE_A]);
+        let (link, _route) = wan_route(PHONE_A);
+        inner.router.register(Arc::clone(&link) as Arc<dyn crate::kdeconnect::wan::TransportLink>);
+
+        inner.set_run_commands(sample_commands());
+        let _ = wan_sent(&link).await;
+        link.sent.lock().unwrap().clear();
+
+        inner.set_run_commands(vec![]);
+
+        let sent = wan_sent(&link).await;
+        let list = sent
+            .iter()
+            .find(|packet| packet.body.contains_key("commandList"))
+            .expect("revoking a command must reach the phone, not just the local registry");
+        let parsed: serde_json::Value =
+            serde_json::from_str(list.body["commandList"].as_str().unwrap()).unwrap();
+        assert_eq!(parsed.as_object().map(|o| o.len()), Some(0));
     }
 
     #[tokio::test]

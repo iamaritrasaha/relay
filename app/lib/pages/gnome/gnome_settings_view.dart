@@ -380,7 +380,7 @@ Future<void> _editRunCommand(BuildContext context, RsRunCommand? existing) async
   if (!context.mounted) return;
   final result = await showDialog<RsRunCommand>(
     context: context,
-    builder: (_) => _RunCommandDialog(
+    builder: (_) => RunCommandDialog(
       command: existing ?? RsRunCommand(id: id, name: '', command: '', enabled: true),
       isNew: existing == null,
     ),
@@ -394,24 +394,38 @@ extension _RunCommandCopy on RsRunCommand {
   RsRunCommand copyWithEnabled(bool enabled) => RsRunCommand(id: id, name: name, command: command, enabled: enabled);
 }
 
-/// Minimal add/edit form for one RunCommand entry.
-class _RunCommandDialog extends StatefulWidget {
+/// Minimal add/edit form for one RunCommand entry. Public so its Save-enabling
+/// behaviour can be tested directly.
+class RunCommandDialog extends StatefulWidget {
   final RsRunCommand command;
   final bool isNew;
 
-  const _RunCommandDialog({required this.command, required this.isNew});
+  const RunCommandDialog({required this.command, required this.isNew});
 
   @override
-  State<_RunCommandDialog> createState() => _RunCommandDialogState();
+  State<RunCommandDialog> createState() => _RunCommandDialogState();
 }
 
-class _RunCommandDialogState extends State<_RunCommandDialog> {
+class _RunCommandDialogState extends State<RunCommandDialog> {
   late final TextEditingController _name = TextEditingController(text: widget.command.name);
   late final TextEditingController _command = TextEditingController(text: widget.command.command);
   late bool _enabled = widget.command.enabled;
 
   @override
+  void initState() {
+    super.initState();
+    // Save is enabled only once a command line exists, and that is decided at
+    // build time -- so the field has to rebuild the dialog as it is typed into.
+    // Without this the button stays disabled forever on a new command, because
+    // it is first built while the field is still empty.
+    _command.addListener(_onCommandChanged);
+  }
+
+  void _onCommandChanged() => setState(() {});
+
+  @override
   void dispose() {
+    _command.removeListener(_onCommandChanged);
     _name.dispose();
     _command.dispose();
     super.dispose();

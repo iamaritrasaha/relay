@@ -172,13 +172,14 @@ class KdeConnectState {
 }
 
 typedef KdeConnectIdentityFactory = Future<RsKdeConnectIdentity> Function({required String deviceName});
-typedef KdeConnectStarter = Future<RsKdeConnect> Function(RsKdeConnectIdentity identity, List<RsKdeConnectTrustedDevice> trusted);
+typedef KdeConnectStarter =
+    Future<RsKdeConnect> Function(RsKdeConnectIdentity identity, List<RsKdeConnectTrustedDevice> trusted, List<RsRunCommand> runCommands);
 
 final kdeConnectProvider = ReduxProvider<KdeConnectService, KdeConnectState>((ref) {
   return KdeConnectService(
     persistence: ref.read(persistenceProvider),
     generateIdentity: kdeconnectGenerateIdentity,
-    startRuntime: (identity, trusted) => startKdeconnect(identity: identity, trusted: trusted),
+    startRuntime: (identity, trusted, runCommands) => startKdeconnect(identity: identity, trusted: trusted, runCommands: runCommands),
   );
 });
 
@@ -257,13 +258,12 @@ class KdeConnectStartAction extends AsyncReduxAction<KdeConnectService, KdeConne
           wanEndpointId: item['wanEndpointId'] as String?,
         ),
     ];
-    final runtime = await notifier.startRuntime(identity, trusted);
-
-    // Restore the RunCommand allow-list before any device can ask for it. Ids
-    // come from persistence unchanged, so a phone's cached command ids still
-    // resolve after a desktop restart.
+    // Restored *before* the runtime starts: a phone asks for the command list
+    // once when its plugin starts and caches the answer, and it can connect
+    // before a post-start call lands. Ids come from persistence unchanged, so a
+    // phone's cached command ids still resolve after a desktop restart.
     final restoredCommands = kdeRunCommandsFromJson(notifier.persistence.getKdeConnectRunCommands());
-    await runtime.setRunCommands(commands: restoredCommands);
+    final runtime = await notifier.startRuntime(identity, trusted, restoredCommands);
 
     await notifier._events?.cancel();
     notifier._runtime = runtime;

@@ -17,8 +17,11 @@ Future<RsKdeConnectIdentity> kdeconnectGenerateIdentity({required String deviceN
 
 Future<Uint8List> kdeconnectGenerateWanSecret() => RustLib.instance.api.crateApiKdeconnectKdeconnectGenerateWanSecret();
 
-Future<RsKdeConnect> startKdeconnect({required RsKdeConnectIdentity identity, required List<RsKdeConnectTrustedDevice> trusted}) =>
-    RustLib.instance.api.crateApiKdeconnectStartKdeconnect(identity: identity, trusted: trusted);
+Future<RsKdeConnect> startKdeconnect({
+  required RsKdeConnectIdentity identity,
+  required List<RsKdeConnectTrustedDevice> trusted,
+  required List<RsRunCommand> runCommands,
+}) => RustLib.instance.api.crateApiKdeconnectStartKdeconnect(identity: identity, trusted: trusted, runCommands: runCommands);
 
 /// Generates a stable id for a newly created command, so Dart never has to
 /// invent one and every entry is identified the same way.

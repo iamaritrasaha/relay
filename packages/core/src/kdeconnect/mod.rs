@@ -26,6 +26,7 @@ pub use capabilities::{
     PACKET_TYPE_TELEPHONY, PACKET_TYPE_TELEPHONY_REQUEST_MUTE,
 };
 pub use identity::LocalIdentity;
+use media::MediaPlayerHost as _;
 pub use lan::{
     BatteryState, BindMode, ConnectivityState, DeviceTable, LanConfig, ObservedDevice,
     MAX_TCP_PORT, MIN_TCP_PORT, UDP_PORT,
@@ -180,6 +181,11 @@ pub struct KdeConnectConfig {
     pub identity: LocalIdentity,
     pub trusted: Vec<TrustedDevice>,
     pub lan: LanConfig,
+    /// The RunCommand allow-list, seeded *before* the LAN loop starts
+    /// accepting connections. Setting it afterwards races the first phone to
+    /// connect: its plugin asks for the list once at startup, and an answer of
+    /// "no commands" gets cached until it reconnects.
+    pub run_commands: Vec<commands::RunCommandEntry>,
 }
 
 pub struct KdeConnectHandle {
@@ -202,6 +208,7 @@ impl KdeConnectHandle {
             event_tx,
             cancel.clone(),
         );
+        inner.commands.replace(config.run_commands);
         let runner = Arc::clone(&inner);
         tokio::spawn(async move {
             lan::run(runner, listener, udp).await;
@@ -345,7 +352,9 @@ impl KdeConnectHandle {
     #[cfg(all(target_os = "linux", feature = "mpris"))]
     pub async fn enable_media(&self) -> Result<()> {
         let host = media::dbus::DbusMediaPlayerHost::connect().await?;
+        let players = host.players().await.len();
         self.inner.set_media_host(Arc::new(host)).await;
+        tracing::info!("[Relay MPRIS] media control enabled; {players} player(s) on the session bus");
         Ok(())
     }
 
@@ -457,6 +466,7 @@ mod tests {
                 bind: BindMode::Loopback,
                 allow_loopback: true,
             },
+            run_commands: Vec::new(),
         })
         .await
         .unwrap();
@@ -481,6 +491,7 @@ mod tests {
             identity: alice_id.clone(),
             trusted: vec![],
             lan: lan.clone(),
+            run_commands: Vec::new(),
         })
         .await
         .unwrap();
@@ -488,6 +499,7 @@ mod tests {
             identity: bob_id.clone(),
             trusted: vec![],
             lan,
+            run_commands: Vec::new(),
         })
         .await
         .unwrap();
@@ -530,6 +542,7 @@ mod tests {
             identity: alice_id.clone(),
             trusted,
             lan: lan.clone(),
+            run_commands: Vec::new(),
         })
         .await
         .unwrap();
@@ -537,6 +550,7 @@ mod tests {
             identity: bob_id.clone(),
             trusted: vec![],
             lan,
+            run_commands: Vec::new(),
         })
         .await
         .unwrap();
@@ -579,6 +593,7 @@ mod tests {
             identity: alice_id.clone(),
             trusted: vec![],
             lan: lan.clone(),
+            run_commands: Vec::new(),
         })
         .await
         .unwrap();
@@ -586,6 +601,7 @@ mod tests {
             identity: bob_id.clone(),
             trusted: vec![],
             lan: lan.clone(),
+            run_commands: Vec::new(),
         })
         .await
         .unwrap();
@@ -614,6 +630,7 @@ mod tests {
             identity: alice_id.clone(),
             trusted,
             lan: lan.clone(),
+            run_commands: Vec::new(),
         })
         .await
         .unwrap();
@@ -621,6 +638,7 @@ mod tests {
             identity: bob_id.clone(),
             trusted: vec![],
             lan,
+            run_commands: Vec::new(),
         })
         .await
         .unwrap();

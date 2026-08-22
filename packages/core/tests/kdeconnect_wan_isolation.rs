@@ -16,6 +16,7 @@ async fn kdeconnect_lan_start_does_not_bind_relay_wan_iroh() {
             bind: BindMode::Loopback,
             allow_loopback: true,
         },
+        run_commands: Vec::new(),
     })
     .await
     .unwrap();

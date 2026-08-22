@@ -7379,13 +7379,18 @@ fn wire__crate__api__kdeconnect__start_kdeconnect_impl(
             let api_trusted = <Vec<crate::api::kdeconnect::RsKdeConnectTrustedDevice>>::sse_decode(
                 &mut deserializer,
             );
+            let api_run_commands =
+                <Vec<crate::api::kdeconnect::RsRunCommand>>::sse_decode(&mut deserializer);
             deserializer.end();
             move |context| async move {
                 transform_result_sse::<_, flutter_rust_bridge::for_generated::anyhow::Error>(
                     (move || async move {
-                        let output_ok =
-                            crate::api::kdeconnect::start_kdeconnect(api_identity, api_trusted)
-                                .await?;
+                        let output_ok = crate::api::kdeconnect::start_kdeconnect(
+                            api_identity,
+                            api_trusted,
+                            api_run_commands,
+                        )
+                        .await?;
                         Ok(output_ok)
                     })()
                     .await,
