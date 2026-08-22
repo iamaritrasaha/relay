@@ -17,6 +17,14 @@ pub const PACKET_TYPE_SMS_REQUEST_CONVERSATION: &str = "kdeconnect.sms.request_c
 pub const PACKET_TYPE_TELEPHONY: &str = "kdeconnect.telephony";
 pub const PACKET_TYPE_TELEPHONY_REQUEST_MUTE: &str = "kdeconnect.telephony.request_mute";
 
+/// Relay-specific extension packets, carried over either KDE LAN or Relay WAN.
+/// Namespace must match the Android side exactly -- see
+/// `kdeconnect/wan/mod.rs` for the transport these travel over.
+pub const PACKET_TYPE_RELAY_WAN_IDENTITY: &str = "kdeconnect.relay.wan.identity";
+pub const PACKET_TYPE_RELAY_DEVICE_STATE: &str = "kdeconnect.relay.device_state";
+pub const PACKET_TYPE_RELAY_PING: &str = "kdeconnect.relay.ping";
+pub const PACKET_TYPE_RELAY_PONG: &str = "kdeconnect.relay.pong";
+
 /// Capabilities that Relay Linux can RECEIVE from KDE Connect peers.
 pub fn canonical_incoming_capabilities() -> Vec<String> {
     vec![
@@ -28,6 +36,10 @@ pub fn canonical_incoming_capabilities() -> Vec<String> {
         PACKET_TYPE_NOTIFICATION.to_string(),
         PACKET_TYPE_SMS_MESSAGES.to_string(),
         PACKET_TYPE_TELEPHONY.to_string(),
+        PACKET_TYPE_RELAY_WAN_IDENTITY.to_string(),
+        PACKET_TYPE_RELAY_DEVICE_STATE.to_string(),
+        PACKET_TYPE_RELAY_PING.to_string(),
+        PACKET_TYPE_RELAY_PONG.to_string(),
     ]
 }
 
@@ -43,6 +55,10 @@ pub fn canonical_outgoing_capabilities() -> Vec<String> {
         PACKET_TYPE_SMS_REQUEST_CONVERSATIONS.to_string(),
         PACKET_TYPE_SMS_REQUEST_CONVERSATION.to_string(),
         PACKET_TYPE_TELEPHONY_REQUEST_MUTE.to_string(),
+        PACKET_TYPE_RELAY_WAN_IDENTITY.to_string(),
+        PACKET_TYPE_RELAY_DEVICE_STATE.to_string(),
+        PACKET_TYPE_RELAY_PING.to_string(),
+        PACKET_TYPE_RELAY_PONG.to_string(),
     ]
 }
 
@@ -63,6 +79,8 @@ mod tests {
         assert!(incoming.contains(&PACKET_TYPE_NOTIFICATION.to_string()));
         assert!(incoming.contains(&PACKET_TYPE_SMS_MESSAGES.to_string()));
         assert!(incoming.contains(&PACKET_TYPE_TELEPHONY.to_string()));
+        assert!(incoming.contains(&PACKET_TYPE_RELAY_WAN_IDENTITY.to_string()));
+        assert!(incoming.contains(&PACKET_TYPE_RELAY_DEVICE_STATE.to_string()));
 
         assert!(outgoing.contains(&PACKET_TYPE_CLIPBOARD.to_string()));
         assert!(outgoing.contains(&PACKET_TYPE_CLIPBOARD_CONNECT.to_string()));
@@ -73,6 +91,8 @@ mod tests {
         assert!(outgoing.contains(&PACKET_TYPE_SMS_REQUEST_CONVERSATIONS.to_string()));
         assert!(outgoing.contains(&PACKET_TYPE_SMS_REQUEST_CONVERSATION.to_string()));
         assert!(outgoing.contains(&PACKET_TYPE_TELEPHONY_REQUEST_MUTE.to_string()));
+        assert!(outgoing.contains(&PACKET_TYPE_RELAY_WAN_IDENTITY.to_string()));
+        assert!(outgoing.contains(&PACKET_TYPE_RELAY_DEVICE_STATE.to_string()));
 
         // Battery is receive only on Linux desktop
         assert!(!outgoing.contains(&PACKET_TYPE_BATTERY.to_string()));

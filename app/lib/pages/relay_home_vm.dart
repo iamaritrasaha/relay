@@ -379,7 +379,12 @@ class RelayHomeVm {
       progress: null,
       detail: detail,
       targetKind: RelayDeviceTargetKind.kdeConnect,
-      connectionType: RelayConnectionType.local,
+      connectionType: switch (device.transportState) {
+        'remoteDirect' => RelayConnectionType.direct,
+        'remoteRelay' => RelayConnectionType.relayed,
+        'reconnecting' => RelayConnectionType.unspecified,
+        _ => RelayConnectionType.local,
+      },
       securityState: RelaySecurityState.unauthenticated,
       battery: RelayBatteryVm(
         percentage: device.batteryPercentage,

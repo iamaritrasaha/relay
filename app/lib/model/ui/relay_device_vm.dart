@@ -105,10 +105,14 @@ class RelayDeviceVm {
     }
     if (isKdeConnect) {
       if (detail == 'Connected') {
-        return 'Connected';
+        return switch (connectionType) {
+          RelayConnectionType.local => 'Local',
+          RelayConnectionType.direct || RelayConnectionType.relayed => 'Remote',
+          RelayConnectionType.unspecified => 'Reconnecting',
+        };
       }
       if (detail == 'Paired') {
-        return 'Paired';
+        return 'Offline';
       }
       return 'Nearby';
     }
@@ -132,7 +136,12 @@ class RelayDeviceVm {
   /// offline; it is never dropped just because discovery stopped seeing it.
   bool get isPresent {
     final summary = statusSummary;
-    return summary.startsWith('Connected') || summary.startsWith('Nearby') || summary.startsWith('Transferring') || summary == 'Paired';
+    return summary == 'Local' ||
+        summary == 'Remote' ||
+        summary.startsWith('Connected') ||
+        summary.startsWith('Nearby') ||
+        summary.startsWith('Transferring') ||
+        summary == 'Paired';
   }
 
   /// Capability states for display.

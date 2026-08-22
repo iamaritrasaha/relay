@@ -31,6 +31,7 @@ RsKdeConnectDevice device({
   connectivityStale: false,
   incomingCapabilities: incoming,
   outgoingCapabilities: outgoing,
+  transportState: connected ? 'local' : 'offline',
 );
 
 /// What a real Android peer accepts.

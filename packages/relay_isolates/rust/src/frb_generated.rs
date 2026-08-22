@@ -45,7 +45,7 @@ flutter_rust_bridge::frb_generated_boilerplate!(
     default_rust_auto_opaque = RustAutoOpaqueMoi,
 );
 pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_VERSION: &str = "2.12.0";
-pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = -1911945012;
+pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = -1849601242;
 
 // Section: executor
 
@@ -2810,6 +2810,67 @@ fn wire__crate__api__kdeconnect__RsKdeConnect_request_pair_impl(
         },
     )
 }
+fn wire__crate__api__kdeconnect__RsKdeConnect_request_relay_device_state_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_async::<flutter_rust_bridge::for_generated::SseCodec, _, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "RsKdeConnect_request_relay_device_state",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_that = <RustOpaqueMoi<
+                flutter_rust_bridge::for_generated::RustAutoOpaqueInner<RsKdeConnect>,
+            >>::sse_decode(&mut deserializer);
+            let api_device_id = <String>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| async move {
+                transform_result_sse::<_, flutter_rust_bridge::for_generated::anyhow::Error>(
+                    (move || async move {
+                        let mut api_that_guard = None;
+                        let decode_indices_ =
+                            flutter_rust_bridge::for_generated::lockable_compute_decode_order(
+                                vec![flutter_rust_bridge::for_generated::LockableOrderInfo::new(
+                                    &api_that, 0, false,
+                                )],
+                            );
+                        for i in decode_indices_ {
+                            match i {
+                                0 => {
+                                    api_that_guard =
+                                        Some(api_that.lockable_decode_async_ref().await)
+                                }
+                                _ => unreachable!(),
+                            }
+                        }
+                        let api_that_guard = api_that_guard.unwrap();
+                        let output_ok =
+                            crate::api::kdeconnect::RsKdeConnect::request_relay_device_state(
+                                &*api_that_guard,
+                                api_device_id,
+                            )
+                            .await?;
+                        Ok(output_ok)
+                    })()
+                    .await,
+                )
+            }
+        },
+    )
+}
 fn wire__crate__api__kdeconnect__RsKdeConnect_request_sms_conversation_impl(
     port_: flutter_rust_bridge::for_generated::MessagePort,
     ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
@@ -3115,6 +3176,66 @@ fn wire__crate__api__kdeconnect__RsKdeConnect_send_ping_impl(
                             &*api_that_guard,
                             api_device_id,
                             api_message,
+                        )
+                        .await?;
+                        Ok(output_ok)
+                    })()
+                    .await,
+                )
+            }
+        },
+    )
+}
+fn wire__crate__api__kdeconnect__RsKdeConnect_send_relay_ping_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_async::<flutter_rust_bridge::for_generated::SseCodec, _, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "RsKdeConnect_send_relay_ping",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_that = <RustOpaqueMoi<
+                flutter_rust_bridge::for_generated::RustAutoOpaqueInner<RsKdeConnect>,
+            >>::sse_decode(&mut deserializer);
+            let api_device_id = <String>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| async move {
+                transform_result_sse::<_, flutter_rust_bridge::for_generated::anyhow::Error>(
+                    (move || async move {
+                        let mut api_that_guard = None;
+                        let decode_indices_ =
+                            flutter_rust_bridge::for_generated::lockable_compute_decode_order(
+                                vec![flutter_rust_bridge::for_generated::LockableOrderInfo::new(
+                                    &api_that, 0, false,
+                                )],
+                            );
+                        for i in decode_indices_ {
+                            match i {
+                                0 => {
+                                    api_that_guard =
+                                        Some(api_that.lockable_decode_async_ref().await)
+                                }
+                                _ => unreachable!(),
+                            }
+                        }
+                        let api_that_guard = api_that_guard.unwrap();
+                        let output_ok = crate::api::kdeconnect::RsKdeConnect::send_relay_ping(
+                            &*api_that_guard,
+                            api_device_id,
                         )
                         .await?;
                         Ok(output_ok)
@@ -6102,6 +6223,40 @@ fn wire__crate__api__kdeconnect__kdeconnect_generate_identity_impl(
                         Ok(output_ok)
                     })(),
                 )
+            }
+        },
+    )
+}
+fn wire__crate__api__kdeconnect__kdeconnect_generate_wan_secret_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_normal::<flutter_rust_bridge::for_generated::SseCodec, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "kdeconnect_generate_wan_secret",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            deserializer.end();
+            move |context| {
+                transform_result_sse::<_, ()>((move || {
+                    let output_ok = Result::<_, ()>::Ok(
+                        crate::api::kdeconnect::kdeconnect_generate_wan_secret(),
+                    )?;
+                    Ok(output_ok)
+                })())
             }
         },
     )
@@ -9250,6 +9405,10 @@ impl SseDecode for crate::api::kdeconnect::RsKdeConnectDevice {
         let mut var_connectivityStale = <bool>::sse_decode(deserializer);
         let mut var_incomingCapabilities = <Vec<String>>::sse_decode(deserializer);
         let mut var_outgoingCapabilities = <Vec<String>>::sse_decode(deserializer);
+        let mut var_transportKind = <Option<String>>::sse_decode(deserializer);
+        let mut var_transportState = <String>::sse_decode(deserializer);
+        let mut var_lastRttMs = <Option<i64>>::sse_decode(deserializer);
+        let mut var_lastSeenUnix = <Option<i64>>::sse_decode(deserializer);
         return crate::api::kdeconnect::RsKdeConnectDevice {
             device_id: var_deviceId,
             name: var_name,
@@ -9267,6 +9426,10 @@ impl SseDecode for crate::api::kdeconnect::RsKdeConnectDevice {
             connectivity_stale: var_connectivityStale,
             incoming_capabilities: var_incomingCapabilities,
             outgoing_capabilities: var_outgoingCapabilities,
+            transport_kind: var_transportKind,
+            transport_state: var_transportState,
+            last_rtt_ms: var_lastRttMs,
+            last_seen_unix: var_lastSeenUnix,
         };
     }
 }
@@ -9370,11 +9533,13 @@ impl SseDecode for crate::api::kdeconnect::RsKdeConnectIdentity {
         let mut var_deviceName = <String>::sse_decode(deserializer);
         let mut var_certificatePem = <String>::sse_decode(deserializer);
         let mut var_privateKeyPem = <String>::sse_decode(deserializer);
+        let mut var_wanSecretKey = <Vec<u8>>::sse_decode(deserializer);
         return crate::api::kdeconnect::RsKdeConnectIdentity {
             device_id: var_deviceId,
             device_name: var_deviceName,
             certificate_pem: var_certificatePem,
             private_key_pem: var_privateKeyPem,
+            wan_secret_key: var_wanSecretKey,
         };
     }
 }
@@ -9388,6 +9553,7 @@ impl SseDecode for crate::api::kdeconnect::RsKdeConnectTrustedDevice {
         let mut var_deviceType = <String>::sse_decode(deserializer);
         let mut var_protocolVersion = <i64>::sse_decode(deserializer);
         let mut var_pairedAtUnix = <i64>::sse_decode(deserializer);
+        let mut var_wanEndpointId = <Option<String>>::sse_decode(deserializer);
         return crate::api::kdeconnect::RsKdeConnectTrustedDevice {
             device_id: var_deviceId,
             certificate_pem: var_certificatePem,
@@ -9395,6 +9561,7 @@ impl SseDecode for crate::api::kdeconnect::RsKdeConnectTrustedDevice {
             device_type: var_deviceType,
             protocol_version: var_protocolVersion,
             paired_at_unix: var_pairedAtUnix,
+            wan_endpoint_id: var_wanEndpointId,
         };
     }
 }
@@ -10670,345 +10837,363 @@ fn pde_ffi_dispatcher_primary_impl(
             rust_vec_len,
             data_len,
         ),
-        45 => wire__crate__api__kdeconnect__RsKdeConnect_request_sms_conversation_impl(
+        45 => wire__crate__api__kdeconnect__RsKdeConnect_request_relay_device_state_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        46 => wire__crate__api__kdeconnect__RsKdeConnect_request_sms_conversations_impl(
+        46 => wire__crate__api__kdeconnect__RsKdeConnect_request_sms_conversation_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        47 => wire__crate__api__kdeconnect__RsKdeConnect_send_clipboard_impl(
+        47 => wire__crate__api__kdeconnect__RsKdeConnect_request_sms_conversations_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        48 => wire__crate__api__kdeconnect__RsKdeConnect_send_clipboard_to_all_paired_impl(
+        48 => wire__crate__api__kdeconnect__RsKdeConnect_send_clipboard_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        49 => wire__crate__api__kdeconnect__RsKdeConnect_send_ping_impl(
+        49 => wire__crate__api__kdeconnect__RsKdeConnect_send_clipboard_to_all_paired_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        50 => wire__crate__api__kdeconnect__RsKdeConnect_send_sms_impl(
+        50 => wire__crate__api__kdeconnect__RsKdeConnect_send_ping_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        51 => wire__crate__api__kdeconnect__RsKdeConnect_snapshot_impl(
+        51 => wire__crate__api__kdeconnect__RsKdeConnect_send_relay_ping_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        52 => {
+        52 => wire__crate__api__kdeconnect__RsKdeConnect_send_sms_impl(
+            port,
+            ptr,
+            rust_vec_len,
+            data_len,
+        ),
+        53 => wire__crate__api__kdeconnect__RsKdeConnect_snapshot_impl(
+            port,
+            ptr,
+            rust_vec_len,
+            data_len,
+        ),
+        54 => {
             wire__crate__api__kdeconnect__RsKdeConnect_stop_impl(port, ptr, rust_vec_len, data_len)
         }
-        53 => wire__crate__api__kdeconnect__RsKdeConnect_unpair_impl(
+        55 => wire__crate__api__kdeconnect__RsKdeConnect_unpair_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        54 => wire__crate__api__webrtc__RtcFileReceiver_get_file_id_impl(
+        56 => wire__crate__api__webrtc__RtcFileReceiver_get_file_id_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        55 => wire__crate__api__webrtc__RtcFileReceiver_receive_impl(
+        57 => wire__crate__api__webrtc__RtcFileReceiver_receive_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        56 => wire__crate__api__webrtc__RtcFileSender_send_impl(port, ptr, rust_vec_len, data_len),
-        57 => wire__crate__api__webrtc__RtcReceiveController_decline_impl(
+        58 => wire__crate__api__webrtc__RtcFileSender_send_impl(port, ptr, rust_vec_len, data_len),
+        59 => wire__crate__api__webrtc__RtcReceiveController_decline_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        58 => wire__crate__api__webrtc__RtcReceiveController_listen_error_impl(
+        60 => wire__crate__api__webrtc__RtcReceiveController_listen_error_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        59 => wire__crate__api__webrtc__RtcReceiveController_listen_files_impl(
+        61 => wire__crate__api__webrtc__RtcReceiveController_listen_files_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        60 => wire__crate__api__webrtc__RtcReceiveController_listen_receiving_impl(
+        62 => wire__crate__api__webrtc__RtcReceiveController_listen_receiving_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        61 => wire__crate__api__webrtc__RtcReceiveController_listen_status_impl(
+        63 => wire__crate__api__webrtc__RtcReceiveController_listen_status_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        62 => wire__crate__api__webrtc__RtcReceiveController_send_file_status_impl(
+        64 => wire__crate__api__webrtc__RtcReceiveController_send_file_status_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        63 => wire__crate__api__webrtc__RtcReceiveController_send_pin_impl(
+        65 => wire__crate__api__webrtc__RtcReceiveController_send_pin_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        64 => wire__crate__api__webrtc__RtcReceiveController_send_selection_impl(
+        66 => wire__crate__api__webrtc__RtcReceiveController_send_selection_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        65 => wire__crate__api__webrtc__RtcSendController_listen_error_impl(
+        67 => wire__crate__api__webrtc__RtcSendController_listen_error_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        66 => wire__crate__api__webrtc__RtcSendController_listen_selected_files_impl(
+        68 => wire__crate__api__webrtc__RtcSendController_listen_selected_files_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        67 => wire__crate__api__webrtc__RtcSendController_listen_status_impl(
+        69 => wire__crate__api__webrtc__RtcSendController_listen_status_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        68 => wire__crate__api__webrtc__RtcSendController_send_file_impl(
+        70 => wire__crate__api__webrtc__RtcSendController_send_file_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        69 => wire__crate__api__webrtc__RtcSendController_send_pin_impl(
+        71 => wire__crate__api__webrtc__RtcSendController_send_pin_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        70 => wire__crate__api__webrtc__connect_impl(port, ptr, rust_vec_len, data_len),
-        78 => wire__crate__api__continuity__continuity_any_capability_enabled_impl(
+        72 => wire__crate__api__webrtc__connect_impl(port, ptr, rust_vec_len, data_len),
+        80 => wire__crate__api__continuity__continuity_any_capability_enabled_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        79 => wire__crate__api__continuity__continuity_call_action_impl(
+        81 => wire__crate__api__continuity__continuity_call_action_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        80 => wire__crate__api__continuity__continuity_connect_device_impl(
+        82 => wire__crate__api__continuity__continuity_connect_device_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        81 => wire__crate__api__continuity__continuity_connect_device_lan_impl(
+        83 => wire__crate__api__continuity__continuity_connect_device_lan_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        83 => wire__crate__api__continuity__continuity_disable_capability_impl(
+        85 => wire__crate__api__continuity__continuity_disable_capability_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        86 => wire__crate__api__continuity__continuity_dismiss_remote_notification_impl(
+        88 => wire__crate__api__continuity__continuity_dismiss_remote_notification_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        87 => wire__crate__api__continuity__continuity_enable_capability_impl(
+        89 => wire__crate__api__continuity__continuity_enable_capability_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        88 => {
+        90 => {
             wire__crate__api__continuity__continuity_events_impl(port, ptr, rust_vec_len, data_len)
         }
-        89 => wire__crate__api__continuity__continuity_export_permissions_impl(
+        91 => wire__crate__api__continuity__continuity_export_permissions_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        90 => wire__crate__api__continuity__continuity_host_requests_impl(
+        92 => wire__crate__api__continuity__continuity_host_requests_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        91 => wire__crate__api__continuity__continuity_import_permissions_impl(
+        93 => wire__crate__api__continuity__continuity_import_permissions_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        93 => wire__crate__api__continuity__continuity_publish_battery_impl(
+        95 => wire__crate__api__continuity__continuity_publish_battery_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        94 => wire__crate__api__continuity__continuity_publish_call_state_impl(
+        96 => wire__crate__api__continuity__continuity_publish_call_state_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        95 => wire__crate__api__continuity__continuity_publish_incoming_message_impl(
+        97 => wire__crate__api__continuity__continuity_publish_incoming_message_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        96 => wire__crate__api__continuity__continuity_publish_notification_impl(
+        98 => wire__crate__api__continuity__continuity_publish_notification_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        97 => wire__crate__api__continuity__continuity_publish_notification_removed_impl(
+        99 => wire__crate__api__continuity__continuity_publish_notification_removed_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        98 => wire__crate__api__continuity__continuity_request_conversations_impl(
+        100 => wire__crate__api__continuity__continuity_request_conversations_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        99 => wire__crate__api__continuity__continuity_request_messages_impl(
+        101 => wire__crate__api__continuity__continuity_request_messages_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        100 => wire__crate__api__continuity__continuity_send_sms_impl(
+        102 => wire__crate__api__continuity__continuity_send_sms_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        101 => wire__crate__api__continuity__continuity_set_clipboard_mode_impl(
+        103 => wire__crate__api__continuity__continuity_set_clipboard_mode_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        104 => wire__crate__api__continuity__continuity_share_clipboard_impl(
+        106 => wire__crate__api__continuity__continuity_share_clipboard_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        107 => wire__crate__api__stream__create_stream_impl(port, ptr, rust_vec_len, data_len),
-        108 => {
+        109 => wire__crate__api__stream__create_stream_impl(port, ptr, rust_vec_len, data_len),
+        110 => {
             wire__crate__api__logging__enable_debug_logging_impl(port, ptr, rust_vec_len, data_len)
         }
-        109 => wire__crate__api__crypto__generate_key_pair_impl(port, ptr, rust_vec_len, data_len),
-        110 => wire__crate__api__crypto__generate_relay_identity_impl(
+        111 => wire__crate__api__crypto__generate_key_pair_impl(port, ptr, rust_vec_len, data_len),
+        112 => wire__crate__api__crypto__generate_relay_identity_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        111 => wire__crate__api__crypto__generate_security_context_impl(
+        113 => wire__crate__api__crypto__generate_security_context_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        112 => wire__crate__api__crypto__hash_file_impl(port, ptr, rust_vec_len, data_len),
-        114 => wire__crate__api__kdeconnect__kdeconnect_generate_identity_impl(
+        114 => wire__crate__api__crypto__hash_file_impl(port, ptr, rust_vec_len, data_len),
+        116 => wire__crate__api__kdeconnect__kdeconnect_generate_identity_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        115 => {
+        117 => wire__crate__api__kdeconnect__kdeconnect_generate_wan_secret_impl(
+            port,
+            ptr,
+            rust_vec_len,
+            data_len,
+        ),
+        118 => {
             wire__crate__api__metadata__read_file_metadata_impl(port, ptr, rust_vec_len, data_len)
         }
-        116 => wire__crate__api__relay_anywhere__relay_anywhere_authenticate_address_impl(
+        119 => wire__crate__api__relay_anywhere__relay_anywhere_authenticate_address_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        124 => wire__crate__api__relay_anywhere__relay_anywhere_receive_impl(
+        127 => wire__crate__api__relay_anywhere__relay_anywhere_receive_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        126 => wire__crate__api__relay_anywhere__relay_anywhere_send_impl(
+        129 => wire__crate__api__relay_anywhere__relay_anywhere_send_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        127 => wire__crate__api__relay_anywhere__relay_anywhere_start_listener_impl(
+        130 => wire__crate__api__relay_anywhere__relay_anywhere_start_listener_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        128 => wire__crate__api__relay_anywhere__relay_anywhere_stop_listener_impl(
+        131 => wire__crate__api__relay_anywhere__relay_anywhere_stop_listener_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        130 => wire__crate__api__http__relay_lan_pair_impl(port, ptr, rust_vec_len, data_len),
-        131 => wire__crate__api__relay_transfer__relay_transfer_send_lan_impl(
+        133 => wire__crate__api__http__relay_lan_pair_impl(port, ptr, rust_vec_len, data_len),
+        134 => wire__crate__api__relay_transfer__relay_transfer_send_lan_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        132 => {
+        135 => {
             wire__crate__api__crypto__restore_relay_identity_impl(port, ptr, rust_vec_len, data_len)
         }
-        134 => wire__crate__api__discovery__start_discovery_impl(port, ptr, rust_vec_len, data_len),
-        135 => {
+        137 => wire__crate__api__discovery__start_discovery_impl(port, ptr, rust_vec_len, data_len),
+        138 => {
             wire__crate__api__kdeconnect__start_kdeconnect_impl(port, ptr, rust_vec_len, data_len)
         }
-        136 => wire__crate__api__server__start_server_impl(port, ptr, rust_vec_len, data_len),
-        137 => wire__crate__api__crypto__verify_cert_impl(port, ptr, rust_vec_len, data_len),
+        139 => wire__crate__api__server__start_server_impl(port, ptr, rust_vec_len, data_len),
+        140 => wire__crate__api__crypto__verify_cert_impl(port, ptr, rust_vec_len, data_len),
         _ => unreachable!(),
     }
 }
@@ -11023,116 +11208,116 @@ fn pde_ffi_dispatcher_sync_impl(
     match func_id {
         2 => wire__crate__api__stream__Dart2RustStreamSink_close_impl(ptr, rust_vec_len, data_len),
         6 => wire__crate__api__cancel__RsCancellationToken_cancel_impl(ptr, rust_vec_len, data_len),
-        71 => wire__crate__api__continuity__continuity_answer_ack_impl(ptr, rust_vec_len, data_len),
-        72 => wire__crate__api__continuity__continuity_answer_call_action_impl(
+        73 => wire__crate__api__continuity__continuity_answer_ack_impl(ptr, rust_vec_len, data_len),
+        74 => wire__crate__api__continuity__continuity_answer_call_action_impl(
             ptr,
             rust_vec_len,
             data_len,
         ),
-        73 => wire__crate__api__continuity__continuity_answer_conversations_impl(
+        75 => wire__crate__api__continuity__continuity_answer_conversations_impl(
             ptr,
             rust_vec_len,
             data_len,
         ),
-        74 => wire__crate__api__continuity__continuity_answer_messages_impl(
+        76 => wire__crate__api__continuity__continuity_answer_messages_impl(
             ptr,
             rust_vec_len,
             data_len,
         ),
-        75 => wire__crate__api__continuity__continuity_answer_sms_failed_impl(
+        77 => wire__crate__api__continuity__continuity_answer_sms_failed_impl(
             ptr,
             rust_vec_len,
             data_len,
         ),
-        76 => wire__crate__api__continuity__continuity_answer_sms_sent_impl(
+        78 => wire__crate__api__continuity__continuity_answer_sms_sent_impl(
             ptr,
             rust_vec_len,
             data_len,
         ),
-        77 => wire__crate__api__continuity__continuity_answer_unavailable_impl(
+        79 => wire__crate__api__continuity__continuity_answer_unavailable_impl(
             ptr,
             rust_vec_len,
             data_len,
         ),
-        82 => wire__crate__api__continuity__continuity_connected_devices_impl(
+        84 => wire__crate__api__continuity__continuity_connected_devices_impl(
             ptr,
             rust_vec_len,
             data_len,
         ),
-        84 => wire__crate__api__continuity__continuity_disconnect_all_impl(
+        86 => wire__crate__api__continuity__continuity_disconnect_all_impl(
             ptr,
             rust_vec_len,
             data_len,
         ),
-        85 => wire__crate__api__continuity__continuity_disconnect_device_impl(
+        87 => wire__crate__api__continuity__continuity_disconnect_device_impl(
             ptr,
             rust_vec_len,
             data_len,
         ),
-        92 => {
+        94 => {
             wire__crate__api__continuity__continuity_is_connected_impl(ptr, rust_vec_len, data_len)
         }
-        102 => wire__crate__api__continuity__continuity_set_device_trust_impl(
+        104 => wire__crate__api__continuity__continuity_set_device_trust_impl(
             ptr,
             rust_vec_len,
             data_len,
         ),
-        103 => wire__crate__api__continuity__continuity_set_local_capabilities_impl(
+        105 => wire__crate__api__continuity__continuity_set_local_capabilities_impl(
             ptr,
             rust_vec_len,
             data_len,
         ),
-        105 => {
+        107 => {
             wire__crate__api__cancel__create_cancellation_token_impl(ptr, rust_vec_len, data_len)
         }
-        106 => wire__crate__api__http__create_client_impl(ptr, rust_vec_len, data_len),
-        113 => wire__crate__api__filename__is_valid_file_name_impl(ptr, rust_vec_len, data_len),
-        117 => wire__crate__api__relay_anywhere__relay_anywhere_cancel_impl(
+        108 => wire__crate__api__http__create_client_impl(ptr, rust_vec_len, data_len),
+        115 => wire__crate__api__filename__is_valid_file_name_impl(ptr, rust_vec_len, data_len),
+        120 => wire__crate__api__relay_anywhere__relay_anywhere_cancel_impl(
             ptr,
             rust_vec_len,
             data_len,
         ),
-        118 => wire__crate__api__relay_anywhere__relay_anywhere_close_session_impl(
+        121 => wire__crate__api__relay_anywhere__relay_anywhere_close_session_impl(
             ptr,
             rust_vec_len,
             data_len,
         ),
-        119 => wire__crate__api__relay_anywhere__relay_anywhere_generate_routing_key_impl(
+        122 => wire__crate__api__relay_anywhere__relay_anywhere_generate_routing_key_impl(
             ptr,
             rust_vec_len,
             data_len,
         ),
-        120 => wire__crate__api__relay_anywhere__relay_anywhere_listener_address_impl(
+        123 => wire__crate__api__relay_anywhere__relay_anywhere_listener_address_impl(
             ptr,
             rust_vec_len,
             data_len,
         ),
-        121 => wire__crate__api__relay_anywhere__relay_anywhere_open_session_impl(
+        124 => wire__crate__api__relay_anywhere__relay_anywhere_open_session_impl(
             ptr,
             rust_vec_len,
             data_len,
         ),
-        122 => wire__crate__api__relay_anywhere__relay_anywhere_open_session_count_impl(
+        125 => wire__crate__api__relay_anywhere__relay_anywhere_open_session_count_impl(
             ptr,
             rust_vec_len,
             data_len,
         ),
-        123 => wire__crate__api__relay_anywhere__relay_anywhere_parse_address_impl(
+        126 => wire__crate__api__relay_anywhere__relay_anywhere_parse_address_impl(
             ptr,
             rust_vec_len,
             data_len,
         ),
-        125 => wire__crate__api__relay_anywhere__relay_anywhere_respond_impl(
+        128 => wire__crate__api__relay_anywhere__relay_anywhere_respond_impl(
             ptr,
             rust_vec_len,
             data_len,
         ),
-        129 => wire__crate__api__relay_anywhere__relay_anywhere_validate_routing_key_impl(
+        132 => wire__crate__api__relay_anywhere__relay_anywhere_validate_routing_key_impl(
             ptr,
             rust_vec_len,
             data_len,
         ),
-        133 => wire__crate__api__filename__sanitize_file_name_impl(ptr, rust_vec_len, data_len),
+        136 => wire__crate__api__filename__sanitize_file_name_impl(ptr, rust_vec_len, data_len),
         _ => unreachable!(),
     }
 }
@@ -12440,6 +12625,10 @@ impl flutter_rust_bridge::IntoDart for crate::api::kdeconnect::RsKdeConnectDevic
             self.connectivity_stale.into_into_dart().into_dart(),
             self.incoming_capabilities.into_into_dart().into_dart(),
             self.outgoing_capabilities.into_into_dart().into_dart(),
+            self.transport_kind.into_into_dart().into_dart(),
+            self.transport_state.into_into_dart().into_dart(),
+            self.last_rtt_ms.into_into_dart().into_dart(),
+            self.last_seen_unix.into_into_dart().into_dart(),
         ]
         .into_dart()
     }
@@ -12545,6 +12734,7 @@ impl flutter_rust_bridge::IntoDart for crate::api::kdeconnect::RsKdeConnectIdent
             self.device_name.into_into_dart().into_dart(),
             self.certificate_pem.into_into_dart().into_dart(),
             self.private_key_pem.into_into_dart().into_dart(),
+            self.wan_secret_key.into_into_dart().into_dart(),
         ]
         .into_dart()
     }
@@ -12570,6 +12760,7 @@ impl flutter_rust_bridge::IntoDart for crate::api::kdeconnect::RsKdeConnectTrust
             self.device_type.into_into_dart().into_dart(),
             self.protocol_version.into_into_dart().into_dart(),
             self.paired_at_unix.into_into_dart().into_dart(),
+            self.wan_endpoint_id.into_into_dart().into_dart(),
         ]
         .into_dart()
     }
@@ -15353,6 +15544,10 @@ impl SseEncode for crate::api::kdeconnect::RsKdeConnectDevice {
         <bool>::sse_encode(self.connectivity_stale, serializer);
         <Vec<String>>::sse_encode(self.incoming_capabilities, serializer);
         <Vec<String>>::sse_encode(self.outgoing_capabilities, serializer);
+        <Option<String>>::sse_encode(self.transport_kind, serializer);
+        <String>::sse_encode(self.transport_state, serializer);
+        <Option<i64>>::sse_encode(self.last_rtt_ms, serializer);
+        <Option<i64>>::sse_encode(self.last_seen_unix, serializer);
     }
 }
 
@@ -15438,6 +15633,7 @@ impl SseEncode for crate::api::kdeconnect::RsKdeConnectIdentity {
         <String>::sse_encode(self.device_name, serializer);
         <String>::sse_encode(self.certificate_pem, serializer);
         <String>::sse_encode(self.private_key_pem, serializer);
+        <Vec<u8>>::sse_encode(self.wan_secret_key, serializer);
     }
 }
 
@@ -15450,6 +15646,7 @@ impl SseEncode for crate::api::kdeconnect::RsKdeConnectTrustedDevice {
         <String>::sse_encode(self.device_type, serializer);
         <i64>::sse_encode(self.protocol_version, serializer);
         <i64>::sse_encode(self.paired_at_unix, serializer);
+        <Option<String>>::sse_encode(self.wan_endpoint_id, serializer);
     }
 }
 

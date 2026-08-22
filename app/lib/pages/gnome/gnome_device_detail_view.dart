@@ -71,7 +71,11 @@ class GnomeDeviceDetailView extends StatelessWidget {
     this.onCancelTransfer,
   });
 
-  bool get _connected => device.statusSummary == 'Connected' || device.statusSummary.startsWith('Connected · ') || device.continuityConnected;
+  bool get _connected =>
+      (device.isKdeConnect && device.detail == 'Connected') ||
+      device.statusSummary == 'Connected' ||
+      device.statusSummary.startsWith('Connected · ') ||
+      device.continuityConnected;
 
   bool get _transferring =>
       device.phase == RelayDevicePhase.sending || device.phase == RelayDevicePhase.waiting || device.phase == RelayDevicePhase.verifying;
@@ -1028,7 +1032,11 @@ class _DeviceStatusSection extends StatelessWidget {
               title: 'Connection',
               trailing: RelayConnectionStatus(
                 connected: connected,
-                label: connected ? 'Connected' : device.statusSummary,
+                label: device.isKdeConnect
+                    ? device.statusSummary
+                    : connected
+                    ? 'Connected'
+                    : device.statusSummary,
                 palette: palette,
                 animationsEnabled: animationsEnabled,
                 ambient: true,
@@ -1334,7 +1342,11 @@ class _DeviceDetails extends StatelessWidget {
               title: 'Connection',
               subtitle: device.isKdeConnect
                   ? device.detail == 'Connected'
-                        ? 'Local network'
+                        ? device.connectionType == RelayConnectionType.local
+                              ? 'KDE LAN'
+                              : device.connectionType == RelayConnectionType.direct
+                              ? 'Relay WAN · Direct'
+                              : 'Relay WAN · Relay'
                         : device.detail == 'Paired'
                         ? 'Paired'
                         : 'Nearby on your local network'
@@ -1347,7 +1359,11 @@ class _DeviceDetails extends StatelessWidget {
                   : 'Nearby on your local network',
               trailing: RelayConnectionStatus(
                 connected: connected,
-                label: connected ? 'Connected' : device.statusSummary,
+                label: connected && device.isKdeConnect
+                    ? device.statusSummary
+                    : connected
+                    ? 'Connected'
+                    : device.statusSummary,
                 palette: palette,
                 animationsEnabled: animationsEnabled,
               ),

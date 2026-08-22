@@ -11,6 +11,7 @@ use relay_core::kdeconnect::{
     KdeSmsConversation, KdeTelephonyEvent, LanConfig, LocalIdentity, SmsAttachmentMetadata,
     SmsMessage, TrustedDevice,
 };
+use relay_core::kdeconnect::wan::{TransportKind, TransportState, WanIdentity, WanRuntimeConfig};
 
 use crate::frb_generated::StreamSink;
 
@@ -19,6 +20,7 @@ pub struct RsKdeConnectIdentity {
     pub device_name: String,
     pub certificate_pem: String,
     pub private_key_pem: String,
+    pub wan_secret_key: Vec<u8>,
 }
 
 pub struct RsKdeConnectTrustedDevice {
@@ -28,6 +30,7 @@ pub struct RsKdeConnectTrustedDevice {
     pub device_type: String,
     pub protocol_version: i64,
     pub paired_at_unix: i64,
+    pub wan_endpoint_id: Option<String>,
 }
 
 pub struct RsKdeConnectDevice {
@@ -47,6 +50,10 @@ pub struct RsKdeConnectDevice {
     pub connectivity_stale: bool,
     pub incoming_capabilities: Vec<String>,
     pub outgoing_capabilities: Vec<String>,
+    pub transport_kind: Option<String>,
+    pub transport_state: String,
+    pub last_rtt_ms: Option<i64>,
+    pub last_seen_unix: Option<i64>,
 }
 
 pub struct RsKdeNotification {
@@ -136,7 +143,14 @@ pub enum RsKdeConnectEvent {
 
 pub fn kdeconnect_generate_identity(device_name: String) -> anyhow::Result<RsKdeConnectIdentity> {
     let identity = LocalIdentity::generate(&device_name)?;
-    Ok(identity.into())
+    let wan_identity = WanIdentity::generate();
+    let mut identity: RsKdeConnectIdentity = identity.into();
+    identity.wan_secret_key = wan_identity.secret_bytes().to_vec();
+    Ok(identity)
+}
+
+pub fn kdeconnect_generate_wan_secret() -> Vec<u8> {
+    WanIdentity::generate().secret_bytes().to_vec()
 }
 
 pub async fn start_kdeconnect(
@@ -146,6 +160,9 @@ pub async fn start_kdeconnect(
     let _ = tracing_subscriber::fmt()
         .with_max_level(tracing::Level::INFO)
         .try_init();
+    let wan_identity = WanIdentity::from_bytes(&identity.wan_secret_key)?;
+    let kde_device_id = identity.device_id.clone();
+    let device_name = identity.device_name.clone();
     let handle = KdeConnectHandle::start(KdeConnectConfig {
         identity: identity.try_into()?,
         trusted: trusted.into_iter().map(Into::into).collect(),
@@ -155,6 +172,14 @@ pub async fn start_kdeconnect(
         },
     })
     .await?;
+    handle.enable_wan(WanRuntimeConfig {
+        identity: wan_identity,
+        kde_device_id,
+        device_name,
+        device_type: "desktop".to_owned(),
+        app_version: env!("CARGO_PKG_VERSION").to_owned(),
+        capability_digest: relay_core::kdeconnect::canonical_incoming_capabilities().join("\n"),
+    }).await?;
     Ok(RsKdeConnect {
         handle: Arc::new(handle),
     })
@@ -220,6 +245,16 @@ impl RsKdeConnect {
         message: Option<String>,
     ) -> anyhow::Result<()> {
         self.handle.send_ping(&device_id, message).await
+    }
+
+    pub async fn send_relay_ping(&self, device_id: String) -> anyhow::Result<()> {
+        self.handle
+            .send_relay_ping(&device_id, &uuid::Uuid::new_v4().to_string())
+            .await
+    }
+
+    pub async fn request_relay_device_state(&self, device_id: String) -> anyhow::Result<()> {
+        self.handle.request_relay_device_state(&device_id).await
     }
 
     pub async fn find_phone(&self, device_id: String) -> anyhow::Result<()> {
@@ -325,6 +360,7 @@ impl From<LocalIdentity> for RsKdeConnectIdentity {
             device_name: value.device_name,
             certificate_pem: value.certificate_pem,
             private_key_pem: value.private_key_pem,
+            wan_secret_key: Vec::new(),
         }
     }
 }
@@ -351,6 +387,7 @@ impl From<TrustedDevice> for RsKdeConnectTrustedDevice {
             device_type: value.device_type,
             protocol_version: value.protocol_version,
             paired_at_unix: value.paired_at_unix,
+            wan_endpoint_id: value.wan_endpoint_id,
         }
     }
 }
@@ -364,6 +401,7 @@ impl From<RsKdeConnectTrustedDevice> for TrustedDevice {
             device_type: value.device_type,
             protocol_version: value.protocol_version,
             paired_at_unix: value.paired_at_unix,
+            wan_endpoint_id: value.wan_endpoint_id,
         }
     }
 }
@@ -387,6 +425,19 @@ impl From<DeviceSnapshot> for RsKdeConnectDevice {
             connectivity_stale: value.connectivity_stale,
             incoming_capabilities: value.incoming_capabilities,
             outgoing_capabilities: value.outgoing_capabilities,
+            transport_kind: value.transport_kind.map(|kind| match kind {
+                TransportKind::KdeLan => "kdeLan".to_owned(),
+                TransportKind::RelayWan => "relayWan".to_owned(),
+            }),
+            transport_state: match value.transport_state {
+                TransportState::Offline => "offline",
+                TransportState::Local => "local",
+                TransportState::RemoteDirect => "remoteDirect",
+                TransportState::RemoteRelay => "remoteRelay",
+                TransportState::Reconnecting => "reconnecting",
+            }.to_owned(),
+            last_rtt_ms: value.last_rtt_ms,
+            last_seen_unix: value.last_seen_unix,
         }
     }
 }

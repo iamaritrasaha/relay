@@ -19,6 +19,7 @@ RsKdeConnectDevice kdeDevice({
   String? networkType,
   int? signalLevel,
   bool connectivityStale = false,
+  String transportState = 'local',
 }) => RsKdeConnectDevice(
   deviceId: id,
   name: name,
@@ -45,6 +46,7 @@ RsKdeConnectDevice kdeDevice({
     'kdeconnect.clipboard.connect',
     'kdeconnect.notification',
   ],
+  transportState: connected ? transportState : 'offline',
 );
 
 List<RelayDeviceVm> devicesFor(List<RsKdeConnectDevice> kdeConnectDevices) => RelayHomeVm.fromState(

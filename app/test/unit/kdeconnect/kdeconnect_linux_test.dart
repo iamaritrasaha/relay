@@ -1,5 +1,7 @@
 import 'package:refena_flutter/refena_flutter.dart';
 import 'package:relay_app/model/state/nearby_devices_state.dart';
+import 'package:relay_app/model/ui/relay_capability_vm.dart';
+import 'package:relay_app/model/ui/relay_device_vm.dart';
 import 'package:relay_app/pages/relay_home_vm.dart';
 import 'package:relay_app/provider/file_transfer_provider.dart';
 import 'package:relay_app/provider/kdeconnect_provider.dart';
@@ -20,6 +22,7 @@ RsKdeConnectDevice kdeDevice({
   String? networkType,
   int? signalLevel,
   bool connectivityStale = false,
+  String transportState = 'local',
 }) => RsKdeConnectDevice(
   deviceId: id,
   name: name,
@@ -46,6 +49,7 @@ RsKdeConnectDevice kdeDevice({
     'kdeconnect.clipboard.connect',
     'kdeconnect.notification',
   ],
+  transportState: connected ? transportState : 'offline',
 );
 
 const _phoneId = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
@@ -116,7 +120,33 @@ void main() {
       kdeConnectDevices: [kdeDevice(id: _phoneId, name: 'Pixel', paired: true)],
     );
     expect(vm.devices.single.detail, 'Paired');
-    expect(vm.devices.single.statusSummary, 'Paired');
+    expect(vm.devices.single.statusSummary, 'Offline');
+  });
+
+  test('live transport state drives Local Remote and Offline without duplicating the device', () {
+    RelayDeviceVm mapped(String transportState, {bool connected = true}) => RelayHomeVm.kdeDeviceVm(
+      kdeDevice(
+        id: _phoneId,
+        name: 'Pixel',
+        paired: true,
+        connected: connected,
+        transportState: transportState,
+      ),
+    );
+
+    final local = mapped('local');
+    final remoteDirect = mapped('remoteDirect');
+    final remoteRelay = mapped('remoteRelay');
+    final offline = mapped('offline', connected: false);
+
+    expect(local.statusSummary, 'Local');
+    expect(local.connectionType, RelayConnectionType.local);
+    expect(remoteDirect.statusSummary, 'Remote');
+    expect(remoteDirect.connectionType, RelayConnectionType.direct);
+    expect(remoteRelay.statusSummary, 'Remote');
+    expect(remoteRelay.connectionType, RelayConnectionType.relayed);
+    expect(offline.statusSummary, 'Offline');
+    expect({local.key, remoteDirect.key, remoteRelay.key, offline.key}, {'kdeconnect:$_phoneId'});
   });
 
   test('incoming request shows accept/reject state', () {

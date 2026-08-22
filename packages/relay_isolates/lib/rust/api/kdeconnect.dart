@@ -15,6 +15,8 @@ part 'kdeconnect.freezed.dart';
 Future<RsKdeConnectIdentity> kdeconnectGenerateIdentity({required String deviceName}) =>
     RustLib.instance.api.crateApiKdeconnectKdeconnectGenerateIdentity(deviceName: deviceName);
 
+Future<Uint8List> kdeconnectGenerateWanSecret() => RustLib.instance.api.crateApiKdeconnectKdeconnectGenerateWanSecret();
+
 Future<RsKdeConnect> startKdeconnect({required RsKdeConnectIdentity identity, required List<RsKdeConnectTrustedDevice> trusted}) =>
     RustLib.instance.api.crateApiKdeconnectStartKdeconnect(identity: identity, trusted: trusted);
 
@@ -40,6 +42,8 @@ abstract class RsKdeConnect implements RustOpaqueInterface {
 
   Future<void> requestPair({required String deviceId});
 
+  Future<void> requestRelayDeviceState({required String deviceId});
+
   Future<void> requestSmsConversation({required String deviceId, required PlatformInt64 threadId, PlatformInt64? before});
 
   Future<void> requestSmsConversations({required String deviceId});
@@ -49,6 +53,8 @@ abstract class RsKdeConnect implements RustOpaqueInterface {
   Future<void> sendClipboardToAllPaired({required String content, required PlatformInt64 timestampMs});
 
   Future<void> sendPing({required String deviceId, String? message});
+
+  Future<void> sendRelayPing({required String deviceId});
 
   Future<void> sendSms({required String deviceId, required List<String> addresses, required String body, int? subId});
 
@@ -76,6 +82,10 @@ class RsKdeConnectDevice {
   final bool connectivityStale;
   final List<String> incomingCapabilities;
   final List<String> outgoingCapabilities;
+  final String? transportKind;
+  final String transportState;
+  final PlatformInt64? lastRttMs;
+  final PlatformInt64? lastSeenUnix;
 
   const RsKdeConnectDevice({
     required this.deviceId,
@@ -94,6 +104,10 @@ class RsKdeConnectDevice {
     required this.connectivityStale,
     required this.incomingCapabilities,
     required this.outgoingCapabilities,
+    this.transportKind,
+    required this.transportState,
+    this.lastRttMs,
+    this.lastSeenUnix,
   });
 
   @override
@@ -113,7 +127,11 @@ class RsKdeConnectDevice {
       signalLevel.hashCode ^
       connectivityStale.hashCode ^
       incomingCapabilities.hashCode ^
-      outgoingCapabilities.hashCode;
+      outgoingCapabilities.hashCode ^
+      transportKind.hashCode ^
+      transportState.hashCode ^
+      lastRttMs.hashCode ^
+      lastSeenUnix.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -135,7 +153,11 @@ class RsKdeConnectDevice {
           signalLevel == other.signalLevel &&
           connectivityStale == other.connectivityStale &&
           incomingCapabilities == other.incomingCapabilities &&
-          outgoingCapabilities == other.outgoingCapabilities;
+          outgoingCapabilities == other.outgoingCapabilities &&
+          transportKind == other.transportKind &&
+          transportState == other.transportState &&
+          lastRttMs == other.lastRttMs &&
+          lastSeenUnix == other.lastSeenUnix;
 }
 
 @freezed
@@ -185,16 +207,18 @@ class RsKdeConnectIdentity {
   final String deviceName;
   final String certificatePem;
   final String privateKeyPem;
+  final Uint8List wanSecretKey;
 
   const RsKdeConnectIdentity({
     required this.deviceId,
     required this.deviceName,
     required this.certificatePem,
     required this.privateKeyPem,
+    required this.wanSecretKey,
   });
 
   @override
-  int get hashCode => deviceId.hashCode ^ deviceName.hashCode ^ certificatePem.hashCode ^ privateKeyPem.hashCode;
+  int get hashCode => deviceId.hashCode ^ deviceName.hashCode ^ certificatePem.hashCode ^ privateKeyPem.hashCode ^ wanSecretKey.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -204,7 +228,8 @@ class RsKdeConnectIdentity {
           deviceId == other.deviceId &&
           deviceName == other.deviceName &&
           certificatePem == other.certificatePem &&
-          privateKeyPem == other.privateKeyPem;
+          privateKeyPem == other.privateKeyPem &&
+          wanSecretKey == other.wanSecretKey;
 }
 
 class RsKdeConnectTrustedDevice {
@@ -214,6 +239,7 @@ class RsKdeConnectTrustedDevice {
   final String deviceType;
   final PlatformInt64 protocolVersion;
   final PlatformInt64 pairedAtUnix;
+  final String? wanEndpointId;
 
   const RsKdeConnectTrustedDevice({
     required this.deviceId,
@@ -222,11 +248,18 @@ class RsKdeConnectTrustedDevice {
     required this.deviceType,
     required this.protocolVersion,
     required this.pairedAtUnix,
+    this.wanEndpointId,
   });
 
   @override
   int get hashCode =>
-      deviceId.hashCode ^ certificatePem.hashCode ^ name.hashCode ^ deviceType.hashCode ^ protocolVersion.hashCode ^ pairedAtUnix.hashCode;
+      deviceId.hashCode ^
+      certificatePem.hashCode ^
+      name.hashCode ^
+      deviceType.hashCode ^
+      protocolVersion.hashCode ^
+      pairedAtUnix.hashCode ^
+      wanEndpointId.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -238,7 +271,8 @@ class RsKdeConnectTrustedDevice {
           name == other.name &&
           deviceType == other.deviceType &&
           protocolVersion == other.protocolVersion &&
-          pairedAtUnix == other.pairedAtUnix;
+          pairedAtUnix == other.pairedAtUnix &&
+          wanEndpointId == other.wanEndpointId;
 }
 
 class RsKdeNotification {

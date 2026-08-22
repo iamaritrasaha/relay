@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:typed_data';
 
 import 'package:collection/collection.dart';
 import 'package:flutter/services.dart';
@@ -136,12 +137,20 @@ class KdeConnectStartAction extends AsyncReduxAction<KdeConnectService, KdeConne
     final persisted = notifier.persistence.getKdeConnectIdentity();
     final RsKdeConnectIdentity identity;
     if (persisted != null) {
+      final persistedWanSecret = persisted['wanSecretKey'];
+      final wanSecret = persistedWanSecret is List
+          ? Uint8List.fromList(persistedWanSecret.cast<num>().map((value) => value.toInt()).toList())
+          : await kdeconnectGenerateWanSecret();
       identity = RsKdeConnectIdentity(
         deviceId: persisted['deviceId'] as String,
         deviceName: persisted['deviceName'] as String? ?? deviceName,
         certificatePem: persisted['certificatePem'] as String,
         privateKeyPem: persisted['privateKeyPem'] as String,
+        wanSecretKey: wanSecret,
       );
+      if (persistedWanSecret == null) {
+        await notifier.persistence.setKdeConnectIdentity({...persisted, 'wanSecretKey': wanSecret.toList()});
+      }
     } else {
       identity = await notifier.generateIdentity(deviceName: deviceName);
       await notifier.persistence.setKdeConnectIdentity({
@@ -149,6 +158,7 @@ class KdeConnectStartAction extends AsyncReduxAction<KdeConnectService, KdeConne
         'deviceName': identity.deviceName,
         'certificatePem': identity.certificatePem,
         'privateKeyPem': identity.privateKeyPem,
+        'wanSecretKey': identity.wanSecretKey.toList(),
       });
     }
     final trusted = [
@@ -160,6 +170,7 @@ class KdeConnectStartAction extends AsyncReduxAction<KdeConnectService, KdeConne
           deviceType: item['deviceType'] as String? ?? 'phone',
           protocolVersion: (item['protocolVersion'] as num?)?.toInt() ?? 8,
           pairedAtUnix: (item['pairedAtUnix'] as num?)?.toInt() ?? 0,
+          wanEndpointId: item['wanEndpointId'] as String?,
         ),
     ];
     final runtime = await notifier.startRuntime(identity, trusted);
@@ -250,6 +261,8 @@ class KdeConnectPingAction extends AsyncReduxAction<KdeConnectService, KdeConnec
   @override
   Future<KdeConnectState> reduce() async {
     try {
+      await notifier._runtime?.sendRelayPing(deviceId: deviceId);
+      await notifier._runtime?.requestRelayDeviceState(deviceId: deviceId);
       await notifier._runtime?.sendPing(deviceId: deviceId, message: message);
     } catch (error, stack) {
       _logger.warning('Send ping failed for device $deviceId', error, stack);
@@ -322,6 +335,7 @@ class KdeConnectApplyEventAction extends ReduxAction<KdeConnectService, KdeConne
                 'deviceType': device.deviceType,
                 'protocolVersion': device.protocolVersion,
                 'pairedAtUnix': device.pairedAtUnix,
+                'wanEndpointId': device.wanEndpointId,
               },
           ]),
         );

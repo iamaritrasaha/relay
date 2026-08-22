@@ -12,9 +12,10 @@ pub use super::capabilities::{
     PACKET_TYPE_BATTERY, PACKET_TYPE_CLIPBOARD, PACKET_TYPE_CLIPBOARD_CONNECT,
     PACKET_TYPE_CONNECTIVITY_REPORT, PACKET_TYPE_FINDMYPHONE_REQUEST, PACKET_TYPE_IDENTITY,
     PACKET_TYPE_NOTIFICATION, PACKET_TYPE_NOTIFICATION_REQUEST, PACKET_TYPE_PAIR, PACKET_TYPE_PING,
-    PACKET_TYPE_SMS_MESSAGES, PACKET_TYPE_SMS_REQUEST, PACKET_TYPE_SMS_REQUEST_CONVERSATION,
-    PACKET_TYPE_SMS_REQUEST_CONVERSATIONS, PACKET_TYPE_TELEPHONY,
-    PACKET_TYPE_TELEPHONY_REQUEST_MUTE,
+    PACKET_TYPE_RELAY_DEVICE_STATE, PACKET_TYPE_RELAY_PING, PACKET_TYPE_RELAY_PONG,
+    PACKET_TYPE_RELAY_WAN_IDENTITY, PACKET_TYPE_SMS_MESSAGES, PACKET_TYPE_SMS_REQUEST,
+    PACKET_TYPE_SMS_REQUEST_CONVERSATION, PACKET_TYPE_SMS_REQUEST_CONVERSATIONS,
+    PACKET_TYPE_TELEPHONY, PACKET_TYPE_TELEPHONY_REQUEST_MUTE,
 };
 pub const PROTOCOL_VERSION: i64 = 8;
 
@@ -81,6 +82,43 @@ pub struct ClipboardBody {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct PingBody {
     pub message: Option<String>,
+}
+
+/// `kdeconnect.relay.wan.identity`: exchanged over an already-trusted LAN link
+/// so the desktop can bind the peer's Relay WAN `EndpointId` to its KDE
+/// device id (see [`crate::kdeconnect::wan::WanBindingRegistry`]). Namespace
+/// and field names must match the Android side exactly.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct RelayWanIdentityBody {
+    pub endpoint_id: String,
+    pub kde_device_id: String,
+}
+
+/// `kdeconnect.relay.device_state`: informational device metadata, sent
+/// request/response style. Every field is optional -- omit anything not
+/// available on this platform.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct RelayDeviceStateBody {
+    pub is_request: bool,
+    pub protocol_version: Option<i64>,
+    pub device_name: Option<String>,
+    pub device_class: Option<String>,
+    pub os: Option<String>,
+    pub os_version: Option<String>,
+    pub relay_version: Option<String>,
+    pub battery_percent: Option<i64>,
+    pub charging: Option<bool>,
+    pub capabilities: Vec<String>,
+    pub timestamp: Option<i64>,
+}
+
+/// `kdeconnect.relay.ping` / `kdeconnect.relay.pong`: the Relay-native
+/// heartbeat, distinct from `kdeconnect.ping` (a user-visible notification
+/// ping). `nonce` correlates a pong with the ping that triggered it, for RTT.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct RelayHeartbeatBody {
+    pub nonce: String,
+    pub timestamp: i64,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -284,6 +322,34 @@ impl NetworkPacket {
             return Err(PacketError("not a telephony packet".into()));
         }
         TelephonyBody::from_map(&self.body)
+    }
+
+    pub fn as_relay_wan_identity(&self) -> Result<RelayWanIdentityBody, PacketError> {
+        if self.packet_type != PACKET_TYPE_RELAY_WAN_IDENTITY {
+            return Err(PacketError("not a relay wan identity packet".into()));
+        }
+        RelayWanIdentityBody::from_map(&self.body)
+    }
+
+    pub fn as_relay_device_state(&self) -> Result<RelayDeviceStateBody, PacketError> {
+        if self.packet_type != PACKET_TYPE_RELAY_DEVICE_STATE {
+            return Err(PacketError("not a relay device_state packet".into()));
+        }
+        RelayDeviceStateBody::from_map(&self.body)
+    }
+
+    pub fn as_relay_ping(&self) -> Result<RelayHeartbeatBody, PacketError> {
+        if self.packet_type != PACKET_TYPE_RELAY_PING {
+            return Err(PacketError("not a relay ping packet".into()));
+        }
+        RelayHeartbeatBody::from_map(&self.body)
+    }
+
+    pub fn as_relay_pong(&self) -> Result<RelayHeartbeatBody, PacketError> {
+        if self.packet_type != PACKET_TYPE_RELAY_PONG {
+            return Err(PacketError("not a relay pong packet".into()));
+        }
+        RelayHeartbeatBody::from_map(&self.body)
     }
 }
 
@@ -567,6 +633,105 @@ impl PingBody {
 impl FindMyPhoneBody {
     pub fn request() -> NetworkPacket {
         NetworkPacket::new(PACKET_TYPE_FINDMYPHONE_REQUEST, Map::new())
+    }
+}
+
+impl RelayWanIdentityBody {
+    pub fn new(endpoint_id: impl Into<String>, kde_device_id: impl Into<String>) -> NetworkPacket {
+        let mut body = Map::new();
+        body.insert("endpointId".into(), Value::String(endpoint_id.into()));
+        body.insert("kdeDeviceId".into(), Value::String(kde_device_id.into()));
+        NetworkPacket::new(PACKET_TYPE_RELAY_WAN_IDENTITY, body)
+    }
+
+    fn from_map(body: &Map<String, Value>) -> Result<Self, PacketError> {
+        Ok(Self {
+            endpoint_id: required_string(body, "endpointId")?,
+            kde_device_id: required_string(body, "kdeDeviceId")?,
+        })
+    }
+}
+
+impl RelayDeviceStateBody {
+    pub fn new(self_: Self) -> NetworkPacket {
+        let mut body = Map::new();
+        if self_.is_request {
+            body.insert("isRequest".into(), Value::Bool(true));
+        }
+        if let Some(v) = self_.protocol_version {
+            body.insert("protocolVersion".into(), Value::Number(v.into()));
+        }
+        if let Some(v) = self_.device_name {
+            body.insert("deviceName".into(), Value::String(v));
+        }
+        if let Some(v) = self_.device_class {
+            body.insert("deviceClass".into(), Value::String(v));
+        }
+        if let Some(v) = self_.os {
+            body.insert("os".into(), Value::String(v));
+        }
+        if let Some(v) = self_.os_version {
+            body.insert("osVersion".into(), Value::String(v));
+        }
+        if let Some(v) = self_.relay_version {
+            body.insert("relayVersion".into(), Value::String(v));
+        }
+        if let Some(v) = self_.battery_percent {
+            body.insert("batteryPercent".into(), Value::Number(v.into()));
+        }
+        if let Some(v) = self_.charging {
+            body.insert("charging".into(), Value::Bool(v));
+        }
+        if !self_.capabilities.is_empty() {
+            body.insert(
+                "capabilities".into(),
+                Value::Array(self_.capabilities.into_iter().map(Value::String).collect()),
+            );
+        }
+        if let Some(v) = self_.timestamp {
+            body.insert("timestamp".into(), Value::Number(v.into()));
+        }
+        NetworkPacket::new(PACKET_TYPE_RELAY_DEVICE_STATE, body)
+    }
+
+    fn from_map(body: &Map<String, Value>) -> Result<Self, PacketError> {
+        Ok(Self {
+            is_request: body.get("isRequest").and_then(Value::as_bool).unwrap_or(false),
+            protocol_version: optional_i64(body, "protocolVersion"),
+            device_name: optional_string(body, "deviceName"),
+            device_class: optional_string(body, "deviceClass"),
+            os: optional_string(body, "os"),
+            os_version: optional_string(body, "osVersion"),
+            relay_version: optional_string(body, "relayVersion"),
+            battery_percent: optional_i64(body, "batteryPercent"),
+            charging: body.get("charging").and_then(Value::as_bool),
+            capabilities: optional_string_list(body, "capabilities"),
+            timestamp: optional_i64(body, "timestamp"),
+        })
+    }
+}
+
+impl RelayHeartbeatBody {
+    pub fn ping(nonce: impl Into<String>, timestamp: i64) -> NetworkPacket {
+        Self::packet(PACKET_TYPE_RELAY_PING, nonce.into(), timestamp)
+    }
+
+    pub fn pong(nonce: impl Into<String>, timestamp: i64) -> NetworkPacket {
+        Self::packet(PACKET_TYPE_RELAY_PONG, nonce.into(), timestamp)
+    }
+
+    fn packet(packet_type: &str, nonce: String, timestamp: i64) -> NetworkPacket {
+        let mut body = Map::new();
+        body.insert("nonce".into(), Value::String(nonce));
+        body.insert("timestamp".into(), Value::Number(timestamp.into()));
+        NetworkPacket::new(packet_type, body)
+    }
+
+    fn from_map(body: &Map<String, Value>) -> Result<Self, PacketError> {
+        Ok(Self {
+            nonce: required_string(body, "nonce")?,
+            timestamp: optional_i64(body, "timestamp").unwrap_or(0),
+        })
     }
 }
 
@@ -1441,5 +1606,73 @@ mod tests {
         assert_eq!(req.packet_type, PACKET_TYPE_NOTIFICATION_REQUEST);
         let parsed = NetworkPacket::parse(&req.serialize()).unwrap();
         assert!(parsed.as_notification_request().is_ok());
+    }
+
+    #[test]
+    fn relay_wan_identity_roundtrips_endpoint_and_device_id() {
+        let packet = RelayWanIdentityBody::new("endpoint-abc", "device-123");
+        assert_eq!(packet.packet_type, PACKET_TYPE_RELAY_WAN_IDENTITY);
+
+        let parsed = NetworkPacket::parse(&packet.serialize())
+            .unwrap()
+            .as_relay_wan_identity()
+            .unwrap();
+        assert_eq!(parsed.endpoint_id, "endpoint-abc");
+        assert_eq!(parsed.kde_device_id, "device-123");
+    }
+
+    #[test]
+    fn relay_device_state_omits_unset_fields_and_roundtrips_the_rest() {
+        let packet = RelayDeviceStateBody::new(RelayDeviceStateBody {
+            is_request: false,
+            protocol_version: Some(1),
+            device_name: Some("Desktop".into()),
+            device_class: Some("desktop".into()),
+            os: Some("linux".into()),
+            os_version: None,
+            relay_version: Some("0.2.0".into()),
+            battery_percent: None,
+            charging: None,
+            capabilities: vec!["kdeconnect.battery".into()],
+            timestamp: Some(1_700_000_000),
+        });
+        assert_eq!(packet.packet_type, PACKET_TYPE_RELAY_DEVICE_STATE);
+        assert!(!packet.body.contains_key("osVersion"));
+        assert!(!packet.body.contains_key("batteryPercent"));
+
+        let parsed = NetworkPacket::parse(&packet.serialize())
+            .unwrap()
+            .as_relay_device_state()
+            .unwrap();
+        assert_eq!(parsed.device_name.as_deref(), Some("Desktop"));
+        assert_eq!(parsed.os.as_deref(), Some("linux"));
+        assert_eq!(parsed.os_version, None);
+        assert_eq!(parsed.capabilities, vec!["kdeconnect.battery".to_string()]);
+        assert_eq!(parsed.timestamp, Some(1_700_000_000));
+    }
+
+    #[test]
+    fn relay_ping_pong_roundtrip_and_carry_the_same_nonce() {
+        let ping = RelayHeartbeatBody::ping("nonce-1", 1000);
+        assert_eq!(ping.packet_type, PACKET_TYPE_RELAY_PING);
+        let parsed_ping = NetworkPacket::parse(&ping.serialize()).unwrap().as_relay_ping().unwrap();
+        assert_eq!(parsed_ping.nonce, "nonce-1");
+        assert_eq!(parsed_ping.timestamp, 1000);
+
+        let pong = RelayHeartbeatBody::pong(parsed_ping.nonce, parsed_ping.timestamp);
+        assert_eq!(pong.packet_type, PACKET_TYPE_RELAY_PONG);
+        let parsed_pong = NetworkPacket::parse(&pong.serialize()).unwrap().as_relay_pong().unwrap();
+        assert_eq!(parsed_pong.nonce, "nonce-1");
+        assert_eq!(parsed_pong.timestamp, 1000);
+    }
+
+    #[test]
+    fn relay_ping_is_not_confused_with_the_relay_pong_or_plain_kdeconnect_ping() {
+        let relay_ping = RelayHeartbeatBody::ping("n", 0);
+        assert!(NetworkPacket::parse(&relay_ping.serialize()).unwrap().as_relay_pong().is_err());
+        assert!(NetworkPacket::parse(&relay_ping.serialize()).unwrap().as_ping().is_err());
+
+        let plain_ping = PingBody::new(None);
+        assert!(NetworkPacket::parse(&plain_ping.serialize()).unwrap().as_relay_ping().is_err());
     }
 }

@@ -9,8 +9,9 @@ use crate::kdeconnect::identity::{
 };
 use crate::kdeconnect::packet::{
     is_valid_device_id, ClipboardBody, ConnectivityReportBody, FindMyPhoneBody, NetworkPacket,
-    NotificationBody, PairBody, PingBody, SmsMessage, SmsRequestConversationBody,
-    SmsRequestConversationsBody, MAX_IDENTITY_PACKET_BYTES, MAX_PACKET_BYTES, PROTOCOL_VERSION,
+    NotificationBody, PairBody, PingBody, RelayDeviceStateBody, RelayHeartbeatBody, SmsMessage,
+    SmsRequestConversationBody, SmsRequestConversationsBody, MAX_IDENTITY_PACKET_BYTES,
+    MAX_PACKET_BYTES, PROTOCOL_VERSION,
 };
 use crate::kdeconnect::pairing::{
     now_unix, PairState, PairingEffect, PairingFailReason, PairingSession, PAIRING_TIMEOUT_SECS,
@@ -129,6 +130,17 @@ impl TrustStore {
     fn cert_der(&self, device_id: &str) -> Option<Vec<u8>> {
         self.by_id.get(device_id)?.certificate_der().ok()
     }
+
+    fn set_wan_endpoint_id(&mut self, device_id: &str, endpoint_id: String) -> bool {
+        let Some(device) = self.by_id.get_mut(device_id) else {
+            return false;
+        };
+        if device.wan_endpoint_id.as_deref() == Some(endpoint_id.as_str()) {
+            return false;
+        }
+        device.wan_endpoint_id = Some(endpoint_id);
+        true
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -157,6 +169,99 @@ struct Conn {
     epoch: u64,
 }
 
+/// Relay-native heartbeat state, tracked per device regardless of which
+/// transport (LAN or WAN) carried the most recent `kdeconnect.relay.ping` /
+/// `kdeconnect.relay.pong`. A device whose pings go unanswered past
+/// [`HEARTBEAT_TIMEOUT`] is treated as no longer live on that transport --
+/// this is what lets a stale connection self-correct without waiting for a
+/// TCP/TLS-level error.
+#[derive(Clone, Copy, Debug, Default)]
+struct HeartbeatState {
+    last_rtt_ms: Option<i64>,
+    last_seen_unix: Option<i64>,
+}
+
+#[cfg(feature = "kdeconnect-wan")]
+const HEARTBEAT_TIMEOUT_SECS: i64 = 60;
+
+fn now_unix_millis() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|duration| duration.as_millis() as i64)
+        .unwrap_or(0)
+}
+
+/// A `TransportLink` over the existing LAN per-connection writer channel, so
+/// KDE LAN participates in the same [`crate::kdeconnect::wan::TransportRouter`]
+/// that Relay WAN links register with -- registering `RelayWan` for a device
+/// that already has `KdeLan` here never creates a second logical device (see
+/// `TransportRouter::register`). Payload sends are intentionally not routed
+/// through this link: LAN payload transfer has its own existing path.
+#[cfg(feature = "kdeconnect-wan")]
+struct LanTransportLink {
+    device_id: String,
+    packets: mpsc::Sender<Vec<u8>>,
+}
+
+#[cfg(feature = "kdeconnect-wan")]
+impl crate::kdeconnect::wan::TransportLink for LanTransportLink {
+    fn device_id(&self) -> &str {
+        &self.device_id
+    }
+
+    fn kind(&self) -> crate::kdeconnect::wan::TransportKind {
+        crate::kdeconnect::wan::TransportKind::KdeLan
+    }
+
+    fn state(&self) -> crate::kdeconnect::wan::TransportState {
+        crate::kdeconnect::wan::TransportState::Local
+    }
+
+    fn metadata(&self) -> crate::kdeconnect::wan::TransportMetadata {
+        crate::kdeconnect::wan::TransportMetadata {
+            kind: self.kind(),
+            state: self.state(),
+            last_seen_unix: None,
+            last_transition_reason: None,
+        }
+    }
+
+    fn send_packet<'a>(
+        &'a self,
+        packet: &'a NetworkPacket,
+    ) -> crate::kdeconnect::wan::transport::LinkFuture<'a, Result<()>> {
+        Box::pin(async move {
+            self.packets
+                .send(packet.serialize())
+                .await
+                .map_err(|_| anyhow::anyhow!("LAN writer channel for {} closed", self.device_id))
+        })
+    }
+
+    fn send_payload<'a>(
+        &'a self,
+        _request: crate::kdeconnect::wan::PayloadRequest<'a>,
+    ) -> crate::kdeconnect::wan::transport::LinkFuture<'a, Result<crate::kdeconnect::wan::PayloadOutcome>>
+    {
+        Box::pin(async move {
+            Err(anyhow::anyhow!(
+                "LAN payload transfer does not go through TransportRouter"
+            ))
+        })
+    }
+
+    fn disconnect(&self) -> crate::kdeconnect::wan::transport::LinkFuture<'_, ()> {
+        // Lifecycle is owned by the LAN connection itself (see
+        // `finish_secure_link`'s reader/writer tasks); the router never tears
+        // down a LAN link directly.
+        Box::pin(async move {})
+    }
+
+    fn health(&self) -> crate::kdeconnect::wan::transport::LinkFuture<'_, bool> {
+        Box::pin(async move { !self.packets.is_closed() })
+    }
+}
+
 pub(crate) struct LanInner {
     pub identity: LocalIdentity,
     config: LanConfig,
@@ -177,6 +282,29 @@ pub(crate) struct LanInner {
     event_tx: mpsc::UnboundedSender<KdeConnectEvent>,
     pub cancel: CancellationToken,
     conn_epoch: AtomicU64,
+    heartbeat: Mutex<HashMap<String, HeartbeatState>>,
+    /// Last packet observed on each concrete route. This must remain
+    /// transport-specific: WAN traffic is proof that the device is alive, but
+    /// it must never keep a dead LAN socket classified as Local.
+    #[cfg(feature = "kdeconnect-wan")]
+    route_last_seen: Mutex<HashMap<(String, crate::kdeconnect::wan::TransportKind), i64>>,
+    /// Devices with a live Relay WAN link. Kept separate from `connections`
+    /// (which owns the LAN writer-channel lifecycle) rather than inserting a
+    /// synthetic `Conn` -- `connected` below is `connections.contains_key(..)
+    /// || wan_active.contains(..)`, so it stays live-derived either way.
+    #[cfg(feature = "kdeconnect-wan")]
+    wan_active: Mutex<std::collections::HashSet<String>>,
+    /// Generation of the currently registered WAN receive task per logical
+    /// device. A superseded task must not unregister its replacement when its
+    /// old Iroh stream finally closes.
+    #[cfg(feature = "kdeconnect-wan")]
+    wan_epoch: Mutex<HashMap<String, u64>>,
+    #[cfg(feature = "kdeconnect-wan")]
+    pub(crate) router: crate::kdeconnect::wan::TransportRouter,
+    #[cfg(feature = "kdeconnect-wan")]
+    pub(crate) wan_bindings: Arc<crate::kdeconnect::wan::WanBindingRegistry>,
+    #[cfg(feature = "kdeconnect-wan")]
+    wan_runtime: Mutex<Option<Arc<crate::kdeconnect::wan::WanRuntime>>>,
 }
 
 impl LanInner {
@@ -188,6 +316,24 @@ impl LanInner {
         event_tx: mpsc::UnboundedSender<KdeConnectEvent>,
         cancel: CancellationToken,
     ) -> Arc<Self> {
+        #[cfg(feature = "kdeconnect-wan")]
+        let initial_wan_bindings = trusted
+            .iter()
+            .filter_map(|device| {
+                let endpoint_id = device.wan_endpoint_id.as_deref()?.parse().ok()?;
+                Some(crate::kdeconnect::wan::WanBinding {
+                    kde_device_id: device.device_id.clone(),
+                    endpoint_id,
+                    display_name: device.name.clone(),
+                    device_type: device.device_type.clone(),
+                    capabilities: Vec::new(),
+                    binding_version: 1,
+                    updated_at_unix: device.paired_at_unix,
+                    last_wan_connected_at_unix: None,
+                    last_transport: None,
+                })
+            })
+            .collect();
         let pairing = trusted
             .iter()
             .map(|d| (d.device_id.clone(), PairingSession::new(true)))
@@ -212,6 +358,19 @@ impl LanInner {
             event_tx,
             cancel,
             conn_epoch: AtomicU64::new(0),
+            heartbeat: Mutex::new(HashMap::new()),
+            #[cfg(feature = "kdeconnect-wan")]
+            route_last_seen: Mutex::new(HashMap::new()),
+            #[cfg(feature = "kdeconnect-wan")]
+            wan_active: Mutex::new(std::collections::HashSet::new()),
+            #[cfg(feature = "kdeconnect-wan")]
+            wan_epoch: Mutex::new(HashMap::new()),
+            #[cfg(feature = "kdeconnect-wan")]
+            router: crate::kdeconnect::wan::TransportRouter::new(),
+            #[cfg(feature = "kdeconnect-wan")]
+            wan_bindings: Arc::new(crate::kdeconnect::wan::WanBindingRegistry::new(initial_wan_bindings)),
+            #[cfg(feature = "kdeconnect-wan")]
+            wan_runtime: Mutex::new(None),
         })
     }
 
@@ -225,6 +384,9 @@ impl LanInner {
         let battery_map = self.battery.lock().await;
         let connectivity_map = self.connectivity.lock().await;
         let caps_map = self.peer_capabilities.lock().await;
+        let heartbeat_map = self.heartbeat.lock().await;
+        #[cfg(feature = "kdeconnect-wan")]
+        let wan_active = self.wan_active.lock().await;
         let mut out = Vec::new();
         let mut seen = std::collections::HashSet::new();
         for observed in devices.iter() {
@@ -238,6 +400,12 @@ impl LanInner {
                 .get(&observed.device_id)
                 .cloned()
                 .unwrap_or_default();
+            let hb = heartbeat_map.get(&observed.device_id).copied().unwrap_or_default();
+            #[cfg(feature = "kdeconnect-wan")]
+            let connected = connections.contains_key(&observed.device_id)
+                || wan_active.contains(&observed.device_id);
+            #[cfg(not(feature = "kdeconnect-wan"))]
+            let connected = connections.contains_key(&observed.device_id);
             out.push(DeviceSnapshot {
                 device_id: observed.device_id.clone(),
                 name: observed.name.clone(),
@@ -245,7 +413,7 @@ impl LanInner {
                 ip: Some(observed.ip.to_string()),
                 port: Some(observed.tcp_port),
                 paired,
-                connected: connections.contains_key(&observed.device_id),
+                connected,
                 incoming_pair: incoming.contains(&observed.device_id),
                 identity_mismatch: mismatches.contains(&observed.device_id),
                 battery_percentage: b.map(|s| s.current_charge),
@@ -255,6 +423,12 @@ impl LanInner {
                 connectivity_stale: connectivity.is_some_and(|state| state.stale),
                 incoming_capabilities: inc,
                 outgoing_capabilities: out_caps,
+                #[cfg(feature = "kdeconnect-wan")]
+                transport_kind: self.router.active_transport(&observed.device_id),
+                #[cfg(feature = "kdeconnect-wan")]
+                transport_state: self.router.snapshot(&observed.device_id).state,
+                last_rtt_ms: hb.last_rtt_ms,
+                last_seen_unix: hb.last_seen_unix,
             });
         }
         for trusted in trust.snapshot() {
@@ -269,6 +443,12 @@ impl LanInner {
                 .get(&trusted.device_id)
                 .cloned()
                 .unwrap_or_default();
+            let hb = heartbeat_map.get(&trusted.device_id).copied().unwrap_or_default();
+            #[cfg(feature = "kdeconnect-wan")]
+            let connected = connections.contains_key(&trusted.device_id)
+                || wan_active.contains(&trusted.device_id);
+            #[cfg(not(feature = "kdeconnect-wan"))]
+            let connected = connections.contains_key(&trusted.device_id);
             out.push(DeviceSnapshot {
                 device_id: trusted.device_id.clone(),
                 name: trusted.name.clone(),
@@ -276,7 +456,7 @@ impl LanInner {
                 ip: None,
                 port: None,
                 paired: true,
-                connected: connections.contains_key(&trusted.device_id),
+                connected,
                 incoming_pair: pairing
                     .get(&trusted.device_id)
                     .is_some_and(|s| s.state == PairState::RequestedByPeer),
@@ -288,6 +468,12 @@ impl LanInner {
                 connectivity_stale: connectivity.is_some_and(|state| state.stale),
                 incoming_capabilities: inc,
                 outgoing_capabilities: out_caps,
+                #[cfg(feature = "kdeconnect-wan")]
+                transport_kind: self.router.active_transport(&trusted.device_id),
+                #[cfg(feature = "kdeconnect-wan")]
+                transport_state: self.router.snapshot(&trusted.device_id).state,
+                last_rtt_ms: hb.last_rtt_ms,
+                last_seen_unix: hb.last_seen_unix,
             });
         }
         out.sort_by(|a, b| {
@@ -315,6 +501,419 @@ impl LanInner {
 
     pub async fn trusted_devices(&self) -> Vec<TrustedDevice> {
         self.trust.lock().await.snapshot()
+    }
+
+    async fn record_heartbeat_seen(&self, device_id: &str) {
+        let mut map = self.heartbeat.lock().await;
+        map.entry(device_id.to_owned()).or_default().last_seen_unix = Some(now_unix());
+    }
+
+    async fn record_heartbeat_rtt(&self, device_id: &str, sent_at: i64) {
+        let now_ms = now_unix_millis();
+        let mut map = self.heartbeat.lock().await;
+        let state = map.entry(device_id.to_owned()).or_default();
+        state.last_seen_unix = Some(now_unix());
+        // `sent_at` is this device's own clock; RTT is only meaningful when it
+        // is not ahead of local time (best-effort, matching how `record_heartbeat_seen`
+        // already tolerates clock skew by never trusting the peer's clock alone).
+        if now_ms >= sent_at {
+            state.last_rtt_ms = Some(now_ms - sent_at);
+        }
+    }
+
+    #[cfg(feature = "kdeconnect-wan")]
+    async fn record_route_seen(
+        &self,
+        device_id: &str,
+        kind: crate::kdeconnect::wan::TransportKind,
+    ) {
+        self.route_last_seen
+            .lock()
+            .await
+            .insert((device_id.to_owned(), kind), now_unix());
+    }
+
+    #[cfg(feature = "kdeconnect-wan")]
+    async fn local_wan_identity_packet(&self) -> Option<NetworkPacket> {
+        let runtime = self.wan_runtime.lock().await.clone()?;
+        Some(crate::kdeconnect::packet::RelayWanIdentityBody::new(
+            runtime.endpoint_id().to_string(),
+            self.identity.device_id.clone(),
+        ))
+    }
+
+    fn local_device_state_packet(&self) -> NetworkPacket {
+        crate::kdeconnect::packet::RelayDeviceStateBody::new(
+            crate::kdeconnect::packet::RelayDeviceStateBody {
+                protocol_version: Some(1),
+                device_name: Some(self.identity.device_name.clone()),
+                device_class: Some("desktop".to_owned()),
+                os: Some(std::env::consts::OS.to_owned()),
+                relay_version: Some(env!("CARGO_PKG_VERSION").to_owned()),
+                capabilities: crate::kdeconnect::canonical_incoming_capabilities(),
+                timestamp: Some(now_unix_millis()),
+                ..Default::default()
+            },
+        )
+    }
+
+    async fn handle_relay_device_state(&self, device_id: &str, state: crate::kdeconnect::packet::RelayDeviceStateBody) {
+        self.record_heartbeat_seen(device_id).await;
+        if let Some(percent) = state.battery_percent.and_then(|value| i32::try_from(value).ok()) {
+            self.battery.lock().await.insert(device_id.to_owned(), BatteryState {
+                current_charge: percent,
+                is_charging: state.charging.unwrap_or(false),
+                threshold_event: None,
+            });
+        }
+        self.emit_devices().await;
+    }
+
+    /// Binds the peer's Relay WAN `EndpointId` to its KDE device id, from a
+    /// `kdeconnect.relay.wan.identity` packet received over an already-trusted
+    /// LAN link. This is the one place `WanBindingRegistry` gets populated
+    /// from real pairing state -- an `EndpointId` is never trusted just
+    /// because a WAN peer claims a known device id (see
+    /// `WanRuntime::negotiate_inbound`).
+    #[cfg(feature = "kdeconnect-wan")]
+    async fn register_wan_binding(
+        &self,
+        device_id: &str,
+        display_name: &str,
+        device_type: &str,
+        identity: crate::kdeconnect::packet::RelayWanIdentityBody,
+    ) {
+        use crate::kdeconnect::wan::WanBinding;
+        if self.trust.lock().await.get(device_id).is_none() {
+            tracing::warn!("[KDE Connect] ignored Relay WAN identity from unpaired device {device_id}");
+            return;
+        }
+        let Ok(endpoint_id) = identity.endpoint_id.parse::<iroh::EndpointId>() else {
+            tracing::warn!(
+                "[KDE Connect] rejected malformed Relay WAN endpoint id from {device_id}"
+            );
+            return;
+        };
+        if identity.kde_device_id != device_id {
+            tracing::warn!(
+                "[KDE Connect] Relay WAN identity kdeDeviceId mismatch: packet said {}, connection is {device_id}",
+                identity.kde_device_id
+            );
+            return;
+        }
+        let (incoming, outgoing) = self
+            .peer_capabilities
+            .lock()
+            .await
+            .get(device_id)
+            .cloned()
+            .unwrap_or_default();
+        let mut capabilities = incoming;
+        capabilities.extend(outgoing);
+        self.wan_bindings.upsert(WanBinding {
+            kde_device_id: device_id.to_owned(),
+            endpoint_id,
+            display_name: display_name.to_owned(),
+            device_type: device_type.to_owned(),
+            capabilities,
+            binding_version: 1,
+            updated_at_unix: now_unix(),
+            last_wan_connected_at_unix: None,
+            last_transport: None,
+        });
+        let trust_changed = self
+            .trust
+            .lock()
+            .await
+            .set_wan_endpoint_id(device_id, identity.endpoint_id);
+        if trust_changed {
+            self.emit_trust().await;
+        }
+    }
+
+    /// Lazily starts the Relay WAN runtime and its inbound accept loop. Never
+    /// called from `LanInner::new`/`run` -- KDE LAN startup must never itself
+    /// bind the Relay WAN Iroh endpoint (see
+    /// `tests/kdeconnect_wan_isolation.rs`). Idempotent: a second call is a
+    /// no-op once a runtime is already running.
+    #[cfg(feature = "kdeconnect-wan")]
+    pub async fn enable_wan(
+        self: &Arc<Self>,
+        config: crate::kdeconnect::wan::WanRuntimeConfig,
+    ) -> Result<()> {
+        if self.wan_runtime.lock().await.is_some() {
+            return Ok(());
+        }
+        let runtime =
+            Arc::new(crate::kdeconnect::wan::WanRuntime::start(config, self.wan_bindings.clone()).await?);
+        *self.wan_runtime.lock().await = Some(runtime.clone());
+
+        // A LAN session may have completed while the optional WAN endpoint was
+        // starting. Advertise the stable endpoint on every already-trusted LAN
+        // connection as well as on future connections below.
+        let identity_packet = crate::kdeconnect::packet::RelayWanIdentityBody::new(
+            runtime.endpoint_id().to_string(),
+            self.identity.device_id.clone(),
+        )
+        .serialize();
+        let existing_lan_senders: Vec<_> = {
+            let trust = self.trust.lock().await;
+            self.connections
+                .lock()
+                .await
+                .iter()
+                .filter(|(device_id, _)| trust.get(device_id).is_some())
+                .map(|(_, connection)| connection.packets.clone())
+                .collect()
+        };
+        for sender in existing_lan_senders {
+            let _ = sender.send(identity_packet.clone()).await;
+        }
+
+        let sweep_inner = Arc::clone(self);
+        let sweep_cancel = self.cancel.clone();
+        tokio::spawn(async move {
+            loop {
+                tokio::select! {
+                    _ = sweep_cancel.cancelled() => break,
+                    _ = tokio::time::sleep(std::time::Duration::from_secs(15)) => {
+                        sweep_inner.sweep_stale_wan_links().await;
+                    }
+                }
+            }
+        });
+
+        // Application-level liveness is authoritative. A TCP writer can keep
+        // accepting bytes after Wi-Fi disappears, so probe the selected route
+        // and evict a route that has not produced a real pong/state packet.
+        let heartbeat_inner = Arc::clone(self);
+        let heartbeat_cancel = self.cancel.clone();
+        tokio::spawn(async move {
+            loop {
+                tokio::select! {
+                    _ = heartbeat_cancel.cancelled() => break,
+                    _ = tokio::time::sleep(std::time::Duration::from_secs(15)) => {
+                        let device_ids: Vec<_> = heartbeat_inner
+                            .trust.lock().await.snapshot().into_iter()
+                            .map(|device| device.device_id).collect();
+                        for device_id in device_ids {
+                            if heartbeat_inner.router.active_transport(&device_id).is_some() {
+                                let nonce = uuid::Uuid::new_v4().to_string();
+                                let ping = RelayHeartbeatBody::ping(nonce, now_unix_millis());
+                                let _ = heartbeat_inner.router.send_packet(&device_id, &ping).await;
+                            }
+                        }
+                        heartbeat_inner.sweep_stale_routes().await;
+                    }
+                }
+            }
+        });
+
+        let inner = Arc::clone(self);
+        let endpoint = runtime.endpoint();
+        let cancel = self.cancel.clone();
+        tokio::spawn(async move {
+            loop {
+                tokio::select! {
+                    _ = cancel.cancelled() => break,
+                    accepted = endpoint.accept() => {
+                        let Ok(incoming) = accepted else { break };
+                        let runtime = runtime.clone();
+                        let inner = Arc::clone(&inner);
+                        tokio::spawn(async move {
+                            let Ok(connection) = incoming.await else { return };
+                            match runtime.negotiate_inbound(connection).await {
+                                Ok(link) => inner.adopt_wan_link(link).await,
+                                Err(error) => tracing::info!("[Relay WAN] inbound connection rejected: {error}"),
+                            }
+                        });
+                    }
+                }
+            }
+        });
+        Ok(())
+    }
+
+    /// A WAN device whose heartbeat hasn't been seen within
+    /// [`HEARTBEAT_TIMEOUT_SECS`] is dropped from `wan_active` and
+    /// unregistered from the router -- `connected`/`transport_kind` in the
+    /// next `snapshot()` reflect this immediately, with no separate "mark
+    /// offline" step required. The link's own receive loop still owns
+    /// actually tearing down the Iroh connection when it next notices.
+    #[cfg(feature = "kdeconnect-wan")]
+    async fn sweep_stale_wan_links(&self) {
+        use crate::kdeconnect::wan::TransportKind;
+        let now = now_unix();
+        let stale: Vec<String> = {
+            let active = self.wan_active.lock().await;
+            let route_last_seen = self.route_last_seen.lock().await;
+            active
+                .iter()
+                .filter(|device_id| {
+                    route_last_seen
+                        .get(&(device_id.to_string(), TransportKind::RelayWan))
+                        .copied()
+                        .map_or(true, |last_seen| now - last_seen > HEARTBEAT_TIMEOUT_SECS)
+                })
+                .cloned()
+                .collect()
+        };
+        if stale.is_empty() {
+            return;
+        }
+        let mut active = self.wan_active.lock().await;
+        for device_id in &stale {
+            active.remove(device_id);
+            self.wan_epoch.lock().await.remove(device_id);
+            self.router.unregister(device_id, TransportKind::RelayWan);
+            self.route_last_seen
+                .lock()
+                .await
+                .remove(&(device_id.clone(), TransportKind::RelayWan));
+        }
+        drop(active);
+        self.emit_devices().await;
+    }
+
+    #[cfg(feature = "kdeconnect-wan")]
+    async fn sweep_stale_routes(&self) {
+        use crate::kdeconnect::wan::TransportKind;
+        let now = now_unix();
+        let stale: Vec<(String, TransportKind)> = {
+            let route_last_seen = self.route_last_seen.lock().await;
+            let trusted = self.trust.lock().await.snapshot();
+            let mut stale = Vec::new();
+            for device in trusted {
+                for kind in self.router.available_transports(&device.device_id) {
+                    if route_last_seen
+                        .get(&(device.device_id.clone(), kind))
+                        .is_none_or(|last_seen| now - *last_seen > HEARTBEAT_TIMEOUT_SECS)
+                    {
+                        stale.push((device.device_id.clone(), kind));
+                    }
+                }
+            }
+            stale
+        };
+        for (device_id, kind) in stale {
+            self.router.unregister(&device_id, kind);
+            match kind {
+                TransportKind::KdeLan => { self.connections.lock().await.remove(&device_id); }
+                TransportKind::RelayWan => {
+                    self.wan_active.lock().await.remove(&device_id);
+                    self.wan_epoch.lock().await.remove(&device_id);
+                }
+            }
+            self.route_last_seen.lock().await.remove(&(device_id.clone(), kind));
+            tracing::warn!("[Relay WAN] removed stale {:?} route for {} after heartbeat timeout", kind, device_id);
+        }
+        if !self.router.available_transports("").is_empty() || !self.trust.lock().await.snapshot().is_empty() {
+            self.emit_devices().await;
+        }
+    }
+
+    #[cfg(feature = "kdeconnect-wan")]
+    async fn clear_wan_if_current(&self, device_id: &str, epoch: u64) -> bool {
+        use crate::kdeconnect::wan::TransportKind;
+        let is_current = {
+            let mut epochs = self.wan_epoch.lock().await;
+            if epochs.get(device_id).copied() == Some(epoch) {
+                epochs.remove(device_id);
+                true
+            } else {
+                false
+            }
+        };
+        if !is_current {
+            return false;
+        }
+        self.wan_active.lock().await.remove(device_id);
+        self.router.unregister(device_id, TransportKind::RelayWan);
+        self.route_last_seen
+            .lock()
+            .await
+            .remove(&(device_id.to_owned(), TransportKind::RelayWan));
+        self.emit_devices().await;
+        true
+    }
+
+    /// Registers an accepted (inbound or outbound) [`WanLink`] with the
+    /// transport router, marks its device live, and spawns the task that
+    /// drains its packets into the same heartbeat/device-state handling LAN
+    /// uses. A LAN link for the same device_id, if present, keeps priority
+    /// (see `TransportKind::priority`) -- this never displaces it.
+    #[cfg(feature = "kdeconnect-wan")]
+    pub(crate) async fn adopt_wan_link(self: &Arc<Self>, link: crate::kdeconnect::wan::WanLink) {
+        use crate::kdeconnect::wan::{TransportKind, TransportLink, WanIncomingEvent};
+        let device_id = link.device_id().to_owned();
+        let link = Arc::new(link);
+        let epoch = self.conn_epoch.fetch_add(1, Ordering::Relaxed);
+        self.router.register(link.clone());
+        self.wan_active.lock().await.insert(device_id.clone());
+        self.wan_epoch.lock().await.insert(device_id.clone(), epoch);
+        self.record_route_seen(&device_id, TransportKind::RelayWan).await;
+        self.record_heartbeat_seen(&device_id).await;
+        self.emit_devices().await;
+
+        let _ = link.send_packet(&RelayDeviceStateBody::new(RelayDeviceStateBody {
+            is_request: true,
+            ..Default::default()
+        })).await;
+        let _ = link.send_packet(&RelayHeartbeatBody::ping(
+            uuid::Uuid::new_v4().to_string(), now_unix_millis()
+        )).await;
+
+        let inner = Arc::clone(self);
+        tokio::spawn(async move {
+            loop {
+                match link.recv_incoming().await {
+                    Some(WanIncomingEvent::Packet(packet)) => {
+                        inner.record_route_seen(&device_id, TransportKind::RelayWan).await;
+                        if let Ok(heartbeat) = packet.as_relay_ping() {
+                            inner.record_heartbeat_seen(&device_id).await;
+                            let _ = link
+                                .send_packet(&RelayHeartbeatBody::pong(heartbeat.nonce, heartbeat.timestamp))
+                                .await;
+                        } else if let Ok(heartbeat) = packet.as_relay_pong() {
+                            inner.record_heartbeat_rtt(&device_id, heartbeat.timestamp).await;
+                        } else if let Ok(state) = packet.as_relay_device_state() {
+                            if state.is_request {
+                                let _ = link.send_packet(&inner.local_device_state_packet()).await;
+                            } else {
+                                inner.handle_relay_device_state(&device_id, state).await;
+                            }
+                        } else if let Ok(battery) = packet.as_battery() {
+                            inner.battery.lock().await.insert(device_id.clone(), BatteryState {
+                                current_charge: battery.current_charge,
+                                is_charging: battery.is_charging,
+                                threshold_event: battery.threshold_event,
+                            });
+                            inner.record_heartbeat_seen(&device_id).await;
+                            inner.emit_devices().await;
+                        } else if let Ok(ping) = packet.as_ping() {
+                            let _ = inner.event_tx.send(KdeConnectEvent::PingReceived {
+                                device_id: device_id.clone(), message: ping.message,
+                            });
+                        } else {
+                            // Full LAN plugin parity (battery, clipboard, sms, ...)
+                            // over Relay WAN is not wired up in this pass -- only
+                            // the relay heartbeat/device_state packets are handled
+                            // here today.
+                            tracing::debug!(
+                                "[Relay WAN] unhandled packet type over WAN: {}",
+                                packet.packet_type
+                            );
+                        }
+                    }
+                    Some(WanIncomingEvent::Payload { .. }) => {
+                        // Payload transfer over Relay WAN is not wired into the
+                        // KDE plugin layer in this pass.
+                    }
+                    None => break,
+                }
+            }
+            inner.clear_wan_if_current(&device_id, epoch).await;
+        });
     }
 
     pub async fn request_pair(self: &Arc<Self>, device_id: &str) -> Result<()> {
@@ -762,11 +1361,32 @@ impl LanInner {
             device_type,
             protocol_version,
             paired_at_unix: now_unix(),
+            wan_endpoint_id: None,
         });
+        #[cfg(feature = "kdeconnect-wan")]
+        if let Some(identity_packet) = self.local_wan_identity_packet().await {
+            // Pairing can become trusted after the secure LAN link was already
+            // installed. Re-advertise at that transition so enrollment does
+            // not depend on a later reconnect or a second pairing.
+            self.send_packet(device_id, &identity_packet.serialize()).await?;
+            let request = RelayDeviceStateBody::new(RelayDeviceStateBody {
+                is_request: true,
+                ..Default::default()
+            });
+            self.send_packet(device_id, &request.serialize()).await?;
+        }
         Ok(())
     }
 
     async fn send_packet(&self, device_id: &str, bytes: &[u8]) -> Result<()> {
+        #[cfg(feature = "kdeconnect-wan")]
+        {
+            let packet = NetworkPacket::parse(bytes).context("invalid outbound KDE Connect packet")?;
+            self.router.send_packet(device_id, &packet).await?;
+            return Ok(());
+        }
+        #[cfg(not(feature = "kdeconnect-wan"))]
+        {
         let connections = self.connections.lock().await;
         let conn = connections.get(device_id).context("no KDE Connect link")?;
         conn.packets
@@ -774,6 +1394,7 @@ impl LanInner {
             .await
             .context("KDE Connect link closed")?;
         Ok(())
+        }
     }
 
     fn spawn_timeout(self: &Arc<Self>, device_id: String) {
@@ -798,6 +1419,10 @@ impl LanInner {
     }
 
     async fn ensure_connected(self: &Arc<Self>, device_id: &str) -> Result<()> {
+        #[cfg(feature = "kdeconnect-wan")]
+        if self.router.active_transport(device_id).is_some() {
+            return Ok(());
+        }
         if self.connections.lock().await.contains_key(device_id) {
             return Ok(());
         }
@@ -1417,6 +2042,28 @@ async fn finish_secure_link(
             },
         );
     }
+    #[cfg(feature = "kdeconnect-wan")]
+    inner.router.register(Arc::new(LanTransportLink {
+        device_id: secure.device_id.clone(),
+        packets: tx.clone(),
+    }));
+    #[cfg(feature = "kdeconnect-wan")]
+    inner
+        .record_route_seen(&secure.device_id, crate::kdeconnect::wan::TransportKind::KdeLan)
+        .await;
+    #[cfg(feature = "kdeconnect-wan")]
+    inner.record_heartbeat_seen(&secure.device_id).await;
+    #[cfg(feature = "kdeconnect-wan")]
+    if inner.trust.lock().await.get(&secure.device_id).is_some() {
+        if let Some(identity_packet) = inner.local_wan_identity_packet().await {
+            let _ = tx.send(identity_packet.serialize()).await;
+        }
+        let request = RelayDeviceStateBody::new(RelayDeviceStateBody {
+            is_request: true,
+            ..Default::default()
+        });
+        let _ = tx.send(request.serialize()).await;
+    }
     tracing::info!(
         "[KDE Connect] [G6] secure link established with {}",
         secure.device_id
@@ -1506,6 +2153,10 @@ async fn finish_secure_link(
             match read_line_bounded(&mut reader, MAX_PACKET_BYTES).await {
                 Ok(line) => {
                     if let Ok(packet) = NetworkPacket::parse(&line) {
+                        #[cfg(feature = "kdeconnect-wan")]
+                        read_inner
+                            .record_route_seen(&read_id, crate::kdeconnect::wan::TransportKind::KdeLan)
+                            .await;
                         tracing::info!("[KDE Connect][RX] type={}", packet.packet_type);
                         if let Ok(pair) = packet.as_pair() {
                             tracing::info!(
@@ -1591,6 +2242,29 @@ async fn finish_secure_link(
                                 device_id: read_id.clone(),
                                 message: ping.message,
                             });
+                        } else if let Ok(heartbeat) = packet.as_relay_ping() {
+                            // Relay-native heartbeat: echo a pong immediately and
+                            // record that this device is live right now, over
+                            // whichever transport delivered it.
+                            read_inner.record_heartbeat_seen(&read_id).await;
+                            let _ = tx
+                                .send(RelayHeartbeatBody::pong(heartbeat.nonce, heartbeat.timestamp).serialize())
+                                .await;
+                        } else if let Ok(heartbeat) = packet.as_relay_pong() {
+                            read_inner.record_heartbeat_rtt(&read_id, heartbeat.timestamp).await;
+                        } else if let Ok(state) = packet.as_relay_device_state() {
+                            if state.is_request {
+                                let _ = tx.send(read_inner.local_device_state_packet().serialize()).await;
+                            } else {
+                                read_inner.handle_relay_device_state(&read_id, state).await;
+                            }
+                        } else if let Ok(wan_identity) = packet.as_relay_wan_identity() {
+                            #[cfg(feature = "kdeconnect-wan")]
+                            read_inner
+                                .register_wan_binding(&read_id, &name, &device_type, wan_identity)
+                                .await;
+                            #[cfg(not(feature = "kdeconnect-wan"))]
+                            let _ = wan_identity;
                         } else if let Ok(notif) = packet.as_notification() {
                             let mut notifs_map = read_inner.notifications.lock().await;
                             let list = notifs_map.entry(read_id.clone()).or_default();
@@ -1686,14 +2360,28 @@ async fn finish_secure_link(
         // secure link has since replaced it (e.g. a capability-refresh
         // reconnect while this older connection was still tearing down),
         // that newer Conn must survive.
-        {
+        let removed_current_lan = {
             let mut connections = read_inner.connections.lock().await;
             if connections
                 .get(&read_id)
                 .is_some_and(|conn| conn.epoch == conn_epoch)
             {
                 connections.remove(&read_id);
+                #[cfg(feature = "kdeconnect-wan")]
+                read_inner
+                    .router
+                    .unregister(&read_id, crate::kdeconnect::wan::TransportKind::KdeLan);
+                true
+            } else {
+                false
             }
+        };
+        #[cfg(feature = "kdeconnect-wan")]
+        if removed_current_lan {
+            read_inner.route_last_seen.lock().await.remove(&(
+                read_id.clone(),
+                crate::kdeconnect::wan::TransportKind::KdeLan,
+            ));
         }
         if let Some(state) = read_inner.connectivity.lock().await.get_mut(&read_id) {
             state.stale = true;
@@ -1936,8 +2624,150 @@ async fn read_line_bounded<R: AsyncReadExt + Unpin>(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::kdeconnect::packet::RelayDeviceStateBody;
     use crate::kdeconnect::BatteryBody;
     use std::net::Ipv4Addr;
+
+    #[cfg(feature = "kdeconnect-wan")]
+    struct TestRoute {
+        device_id: String,
+        kind: crate::kdeconnect::wan::TransportKind,
+    }
+
+    #[cfg(feature = "kdeconnect-wan")]
+    impl crate::kdeconnect::wan::TransportLink for TestRoute {
+        fn device_id(&self) -> &str { &self.device_id }
+        fn kind(&self) -> crate::kdeconnect::wan::TransportKind { self.kind }
+        fn state(&self) -> crate::kdeconnect::wan::TransportState {
+            match self.kind {
+                crate::kdeconnect::wan::TransportKind::KdeLan => crate::kdeconnect::wan::TransportState::Local,
+                crate::kdeconnect::wan::TransportKind::RelayWan => crate::kdeconnect::wan::TransportState::RemoteDirect,
+            }
+        }
+        fn metadata(&self) -> crate::kdeconnect::wan::TransportMetadata {
+            crate::kdeconnect::wan::TransportMetadata {
+                kind: self.kind,
+                state: self.state(),
+                last_seen_unix: None,
+                last_transition_reason: None,
+            }
+        }
+        fn send_packet<'a>(&'a self, _: &'a NetworkPacket) -> crate::kdeconnect::wan::transport::LinkFuture<'a, Result<()>> {
+            Box::pin(async { Ok(()) })
+        }
+        fn send_payload<'a>(
+            &'a self,
+            _: crate::kdeconnect::wan::PayloadRequest<'a>,
+        ) -> crate::kdeconnect::wan::transport::LinkFuture<'a, Result<crate::kdeconnect::wan::PayloadOutcome>> {
+            Box::pin(async { Ok(crate::kdeconnect::wan::PayloadOutcome::Sent) })
+        }
+        fn disconnect(&self) -> crate::kdeconnect::wan::transport::LinkFuture<'_, ()> { Box::pin(async {}) }
+        fn health(&self) -> crate::kdeconnect::wan::transport::LinkFuture<'_, bool> { Box::pin(async { true }) }
+    }
+
+    #[cfg(feature = "kdeconnect-wan")]
+    #[tokio::test]
+    async fn superseded_wan_task_cannot_clear_its_replacement_route() {
+        use crate::kdeconnect::wan::TransportKind;
+        let inner = LanInner::new(
+            crate::kdeconnect::LocalIdentity::generate("Relay").unwrap(),
+            Vec::new(),
+            LanConfig::default(),
+            1716,
+            tokio::sync::mpsc::unbounded_channel().0,
+            tokio_util::sync::CancellationToken::new(),
+        );
+        let device_id = "phone".to_owned();
+        inner.router.register(Arc::new(TestRoute {
+            device_id: device_id.clone(),
+            kind: TransportKind::RelayWan,
+        }));
+        inner.wan_active.lock().await.insert(device_id.clone());
+        inner.wan_epoch.lock().await.insert(device_id.clone(), 2);
+
+        assert!(!inner.clear_wan_if_current(&device_id, 1).await);
+        assert_eq!(inner.router.active_transport(&device_id), Some(TransportKind::RelayWan));
+        assert!(inner.wan_active.lock().await.contains(&device_id));
+
+        assert!(inner.clear_wan_if_current(&device_id, 2).await);
+        assert_eq!(inner.router.active_transport(&device_id), None);
+        assert!(!inner.wan_active.lock().await.contains(&device_id));
+    }
+
+    #[cfg(feature = "kdeconnect-wan")]
+    #[tokio::test]
+    async fn persisted_trusted_endpoint_restores_wan_authentication_binding() {
+        let relay_identity = crate::kdeconnect::LocalIdentity::generate("Relay").unwrap();
+        let phone_identity = crate::kdeconnect::LocalIdentity::generate("Phone").unwrap();
+        let endpoint_id = iroh::SecretKey::generate().public();
+        let phone_id = phone_identity.device_id.clone();
+        let inner = LanInner::new(
+            relay_identity,
+            vec![crate::kdeconnect::TrustedDevice {
+                device_id: phone_id.clone(),
+                certificate_pem: phone_identity.certificate_pem,
+                name: phone_identity.device_name,
+                device_type: phone_identity.device_type,
+                protocol_version: PROTOCOL_VERSION,
+                paired_at_unix: 123456,
+                wan_endpoint_id: Some(endpoint_id.to_string()),
+            }],
+            LanConfig::default(),
+            1716,
+            tokio::sync::mpsc::unbounded_channel().0,
+            tokio_util::sync::CancellationToken::new(),
+        );
+
+        let restored = inner.wan_bindings.by_endpoint_id(&endpoint_id).unwrap();
+        assert_eq!(restored.kde_device_id, phone_id);
+    }
+
+    #[cfg(feature = "kdeconnect-wan")]
+    #[tokio::test]
+    async fn fresh_wan_traffic_cannot_keep_a_stale_lan_route_local() {
+        use crate::kdeconnect::wan::{TransportKind, TransportState};
+
+        let relay_identity = crate::kdeconnect::LocalIdentity::generate("Relay").unwrap();
+        let phone_identity = crate::kdeconnect::LocalIdentity::generate("Phone").unwrap();
+        let phone_id = phone_identity.device_id.clone();
+        let inner = LanInner::new(
+            relay_identity,
+            vec![crate::kdeconnect::TrustedDevice {
+                device_id: phone_id.clone(),
+                certificate_pem: phone_identity.certificate_pem,
+                name: phone_identity.device_name,
+                device_type: phone_identity.device_type,
+                protocol_version: PROTOCOL_VERSION,
+                paired_at_unix: now_unix(),
+                wan_endpoint_id: None,
+            }],
+            LanConfig { bind: BindMode::Any, allow_loopback: true },
+            1716,
+            tokio::sync::mpsc::unbounded_channel().0,
+            tokio_util::sync::CancellationToken::new(),
+        );
+
+        inner.router.register(Arc::new(TestRoute { device_id: phone_id.clone(), kind: TransportKind::KdeLan }));
+        inner.router.register(Arc::new(TestRoute { device_id: phone_id.clone(), kind: TransportKind::RelayWan }));
+        inner.wan_active.lock().await.insert(phone_id.clone());
+        inner.heartbeat.lock().await.insert(phone_id.clone(), HeartbeatState {
+            last_rtt_ms: Some(10),
+            last_seen_unix: Some(now_unix()),
+        });
+        inner.route_last_seen.lock().await.insert(
+            (phone_id.clone(), TransportKind::KdeLan),
+            now_unix() - HEARTBEAT_TIMEOUT_SECS - 1,
+        );
+        inner.route_last_seen.lock().await.insert(
+            (phone_id.clone(), TransportKind::RelayWan),
+            now_unix(),
+        );
+
+        inner.sweep_stale_routes().await;
+
+        assert_eq!(inner.router.available_transports(&phone_id), vec![TransportKind::RelayWan]);
+        assert_eq!(inner.router.snapshot(&phone_id).state, TransportState::RemoteDirect);
+    }
 
     #[tokio::test]
     async fn sms_bulk_packet_can_exceed_the_identity_packet_limit() {
@@ -2412,6 +3242,7 @@ mod tests {
                 device_type: phone_identity.device_type.clone(),
                 protocol_version: PROTOCOL_VERSION,
                 paired_at_unix: 123456,
+                wan_endpoint_id: None,
             }],
             LanConfig {
                 bind: BindMode::Any,
@@ -2545,6 +3376,7 @@ mod tests {
                 device_type: phone_identity.device_type.clone(),
                 protocol_version: PROTOCOL_VERSION,
                 paired_at_unix: 123456,
+                wan_endpoint_id: None,
             }],
             LanConfig {
                 bind: BindMode::Any,
@@ -2646,6 +3478,7 @@ mod tests {
                 device_type: phone_identity.device_type.clone(),
                 protocol_version: PROTOCOL_VERSION,
                 paired_at_unix: 123456,
+                wan_endpoint_id: None,
             }],
             LanConfig {
                 bind: BindMode::Any,
@@ -2685,6 +3518,147 @@ mod tests {
         }
     }
 
+    #[cfg(feature = "kdeconnect-wan")]
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn relay_heartbeat_and_device_state_round_trip_over_the_selected_route() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+
+        let relay_identity = crate::kdeconnect::LocalIdentity::generate("Relay").unwrap();
+        let phone_identity = crate::kdeconnect::LocalIdentity::generate("Phone").unwrap();
+        let phone_id = phone_identity.device_id.clone();
+
+        let (event_tx, _event_rx) = tokio::sync::mpsc::unbounded_channel();
+        let relay_inner = LanInner::new(
+            relay_identity.clone(),
+            vec![crate::kdeconnect::TrustedDevice {
+                device_id: phone_id.clone(),
+                certificate_pem: phone_identity.certificate_pem.clone(),
+                name: phone_identity.device_name.clone(),
+                device_type: phone_identity.device_type.clone(),
+                protocol_version: PROTOCOL_VERSION,
+                paired_at_unix: 123456,
+                wan_endpoint_id: None,
+            }],
+            LanConfig {
+                bind: BindMode::Any,
+                allow_loopback: true,
+            },
+            port,
+            event_tx,
+            tokio_util::sync::CancellationToken::new(),
+        );
+
+        let relay_inner_clone = Arc::clone(&relay_inner);
+        let relay_task = tokio::spawn(async move {
+            let (stream, addr) = listener.accept().await.unwrap();
+            inbound_tcp(relay_inner_clone, stream, addr).await
+        });
+
+        let phone_identity_clone = phone_identity.clone();
+        let phone_task = tokio::spawn(async move {
+            let mut stream = TcpStream::connect(SocketAddr::from(([127, 0, 0, 1], port)))
+                .await
+                .unwrap();
+            let pre_tls = phone_identity_clone
+                .identity_packet(Some(1716))
+                .to_packet()
+                .serialize();
+            stream.write_all(&pre_tls).await.unwrap();
+            stream.flush().await.unwrap();
+
+            let mut tls = tokio::time::timeout(
+                Duration::from_secs(2),
+                start_tls_as_server(&phone_identity_clone, stream, None),
+            )
+            .await
+            .expect("TLS handshake timeout")
+            .unwrap();
+
+            let secure_identity = phone_identity_clone.identity_packet(None);
+            let secure_id = secure_identity.to_packet().serialize();
+            tls.write_all(&secure_id).await.unwrap();
+            tls.flush().await.unwrap();
+
+            let line = tokio::time::timeout(
+                Duration::from_secs(2),
+                read_line_bounded(&mut tls, MAX_IDENTITY_PACKET_BYTES),
+            )
+            .await
+            .expect("read identity timeout")
+            .unwrap();
+            let _ = NetworkPacket::parse(&line).unwrap().as_identity().unwrap();
+
+            // Phone sends a relay heartbeat ping; the desktop must echo a pong
+            // with the same nonce.
+            let ping = RelayHeartbeatBody::ping("phone-nonce", 1_000).serialize();
+            tls.write_all(&ping).await.unwrap();
+            tls.flush().await.unwrap();
+
+            let mut got_pong = false;
+            for _ in 0..10 {
+                if let Ok(Ok(l)) = tokio::time::timeout(
+                    Duration::from_millis(500),
+                    read_line_bounded(&mut tls, MAX_PACKET_BYTES),
+                )
+                .await
+                {
+                    if let Ok(pkt) = NetworkPacket::parse(&l) {
+                        if let Ok(pong) = pkt.as_relay_pong() {
+                            assert_eq!(pong.nonce, "phone-nonce");
+                            got_pong = true;
+                            break;
+                        }
+                    }
+                }
+            }
+            assert!(got_pong, "expected a relay pong echoing the ping's nonce");
+
+            // Phone also sends a device_state packet -- the desktop must
+            // accept it without erroring the connection (checked below via
+            // `last_seen_unix` and continued connectivity).
+            let state = RelayDeviceStateBody::new(RelayDeviceStateBody {
+                device_name: Some("Pixel".into()),
+                device_class: Some("phone".into()),
+                os: Some("android".into()),
+                timestamp: Some(2_000),
+                ..Default::default()
+            })
+            .serialize();
+            tls.write_all(&state).await.unwrap();
+            tls.flush().await.unwrap();
+            // Stay connected well past the assertions below -- the test must
+            // observe `connected == true` while this link is still live, not
+            // race the socket closing at task-end.
+            tokio::time::sleep(Duration::from_secs(2)).await;
+            Ok::<(), anyhow::Error>(())
+        });
+
+        tokio::time::sleep(Duration::from_millis(200)).await;
+
+        // The desktop can also originate a heartbeat over the same route.
+        relay_inner
+            .router
+            .send_packet(&phone_id, &RelayHeartbeatBody::ping("desktop-nonce", 3_000))
+            .await
+            .unwrap();
+
+        tokio::time::sleep(Duration::from_millis(300)).await;
+
+        let snapshot = relay_inner.snapshot().await;
+        let device = snapshot.iter().find(|d| d.device_id == phone_id).unwrap();
+        assert!(device.connected);
+        assert!(
+            device.last_seen_unix.is_some(),
+            "relay ping/pong/device_state traffic must update last_seen_unix"
+        );
+        #[cfg(feature = "kdeconnect-wan")]
+        assert_eq!(device.transport_kind, Some(crate::kdeconnect::wan::TransportKind::KdeLan));
+
+        let _ = relay_task.await;
+        let _ = phone_task.await;
+    }
+
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn paired_secure_session_ping_and_find_phone() {
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -2704,6 +3678,7 @@ mod tests {
                 device_type: phone_identity.device_type.clone(),
                 protocol_version: PROTOCOL_VERSION,
                 paired_at_unix: 123456,
+                wan_endpoint_id: None,
             }],
             LanConfig {
                 bind: BindMode::Any,
@@ -2826,6 +3801,7 @@ mod tests {
                 device_type: phone_identity.device_type.clone(),
                 protocol_version: PROTOCOL_VERSION,
                 paired_at_unix: 123456,
+                wan_endpoint_id: None,
             }],
             LanConfig {
                 bind: BindMode::Any,

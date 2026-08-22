@@ -60,6 +60,10 @@ required-features = ["anywhere"]
 name = "anywhere_transfer"
 required-features = ["anywhere"]
 
+[[test]]
+name = "kdeconnect_wan_isolation"
+required-features = ["kdeconnect-wan"]
+
 
 [features]
 default = []
@@ -68,9 +72,10 @@ crypto = ["ed25519-dalek", "rcgen", "rsa", "sha2", "tokio-util"]
 discovery = ["http", "multicast"]
 http = ["crypto", "form_urlencoded", "http-body-util", "hyper", "hyper-util", "if-addrs", "pem", "percent-encoding", "reqwest", "rustls", "socket2", "time", "tokio-rustls", "tokio-util", "x509-parser"]
 kdeconnect = ["crypto", "if-addrs", "pem", "rustls", "socket2", "time", "tokio-rustls", "tokio-util", "x509-parser"]
+kdeconnect-wan = ["kdeconnect", "dep:iroh"]
 multicast = ["if-addrs", "socket2", "tokio-util"]
 webrtc-signaling = ["tokio-tungstenite"]
 webrtc = ["crypto", "flate2", "dep:webrtc", "webrtc-signaling", "x509-parser"]
 anywhere-dev = ["crypto", "http"]
 anywhere = ["continuity", "crypto", "http", "dep:iroh"]
-full = ["continuity", "crypto", "discovery", "http", "kdeconnect", "multicast", "webrtc"]
+full = ["continuity", "crypto", "discovery", "http", "kdeconnect", "kdeconnect-wan", "multicast", "webrtc"]

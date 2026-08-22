@@ -8,15 +8,18 @@ mod identity;
 mod lan;
 mod packet;
 mod pairing;
+#[cfg(feature = "kdeconnect-wan")]
+pub mod wan;
 
 pub use capabilities::{
     canonical_incoming_capabilities, canonical_outgoing_capabilities, PACKET_TYPE_BATTERY,
     PACKET_TYPE_CLIPBOARD, PACKET_TYPE_CLIPBOARD_CONNECT, PACKET_TYPE_CONNECTIVITY_REPORT,
     PACKET_TYPE_FINDMYPHONE_REQUEST, PACKET_TYPE_IDENTITY, PACKET_TYPE_NOTIFICATION,
-    PACKET_TYPE_NOTIFICATION_REQUEST, PACKET_TYPE_PAIR, PACKET_TYPE_PING, PACKET_TYPE_SMS_MESSAGES,
-    PACKET_TYPE_SMS_REQUEST, PACKET_TYPE_SMS_REQUEST_CONVERSATION,
-    PACKET_TYPE_SMS_REQUEST_CONVERSATIONS, PACKET_TYPE_TELEPHONY,
-    PACKET_TYPE_TELEPHONY_REQUEST_MUTE,
+    PACKET_TYPE_NOTIFICATION_REQUEST, PACKET_TYPE_PAIR, PACKET_TYPE_PING,
+    PACKET_TYPE_RELAY_DEVICE_STATE, PACKET_TYPE_RELAY_PING, PACKET_TYPE_RELAY_PONG,
+    PACKET_TYPE_RELAY_WAN_IDENTITY, PACKET_TYPE_SMS_MESSAGES, PACKET_TYPE_SMS_REQUEST,
+    PACKET_TYPE_SMS_REQUEST_CONVERSATION, PACKET_TYPE_SMS_REQUEST_CONVERSATIONS,
+    PACKET_TYPE_TELEPHONY, PACKET_TYPE_TELEPHONY_REQUEST_MUTE,
 };
 pub use identity::LocalIdentity;
 pub use lan::{
@@ -26,8 +29,9 @@ pub use lan::{
 pub use packet::{
     filter_device_name, is_valid_device_id, BatteryBody, ClipboardBody, ConnectivityReportBody,
     ConnectivitySignal, FindMyPhoneBody, IdentityBody, NetworkPacket, NotificationBody,
-    PacketError, PairBody, PingBody, SmsAttachmentMetadata, SmsMessage, SmsMessagesBody,
-    SmsRequestBody, SmsRequestConversationBody, SmsRequestConversationsBody, TelephonyBody,
+    PacketError, PairBody, PingBody, RelayDeviceStateBody, RelayHeartbeatBody,
+    RelayWanIdentityBody, SmsAttachmentMetadata, SmsMessage, SmsMessagesBody, SmsRequestBody,
+    SmsRequestConversationBody, SmsRequestConversationsBody, TelephonyBody,
     TelephonyRequestMuteBody, PROTOCOL_VERSION,
 };
 pub use pairing::{
@@ -50,6 +54,10 @@ pub struct TrustedDevice {
     pub device_type: String,
     pub protocol_version: i64,
     pub paired_at_unix: i64,
+    /// Relay WAN EndpointId learned over an authenticated, already-paired LAN
+    /// session. Persisted with the KDE trust record so a desktop restart does
+    /// not forget how to authenticate the same phone on mobile data.
+    pub wan_endpoint_id: Option<String>,
 }
 
 impl TrustedDevice {
@@ -78,6 +86,21 @@ pub struct DeviceSnapshot {
     pub connectivity_stale: bool,
     pub incoming_capabilities: Vec<String>,
     pub outgoing_capabilities: Vec<String>,
+    /// Which transport is currently authoritative for this device, derived
+    /// live from the same connection state as `connected` -- never a cached
+    /// "last known" value. `RelayWan` state distinguishes a direct Iroh path
+    /// from a relayed one (`TransportState::RemoteDirect` /
+    /// `RemoteRelay`). Only populated when the `kdeconnect-wan` feature is
+    /// compiled in.
+    #[cfg(feature = "kdeconnect-wan")]
+    pub transport_kind: Option<wan::TransportKind>,
+    #[cfg(feature = "kdeconnect-wan")]
+    pub transport_state: wan::TransportState,
+    /// Round-trip time of the last successful `kdeconnect.relay.ping` /
+    /// `kdeconnect.relay.pong` exchange, and when any relay packet was last
+    /// received, over whichever transport is currently authoritative.
+    pub last_rtt_ms: Option<i64>,
+    pub last_seen_unix: Option<i64>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -299,6 +322,37 @@ impl KdeConnectHandle {
     pub fn stop(&self) {
         self.inner.cancel.cancel();
     }
+
+    /// Opt-in: starts the Relay WAN runtime (binding the Iroh endpoint) and
+    /// its inbound accept loop. Never called implicitly by `start` -- see
+    /// `tests/kdeconnect_wan_isolation.rs`. Safe to call multiple times.
+    #[cfg(feature = "kdeconnect-wan")]
+    pub async fn enable_wan(&self, config: wan::WanRuntimeConfig) -> Result<()> {
+        self.inner.enable_wan(config).await
+    }
+
+    /// Sends a Relay-native heartbeat ping to `device_id` over whichever
+    /// transport is currently authoritative (LAN preferred, then WAN).
+    #[cfg(feature = "kdeconnect-wan")]
+    pub async fn send_relay_ping(&self, device_id: &str, nonce: &str) -> Result<()> {
+        let timestamp = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|duration| duration.as_millis() as i64)
+            .unwrap_or(0);
+        let packet = packet::RelayHeartbeatBody::ping(nonce, timestamp);
+        self.inner.router.send_packet(device_id, &packet).await?;
+        Ok(())
+    }
+
+    #[cfg(feature = "kdeconnect-wan")]
+    pub async fn request_relay_device_state(&self, device_id: &str) -> Result<()> {
+        let packet = packet::RelayDeviceStateBody::new(packet::RelayDeviceStateBody {
+            is_request: true,
+            ..Default::default()
+        });
+        self.inner.router.send_packet(device_id, &packet).await?;
+        Ok(())
+    }
 }
 
 impl Drop for KdeConnectHandle {
@@ -357,6 +411,7 @@ mod tests {
                 device_type: "phone".into(),
                 protocol_version: PROTOCOL_VERSION,
                 paired_at_unix: 1,
+                wan_endpoint_id: None,
             }],
             lan: LanConfig {
                 bind: BindMode::Loopback,
