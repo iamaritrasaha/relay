@@ -82,6 +82,22 @@ impl WanBindingRegistry {
             .cloned()
     }
 
+    /// Refreshes the capability list of an existing binding, leaving the
+    /// binding's identity (device id / endpoint id) untouched. Called when a
+    /// WAN hello re-advertises the peer's capabilities, so a binding restored
+    /// from persisted trust -- which carries no capabilities -- learns them
+    /// again without needing a LAN session first.
+    pub fn set_capabilities(&self, kde_device_id: &str, capabilities: Vec<String>) {
+        if let Some(binding) = self
+            .by_device
+            .lock()
+            .expect("WanBindingRegistry mutex poisoned")
+            .get_mut(kde_device_id)
+        {
+            binding.capabilities = capabilities;
+        }
+    }
+
     pub fn record_connection(&self, kde_device_id: &str, transport: &str, at_unix: i64) {
         if let Some(binding) = self
             .by_device
@@ -165,6 +181,39 @@ mod tests {
 
         let b = registry.by_kde_device_id("device-b").unwrap();
         assert_eq!(b.last_wan_connected_at_unix, None);
+    }
+
+    #[test]
+    fn setting_capabilities_updates_only_that_binding_and_keeps_its_identity() {
+        let endpoint_a = SecretKey::generate().public();
+        let endpoint_b = SecretKey::generate().public();
+        let registry = WanBindingRegistry::new(vec![
+            binding("device-a", endpoint_a),
+            binding("device-b", endpoint_b),
+        ]);
+
+        registry.set_capabilities(
+            "device-a",
+            vec![
+                "kdeconnect.notification".to_owned(),
+                "kdeconnect.sms.messages".to_owned(),
+            ],
+        );
+
+        let a = registry.by_kde_device_id("device-a").unwrap();
+        assert_eq!(a.endpoint_id, endpoint_a, "identity must not move");
+        assert!(a.capabilities.iter().any(|c| c == "kdeconnect.notification"));
+        assert!(a.capabilities.iter().any(|c| c == "kdeconnect.sms.messages"));
+
+        let b = registry.by_kde_device_id("device-b").unwrap();
+        assert_eq!(b.capabilities, vec!["kdeconnect.battery".to_owned()]);
+    }
+
+    #[test]
+    fn setting_capabilities_for_an_unknown_device_never_creates_a_binding() {
+        let registry = WanBindingRegistry::new(vec![]);
+        registry.set_capabilities("nobody", vec!["kdeconnect.ping".to_owned()]);
+        assert!(registry.snapshot().is_empty());
     }
 
     #[test]

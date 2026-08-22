@@ -258,8 +258,8 @@ void main() {
       expect(material.clipBehavior, Clip.antiAlias);
     }
 
-    final connectedLabels = tester.widgetList<Text>(find.text('Connected'));
-    final success = YaruColors.of(tester.element(find.text('Connected').first)).success;
+    final connectedLabels = tester.widgetList<Text>(find.textContaining('Connected'));
+    final success = YaruColors.of(tester.element(find.textContaining('Connected').first)).success;
     expect(connectedLabels, isNotEmpty);
     for (final label in connectedLabels) {
       expect(label.style?.color, isNot(success));

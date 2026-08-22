@@ -94,6 +94,11 @@ impl WanRuntime {
             kde_protocol_version: KDE_PROTOCOL_VERSION,
             capability_digest: self.config.capability_digest.clone(),
             app_version: self.config.app_version.clone(),
+            // Same canonical registry the LAN `kdeconnect.identity` packet is
+            // built from, so a peer learns an identical capability set no
+            // matter which transport introduced us.
+            incoming_capabilities: crate::kdeconnect::canonical_incoming_capabilities(),
+            outgoing_capabilities: crate::kdeconnect::canonical_outgoing_capabilities(),
         }
     }
 
@@ -544,6 +549,8 @@ mod tests {
             kde_protocol_version: KDE_PROTOCOL_VERSION,
             capability_digest: "digest".to_owned(),
             app_version: "0.2.0".to_owned(),
+            incoming_capabilities: vec!["kdeconnect.notification".to_owned()],
+            outgoing_capabilities: vec!["kdeconnect.sms.messages".to_owned()],
         };
 
         let connection2 = client_endpoint

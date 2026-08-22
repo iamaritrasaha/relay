@@ -2,6 +2,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:relay_app/config/relay_brand.dart';
+import 'package:relay_app/config/relay_device_palette.dart';
 import 'package:relay_app/config/relay_motion.dart';
 import 'package:relay_app/model/ui/relay_device_vm.dart';
 import 'package:relay_app/widget/relay_motion/relay_ambient_clock.dart';
@@ -10,11 +11,12 @@ import 'package:relay_isolates/model/device.dart';
 
 /// The visual centerpiece of the Relay connected-device Hero:
 ///
-/// [ REMOTE DEVICE SILHOUETTE ]  ─────────  [ RELAY LINK CORE ]  ─────────  [ LOCAL DESKTOP SILHOUETTE ]
+/// [ REMOTE DEVICE SILHOUETTE ]  ═════════  [ RELAY LINK CORE ]  ═════════  [ LOCAL DESKTOP SILHOUETTE ]
 ///
 /// Communicates the live continuity bridge between the selected remote device
-/// and this computer with deterministic device-palette styling, responsive horizontal
-/// and vertical layouts, and ambient low-overhead data particle flow.
+/// and this computer with deterministic device-palette styling, optical endpoint anchors,
+/// a continuous softly flowing luminous bridge line (no packet dots), and a slow steadily rotating
+/// Relay Link Core with subtle luminosity breath.
 class RelayConnectionStage extends StatelessWidget {
   final RelayDeviceVm device;
   final RelayDevicePalette palette;
@@ -42,37 +44,128 @@ class RelayConnectionStage extends StatelessWidget {
     final disableMotion = (MediaQuery.maybeDisableAnimationsOf(context) ?? false) || !animationsEnabled;
     final sharedClock = RelayAmbientClock.maybeOf(context);
 
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final isWide = constraints.maxWidth >= 480;
+    return TweenAnimationBuilder<RelayDevicePalette>(
+      tween: RelayDevicePaletteTween(begin: palette, end: palette),
+      duration: const Duration(milliseconds: 300),
+      curve: Curves.easeInOut,
+      builder: (context, animatedPalette, _) {
+        return LayoutBuilder(
+          builder: (context, constraints) {
+            final isWide = constraints.maxWidth >= 480;
 
-        if (isWide) {
-          return _HorizontalConnectionStage(
-            device: device,
-            palette: palette,
-            selfAlias: selfAlias,
-            selfDeviceType: selfDeviceType,
-            connected: connected,
-            connecting: connecting,
-            isDark: isDark,
-            disableMotion: disableMotion,
-            sharedClock: sharedClock,
-          );
-        } else {
-          return _VerticalConnectionStage(
-            device: device,
-            palette: palette,
-            selfAlias: selfAlias,
-            selfDeviceType: selfDeviceType,
-            connected: connected,
-            connecting: connecting,
-            isDark: isDark,
-            disableMotion: disableMotion,
-            sharedClock: sharedClock,
-          );
-        }
+            if (isWide) {
+              return _HorizontalConnectionStage(
+                device: device,
+                palette: animatedPalette,
+                selfAlias: selfAlias,
+                selfDeviceType: selfDeviceType,
+                connected: connected,
+                connecting: connecting,
+                isDark: isDark,
+                disableMotion: disableMotion,
+                sharedClock: sharedClock,
+              );
+            } else {
+              return _VerticalConnectionStage(
+                device: device,
+                palette: animatedPalette,
+                selfAlias: selfAlias,
+                selfDeviceType: selfDeviceType,
+                connected: connected,
+                connecting: connecting,
+                isDark: isDark,
+                disableMotion: disableMotion,
+                sharedClock: sharedClock,
+              );
+            }
+          },
+        );
       },
     );
+  }
+}
+
+/// Tween for smooth 250-350ms device palette crossfades on device switch.
+class RelayDevicePaletteTween extends Tween<RelayDevicePalette> {
+  RelayDevicePaletteTween({super.begin, super.end});
+
+  @override
+  RelayDevicePalette lerp(double t) {
+    if (begin == null && end == null) {
+      return RelayDevicePalette.fallback();
+    }
+    if (begin == null) return end!;
+    if (end == null) return begin!;
+    return RelayDevicePalette.lerp(begin!, end!, t);
+  }
+}
+
+/// Precise optical geometry metrics for device silhouettes to ensure sub-pixel line contact.
+class _SilhouetteOpticalMetrics {
+  final double width;
+  final double height;
+  final double anchorOffsetY; // Y distance from top of silhouette to visual center anchor
+  final double displayHeight; // Display body height (excluding stand)
+
+  const _SilhouetteOpticalMetrics({
+    required this.width,
+    required this.height,
+    required this.anchorOffsetY,
+    required this.displayHeight,
+  });
+
+  static _SilhouetteOpticalMetrics of({
+    required DeviceType deviceType,
+    required bool isTablet,
+    required bool compact,
+  }) {
+    if (compact) {
+      if (isTablet) {
+        return const _SilhouetteOpticalMetrics(
+          width: 52,
+          height: 44,
+          anchorOffsetY: 22,
+          displayHeight: 44,
+        );
+      }
+      return switch (deviceType) {
+        DeviceType.mobile => const _SilhouetteOpticalMetrics(
+          width: 38,
+          height: 64,
+          anchorOffsetY: 32,
+          displayHeight: 64,
+        ),
+        _ => const _SilhouetteOpticalMetrics(
+          width: 58,
+          height: 44,
+          anchorOffsetY: 18, // displayHeight = 36, 36/2 = 18
+          displayHeight: 36,
+        ),
+      };
+    }
+
+    if (isTablet) {
+      return const _SilhouetteOpticalMetrics(
+        width: 66,
+        height: 54,
+        anchorOffsetY: 27,
+        displayHeight: 54,
+      );
+    }
+    return switch (deviceType) {
+      DeviceType.mobile => const _SilhouetteOpticalMetrics(
+        width: 48,
+        height: 80,
+        anchorOffsetY: 40,
+        displayHeight: 80,
+      ),
+      _ => const _SilhouetteOpticalMetrics(
+        width: 76,
+        height: 54,
+        anchorOffsetY: 23, // displayHeight = 46, 46/2 = 23
+        displayHeight: 46,
+      ),
+    };
   }
 }
 
@@ -99,78 +192,183 @@ class _HorizontalConnectionStage extends StatelessWidget {
     required this.sharedClock,
   });
 
+  bool get _isTabletDevice {
+    if (device.deviceType != DeviceType.mobile) return false;
+    final lower = '${device.alias} ${device.deviceModel ?? ''}'.toLowerCase();
+    return lower.contains('tab') || lower.contains('pad') || lower.contains('tablet');
+  }
+
   @override
   Widget build(BuildContext context) {
     final localDisplayName = selfAlias.isNotEmpty ? selfAlias : 'This computer';
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+
+    const stageHeight = 120.0;
+    const connectionAxisY = 46.0;
+    const coreDiameter = 44.0;
+    const coreRadius = coreDiameter / 2;
+    const padX = 16.0;
+    const labelTop = 92.0;
+
+    final remoteMetrics = _SilhouetteOpticalMetrics.of(
+      deviceType: device.deviceType,
+      isTablet: _isTabletDevice,
+      compact: false,
+    );
+
+    final localMetrics = _SilhouetteOpticalMetrics.of(
+      deviceType: selfDeviceType,
+      isTablet: false,
+      compact: false,
+    );
 
     return SizedBox(
-      height: 120,
-      child: Stack(
-        alignment: Alignment.center,
-        children: [
-          // Background bridge connecting remote to local through core
-          Positioned.fill(
-            child: RepaintBoundary(
-              child: _BridgeLine(
-                orientation: Axis.horizontal,
-                connected: connected,
-                connecting: connecting,
-                palette: palette,
-                isDark: isDark,
-                disableMotion: disableMotion,
-                sharedClock: sharedClock,
-              ),
-            ),
-          ),
-          // Content Row: Remote on left, Core in center, Local on right
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      height: stageHeight,
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final stageWidth = constraints.maxWidth;
+          final centerX = stageWidth / 2;
+
+          // Explicit optical contact anchors (all exactly on connectionAxisY)
+          final remoteAnchor = Offset(padX + remoteMetrics.width, connectionAxisY);
+          final coreLeft = Offset(centerX - coreRadius, connectionAxisY);
+          final coreRight = Offset(centerX + coreRadius, connectionAxisY);
+          final localAnchor = Offset(stageWidth - padX - localMetrics.width, connectionAxisY);
+
+          return Stack(
+            clipBehavior: Clip.none,
             children: [
-              // Remote device silhouette
-              AnimatedSwitcher(
-                duration: RelayMotion.focus,
-                switchInCurve: RelayMotion.focusCurve,
-                switchOutCurve: RelayMotion.focusCurve,
-                child: KeyedSubtree(
-                  key: ValueKey('${device.key}-${device.deviceType}'),
-                  child: _DeviceSilhouette(
-                    deviceType: device.deviceType,
+              // Continuous glowing bridge line behind silhouettes and core
+              Positioned.fill(
+                child: RepaintBoundary(
+                  child: CustomPaint(
+                    painter: _BridgePainter(
+                      orientation: Axis.horizontal,
+                      connected: connected,
+                      connecting: connecting,
+                      palette: palette,
+                      isDark: isDark,
+                      sharedClock: sharedClock,
+                      disableMotion: disableMotion,
+                      startAnchor: remoteAnchor,
+                      coreLeft: coreLeft,
+                      coreRight: coreRight,
+                      endAnchor: localAnchor,
+                    ),
+                  ),
+                ),
+              ),
+
+              // Remote device silhouette (aligned to connectionAxisY)
+              Positioned(
+                left: padX,
+                top: connectionAxisY - remoteMetrics.anchorOffsetY,
+                width: remoteMetrics.width,
+                height: remoteMetrics.height,
+                child: AnimatedSwitcher(
+                  duration: RelayMotion.focus,
+                  switchInCurve: RelayMotion.focusCurve,
+                  switchOutCurve: RelayMotion.focusCurve,
+                  child: KeyedSubtree(
+                    key: ValueKey('${device.key}-${device.deviceType}'),
+                    child: RepaintBoundary(
+                      child: CustomPaint(
+                        size: Size(remoteMetrics.width, remoteMetrics.height),
+                        painter: _SilhouettePainter(
+                          deviceType: device.deviceType,
+                          palette: palette,
+                          connected: connected,
+                          connecting: connecting,
+                          isDark: isDark,
+                          isLocal: false,
+                          sharedClock: sharedClock,
+                          disableMotion: disableMotion,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+
+              // Central Relay Link Core (aligned to connectionAxisY)
+              Positioned(
+                left: centerX - coreRadius,
+                top: connectionAxisY - coreRadius,
+                width: coreDiameter,
+                height: coreDiameter,
+                child: RepaintBoundary(
+                  child: _RelayLinkCore(
                     palette: palette,
                     connected: connected,
                     connecting: connecting,
                     isDark: isDark,
-                    isLocal: false,
-                    label: device.alias,
-                    deviceModel: device.deviceModel,
                     disableMotion: disableMotion,
                     sharedClock: sharedClock,
+                    compact: false,
                   ),
                 ),
               ),
-              // Central Relay Link Core
-              _RelayLinkCore(
-                palette: palette,
-                connected: connected,
-                connecting: connecting,
-                isDark: isDark,
-                disableMotion: disableMotion,
-                sharedClock: sharedClock,
+
+              // Local desktop silhouette (aligned to connectionAxisY)
+              Positioned(
+                right: padX,
+                top: connectionAxisY - localMetrics.anchorOffsetY,
+                width: localMetrics.width,
+                height: localMetrics.height,
+                child: RepaintBoundary(
+                  child: CustomPaint(
+                    size: Size(localMetrics.width, localMetrics.height),
+                    painter: _SilhouettePainter(
+                      deviceType: selfDeviceType,
+                      palette: palette,
+                      connected: connected,
+                      connecting: connecting,
+                      isDark: isDark,
+                      isLocal: true,
+                      sharedClock: sharedClock,
+                      disableMotion: disableMotion,
+                    ),
+                  ),
+                ),
               ),
-              // Local desktop silhouette
-              _DeviceSilhouette(
-                deviceType: selfDeviceType,
-                palette: palette,
-                connected: connected,
-                connecting: connecting,
-                isDark: isDark,
-                isLocal: true,
-                label: localDisplayName,
-                disableMotion: disableMotion,
-                sharedClock: sharedClock,
+
+              // Remote device label (shared baseline at labelTop)
+              Positioned(
+                left: math.max(0.0, padX + (remoteMetrics.width / 2) - 60.0),
+                top: labelTop,
+                width: 120.0,
+                child: Text(
+                  device.alias,
+                  style: theme.textTheme.labelSmall?.copyWith(
+                    fontWeight: FontWeight.w600,
+                    color: connected ? colorScheme.onSurface : colorScheme.onSurface.withValues(alpha: 0.6),
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  textAlign: TextAlign.center,
+                ),
+              ),
+
+              // Local device label (shared baseline at labelTop)
+              Positioned(
+                right: math.max(0.0, padX + (localMetrics.width / 2) - 60.0),
+                top: labelTop,
+                width: 120.0,
+                child: Text(
+                  localDisplayName,
+                  style: theme.textTheme.labelSmall?.copyWith(
+                    fontWeight: FontWeight.w600,
+                    color: connected ? colorScheme.onSurface : colorScheme.onSurface.withValues(alpha: 0.6),
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  textAlign: TextAlign.center,
+                ),
               ),
             ],
-          ),
-        ],
+          );
+        },
       ),
     );
   }
@@ -199,87 +397,193 @@ class _VerticalConnectionStage extends StatelessWidget {
     required this.sharedClock,
   });
 
+  bool get _isTabletDevice {
+    if (device.deviceType != DeviceType.mobile) return false;
+    final lower = '${device.alias} ${device.deviceModel ?? ''}'.toLowerCase();
+    return lower.contains('tab') || lower.contains('pad') || lower.contains('tablet');
+  }
+
   @override
   Widget build(BuildContext context) {
     final localDisplayName = selfAlias.isNotEmpty ? selfAlias : 'This computer';
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+
+    const stageHeight = 220.0;
+    const coreDiameter = 38.0;
+    const coreRadius = coreDiameter / 2;
+    const padY = 8.0;
+
+    final remoteMetrics = _SilhouetteOpticalMetrics.of(
+      deviceType: device.deviceType,
+      isTablet: _isTabletDevice,
+      compact: true,
+    );
+
+    final localMetrics = _SilhouetteOpticalMetrics.of(
+      deviceType: selfDeviceType,
+      isTablet: false,
+      compact: true,
+    );
 
     return SizedBox(
-      height: 220,
-      child: Stack(
-        alignment: Alignment.center,
-        children: [
-          // Background vertical bridge connecting remote to local through core
-          Positioned.fill(
-            child: RepaintBoundary(
-              child: _BridgeLine(
-                orientation: Axis.vertical,
-                connected: connected,
-                connecting: connecting,
-                palette: palette,
-                isDark: isDark,
-                disableMotion: disableMotion,
-                sharedClock: sharedClock,
-              ),
-            ),
-          ),
-          // Content Column: Remote on top, Core in middle, Local on bottom
-          Column(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      height: stageHeight,
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final stageWidth = constraints.maxWidth;
+          final centerX = stageWidth / 2;
+          final centerY = stageHeight / 2;
+
+          final remoteTop = padY;
+          final remoteDisplayBottom = remoteTop + (device.deviceType == DeviceType.mobile ? remoteMetrics.height : remoteMetrics.displayHeight);
+          final localTop = stageHeight - padY - 20.0 - localMetrics.height;
+
+          // Explicit optical contact anchors along vertical axis X = centerX
+          final topAnchor = Offset(centerX, remoteDisplayBottom);
+          final coreTop = Offset(centerX, centerY - coreRadius);
+          final coreBottom = Offset(centerX, centerY + coreRadius);
+          final bottomAnchor = Offset(centerX, localTop);
+
+          return Stack(
+            clipBehavior: Clip.none,
             children: [
-              // Remote device silhouette
-              AnimatedSwitcher(
-                duration: RelayMotion.focus,
-                switchInCurve: RelayMotion.focusCurve,
-                switchOutCurve: RelayMotion.focusCurve,
-                child: KeyedSubtree(
-                  key: ValueKey('${device.key}-${device.deviceType}'),
-                  child: _DeviceSilhouette(
-                    deviceType: device.deviceType,
+              // Continuous glowing vertical bridge line
+              Positioned.fill(
+                child: RepaintBoundary(
+                  child: CustomPaint(
+                    painter: _BridgePainter(
+                      orientation: Axis.vertical,
+                      connected: connected,
+                      connecting: connecting,
+                      palette: palette,
+                      isDark: isDark,
+                      sharedClock: sharedClock,
+                      disableMotion: disableMotion,
+                      startAnchor: topAnchor,
+                      coreLeft: coreTop,
+                      coreRight: coreBottom,
+                      endAnchor: bottomAnchor,
+                    ),
+                  ),
+                ),
+              ),
+
+              // Remote device silhouette (top)
+              Positioned(
+                left: centerX - (remoteMetrics.width / 2),
+                top: remoteTop,
+                width: remoteMetrics.width,
+                height: remoteMetrics.height,
+                child: AnimatedSwitcher(
+                  duration: RelayMotion.focus,
+                  switchInCurve: RelayMotion.focusCurve,
+                  switchOutCurve: RelayMotion.focusCurve,
+                  child: KeyedSubtree(
+                    key: ValueKey('${device.key}-${device.deviceType}'),
+                    child: RepaintBoundary(
+                      child: CustomPaint(
+                        size: Size(remoteMetrics.width, remoteMetrics.height),
+                        painter: _SilhouettePainter(
+                          deviceType: device.deviceType,
+                          palette: palette,
+                          connected: connected,
+                          connecting: connecting,
+                          isDark: isDark,
+                          isLocal: false,
+                          sharedClock: sharedClock,
+                          disableMotion: disableMotion,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+
+              // Remote device label
+              Positioned(
+                left: centerX - 50.0,
+                top: remoteTop + remoteMetrics.height + 4.0,
+                width: 100.0,
+                child: Text(
+                  device.alias,
+                  style: theme.textTheme.labelSmall?.copyWith(
+                    fontWeight: FontWeight.w600,
+                    color: connected ? colorScheme.onSurface : colorScheme.onSurface.withValues(alpha: 0.6),
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  textAlign: TextAlign.center,
+                ),
+              ),
+
+              // Central Relay Link Core (middle)
+              Positioned(
+                left: centerX - coreRadius,
+                top: centerY - coreRadius,
+                width: coreDiameter,
+                height: coreDiameter,
+                child: RepaintBoundary(
+                  child: _RelayLinkCore(
                     palette: palette,
                     connected: connected,
                     connecting: connecting,
                     isDark: isDark,
-                    isLocal: false,
-                    label: device.alias,
-                    deviceModel: device.deviceModel,
                     disableMotion: disableMotion,
                     sharedClock: sharedClock,
                     compact: true,
                   ),
                 ),
               ),
-              // Central Relay Link Core
-              _RelayLinkCore(
-                palette: palette,
-                connected: connected,
-                connecting: connecting,
-                isDark: isDark,
-                disableMotion: disableMotion,
-                sharedClock: sharedClock,
-                compact: true,
+
+              // Local desktop silhouette (bottom)
+              Positioned(
+                left: centerX - (localMetrics.width / 2),
+                top: localTop,
+                width: localMetrics.width,
+                height: localMetrics.height,
+                child: RepaintBoundary(
+                  child: CustomPaint(
+                    size: Size(localMetrics.width, localMetrics.height),
+                    painter: _SilhouettePainter(
+                      deviceType: selfDeviceType,
+                      palette: palette,
+                      connected: connected,
+                      connecting: connecting,
+                      isDark: isDark,
+                      isLocal: true,
+                      sharedClock: sharedClock,
+                      disableMotion: disableMotion,
+                    ),
+                  ),
+                ),
               ),
-              // Local desktop silhouette
-              _DeviceSilhouette(
-                deviceType: selfDeviceType,
-                palette: palette,
-                connected: connected,
-                connecting: connecting,
-                isDark: isDark,
-                isLocal: true,
-                label: localDisplayName,
-                disableMotion: disableMotion,
-                sharedClock: sharedClock,
-                compact: true,
+
+              // Local device label
+              Positioned(
+                left: centerX - 50.0,
+                top: localTop + localMetrics.height + 4.0,
+                width: 100.0,
+                child: Text(
+                  localDisplayName,
+                  style: theme.textTheme.labelSmall?.copyWith(
+                    fontWeight: FontWeight.w600,
+                    color: connected ? colorScheme.onSurface : colorScheme.onSurface.withValues(alpha: 0.6),
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  textAlign: TextAlign.center,
+                ),
               ),
             ],
-          ),
-        ],
+          );
+        },
       ),
     );
   }
 }
 
-/// Central circular Relay Link Core.
+/// Central circular Relay Link Core with slow steady rotation, subtle luminosity breath,
+/// and synchronized bridge-crossing highlight boost.
 class _RelayLinkCore extends StatelessWidget {
   final RelayDevicePalette palette;
   final bool connected;
@@ -304,6 +608,90 @@ class _RelayLinkCore extends StatelessWidget {
     final size = compact ? 38.0 : 44.0;
     final symbolSize = compact ? 20.0 : 24.0;
 
+    final isMotionActive = !disableMotion && (connected || connecting) && sharedClock != null;
+
+    if (!isMotionActive) {
+      return _buildStaticCore(size, symbolSize);
+    }
+
+    return AnimatedBuilder(
+      animation: sharedClock!.cadenceClock,
+      builder: (context, _) {
+        final elapsed = sharedClock!.elapsedSeconds;
+
+        // Slow steady continuous rotation: 12.0s linear period
+        const rotationPeriod = 12.0;
+        final rotationPhase = (elapsed / rotationPeriod) % 1.0;
+        final rotationAngle = (connected || connecting) ? rotationPhase * 2 * math.pi : 0.0;
+
+        // Subtle luminosity breath (~5.2s cycle)
+        final breath = sharedClock!.breathValue; // 0.0 to 1.0
+
+        // Synchronized bridge wave crossing boost (peak at p ≈ 0.5)
+        const wavePeriod = 9.2;
+        final waveTime = elapsed % wavePeriod;
+        double waveProgress;
+        if (waveTime < 4.0) {
+          waveProgress = Curves.easeInOutSine.transform(waveTime / 4.0);
+        } else if (waveTime < 4.4) {
+          waveProgress = 1.0;
+        } else if (waveTime < 8.4) {
+          waveProgress = 1.0 - Curves.easeInOutSine.transform((waveTime - 4.4) / 4.0);
+        } else {
+          waveProgress = 0.0;
+        }
+
+        final distFromCoreCenter = (waveProgress - 0.5).abs();
+        double waveCrossingBoost = 0.0;
+        if (connected && distFromCoreCenter < 0.22) {
+          final normDist = distFromCoreCenter / 0.22;
+          final factor = math.cos(normDist * math.pi / 2);
+          waveCrossingBoost = 0.15 * factor * factor;
+        }
+
+        final baseHaloAlpha = isDark ? 0.14 : 0.08;
+        final breathHaloAlpha = baseHaloAlpha + (breath * 0.08) + waveCrossingBoost;
+        final haloColor = palette.primary.withValues(alpha: breathHaloAlpha.clamp(0.0, 1.0));
+
+        final baseBorderColor = connected
+            ? palette.borderAccent.withValues(alpha: (0.40 + breath * 0.15 + waveCrossingBoost).clamp(0.0, 1.0))
+            : (connecting ? palette.primary.withValues(alpha: 0.35) : (isDark ? const Color(0xFF484848) : const Color(0xFFCCCCCC)));
+
+        final nodeBackground = isDark ? const Color(0xFF1F1F1F) : const Color(0xFFF0F0F0);
+
+        return Container(
+          width: size,
+          height: size,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            color: nodeBackground,
+            border: Border.all(color: baseBorderColor, width: 1.5),
+            boxShadow: connected
+                ? [
+                    BoxShadow(
+                      color: haloColor,
+                      blurRadius: 12 + (waveCrossingBoost * 30),
+                      spreadRadius: 1.5 + (waveCrossingBoost * 2),
+                    ),
+                  ]
+                : null,
+          ),
+          alignment: Alignment.center,
+          child: Transform.rotate(
+            angle: rotationAngle,
+            child: RelaySymbol(
+              size: symbolSize,
+              palette: palette,
+              animated: false,
+              color: connected ? null : (isDark ? const Color(0xFF888888) : const Color(0xFF777777)),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildStaticCore(double size, double symbolSize) {
     final baseBorderColor = connected
         ? palette.borderAccent
         : (connecting ? palette.primary.withValues(alpha: 0.35) : (isDark ? const Color(0xFF484848) : const Color(0xFFCCCCCC)));
@@ -317,15 +705,6 @@ class _RelayLinkCore extends StatelessWidget {
         shape: BoxShape.circle,
         color: nodeBackground,
         border: Border.all(color: baseBorderColor, width: 1.5),
-        boxShadow: connected && !disableMotion
-            ? [
-                BoxShadow(
-                  color: palette.haloColor,
-                  blurRadius: 12,
-                  spreadRadius: 2,
-                ),
-              ]
-            : null,
       ),
       alignment: Alignment.center,
       child: RelaySymbol(
@@ -339,112 +718,6 @@ class _RelayLinkCore extends StatelessWidget {
 }
 
 /// Stylized vector silhouette for a remote device or local desktop.
-class _DeviceSilhouette extends StatelessWidget {
-  final DeviceType deviceType;
-  final RelayDevicePalette palette;
-  final bool connected;
-  final bool connecting;
-  final bool isDark;
-  final bool isLocal;
-  final String label;
-  final String? deviceModel;
-  final bool disableMotion;
-  final RelayAmbientClockNotifier? sharedClock;
-  final bool compact;
-
-  const _DeviceSilhouette({
-    required this.deviceType,
-    required this.palette,
-    required this.connected,
-    required this.connecting,
-    required this.isDark,
-    required this.isLocal,
-    required this.label,
-    this.deviceModel,
-    required this.disableMotion,
-    required this.sharedClock,
-    this.compact = false,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final colorScheme = theme.colorScheme;
-
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      crossAxisAlignment: CrossAxisAlignment.center,
-      children: [
-        SizedBox(
-          width: _silhouetteWidth,
-          height: _silhouetteHeight,
-          child: CustomPaint(
-            painter: _SilhouettePainter(
-              deviceType: deviceType,
-              palette: palette,
-              connected: connected,
-              connecting: connecting,
-              isDark: isDark,
-              isLocal: isLocal,
-              sharedClock: sharedClock,
-              disableMotion: disableMotion,
-            ),
-          ),
-        ),
-        const SizedBox(height: 6),
-        ConstrainedBox(
-          constraints: BoxConstraints(maxWidth: compact ? 90 : 120),
-          child: Text(
-            label,
-            style: theme.textTheme.labelSmall?.copyWith(
-              fontWeight: FontWeight.w600,
-              color: connected ? colorScheme.onSurface : colorScheme.onSurface.withValues(alpha: 0.6),
-            ),
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            textAlign: TextAlign.center,
-          ),
-        ),
-      ],
-    );
-  }
-
-  bool get _isTabletDevice {
-    final lower = '$label ${deviceModel ?? ''}'.toLowerCase();
-    return lower.contains('tab') || lower.contains('pad') || lower.contains('tablet');
-  }
-
-  double get _silhouetteWidth {
-    if (compact) {
-      if (_isTabletDevice) return 52;
-      return switch (deviceType) {
-        DeviceType.mobile => 38,
-        _ => 58,
-      };
-    }
-    if (_isTabletDevice) return 66;
-    return switch (deviceType) {
-      DeviceType.mobile => 48,
-      _ => 76,
-    };
-  }
-
-  double get _silhouetteHeight {
-    if (compact) {
-      if (_isTabletDevice) return 44;
-      return switch (deviceType) {
-        DeviceType.mobile => 64,
-        _ => 44,
-      };
-    }
-    if (_isTabletDevice) return 54;
-    return switch (deviceType) {
-      DeviceType.mobile => 80,
-      _ => 54,
-    };
-  }
-}
-
 class _SilhouettePainter extends CustomPainter {
   final DeviceType deviceType;
   final RelayDevicePalette palette;
@@ -539,7 +812,7 @@ class _SilhouettePainter extends CustomPainter {
       ..color = connected ? palette.primary.withValues(alpha: isDark ? 0.40 : 0.30) : (isDark ? const Color(0xFF444444) : const Color(0xFFCCCCCC));
     canvas.drawRRect(rrect, borderPaint);
 
-    // Top speaker / pill slit
+    // Top speaker slit
     final notchPaint = Paint()
       ..color = isDark ? const Color(0xFF181818) : const Color(0xFFB0B0B0)
       ..style = PaintingStyle.fill;
@@ -636,7 +909,6 @@ class _SilhouettePainter extends CustomPainter {
     final screenPaint = Paint()..style = PaintingStyle.fill;
     if (connected) {
       if (isLocal) {
-        // Local machine gets subtle Yaru warmth and subtle palette reflection
         screenPaint.shader = LinearGradient(
           begin: Alignment.topCenter,
           end: Alignment.bottomCenter,
@@ -681,42 +953,8 @@ class _SilhouettePainter extends CustomPainter {
       disableMotion != oldDelegate.disableMotion;
 }
 
-/// Restrained connection bridge line with travelling live data particles.
-class _BridgeLine extends StatelessWidget {
-  final Axis orientation;
-  final bool connected;
-  final bool connecting;
-  final RelayDevicePalette palette;
-  final bool isDark;
-  final bool disableMotion;
-  final RelayAmbientClockNotifier? sharedClock;
-
-  const _BridgeLine({
-    required this.orientation,
-    required this.connected,
-    required this.connecting,
-    required this.palette,
-    required this.isDark,
-    required this.disableMotion,
-    required this.sharedClock,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return CustomPaint(
-      painter: _BridgePainter(
-        orientation: orientation,
-        connected: connected,
-        connecting: connecting,
-        palette: palette,
-        isDark: isDark,
-        sharedClock: sharedClock,
-        disableMotion: disableMotion,
-      ),
-    );
-  }
-}
-
+/// Single lightweight CustomPainter for the restrained base bridge line and the
+/// softly flowing continuous luminous wave (no particle dots).
 class _BridgePainter extends CustomPainter {
   final Axis orientation;
   final bool connected;
@@ -725,6 +963,10 @@ class _BridgePainter extends CustomPainter {
   final bool isDark;
   final RelayAmbientClockNotifier? sharedClock;
   final bool disableMotion;
+  final Offset startAnchor;
+  final Offset coreLeft;
+  final Offset coreRight;
+  final Offset endAnchor;
 
   _BridgePainter({
     required this.orientation,
@@ -734,249 +976,152 @@ class _BridgePainter extends CustomPainter {
     required this.isDark,
     required this.sharedClock,
     required this.disableMotion,
+    required this.startAnchor,
+    required this.coreLeft,
+    required this.coreRight,
+    required this.endAnchor,
   }) : super(repaint: (!disableMotion && (connected || connecting)) ? sharedClock?.cadenceClock : null);
 
-  double get phase => (!disableMotion && sharedClock != null) ? sharedClock!.elapsedSeconds : 0.0;
+  double get elapsed => (!disableMotion && sharedClock != null) ? sharedClock!.elapsedSeconds : 0.0;
 
   @override
   void paint(Canvas canvas, Size size) {
     if (orientation == Axis.horizontal) {
-      _paintHorizontal(canvas, size);
+      if (endAnchor.dx <= startAnchor.dx) return;
     } else {
-      _paintVertical(canvas, size);
+      if (endAnchor.dy <= startAnchor.dy) return;
     }
-  }
-
-  void _paintHorizontal(Canvas canvas, Size size) {
-    final midY = size.height / 2; // align with silhouette center
-    final leftX = 54.0;
-    final rightX = size.width - 54.0;
-    final centerX = size.width / 2;
-    final coreRadius = 24.0;
-
-    if (rightX <= leftX + coreRadius * 2) return;
 
     final linePaint = Paint()
       ..style = PaintingStyle.stroke
       ..strokeWidth = 1.5;
 
     if (connected) {
-      linePaint.color = palette.primary.withValues(alpha: isDark ? 0.32 : 0.22);
-      // Segment 1: Left device to Core
-      canvas.drawLine(Offset(leftX, midY), Offset(centerX - coreRadius, midY), linePaint);
-      // Segment 2: Core to Right device
-      canvas.drawLine(Offset(centerX + coreRadius, midY), Offset(rightX, midY), linePaint);
+      // Base bridge line: restrained neutral hairline mixed with device palette
+      final baseColor = isDark ? palette.primary.withValues(alpha: 0.32) : palette.primary.withValues(alpha: 0.22);
+      linePaint.color = baseColor;
 
-      // Draw travelling data packet train when motion is active
-      if (!disableMotion && phase > 0) {
-        final trainDotCount = 6;
-        final dotSpacing = 8.0;
-        final coreRadius = 24.0;
-        final flashDuration = 0.15; // seconds
+      // Segment 1: Remote endpoint to Core outer radius
+      canvas.drawLine(startAnchor, coreLeft, linePaint);
+      // Segment 2: Core outer radius to Local endpoint
+      canvas.drawLine(coreRight, endAnchor, linePaint);
 
-        // Forward train (remote → local)
-        final cycleA = 3.2; // total travel time
-        final progressA = (phase % cycleA) / cycleA;
-        final startXA = leftX + dotSpacing;
-        final endXA = rightX - dotSpacing;
-        final travelDistA = endXA - startXA;
-        double? currentXA;
-        for (int i = 0; i < trainDotCount; i++) {
-          final offset = i * (dotSpacing + 2.0);
-          final pos = startXA + (travelDistA * progressA) - offset;
-          if (i == 0) currentXA = pos;
-          if (pos < startXA || pos > endXA) continue;
-          final radius = 5.0 - i * 0.5;
-          final opacity = 1.0 - (i * 0.12);
-          final paint = Paint()
-            ..style = PaintingStyle.fill
-            ..color = Colors.white.withValues(alpha: opacity);
-          final glow = Paint()
-            ..style = PaintingStyle.fill
-            ..color = palette.primary.withValues(alpha: (isDark ? 0.7 : 0.5) * opacity);
-          canvas.drawCircle(Offset(pos, midY), radius + 2, glow);
-          canvas.drawCircle(Offset(pos, midY), radius, paint);
-        }
-
-        // Reverse train (local → remote)
-        final cycleB = 4.8;
-        final progressB = 1.0 - ((phase % cycleB) / cycleB);
-        final startXB = rightX - dotSpacing;
-        final endXB = leftX + dotSpacing;
-        final travelDistB = startXB - endXB;
-        double? currentXB;
-        for (int i = 0; i < trainDotCount; i++) {
-          final offset = i * (dotSpacing + 2.0);
-          final pos = startXB - (travelDistB * progressB) + offset;
-          if (i == 0) currentXB = pos;
-          if (pos < endXB || pos > startXB) continue;
-          final radius = 4.0 - i * 0.4;
-          final opacity = 0.85 - (i * 0.1);
-          final paint = Paint()
-            ..style = PaintingStyle.fill
-            ..color = Colors.white.withValues(alpha: opacity);
-          final glow = Paint()
-            ..style = PaintingStyle.fill
-            ..color = palette.secondary.withValues(alpha: (isDark ? 0.5 : 0.35) * opacity);
-          canvas.drawCircle(Offset(pos, midY), radius + 2, glow);
-          canvas.drawCircle(Offset(pos, midY), radius, paint);
-        }
-
-        // Core flash when either train passes through core region
-        final coreCenter = Offset(centerX, midY);
-        final coreFlashPaint = Paint()
-          ..style = PaintingStyle.stroke
-          ..strokeWidth = 4.0
-          ..color = palette.haloColor.withValues(alpha: 0.6);
-        // Simple flash based on phase proximity to core crossing
-        final coreCrossA = (currentXA ?? leftX) - coreCenter.dx;
-        final coreCrossB = (currentXB ?? rightX) - coreCenter.dx;
-        if ((coreCrossA.abs() < coreRadius && (phase % cycleA) < flashDuration) ||
-            (coreCrossB.abs() < coreRadius && (phase % cycleB) < flashDuration)) {
-          canvas.drawCircle(coreCenter, coreRadius + 6, coreFlashPaint);
-        }
-
-        // Endpoint highlight when train reaches endpoints
-        final endpointPaint = Paint()
-          ..style = PaintingStyle.stroke
-          ..strokeWidth = 3.0
-          ..color = palette.primary.withValues(alpha: 0.5);
-        // Forward reaching right endpoint
-        if ((currentXA ?? leftX) > rightX - coreRadius && (phase % cycleA) < flashDuration) {
-          canvas.drawCircle(Offset(rightX, midY), 8, endpointPaint);
-        }
-        // Reverse reaching left endpoint
-        if ((currentXB ?? rightX) < leftX + coreRadius && (phase % cycleB) < flashDuration) {
-          canvas.drawCircle(Offset(leftX, midY), 8, endpointPaint);
-        }
+      // Continuous luminous glow wave (no packet dots)
+      if (!disableMotion && elapsed > 0) {
+        _paintLuminousGlow(canvas);
       }
     } else if (connecting) {
-      // Dashed moving line for connecting
+      // Connecting: dashed forming line
       linePaint.color = palette.primary.withValues(alpha: isDark ? 0.45 : 0.30);
-      _drawDashedLine(canvas, Offset(leftX, midY), Offset(centerX - coreRadius, midY), linePaint, 4, 4, phase * 10);
-      _drawDashedLine(canvas, Offset(centerX + coreRadius, midY), Offset(rightX, midY), linePaint, 4, 4, phase * 10);
+      final phaseOffset = elapsed * 12.0;
+      _drawDashedLine(canvas, startAnchor, coreLeft, linePaint, 4, 4, phaseOffset);
+      _drawDashedLine(canvas, coreRight, endAnchor, linePaint, 4, 4, phaseOffset);
     } else {
-      // Offline: faded broken line
+      // Offline / Paired: muted static broken line
       linePaint.color = isDark ? const Color(0xFF383838) : const Color(0xFFD8D8D8);
-      _drawDashedLine(canvas, Offset(leftX, midY), Offset(centerX - coreRadius, midY), linePaint, 3, 6, 0);
-      _drawDashedLine(canvas, Offset(centerX + coreRadius, midY), Offset(rightX, midY), linePaint, 3, 6, 0);
+      _drawDashedLine(canvas, startAnchor, coreLeft, linePaint, 3, 6, 0);
+      _drawDashedLine(canvas, coreRight, endAnchor, linePaint, 3, 6, 0);
     }
   }
 
-  void _paintVertical(Canvas canvas, Size size) {
-    final midX = size.width / 2;
-    final topY = 48.0;
-    final bottomY = size.height - 48.0;
-    final centerY = size.height / 2;
-    final coreRadius = 22.0;
+  void _paintLuminousGlow(Canvas canvas) {
+    // Complete cycle:
+    // 0.0 .. 4.0s: Remote → Local (4.0s)
+    // 4.0 .. 4.4s: Soft hold at Local (0.4s)
+    // 4.4 .. 8.4s: Local → Remote (4.0s)
+    // 8.4 .. 9.2s: Rest at Remote (0.8s)
+    const totalCycle = 9.2;
+    final cycleTime = elapsed % totalCycle;
 
-    if (bottomY <= topY + coreRadius * 2) return;
-
-    final linePaint = Paint()
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 1.5;
-
-    if (connected) {
-      linePaint.color = palette.primary.withValues(alpha: isDark ? 0.32 : 0.22);
-      canvas.drawLine(Offset(midX, topY), Offset(midX, centerY - coreRadius), linePaint);
-      canvas.drawLine(Offset(midX, centerY + coreRadius), Offset(midX, bottomY), linePaint);
-
-      // Draw travelling data packet train when motion is active
-      if (!disableMotion && phase > 0) {
-        final trainDotCount = 6;
-        final dotSpacing = 8.0;
-        final flashDuration = 0.15; // seconds
-
-        // Forward train (top → bottom)
-        final cycleA = 3.2;
-        final progressA = (phase % cycleA) / cycleA;
-        final startYA = topY + dotSpacing;
-        final endYA = bottomY - dotSpacing;
-        final travelDistA = endYA - startYA;
-        double? currentYA;
-        for (int i = 0; i < trainDotCount; i++) {
-          final offset = i * (dotSpacing + 2.0);
-          final pos = startYA + (travelDistA * progressA) - offset;
-          if (i == 0) currentYA = pos;
-          if (pos < startYA || pos > endYA) continue;
-          final radius = 5.0 - i * 0.5;
-          final opacity = 1.0 - (i * 0.12);
-          final paint = Paint()
-            ..style = PaintingStyle.fill
-            ..color = Colors.white.withValues(alpha: opacity);
-          final glow = Paint()
-            ..style = PaintingStyle.fill
-            ..color = palette.primary.withValues(alpha: (isDark ? 0.7 : 0.5) * opacity);
-          canvas.drawCircle(Offset(midX, pos), radius + 2, glow);
-          canvas.drawCircle(Offset(midX, pos), radius, paint);
-        }
-
-        // Reverse train (bottom → top)
-        final cycleB = 4.8;
-        final progressB = 1.0 - ((phase % cycleB) / cycleB);
-        final startYB = bottomY - dotSpacing;
-        final endYB = topY + dotSpacing;
-        final travelDistB = startYB - endYB;
-        double? currentYB;
-        for (int i = 0; i < trainDotCount; i++) {
-          final offset = i * (dotSpacing + 2.0);
-          final pos = startYB - (travelDistB * progressB) + offset;
-          if (i == 0) currentYB = pos;
-          if (pos < endYB || pos > startYB) continue;
-          final radius = 4.0 - i * 0.4;
-          final opacity = 0.85 - (i * 0.1);
-          final paint = Paint()
-            ..style = PaintingStyle.fill
-            ..color = Colors.white.withValues(alpha: opacity);
-          final glow = Paint()
-            ..style = PaintingStyle.fill
-            ..color = palette.secondary.withValues(alpha: (isDark ? 0.5 : 0.35) * opacity);
-          canvas.drawCircle(Offset(midX, pos), radius + 2, glow);
-          canvas.drawCircle(Offset(midX, pos), radius, paint);
-        }
-
-        // Core flash when either train passes through core region
-        final coreCenter = Offset(midX, centerY);
-        final coreFlashPaint = Paint()
-          ..style = PaintingStyle.stroke
-          ..strokeWidth = 4.0
-          ..color = palette.haloColor.withValues(alpha: 0.6);
-        final coreCrossA = (currentYA ?? topY) - coreCenter.dy;
-        final coreCrossB = (currentYB ?? bottomY) - coreCenter.dy;
-        if ((coreCrossA.abs() < coreRadius && (phase % cycleA) < flashDuration) ||
-            (coreCrossB.abs() < coreRadius && (phase % cycleB) < flashDuration)) {
-          canvas.drawCircle(coreCenter, coreRadius + 6, coreFlashPaint);
-        }
-
-        // Endpoint highlight when train reaches endpoints
-        final endpointPaint = Paint()
-          ..style = PaintingStyle.stroke
-          ..strokeWidth = 3.0
-          ..color = palette.primary.withValues(alpha: 0.5);
-        // Forward reaching bottom endpoint
-        if ((currentYA ?? topY) > bottomY - coreRadius && (phase % cycleA) < flashDuration) {
-          canvas.drawCircle(Offset(midX, bottomY), 8, endpointPaint);
-        }
-        // Reverse reaching top endpoint
-        if ((currentYB ?? bottomY) < topY + coreRadius && (phase % cycleB) < flashDuration) {
-          canvas.drawCircle(Offset(midX, topY), 8, endpointPaint);
-        }
-      }
-    } else if (connecting) {
-      linePaint.color = palette.primary.withValues(alpha: isDark ? 0.45 : 0.30);
-      _drawDashedLine(canvas, Offset(midX, topY), Offset(midX, centerY - coreRadius), linePaint, 4, 4, phase * 10);
-      _drawDashedLine(canvas, Offset(midX, centerY + coreRadius), Offset(midX, bottomY), linePaint, 4, 4, phase * 10);
+    double progress;
+    if (cycleTime < 4.0) {
+      final u = cycleTime / 4.0;
+      progress = Curves.easeInOutSine.transform(u);
+    } else if (cycleTime < 4.4) {
+      progress = 1.0;
+    } else if (cycleTime < 8.4) {
+      final u = (cycleTime - 4.4) / 4.0;
+      progress = 1.0 - Curves.easeInOutSine.transform(u);
     } else {
-      linePaint.color = isDark ? const Color(0xFF383838) : const Color(0xFFD8D8D8);
-      _drawDashedLine(canvas, Offset(midX, topY), Offset(midX, centerY - coreRadius), linePaint, 3, 6, 0);
-      _drawDashedLine(canvas, Offset(midX, centerY + coreRadius), Offset(midX, bottomY), linePaint, 3, 6, 0);
+      progress = 0.0;
     }
+
+    final isResting = cycleTime >= 8.4;
+    if (isResting) return;
+
+    // Luminous region occupies roughly 28% of the full bridge length
+    const waveWidth = 0.28;
+    final p = progress;
+    final w = waveWidth;
+
+    final s0 = (p - w).clamp(0.0, 1.0);
+    final s1 = (p - w * 0.5).clamp(0.0, 1.0);
+    final s2 = p.clamp(0.0, 1.0);
+    final s3 = (p + w * 0.5).clamp(0.0, 1.0);
+    final s4 = (p + w).clamp(0.0, 1.0);
+
+    final peakColor = isDark ? Color.lerp(palette.secondary, Colors.white, 0.40)! : Color.lerp(palette.secondary, Colors.white, 0.20)!;
+
+    final stops = <double>[];
+    final colors = <Color>[];
+
+    void addStop(double stop, Color color) {
+      if (stops.isEmpty || stop > stops.last + 0.0001) {
+        stops.add(stop);
+        colors.add(color);
+      }
+    }
+
+    addStop(0.0, palette.primary.withValues(alpha: 0.0));
+    if (s0 > 0.0) addStop(s0, palette.primary.withValues(alpha: 0.0));
+    if (s1 > s0) addStop(s1, palette.primary.withValues(alpha: isDark ? 0.40 : 0.28));
+    if (s2 > s1) addStop(s2, peakColor.withValues(alpha: isDark ? 0.95 : 0.82));
+    if (s3 > s2) addStop(s3, palette.secondary.withValues(alpha: isDark ? 0.40 : 0.28));
+    if (s4 > s3 && s4 < 1.0) addStop(s4, palette.primary.withValues(alpha: 0.0));
+    addStop(1.0, palette.primary.withValues(alpha: 0.0));
+
+    if (stops.length < 2) return;
+
+    final gradient = LinearGradient(
+      begin: orientation == Axis.horizontal ? Alignment.centerLeft : Alignment.topCenter,
+      end: orientation == Axis.horizontal ? Alignment.centerRight : Alignment.bottomCenter,
+      stops: stops,
+      colors: colors,
+    );
+
+    final lineRect = Rect.fromPoints(
+      Offset(startAnchor.dx - 2, startAnchor.dy - 2),
+      Offset(endAnchor.dx + 2, endAnchor.dy + 2),
+    );
+    final glowShader = gradient.createShader(lineRect);
+
+    // Pass 1: Soft luminous bloom stroke (3.0px)
+    final bloomPaint = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 3.0
+      ..shader = glowShader
+      ..strokeCap = StrokeCap.round;
+
+    canvas.drawLine(startAnchor, coreLeft, bloomPaint);
+    canvas.drawLine(coreRight, endAnchor, bloomPaint);
+
+    // Pass 2: Sharp core luminous wave (1.5px)
+    final corePaint = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.5
+      ..shader = glowShader
+      ..strokeCap = StrokeCap.round;
+
+    canvas.drawLine(startAnchor, coreLeft, corePaint);
+    canvas.drawLine(coreRight, endAnchor, corePaint);
   }
 
   void _drawDashedLine(Canvas canvas, Offset p1, Offset p2, Paint paint, double dashWidth, double dashSpace, double offset) {
     final dx = p2.dx - p1.dx;
     final dy = p2.dy - p1.dy;
     final count = math.sqrt(dx * dx + dy * dy);
+    if (count <= 0) return;
+
     final unitX = dx / count;
     final unitY = dy / count;
 
@@ -1005,5 +1150,9 @@ class _BridgePainter extends CustomPainter {
       connecting != oldDelegate.connecting ||
       palette != oldDelegate.palette ||
       isDark != oldDelegate.isDark ||
-      disableMotion != oldDelegate.disableMotion;
+      disableMotion != oldDelegate.disableMotion ||
+      startAnchor != oldDelegate.startAnchor ||
+      coreLeft != oldDelegate.coreLeft ||
+      coreRight != oldDelegate.coreRight ||
+      endAnchor != oldDelegate.endAnchor;
 }

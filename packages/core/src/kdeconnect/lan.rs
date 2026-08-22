@@ -68,6 +68,32 @@ impl Default for LanConfig {
     }
 }
 
+/// Where a reply produced while handling an inbound packet is sent: always the
+/// transport the packet itself arrived on. Answering a `kdeconnect.relay.ping`
+/// over a *different* route than it came in on would make one route's liveness
+/// look like the other's.
+pub(crate) enum PacketReplyRoute {
+    /// The LAN writer channel belonging to the connection that delivered the packet.
+    Lan(mpsc::Sender<Vec<u8>>),
+    #[cfg(feature = "kdeconnect-wan")]
+    Wan(Arc<crate::kdeconnect::wan::WanLink>),
+}
+
+impl PacketReplyRoute {
+    async fn send(&self, packet: &NetworkPacket) {
+        match self {
+            PacketReplyRoute::Lan(tx) => {
+                let _ = tx.send(packet.serialize()).await;
+            }
+            #[cfg(feature = "kdeconnect-wan")]
+            PacketReplyRoute::Wan(link) => {
+                use crate::kdeconnect::wan::TransportLink as _;
+                let _ = link.send_packet(packet).await;
+            }
+        }
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct ObservedDevice {
     pub device_id: String,
@@ -557,6 +583,191 @@ impl LanInner {
         )
     }
 
+
+    /// Handles one KDE `NetworkPacket` that arrived over *any* transport.
+    ///
+    /// This is the single dispatch chain shared by the LAN reader task and the
+    /// Relay WAN receive task, so a feature's behaviour never depends on which
+    /// transport delivered its packet -- there is deliberately no `if wan {}`
+    /// branch below. Anything replied to here goes back over `reply`, i.e. the
+    /// same route the packet arrived on, which is also what keeps per-route
+    /// liveness honest: a WAN pong must never be evidence that LAN is alive.
+    ///
+    /// Excluded on purpose and handled by the LAN reader alone: `kdeconnect.pair`
+    /// (pairing is only ever performed over an authenticated LAN session) and
+    /// `kdeconnect.relay.wan.identity` (WAN endpoint enrolment must be learned
+    /// from a LAN link, never from a WAN peer describing itself).
+    ///
+    /// Returns `false` if no branch claimed the packet, so each caller can log
+    /// the miss in its own terms.
+    async fn handle_transport_packet(
+        self: &Arc<Self>,
+        device_id: &str,
+        packet: &NetworkPacket,
+        reply: &PacketReplyRoute,
+    ) -> bool {
+        let read_inner = self;
+        let read_id: String = device_id.to_owned();
+        if let Ok(battery) = packet.as_battery() {
+            tracing::info!(
+                "[KDE Connect][RX] type=kdeconnect.battery currentCharge={} isCharging={} thresholdEvent={:?}",
+                battery.current_charge,
+                battery.is_charging,
+                battery.threshold_event
+            );
+            read_inner.battery.lock().await.insert(
+                read_id.clone(),
+                BatteryState {
+                    current_charge: battery.current_charge,
+                    is_charging: battery.is_charging,
+                    threshold_event: battery.threshold_event,
+                },
+            );
+            read_inner.emit_devices().await;
+        } else if let Ok(report) = packet.as_connectivity_report() {
+            let selected = report.selected_signal().map(|(_, signal)| {
+                (signal.network_type.clone(), signal.signal_strength)
+            });
+            tracing::info!(
+                "[KDE Connectivity] device={} signals={} selectedType={} selectedLevel={}",
+                read_id,
+                report.signal_strengths.len(),
+                selected.as_ref().map(|(kind, _)| kind.as_str()).unwrap_or("Unknown"),
+                selected.as_ref().map(|(_, level)| level.to_string()).unwrap_or_else(|| "unknown".to_string()),
+            );
+            read_inner.connectivity.lock().await.insert(
+                read_id.clone(),
+                ConnectivityState {
+                    report,
+                    stale: false,
+                },
+            );
+            read_inner.emit_devices().await;
+        } else if let Ok(clipboard) = packet.as_clipboard() {
+            let now_ms = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_millis() as i64)
+                .unwrap_or(0);
+            let ts = clipboard.timestamp.unwrap_or(now_ms);
+            let mut cb_map = read_inner.clipboard.lock().await;
+            let prev_ts = cb_map.get(&read_id).copied().unwrap_or(0);
+            if ts >= prev_ts {
+                cb_map.insert(read_id.clone(), ts);
+                drop(cb_map);
+                let _ =
+                    read_inner
+                        .event_tx
+                        .send(KdeConnectEvent::ClipboardReceived {
+                            device_id: read_id.clone(),
+                            content: clipboard.content,
+                            timestamp_ms: ts,
+                        });
+            }
+        } else if let Ok(ping) = packet.as_ping() {
+            tracing::info!("[KDE Connect] Received ping from {read_id}");
+            let _ = read_inner.event_tx.send(KdeConnectEvent::PingReceived {
+                device_id: read_id.clone(),
+                message: ping.message,
+            });
+        } else if let Ok(heartbeat) = packet.as_relay_ping() {
+            // Relay-native heartbeat: echo a pong immediately and
+            // record that this device is live right now, over
+            // whichever transport delivered it.
+            read_inner.record_heartbeat_seen(&read_id).await;
+            reply
+                .send(&RelayHeartbeatBody::pong(heartbeat.nonce, heartbeat.timestamp))
+                .await;
+        } else if let Ok(heartbeat) = packet.as_relay_pong() {
+            read_inner.record_heartbeat_rtt(&read_id, heartbeat.timestamp).await;
+        } else if let Ok(state) = packet.as_relay_device_state() {
+            if state.is_request {
+                reply.send(&read_inner.local_device_state_packet()).await;
+            } else {
+                read_inner.handle_relay_device_state(&read_id, state).await;
+            }
+        } else if let Ok(notif) = packet.as_notification() {
+            let mut notifs_map = read_inner.notifications.lock().await;
+            let list = notifs_map.entry(read_id.clone()).or_default();
+            if notif.is_cancel {
+                list.retain(|n| n.id != notif.id);
+            } else {
+                if let Some(existing) = list.iter_mut().find(|n| n.id == notif.id) {
+                    existing.app_name =
+                        notif.app_name.or(existing.app_name.clone());
+                    existing.title = notif.title.or(existing.title.clone());
+                    existing.text = notif.text.or(existing.text.clone());
+                    existing.time = notif.time.or(existing.time.clone());
+                    if let Some(c) = notif.is_clearable {
+                        existing.is_clearable = c;
+                    }
+                    if let Some(s) = notif.silent {
+                        existing.silent = s;
+                    }
+                } else {
+                    list.push(KdeNotification {
+                        id: notif.id,
+                        app_name: notif.app_name,
+                        title: notif.title,
+                        text: notif.text,
+                        time: notif.time,
+                        is_clearable: notif.is_clearable.unwrap_or(true),
+                        silent: notif.silent.unwrap_or(false),
+                    });
+                }
+            }
+            let current_notifs = list.clone();
+            drop(notifs_map);
+            let _ =
+                read_inner
+                    .event_tx
+                    .send(KdeConnectEvent::NotificationsChanged {
+                        device_id: read_id.clone(),
+                        notifications: current_notifs,
+                    });
+        } else if packet.packet_type == crate::kdeconnect::PACKET_TYPE_SMS_MESSAGES
+        {
+            tracing::info!(
+                "[RelaySmsBridge] RECEIVE device={} packetType={}",
+                read_id,
+                packet.packet_type
+            );
+            match packet.as_sms_messages() {
+                Ok(sms) => {
+                    tracing::info!(
+                        "[RelaySmsBridge] PARSE success device={} packetType={} messages={}",
+                        read_id,
+                        packet.packet_type,
+                        sms.messages.len()
+                    );
+                    read_inner.merge_sms_messages(&read_id, sms.messages).await;
+                }
+                Err(error) => tracing::warn!(
+                    "[RelaySmsBridge] PARSE failed device={} packetType={} reason={}",
+                    read_id,
+                    packet.packet_type,
+                    error
+                ),
+            }
+        } else if let Ok(telephony) = packet.as_telephony() {
+            let event = crate::kdeconnect::KdeTelephonyEvent {
+                event: telephony.event,
+                is_cancel: telephony.is_cancel,
+                phone_number: telephony.phone_number,
+                contact_name: telephony.contact_name,
+                phone_thumbnail: telephony.phone_thumbnail,
+            };
+            let _ = read_inner
+                .event_tx
+                .send(KdeConnectEvent::TelephonyReceived {
+                    device_id: read_id.clone(),
+                    event,
+                });
+        } else {
+            return false;
+        }
+        true
+    }
+
     async fn handle_relay_device_state(&self, device_id: &str, state: crate::kdeconnect::packet::RelayDeviceStateBody) {
         self.record_heartbeat_seen(device_id).await;
         if let Some(percent) = state.battery_percent.and_then(|value| i32::try_from(value).ok()) {
@@ -846,6 +1057,36 @@ impl LanInner {
     pub(crate) async fn adopt_wan_link(self: &Arc<Self>, link: crate::kdeconnect::wan::WanLink) {
         use crate::kdeconnect::wan::{TransportKind, TransportLink, WanIncomingEvent};
         let device_id = link.device_id().to_owned();
+
+        // A WAN-only session never sees a `kdeconnect.identity` packet, so
+        // without this the peer's capability lists would stay empty and every
+        // capability-gated send (`ensure_peer_accepts`) would be refused
+        // locally -- notifications and SMS would silently do nothing after a
+        // desktop restart while the phone is on mobile data. The WAN hello
+        // carries the same canonical lists the LAN identity packet does.
+        let hello = link.remote_hello();
+        if !hello.incoming_capabilities.is_empty() || !hello.outgoing_capabilities.is_empty() {
+            let incoming = hello.incoming_capabilities.clone();
+            let outgoing = hello.outgoing_capabilities.clone();
+            tracing::info!(
+                "[Relay WAN][CAPS] device={device_id} incoming={} outgoing={}",
+                incoming.len(),
+                outgoing.len()
+            );
+            let mut merged = incoming.clone();
+            merged.extend(outgoing.clone());
+            self.wan_bindings.set_capabilities(&device_id, merged);
+            self.peer_capabilities
+                .lock()
+                .await
+                .insert(device_id.clone(), (incoming, outgoing));
+        } else {
+            tracing::debug!(
+                "[Relay WAN][CAPS] device={device_id} advertised no capability lists; \
+                 keeping whatever LAN already taught us"
+            );
+        }
+
         let link = Arc::new(link);
         let epoch = self.conn_epoch.fetch_add(1, Ordering::Relaxed);
         self.router.register(link.clone());
@@ -869,36 +1110,23 @@ impl LanInner {
                 match link.recv_incoming().await {
                     Some(WanIncomingEvent::Packet(packet)) => {
                         inner.record_route_seen(&device_id, TransportKind::RelayWan).await;
-                        if let Ok(heartbeat) = packet.as_relay_ping() {
-                            inner.record_heartbeat_seen(&device_id).await;
-                            let _ = link
-                                .send_packet(&RelayHeartbeatBody::pong(heartbeat.nonce, heartbeat.timestamp))
-                                .await;
-                        } else if let Ok(heartbeat) = packet.as_relay_pong() {
-                            inner.record_heartbeat_rtt(&device_id, heartbeat.timestamp).await;
-                        } else if let Ok(state) = packet.as_relay_device_state() {
-                            if state.is_request {
-                                let _ = link.send_packet(&inner.local_device_state_packet()).await;
-                            } else {
-                                inner.handle_relay_device_state(&device_id, state).await;
-                            }
-                        } else if let Ok(battery) = packet.as_battery() {
-                            inner.battery.lock().await.insert(device_id.clone(), BatteryState {
-                                current_charge: battery.current_charge,
-                                is_charging: battery.is_charging,
-                                threshold_event: battery.threshold_event,
-                            });
-                            inner.record_heartbeat_seen(&device_id).await;
-                            inner.emit_devices().await;
-                        } else if let Ok(ping) = packet.as_ping() {
-                            let _ = inner.event_tx.send(KdeConnectEvent::PingReceived {
-                                device_id: device_id.clone(), message: ping.message,
-                            });
-                        } else {
-                            // Full LAN plugin parity (battery, clipboard, sms, ...)
-                            // over Relay WAN is not wired up in this pass -- only
-                            // the relay heartbeat/device_state packets are handled
-                            // here today.
+                        // Pairing is a LAN-only operation. A WAN peer is
+                        // already authenticated by its bound EndpointId, so a
+                        // pair packet here can only be an attempt to change
+                        // trust over a transport that must never grant it.
+                        if packet.packet_type == crate::kdeconnect::PACKET_TYPE_PAIR {
+                            tracing::warn!(
+                                "[Relay WAN] refused a {} packet from {device_id}: pairing is LAN-only",
+                                packet.packet_type
+                            );
+                        } else if !inner
+                            .handle_transport_packet(
+                                &device_id,
+                                &packet,
+                                &PacketReplyRoute::Wan(Arc::clone(&link)),
+                            )
+                            .await
+                        {
                             tracing::debug!(
                                 "[Relay WAN] unhandled packet type over WAN: {}",
                                 packet.packet_type
@@ -2181,83 +2409,6 @@ async fn finish_secure_link(
                                     effect,
                                 )
                                 .await;
-                        } else if let Ok(battery) = packet.as_battery() {
-                            tracing::info!(
-                                "[KDE Connect][RX] type=kdeconnect.battery currentCharge={} isCharging={} thresholdEvent={:?}",
-                                battery.current_charge,
-                                battery.is_charging,
-                                battery.threshold_event
-                            );
-                            read_inner.battery.lock().await.insert(
-                                read_id.clone(),
-                                BatteryState {
-                                    current_charge: battery.current_charge,
-                                    is_charging: battery.is_charging,
-                                    threshold_event: battery.threshold_event,
-                                },
-                            );
-                            read_inner.emit_devices().await;
-                        } else if let Ok(report) = packet.as_connectivity_report() {
-                            let selected = report.selected_signal().map(|(_, signal)| {
-                                (signal.network_type.clone(), signal.signal_strength)
-                            });
-                            tracing::info!(
-                                "[KDE Connectivity] device={} signals={} selectedType={} selectedLevel={}",
-                                read_id,
-                                report.signal_strengths.len(),
-                                selected.as_ref().map(|(kind, _)| kind.as_str()).unwrap_or("Unknown"),
-                                selected.as_ref().map(|(_, level)| level.to_string()).unwrap_or_else(|| "unknown".to_string()),
-                            );
-                            read_inner.connectivity.lock().await.insert(
-                                read_id.clone(),
-                                ConnectivityState {
-                                    report,
-                                    stale: false,
-                                },
-                            );
-                            read_inner.emit_devices().await;
-                        } else if let Ok(clipboard) = packet.as_clipboard() {
-                            let now_ms = std::time::SystemTime::now()
-                                .duration_since(std::time::UNIX_EPOCH)
-                                .map(|d| d.as_millis() as i64)
-                                .unwrap_or(0);
-                            let ts = clipboard.timestamp.unwrap_or(now_ms);
-                            let mut cb_map = read_inner.clipboard.lock().await;
-                            let prev_ts = cb_map.get(&read_id).copied().unwrap_or(0);
-                            if ts >= prev_ts {
-                                cb_map.insert(read_id.clone(), ts);
-                                drop(cb_map);
-                                let _ =
-                                    read_inner
-                                        .event_tx
-                                        .send(KdeConnectEvent::ClipboardReceived {
-                                            device_id: read_id.clone(),
-                                            content: clipboard.content,
-                                            timestamp_ms: ts,
-                                        });
-                            }
-                        } else if let Ok(ping) = packet.as_ping() {
-                            tracing::info!("[KDE Connect] Received ping from {read_id}");
-                            let _ = read_inner.event_tx.send(KdeConnectEvent::PingReceived {
-                                device_id: read_id.clone(),
-                                message: ping.message,
-                            });
-                        } else if let Ok(heartbeat) = packet.as_relay_ping() {
-                            // Relay-native heartbeat: echo a pong immediately and
-                            // record that this device is live right now, over
-                            // whichever transport delivered it.
-                            read_inner.record_heartbeat_seen(&read_id).await;
-                            let _ = tx
-                                .send(RelayHeartbeatBody::pong(heartbeat.nonce, heartbeat.timestamp).serialize())
-                                .await;
-                        } else if let Ok(heartbeat) = packet.as_relay_pong() {
-                            read_inner.record_heartbeat_rtt(&read_id, heartbeat.timestamp).await;
-                        } else if let Ok(state) = packet.as_relay_device_state() {
-                            if state.is_request {
-                                let _ = tx.send(read_inner.local_device_state_packet().serialize()).await;
-                            } else {
-                                read_inner.handle_relay_device_state(&read_id, state).await;
-                            }
                         } else if let Ok(wan_identity) = packet.as_relay_wan_identity() {
                             #[cfg(feature = "kdeconnect-wan")]
                             read_inner
@@ -2265,84 +2416,10 @@ async fn finish_secure_link(
                                 .await;
                             #[cfg(not(feature = "kdeconnect-wan"))]
                             let _ = wan_identity;
-                        } else if let Ok(notif) = packet.as_notification() {
-                            let mut notifs_map = read_inner.notifications.lock().await;
-                            let list = notifs_map.entry(read_id.clone()).or_default();
-                            if notif.is_cancel {
-                                list.retain(|n| n.id != notif.id);
-                            } else {
-                                if let Some(existing) = list.iter_mut().find(|n| n.id == notif.id) {
-                                    existing.app_name =
-                                        notif.app_name.or(existing.app_name.clone());
-                                    existing.title = notif.title.or(existing.title.clone());
-                                    existing.text = notif.text.or(existing.text.clone());
-                                    existing.time = notif.time.or(existing.time.clone());
-                                    if let Some(c) = notif.is_clearable {
-                                        existing.is_clearable = c;
-                                    }
-                                    if let Some(s) = notif.silent {
-                                        existing.silent = s;
-                                    }
-                                } else {
-                                    list.push(KdeNotification {
-                                        id: notif.id,
-                                        app_name: notif.app_name,
-                                        title: notif.title,
-                                        text: notif.text,
-                                        time: notif.time,
-                                        is_clearable: notif.is_clearable.unwrap_or(true),
-                                        silent: notif.silent.unwrap_or(false),
-                                    });
-                                }
-                            }
-                            let current_notifs = list.clone();
-                            drop(notifs_map);
-                            let _ =
-                                read_inner
-                                    .event_tx
-                                    .send(KdeConnectEvent::NotificationsChanged {
-                                        device_id: read_id.clone(),
-                                        notifications: current_notifs,
-                                    });
-                        } else if packet.packet_type == crate::kdeconnect::PACKET_TYPE_SMS_MESSAGES
+                        } else if !read_inner
+                            .handle_transport_packet(&read_id, &packet, &PacketReplyRoute::Lan(tx.clone()))
+                            .await
                         {
-                            tracing::info!(
-                                "[RelaySmsBridge] RECEIVE device={} packetType={}",
-                                read_id,
-                                packet.packet_type
-                            );
-                            match packet.as_sms_messages() {
-                                Ok(sms) => {
-                                    tracing::info!(
-                                        "[RelaySmsBridge] PARSE success device={} packetType={} messages={}",
-                                        read_id,
-                                        packet.packet_type,
-                                        sms.messages.len()
-                                    );
-                                    read_inner.merge_sms_messages(&read_id, sms.messages).await;
-                                }
-                                Err(error) => tracing::warn!(
-                                    "[RelaySmsBridge] PARSE failed device={} packetType={} reason={}",
-                                    read_id,
-                                    packet.packet_type,
-                                    error
-                                ),
-                            }
-                        } else if let Ok(telephony) = packet.as_telephony() {
-                            let event = crate::kdeconnect::KdeTelephonyEvent {
-                                event: telephony.event,
-                                is_cancel: telephony.is_cancel,
-                                phone_number: telephony.phone_number,
-                                contact_name: telephony.contact_name,
-                                phone_thumbnail: telephony.phone_thumbnail,
-                            };
-                            let _ = read_inner
-                                .event_tx
-                                .send(KdeConnectEvent::TelephonyReceived {
-                                    device_id: read_id.clone(),
-                                    event,
-                                });
-                        } else {
                             tracing::debug!(
                                 "[KDE Connect] Ignored unhandled packet type: {}",
                                 packet.packet_type
@@ -3519,6 +3596,209 @@ mod tests {
     }
 
     #[cfg(feature = "kdeconnect-wan")]
+    /// Builds a `LanInner` with `phone_id` already trusted, for tests that only
+    /// need the packet-handling half and not a real socket.
+    fn dispatch_harness(
+        phone_id: &str,
+    ) -> (
+        Arc<LanInner>,
+        tokio::sync::mpsc::UnboundedReceiver<KdeConnectEvent>,
+    ) {
+        let relay_identity = crate::kdeconnect::LocalIdentity::generate("Relay").unwrap();
+        let phone_identity = crate::kdeconnect::LocalIdentity::generate("Phone").unwrap();
+        let (event_tx, event_rx) = tokio::sync::mpsc::unbounded_channel();
+        let inner = LanInner::new(
+            relay_identity,
+            vec![crate::kdeconnect::TrustedDevice {
+                device_id: phone_id.to_owned(),
+                certificate_pem: phone_identity.certificate_pem.clone(),
+                name: "Phone".into(),
+                device_type: "phone".into(),
+                protocol_version: PROTOCOL_VERSION,
+                paired_at_unix: 123456,
+                wan_endpoint_id: None,
+            }],
+            LanConfig {
+                bind: BindMode::Loopback,
+                allow_loopback: true,
+            },
+            0,
+            event_tx,
+            tokio_util::sync::CancellationToken::new(),
+        );
+        (inner, event_rx)
+    }
+
+    /// Every control-plane packet type that has to keep working while the phone
+    /// is Remote. The WAN receive task and the LAN reader call the *same*
+    /// `handle_transport_packet`, so proving the chain claims each type proves
+    /// it for both transports at once -- there is no separate WAN dispatch to
+    /// drift out of sync with this list.
+    const CONTROL_PLANE_PACKET_TYPES: &[&str] = &[
+        crate::kdeconnect::PACKET_TYPE_BATTERY,
+        crate::kdeconnect::PACKET_TYPE_CONNECTIVITY_REPORT,
+        crate::kdeconnect::PACKET_TYPE_CLIPBOARD,
+        crate::kdeconnect::PACKET_TYPE_PING,
+        crate::kdeconnect::PACKET_TYPE_NOTIFICATION,
+        crate::kdeconnect::PACKET_TYPE_SMS_MESSAGES,
+        crate::kdeconnect::PACKET_TYPE_TELEPHONY,
+        crate::kdeconnect::PACKET_TYPE_RELAY_PING,
+        crate::kdeconnect::PACKET_TYPE_RELAY_PONG,
+        crate::kdeconnect::PACKET_TYPE_RELAY_DEVICE_STATE,
+    ];
+
+    fn minimal_packet(packet_type: &str) -> NetworkPacket {
+        let mut body = serde_json::Map::new();
+        match packet_type {
+            t if t == crate::kdeconnect::PACKET_TYPE_BATTERY => {
+                body.insert("currentCharge".into(), 42.into());
+                body.insert("isCharging".into(), true.into());
+            }
+            t if t == crate::kdeconnect::PACKET_TYPE_CONNECTIVITY_REPORT => {
+                body.insert("signalStrengths".into(), serde_json::json!({}));
+            }
+            t if t == crate::kdeconnect::PACKET_TYPE_CLIPBOARD => {
+                body.insert("content".into(), "hello".into());
+            }
+            t if t == crate::kdeconnect::PACKET_TYPE_NOTIFICATION => {
+                body.insert("id".into(), "notif-1".into());
+                body.insert("appName".into(), "Messages".into());
+                body.insert("title".into(), "Alice".into());
+                body.insert("text".into(), "hi".into());
+            }
+            t if t == crate::kdeconnect::PACKET_TYPE_SMS_MESSAGES => {
+                body.insert("version".into(), 2.into());
+                body.insert("messages".into(), serde_json::json!([]));
+            }
+            t if t == crate::kdeconnect::PACKET_TYPE_TELEPHONY => {
+                body.insert("event".into(), "ringing".into());
+            }
+            t if t == crate::kdeconnect::PACKET_TYPE_RELAY_PING
+                || t == crate::kdeconnect::PACKET_TYPE_RELAY_PONG =>
+            {
+                body.insert("nonce".into(), "nonce-1".into());
+                body.insert("timestamp".into(), 1_700_000_000_000_i64.into());
+            }
+            _ => {}
+        }
+        NetworkPacket::new(packet_type, body)
+    }
+
+    #[tokio::test]
+    async fn the_shared_dispatch_chain_claims_every_control_plane_packet_type() {
+        let phone_id = "a".repeat(32);
+        let (inner, _events) = dispatch_harness(&phone_id);
+        let (tx, _rx) = tokio::sync::mpsc::channel(16);
+        let reply = PacketReplyRoute::Lan(tx);
+
+        for packet_type in CONTROL_PLANE_PACKET_TYPES {
+            let packet = minimal_packet(packet_type);
+            assert!(
+                inner
+                    .handle_transport_packet(&phone_id, &packet, &reply)
+                    .await,
+                "{packet_type} was not claimed by the shared dispatch chain, so it would be \
+                 silently dropped on whichever transport delivered it"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn an_unknown_packet_type_is_reported_unhandled_rather_than_swallowed() {
+        let phone_id = "a".repeat(32);
+        let (inner, _events) = dispatch_harness(&phone_id);
+        let (tx, _rx) = tokio::sync::mpsc::channel(16);
+
+        let packet = NetworkPacket::new("kdeconnect.something.unknown", serde_json::Map::new());
+        assert!(
+            !inner
+                .handle_transport_packet(&phone_id, &packet, &PacketReplyRoute::Lan(tx))
+                .await
+        );
+    }
+
+    #[tokio::test]
+    async fn a_relay_ping_is_answered_on_the_route_it_arrived_on() {
+        let phone_id = "a".repeat(32);
+        let (inner, _events) = dispatch_harness(&phone_id);
+        let (tx, mut rx) = tokio::sync::mpsc::channel(16);
+
+        let ping = minimal_packet(crate::kdeconnect::PACKET_TYPE_RELAY_PING);
+        assert!(
+            inner
+                .handle_transport_packet(&phone_id, &ping, &PacketReplyRoute::Lan(tx))
+                .await
+        );
+
+        let replied = rx.try_recv().expect("a pong must go back on the same route");
+        let parsed = NetworkPacket::parse(&replied).unwrap();
+        assert_eq!(parsed.packet_type, crate::kdeconnect::PACKET_TYPE_RELAY_PONG);
+        let pong = parsed.as_relay_pong().unwrap();
+        assert_eq!(pong.nonce, "nonce-1", "the pong must echo the ping's nonce");
+    }
+
+    #[tokio::test]
+    async fn a_notification_arriving_over_any_transport_reaches_the_notification_event() {
+        let phone_id = "a".repeat(32);
+        let (inner, mut events) = dispatch_harness(&phone_id);
+        let (tx, _rx) = tokio::sync::mpsc::channel(16);
+
+        let packet = minimal_packet(crate::kdeconnect::PACKET_TYPE_NOTIFICATION);
+        assert!(
+            inner
+                .handle_transport_packet(&phone_id, &packet, &PacketReplyRoute::Lan(tx))
+                .await
+        );
+
+        let event = events.try_recv().expect("a NotificationsChanged event");
+        match event {
+            KdeConnectEvent::NotificationsChanged {
+                device_id,
+                notifications,
+            } => {
+                assert_eq!(device_id, phone_id);
+                assert_eq!(notifications.len(), 1);
+                assert_eq!(notifications[0].id, "notif-1");
+                assert_eq!(notifications[0].title.as_deref(), Some("Alice"));
+            }
+            other => panic!("unexpected event: {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn sms_messages_arriving_over_any_transport_are_merged_not_duplicated() {
+        let phone_id = "a".repeat(32);
+        let (inner, _events) = dispatch_harness(&phone_id);
+        let (tx, _rx) = tokio::sync::mpsc::channel(16);
+        let reply = PacketReplyRoute::Lan(tx);
+
+        let mut body = serde_json::Map::new();
+        body.insert("version".into(), 2.into());
+        body.insert(
+            "messages".into(),
+            serde_json::json!([{
+                "_id": 7,
+                "thread_id": 3,
+                "body": "hello",
+                "address": "+15550000",
+                "date": 1_700_000_000_000_i64,
+                "type": 1,
+                "read": 1,
+                "addresses": [{"address": "+15550000"}],
+            }]),
+        );
+        let packet = NetworkPacket::new(crate::kdeconnect::PACKET_TYPE_SMS_MESSAGES, body);
+
+        // Deliver the same message twice, as a LAN session followed by a WAN
+        // session re-sending its backlog would.
+        assert!(inner.handle_transport_packet(&phone_id, &packet, &reply).await);
+        assert!(inner.handle_transport_packet(&phone_id, &packet, &reply).await);
+
+        let messages = inner.get_sms_messages(&phone_id, 3).await;
+        assert_eq!(messages.len(), 1, "the same message must not be stored twice");
+        assert_eq!(messages[0].body, "hello");
+    }
+
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn relay_heartbeat_and_device_state_round_trip_over_the_selected_route() {
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();

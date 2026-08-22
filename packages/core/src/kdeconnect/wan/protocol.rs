@@ -136,6 +136,20 @@ pub struct WanHello {
     pub kde_protocol_version: i64,
     pub capability_digest: String,
     pub app_version: String,
+    /// The peer's KDE capability lists, carried verbatim so a WAN-only
+    /// session learns exactly what a LAN `kdeconnect.identity` packet would
+    /// have taught us. Without this a desktop restarted while the phone is on
+    /// mobile data has no `peer_capabilities` entry at all, and every
+    /// capability-gated send (notification/SMS requests) is refused locally
+    /// before it ever reaches the transport.
+    ///
+    /// Optional so a peer predating this field still completes the handshake;
+    /// an absent list falls back to the previous permissive behaviour rather
+    /// than to "deny everything".
+    #[serde(default)]
+    pub incoming_capabilities: Vec<String>,
+    #[serde(default)]
+    pub outgoing_capabilities: Vec<String>,
 }
 
 #[derive(Debug, Clone, Eq, PartialEq, thiserror::Error)]
@@ -154,6 +168,10 @@ pub enum WanHelloError {
 
 const MAX_TEXT_FIELD_LEN: usize = 256;
 const MAX_DIGEST_FIELD_LEN: usize = 512;
+/// Bound on how many capability strings a hello may declare. The canonical
+/// KDE capability set is well under this; the cap only stops a peer from
+/// making the (already 8 KiB-bounded) hello frame expensive to process.
+const MAX_CAPABILITY_LIST_LEN: usize = 128;
 
 impl WanHello {
     /// Validates a *remote* hello against the identity Relay WAN already
@@ -188,6 +206,16 @@ impl WanHello {
             return Err(WanHelloError::FieldTooLong);
         }
         if self.capability_digest.len() > MAX_DIGEST_FIELD_LEN {
+            return Err(WanHelloError::FieldTooLong);
+        }
+        if self.incoming_capabilities.len() > MAX_CAPABILITY_LIST_LEN
+            || self.outgoing_capabilities.len() > MAX_CAPABILITY_LIST_LEN
+            || self
+                .incoming_capabilities
+                .iter()
+                .chain(self.outgoing_capabilities.iter())
+                .any(|capability| capability.len() > MAX_TEXT_FIELD_LEN)
+        {
             return Err(WanHelloError::FieldTooLong);
         }
         Ok(())
@@ -255,6 +283,8 @@ mod tests {
             kde_protocol_version: 8,
             capability_digest: "digest".to_owned(),
             app_version: "0.2.0".to_owned(),
+            incoming_capabilities: vec!["kdeconnect.notification".to_owned()],
+            outgoing_capabilities: vec!["kdeconnect.sms.request".to_owned()],
         }
     }
 
