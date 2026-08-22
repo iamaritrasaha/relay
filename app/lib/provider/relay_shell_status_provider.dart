@@ -323,8 +323,15 @@ Future<RelayShellStatusBridge?> startRelayShellStatusBridge(Ref ref) async {
     _logger.fine('Querying the shell surface failed', e);
   }
 
-  final desktopNotificationService = RelayDesktopNotificationService();
-  desktopNotificationService.start(ref.stream(kdeConnectProvider).map((event) => event.next.notifications));
+  final desktopNotificationService = RelayDesktopNotificationService(
+    // Activating a banner focuses the device that actually produced it, rather
+    // than whatever happened to be selected. The banner key carries the owning
+    // device, so this is correct even with several phones connected at once.
+    onActivated: (deviceId, notificationId) {
+      ref.notifier(selectedDeviceProvider).selectDevice('$_kdeConnectKeyPrefix$deviceId');
+    },
+  );
+  desktopNotificationService.start(ref.stream(kdeConnectProvider).map((event) => event.next.allNotifications));
 
   bridge.attachTo(
     devices: ref.stream(relayHomeVmProvider).map((event) => event.next.devices),

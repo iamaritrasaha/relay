@@ -11,6 +11,8 @@ use relay_core::kdeconnect::{
     KdeSmsConversation, KdeTelephonyEvent, LanConfig, LocalIdentity, SmsAttachmentMetadata,
     SmsMessage, TrustedDevice,
 };
+use relay_core::kdeconnect::commands::RunCommandEntry;
+use relay_core::kdeconnect::wan::{TransportKind, TransportState, WanIdentity, WanRuntimeConfig};
 
 use crate::frb_generated::StreamSink;
 
@@ -19,6 +21,7 @@ pub struct RsKdeConnectIdentity {
     pub device_name: String,
     pub certificate_pem: String,
     pub private_key_pem: String,
+    pub wan_secret_key: Vec<u8>,
 }
 
 pub struct RsKdeConnectTrustedDevice {
@@ -28,6 +31,7 @@ pub struct RsKdeConnectTrustedDevice {
     pub device_type: String,
     pub protocol_version: i64,
     pub paired_at_unix: i64,
+    pub wan_endpoint_id: Option<String>,
 }
 
 pub struct RsKdeConnectDevice {
@@ -47,6 +51,10 @@ pub struct RsKdeConnectDevice {
     pub connectivity_stale: bool,
     pub incoming_capabilities: Vec<String>,
     pub outgoing_capabilities: Vec<String>,
+    pub transport_kind: Option<String>,
+    pub transport_state: String,
+    pub last_rtt_ms: Option<i64>,
+    pub last_seen_unix: Option<i64>,
 }
 
 pub struct RsKdeNotification {
@@ -136,16 +144,27 @@ pub enum RsKdeConnectEvent {
 
 pub fn kdeconnect_generate_identity(device_name: String) -> anyhow::Result<RsKdeConnectIdentity> {
     let identity = LocalIdentity::generate(&device_name)?;
-    Ok(identity.into())
+    let wan_identity = WanIdentity::generate();
+    let mut identity: RsKdeConnectIdentity = identity.into();
+    identity.wan_secret_key = wan_identity.secret_bytes().to_vec();
+    Ok(identity)
+}
+
+pub fn kdeconnect_generate_wan_secret() -> Vec<u8> {
+    WanIdentity::generate().secret_bytes().to_vec()
 }
 
 pub async fn start_kdeconnect(
     identity: RsKdeConnectIdentity,
     trusted: Vec<RsKdeConnectTrustedDevice>,
+    run_commands: Vec<RsRunCommand>,
 ) -> anyhow::Result<RsKdeConnect> {
     let _ = tracing_subscriber::fmt()
         .with_max_level(tracing::Level::INFO)
         .try_init();
+    let wan_identity = WanIdentity::from_bytes(&identity.wan_secret_key)?;
+    let kde_device_id = identity.device_id.clone();
+    let device_name = identity.device_name.clone();
     let handle = KdeConnectHandle::start(KdeConnectConfig {
         identity: identity.try_into()?,
         trusted: trusted.into_iter().map(Into::into).collect(),
@@ -153,11 +172,72 @@ pub async fn start_kdeconnect(
             bind: BindMode::Any,
             allow_loopback: false,
         },
+        // Seeded here rather than set after start: a phone asks for the command
+        // list once when its plugin starts, and it connects fast enough to beat
+        // a post-start call -- it would then cache an empty list until the next
+        // reconnect.
+        run_commands: run_commands.into_iter().map(Into::into).collect(),
     })
     .await?;
+    handle.enable_wan(WanRuntimeConfig {
+        identity: wan_identity,
+        kde_device_id,
+        device_name,
+        device_type: "desktop".to_owned(),
+        app_version: env!("CARGO_PKG_VERSION").to_owned(),
+        capability_digest: relay_core::kdeconnect::canonical_incoming_capabilities().join("\n"),
+    }).await?;
+    // Media control is best-effort: a machine with no D-Bus session bus still
+    // runs Relay, just without MPRIS. Failing the whole KDE runtime over it
+    // would take LAN and WAN down with it.
+    #[cfg(all(target_os = "linux", feature = "mpris"))]
+    if let Err(error) = handle.enable_media().await {
+        tracing::warn!("[Relay MPRIS] media control unavailable: {error}");
+    }
     Ok(RsKdeConnect {
         handle: Arc::new(handle),
     })
+}
+
+/// One entry in the desktop's RunCommand allow-list.
+///
+/// `id` is generated once and persisted, so a phone's cached id stays valid
+/// across restarts. The phone can only ever name an id -- it never supplies
+/// `command`.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct RsRunCommand {
+    pub id: String,
+    pub name: String,
+    pub command: String,
+    pub enabled: bool,
+}
+
+impl From<RunCommandEntry> for RsRunCommand {
+    fn from(value: RunCommandEntry) -> Self {
+        Self {
+            id: value.id,
+            name: value.name,
+            command: value.command,
+            enabled: value.enabled,
+        }
+    }
+}
+
+impl From<RsRunCommand> for RunCommandEntry {
+    fn from(value: RsRunCommand) -> Self {
+        Self {
+            id: value.id,
+            name: value.name,
+            command: value.command,
+            enabled: value.enabled,
+        }
+    }
+}
+
+/// Generates a stable id for a newly created command, so Dart never has to
+/// invent one and every entry is identified the same way.
+pub fn kdeconnect_new_run_command_id() -> String {
+    RunCommandEntry::new(String::new(), String::new(), false).id
 }
 
 pub struct RsKdeConnect {
@@ -222,6 +302,16 @@ impl RsKdeConnect {
         self.handle.send_ping(&device_id, message).await
     }
 
+    pub async fn send_relay_ping(&self, device_id: String) -> anyhow::Result<()> {
+        self.handle
+            .send_relay_ping(&device_id, &uuid::Uuid::new_v4().to_string())
+            .await
+    }
+
+    pub async fn request_relay_device_state(&self, device_id: String) -> anyhow::Result<()> {
+        self.handle.request_relay_device_state(&device_id).await
+    }
+
     pub async fn find_phone(&self, device_id: String) -> anyhow::Result<()> {
         self.handle.find_phone(&device_id).await
     }
@@ -249,6 +339,66 @@ impl RsKdeConnect {
 
     pub async fn request_notifications(&self, device_id: String) -> anyhow::Result<()> {
         self.handle.request_notifications(&device_id).await
+    }
+
+    /// Dismisses one notification on the logical device that produced it.
+    ///
+    /// Both arguments are required: a remote notification id is unique only
+    /// within its own device, so dismissing by id alone would be ambiguous
+    /// across simultaneously connected phones.
+    pub async fn dismiss_notification(
+        &self,
+        device_id: String,
+        remote_notification_id: String,
+    ) -> anyhow::Result<()> {
+        self.handle
+            .dismiss_notification(&device_id, &remote_notification_id)
+            .await
+    }
+
+    /// Whether remote input is switched on for this desktop.
+    pub fn remote_input_enabled(&self) -> bool {
+        self.handle.remote_input_enabled()
+    }
+
+    pub fn set_remote_input_enabled(&self, enabled: bool) {
+        self.handle.set_remote_input_enabled(enabled);
+    }
+
+    /// Whether an OS-level input session is currently authorised.
+    pub async fn remote_input_ready(&self) -> bool {
+        self.handle.remote_input_ready().await
+    }
+
+    /// Asks the desktop for permission to inject input.
+    ///
+    /// Raises the compositor's own approval dialog, so it must only be called
+    /// from a deliberate user action in Settings -- never at startup, and never
+    /// because a phone sent something.
+    pub async fn authorize_remote_input(&self) -> anyhow::Result<()> {
+        #[cfg(all(target_os = "linux", feature = "remote-input"))]
+        {
+            return self.handle.authorize_remote_input().await;
+        }
+        #[cfg(not(all(target_os = "linux", feature = "remote-input")))]
+        {
+            anyhow::bail!("remote input is not supported on this platform")
+        }
+    }
+
+    pub async fn revoke_remote_input(&self) {
+        self.handle.revoke_remote_input().await;
+    }
+
+    /// Replaces the RunCommand allow-list. Effective immediately for every
+    /// connected device, over both LAN and Relay WAN.
+    pub fn set_run_commands(&self, commands: Vec<RsRunCommand>) {
+        self.handle
+            .set_run_commands(commands.into_iter().map(Into::into).collect());
+    }
+
+    pub fn run_commands(&self) -> Vec<RsRunCommand> {
+        self.handle.run_commands().into_iter().map(Into::into).collect()
     }
 
     pub async fn get_notifications(&self, device_id: String) -> Vec<RsKdeNotification> {
@@ -325,6 +475,7 @@ impl From<LocalIdentity> for RsKdeConnectIdentity {
             device_name: value.device_name,
             certificate_pem: value.certificate_pem,
             private_key_pem: value.private_key_pem,
+            wan_secret_key: Vec::new(),
         }
     }
 }
@@ -351,6 +502,7 @@ impl From<TrustedDevice> for RsKdeConnectTrustedDevice {
             device_type: value.device_type,
             protocol_version: value.protocol_version,
             paired_at_unix: value.paired_at_unix,
+            wan_endpoint_id: value.wan_endpoint_id,
         }
     }
 }
@@ -364,6 +516,7 @@ impl From<RsKdeConnectTrustedDevice> for TrustedDevice {
             device_type: value.device_type,
             protocol_version: value.protocol_version,
             paired_at_unix: value.paired_at_unix,
+            wan_endpoint_id: value.wan_endpoint_id,
         }
     }
 }
@@ -387,6 +540,19 @@ impl From<DeviceSnapshot> for RsKdeConnectDevice {
             connectivity_stale: value.connectivity_stale,
             incoming_capabilities: value.incoming_capabilities,
             outgoing_capabilities: value.outgoing_capabilities,
+            transport_kind: value.transport_kind.map(|kind| match kind {
+                TransportKind::KdeLan => "kdeLan".to_owned(),
+                TransportKind::RelayWan => "relayWan".to_owned(),
+            }),
+            transport_state: match value.transport_state {
+                TransportState::Offline => "offline",
+                TransportState::Local => "local",
+                TransportState::RemoteDirect => "remoteDirect",
+                TransportState::RemoteRelay => "remoteRelay",
+                TransportState::Reconnecting => "reconnecting",
+            }.to_owned(),
+            last_rtt_ms: value.last_rtt_ms,
+            last_seen_unix: value.last_seen_unix,
         }
     }
 }

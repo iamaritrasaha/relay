@@ -9,18 +9,41 @@ import 'package:relay_isolates/rust/frb_generated.dart';
 
 part 'kdeconnect.freezed.dart';
 
-// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `try_from`
+// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `clone`, `eq`, `fmt`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `try_from`
 // These functions are ignored (category: IgnoreBecauseExplicitAttribute): `_keep_frb_imports`
 
 Future<RsKdeConnectIdentity> kdeconnectGenerateIdentity({required String deviceName}) =>
     RustLib.instance.api.crateApiKdeconnectKdeconnectGenerateIdentity(deviceName: deviceName);
 
-Future<RsKdeConnect> startKdeconnect({required RsKdeConnectIdentity identity, required List<RsKdeConnectTrustedDevice> trusted}) =>
-    RustLib.instance.api.crateApiKdeconnectStartKdeconnect(identity: identity, trusted: trusted);
+Future<Uint8List> kdeconnectGenerateWanSecret() => RustLib.instance.api.crateApiKdeconnectKdeconnectGenerateWanSecret();
+
+Future<RsKdeConnect> startKdeconnect({
+  required RsKdeConnectIdentity identity,
+  required List<RsKdeConnectTrustedDevice> trusted,
+  required List<RsRunCommand> runCommands,
+}) => RustLib.instance.api.crateApiKdeconnectStartKdeconnect(identity: identity, trusted: trusted, runCommands: runCommands);
+
+/// Generates a stable id for a newly created command, so Dart never has to
+/// invent one and every entry is identified the same way.
+Future<String> kdeconnectNewRunCommandId() => RustLib.instance.api.crateApiKdeconnectKdeconnectNewRunCommandId();
 
 // Rust type: RustOpaqueMoi<flutter_rust_bridge::for_generated::RustAutoOpaqueInner<RsKdeConnect>>
 abstract class RsKdeConnect implements RustOpaqueInterface {
   Future<void> acceptPair({required String deviceId});
+
+  /// Asks the desktop for permission to inject input.
+  ///
+  /// Raises the compositor's own approval dialog, so it must only be called
+  /// from a deliberate user action in Settings -- never at startup, and never
+  /// because a phone sent something.
+  Future<void> authorizeRemoteInput();
+
+  /// Dismisses one notification on the logical device that produced it.
+  ///
+  /// Both arguments are required: a remote notification id is unique only
+  /// within its own device, so dismissing by id alone would be ambiguous
+  /// across simultaneously connected phones.
+  Future<void> dismissNotification({required String deviceId, required String remoteNotificationId});
 
   Future<void> findPhone({required String deviceId});
 
@@ -36,13 +59,25 @@ abstract class RsKdeConnect implements RustOpaqueInterface {
 
   Future<void> rejectPair({required String deviceId});
 
+  /// Whether remote input is switched on for this desktop.
+  Future<bool> remoteInputEnabled();
+
+  /// Whether an OS-level input session is currently authorised.
+  Future<bool> remoteInputReady();
+
   Future<void> requestNotifications({required String deviceId});
 
   Future<void> requestPair({required String deviceId});
 
+  Future<void> requestRelayDeviceState({required String deviceId});
+
   Future<void> requestSmsConversation({required String deviceId, required PlatformInt64 threadId, PlatformInt64? before});
 
   Future<void> requestSmsConversations({required String deviceId});
+
+  Future<void> revokeRemoteInput();
+
+  Future<List<RsRunCommand>> runCommands();
 
   Future<void> sendClipboard({required String deviceId, required String content, required PlatformInt64 timestampMs});
 
@@ -50,7 +85,15 @@ abstract class RsKdeConnect implements RustOpaqueInterface {
 
   Future<void> sendPing({required String deviceId, String? message});
 
+  Future<void> sendRelayPing({required String deviceId});
+
   Future<void> sendSms({required String deviceId, required List<String> addresses, required String body, int? subId});
+
+  Future<void> setRemoteInputEnabled({required bool enabled});
+
+  /// Replaces the RunCommand allow-list. Effective immediately for every
+  /// connected device, over both LAN and Relay WAN.
+  Future<void> setRunCommands({required List<RsRunCommand> commands});
 
   Future<List<RsKdeConnectDevice>> snapshot();
 
@@ -76,6 +119,10 @@ class RsKdeConnectDevice {
   final bool connectivityStale;
   final List<String> incomingCapabilities;
   final List<String> outgoingCapabilities;
+  final String? transportKind;
+  final String transportState;
+  final PlatformInt64? lastRttMs;
+  final PlatformInt64? lastSeenUnix;
 
   const RsKdeConnectDevice({
     required this.deviceId,
@@ -94,6 +141,10 @@ class RsKdeConnectDevice {
     required this.connectivityStale,
     required this.incomingCapabilities,
     required this.outgoingCapabilities,
+    this.transportKind,
+    required this.transportState,
+    this.lastRttMs,
+    this.lastSeenUnix,
   });
 
   @override
@@ -113,7 +164,11 @@ class RsKdeConnectDevice {
       signalLevel.hashCode ^
       connectivityStale.hashCode ^
       incomingCapabilities.hashCode ^
-      outgoingCapabilities.hashCode;
+      outgoingCapabilities.hashCode ^
+      transportKind.hashCode ^
+      transportState.hashCode ^
+      lastRttMs.hashCode ^
+      lastSeenUnix.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -135,7 +190,11 @@ class RsKdeConnectDevice {
           signalLevel == other.signalLevel &&
           connectivityStale == other.connectivityStale &&
           incomingCapabilities == other.incomingCapabilities &&
-          outgoingCapabilities == other.outgoingCapabilities;
+          outgoingCapabilities == other.outgoingCapabilities &&
+          transportKind == other.transportKind &&
+          transportState == other.transportState &&
+          lastRttMs == other.lastRttMs &&
+          lastSeenUnix == other.lastSeenUnix;
 }
 
 @freezed
@@ -185,16 +244,18 @@ class RsKdeConnectIdentity {
   final String deviceName;
   final String certificatePem;
   final String privateKeyPem;
+  final Uint8List wanSecretKey;
 
   const RsKdeConnectIdentity({
     required this.deviceId,
     required this.deviceName,
     required this.certificatePem,
     required this.privateKeyPem,
+    required this.wanSecretKey,
   });
 
   @override
-  int get hashCode => deviceId.hashCode ^ deviceName.hashCode ^ certificatePem.hashCode ^ privateKeyPem.hashCode;
+  int get hashCode => deviceId.hashCode ^ deviceName.hashCode ^ certificatePem.hashCode ^ privateKeyPem.hashCode ^ wanSecretKey.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -204,7 +265,8 @@ class RsKdeConnectIdentity {
           deviceId == other.deviceId &&
           deviceName == other.deviceName &&
           certificatePem == other.certificatePem &&
-          privateKeyPem == other.privateKeyPem;
+          privateKeyPem == other.privateKeyPem &&
+          wanSecretKey == other.wanSecretKey;
 }
 
 class RsKdeConnectTrustedDevice {
@@ -214,6 +276,7 @@ class RsKdeConnectTrustedDevice {
   final String deviceType;
   final PlatformInt64 protocolVersion;
   final PlatformInt64 pairedAtUnix;
+  final String? wanEndpointId;
 
   const RsKdeConnectTrustedDevice({
     required this.deviceId,
@@ -222,11 +285,18 @@ class RsKdeConnectTrustedDevice {
     required this.deviceType,
     required this.protocolVersion,
     required this.pairedAtUnix,
+    this.wanEndpointId,
   });
 
   @override
   int get hashCode =>
-      deviceId.hashCode ^ certificatePem.hashCode ^ name.hashCode ^ deviceType.hashCode ^ protocolVersion.hashCode ^ pairedAtUnix.hashCode;
+      deviceId.hashCode ^
+      certificatePem.hashCode ^
+      name.hashCode ^
+      deviceType.hashCode ^
+      protocolVersion.hashCode ^
+      pairedAtUnix.hashCode ^
+      wanEndpointId.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -238,7 +308,8 @@ class RsKdeConnectTrustedDevice {
           name == other.name &&
           deviceType == other.deviceType &&
           protocolVersion == other.protocolVersion &&
-          pairedAtUnix == other.pairedAtUnix;
+          pairedAtUnix == other.pairedAtUnix &&
+          wanEndpointId == other.wanEndpointId;
 }
 
 class RsKdeNotification {
@@ -411,4 +482,36 @@ class RsKdeTelephonyEvent {
           phoneNumber == other.phoneNumber &&
           contactName == other.contactName &&
           phoneThumbnail == other.phoneThumbnail;
+}
+
+/// One entry in the desktop's RunCommand allow-list.
+///
+/// `id` is generated once and persisted, so a phone's cached id stays valid
+/// across restarts. The phone can only ever name an id -- it never supplies
+/// `command`.
+class RsRunCommand {
+  final String id;
+  final String name;
+  final String command;
+  final bool enabled;
+
+  const RsRunCommand({
+    required this.id,
+    required this.name,
+    required this.command,
+    required this.enabled,
+  });
+
+  @override
+  int get hashCode => id.hashCode ^ name.hashCode ^ command.hashCode ^ enabled.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is RsRunCommand &&
+          runtimeType == other.runtimeType &&
+          id == other.id &&
+          name == other.name &&
+          command == other.command &&
+          enabled == other.enabled;
 }

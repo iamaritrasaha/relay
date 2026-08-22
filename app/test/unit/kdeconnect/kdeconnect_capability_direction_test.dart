@@ -31,6 +31,7 @@ RsKdeConnectDevice device({
   connectivityStale: false,
   incomingCapabilities: incoming,
   outgoingCapabilities: outgoing,
+  transportState: connected ? 'local' : 'offline',
 );
 
 /// What a real Android peer accepts.
@@ -100,6 +101,28 @@ void main() {
       expect(offline.canSendSms, isFalse);
       expect(unpaired.capabilities[RelayCapability.messages], CapabilityStatus.unavailable);
       expect(offline.capabilities[RelayCapability.messages], CapabilityStatus.unavailable);
+    });
+
+    /// Regression guard for the capability-refresh bug: once the Rust core
+    /// authoritatively updates a peer's cached capabilities (after granting
+    /// SEND_SMS on the phone and completing a secure re-handshake), the VM
+    /// derivation must reflect the new snapshot rather than sticking to
+    /// whatever it computed the first time.
+    ///
+    /// This is a VM-reactivity check only: it re-derives the VM from two
+    /// static snapshots the way a Rust-side capability refresh would produce
+    /// them, not a reproduction of the Rust bug itself -- a pure-Dart test
+    /// cannot drive the two-peer TCP/TLS handshake that bug lives in. See
+    /// `capability_refresh_completes_end_to_end_and_survives_stale_reader_cleanup`
+    /// in `packages/core/src/kdeconnect/lan.rs` for that coverage.
+    test('canSendSms flips true when a fresh snapshot adds the capability', () {
+      final before = RelayHomeVm.kdeDeviceVm(
+        device(incoming: const ['kdeconnect.ping'], outgoing: _androidSends),
+      );
+      expect(before.canSendSms, isFalse, reason: 'SEND_SMS not yet granted on the phone');
+
+      final after = RelayHomeVm.kdeDeviceVm(device(incoming: _androidAccepts, outgoing: _androidSends));
+      expect(after.canSendSms, isTrue, reason: 'capability refresh should surface the newly-granted permission');
     });
   });
 

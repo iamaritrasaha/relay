@@ -456,6 +456,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   List<RsRelayTransferFile> dco_decode_list_rs_relay_transfer_file(dynamic raw);
 
   @protected
+  List<RsRunCommand> dco_decode_list_rs_run_command(dynamic raw);
+
+  @protected
   List<RsSmsConversation> dco_decode_list_rs_sms_conversation(dynamic raw);
 
   @protected
@@ -674,6 +677,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   RsRelayTransferFile dco_decode_rs_relay_transfer_file(dynamic raw);
+
+  @protected
+  RsRunCommand dco_decode_rs_run_command(dynamic raw);
 
   @protected
   RsServerEvent dco_decode_rs_server_event(dynamic raw);
@@ -1145,6 +1151,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   List<RsRelayTransferFile> sse_decode_list_rs_relay_transfer_file(SseDeserializer deserializer);
 
   @protected
+  List<RsRunCommand> sse_decode_list_rs_run_command(SseDeserializer deserializer);
+
+  @protected
   List<RsSmsConversation> sse_decode_list_rs_sms_conversation(SseDeserializer deserializer);
 
   @protected
@@ -1365,6 +1374,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   RsRelayTransferFile sse_decode_rs_relay_transfer_file(SseDeserializer deserializer);
+
+  @protected
+  RsRunCommand sse_decode_rs_run_command(SseDeserializer deserializer);
 
   @protected
   RsServerEvent sse_decode_rs_server_event(SseDeserializer deserializer);
@@ -1881,6 +1893,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   void sse_encode_list_rs_relay_transfer_file(List<RsRelayTransferFile> self, SseSerializer serializer);
 
   @protected
+  void sse_encode_list_rs_run_command(List<RsRunCommand> self, SseSerializer serializer);
+
+  @protected
   void sse_encode_list_rs_sms_conversation(List<RsSmsConversation> self, SseSerializer serializer);
 
   @protected
@@ -2102,6 +2117,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   void sse_encode_rs_relay_transfer_file(RsRelayTransferFile self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_rs_run_command(RsRunCommand self, SseSerializer serializer);
 
   @protected
   void sse_encode_rs_server_event(RsServerEvent self, SseSerializer serializer);

@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:typed_data';
 
 import 'package:collection/collection.dart';
 import 'package:flutter/services.dart';
@@ -35,10 +36,67 @@ class KdeTelephonyState {
   });
 }
 
+/// One notification, together with the logical device that produced it.
+///
+/// A remote notification id is assigned by the phone and is unique only *within*
+/// that phone -- two devices can legitimately both send id `42`. So the stable
+/// identity of a notification in Relay is the `(deviceId, notificationId)` pair,
+/// exposed here as [key]. Nothing in Relay may key notifications on the
+/// notification id alone, nor on a LAN address, WAN EndpointId, transport or
+/// current route: those are routes to a logical device, not the device itself.
+class RelayNotificationRecord {
+  /// The logical KDE/Relay device id that produced this notification.
+  final String deviceId;
+
+  /// Display name of the originating device, for a merged/global view.
+  final String deviceName;
+
+  /// The id the originating device assigned. Unique only within [deviceId].
+  final String notificationId;
+
+  final RsKdeNotification notification;
+
+  const RelayNotificationRecord({
+    required this.deviceId,
+    required this.deviceName,
+    required this.notificationId,
+    required this.notification,
+  });
+
+  /// The globally stable key: device identity first, then the remote id.
+  String get key => '$deviceId:$notificationId';
+
+  String? get appName => notification.appName;
+  String? get title => notification.title;
+  String? get text => notification.text;
+
+  @override
+  bool operator ==(Object other) =>
+      other is RelayNotificationRecord &&
+      other.deviceId == deviceId &&
+      other.notificationId == notificationId &&
+      other.deviceName == deviceName &&
+      other.notification == notification;
+
+  @override
+  int get hashCode => Object.hash(deviceId, notificationId, deviceName, notification);
+}
+
 class KdeConnectState {
   final List<RsKdeConnectDevice> devices;
   final KdeConnectIncomingRequest? incoming;
   final Map<String, List<RsKdeNotification>> notifications;
+
+  /// The desktop's RunCommand allow-list. Owned by this machine, not by any
+  /// device: which phone asked is carried in the request, never in the storage.
+  final List<RsRunCommand> runCommands;
+
+  /// Whether the desktop user has switched remote input on.
+  final bool remoteInputEnabled;
+
+  /// Whether an OS-level input session is currently authorised. Being enabled
+  /// is not enough: the compositor must also have granted a session.
+  final bool remoteInputReady;
   final Map<String, List<RsKdeSmsConversation>> smsConversations;
   final Map<String, Map<int, List<RsKdeSmsMessage>>> smsMessages;
   final Map<String, KdeTelephonyState?> activeCalls;
@@ -51,6 +109,9 @@ class KdeConnectState {
     this.devices = const [],
     this.incoming,
     this.notifications = const {},
+    this.runCommands = const [],
+    this.remoteInputEnabled = false,
+    this.remoteInputReady = false,
     this.smsConversations = const {},
     this.smsMessages = const {},
     this.activeCalls = const {},
@@ -60,11 +121,45 @@ class KdeConnectState {
     this.lastPingTimestamp = 0,
   });
 
+  /// Notifications belonging to exactly one logical device.
+  ///
+  /// Never falls back to "any device's notifications": an unknown device id
+  /// yields an empty list rather than someone else's notifications.
+  List<RsKdeNotification> notificationsForDevice(String deviceId) => notifications[kdeConnectDeviceIdFromKey(deviceId)] ?? const [];
+
+  /// Every device's notifications merged into one list, each entry still
+  /// carrying the device that produced it.
+  ///
+  /// This is what a global Notifications surface renders; the per-device
+  /// collections stay authoritative and are never flattened into a shared
+  /// id-keyed store, so two phones sending the same notification id produce two
+  /// distinct records here.
+  List<RelayNotificationRecord> get allNotifications => [
+    for (final entry in notifications.entries)
+      for (final notification in entry.value)
+        RelayNotificationRecord(
+          deviceId: entry.key,
+          deviceName: deviceNameFor(entry.key),
+          notificationId: notification.id,
+          notification: notification,
+        ),
+  ];
+
+  /// Display name for a device id, falling back to the raw id so a merged view
+  /// can always attribute a notification to *something*.
+  String deviceNameFor(String deviceId) {
+    final id = kdeConnectDeviceIdFromKey(deviceId);
+    return devices.firstWhereOrNull((device) => device.deviceId == id)?.name ?? id;
+  }
+
   KdeConnectState copyWith({
     List<RsKdeConnectDevice>? devices,
     KdeConnectIncomingRequest? incoming,
     bool clearIncoming = false,
     Map<String, List<RsKdeNotification>>? notifications,
+    List<RsRunCommand>? runCommands,
+    bool? remoteInputEnabled,
+    bool? remoteInputReady,
     Map<String, List<RsKdeSmsConversation>>? smsConversations,
     Map<String, Map<int, List<RsKdeSmsMessage>>>? smsMessages,
     Map<String, KdeTelephonyState?>? activeCalls,
@@ -76,6 +171,9 @@ class KdeConnectState {
     devices: devices ?? this.devices,
     incoming: clearIncoming ? null : incoming ?? this.incoming,
     notifications: notifications ?? this.notifications,
+    runCommands: runCommands ?? this.runCommands,
+    remoteInputEnabled: remoteInputEnabled ?? this.remoteInputEnabled,
+    remoteInputReady: remoteInputReady ?? this.remoteInputReady,
     smsConversations: smsConversations ?? this.smsConversations,
     smsMessages: smsMessages ?? this.smsMessages,
     activeCalls: activeCalls ?? this.activeCalls,
@@ -87,13 +185,14 @@ class KdeConnectState {
 }
 
 typedef KdeConnectIdentityFactory = Future<RsKdeConnectIdentity> Function({required String deviceName});
-typedef KdeConnectStarter = Future<RsKdeConnect> Function(RsKdeConnectIdentity identity, List<RsKdeConnectTrustedDevice> trusted);
+typedef KdeConnectStarter =
+    Future<RsKdeConnect> Function(RsKdeConnectIdentity identity, List<RsKdeConnectTrustedDevice> trusted, List<RsRunCommand> runCommands);
 
 final kdeConnectProvider = ReduxProvider<KdeConnectService, KdeConnectState>((ref) {
   return KdeConnectService(
     persistence: ref.read(persistenceProvider),
     generateIdentity: kdeconnectGenerateIdentity,
-    startRuntime: (identity, trusted) => startKdeconnect(identity: identity, trusted: trusted),
+    startRuntime: (identity, trusted, runCommands) => startKdeconnect(identity: identity, trusted: trusted, runCommands: runCommands),
   );
 });
 
@@ -136,12 +235,20 @@ class KdeConnectStartAction extends AsyncReduxAction<KdeConnectService, KdeConne
     final persisted = notifier.persistence.getKdeConnectIdentity();
     final RsKdeConnectIdentity identity;
     if (persisted != null) {
+      final persistedWanSecret = persisted['wanSecretKey'];
+      final wanSecret = persistedWanSecret is List
+          ? Uint8List.fromList(persistedWanSecret.cast<num>().map((value) => value.toInt()).toList())
+          : await kdeconnectGenerateWanSecret();
       identity = RsKdeConnectIdentity(
         deviceId: persisted['deviceId'] as String,
         deviceName: persisted['deviceName'] as String? ?? deviceName,
         certificatePem: persisted['certificatePem'] as String,
         privateKeyPem: persisted['privateKeyPem'] as String,
+        wanSecretKey: wanSecret,
       );
+      if (persistedWanSecret == null) {
+        await notifier.persistence.setKdeConnectIdentity({...persisted, 'wanSecretKey': wanSecret.toList()});
+      }
     } else {
       identity = await notifier.generateIdentity(deviceName: deviceName);
       await notifier.persistence.setKdeConnectIdentity({
@@ -149,6 +256,7 @@ class KdeConnectStartAction extends AsyncReduxAction<KdeConnectService, KdeConne
         'deviceName': identity.deviceName,
         'certificatePem': identity.certificatePem,
         'privateKeyPem': identity.privateKeyPem,
+        'wanSecretKey': identity.wanSecretKey.toList(),
       });
     }
     final trusted = [
@@ -160,9 +268,16 @@ class KdeConnectStartAction extends AsyncReduxAction<KdeConnectService, KdeConne
           deviceType: item['deviceType'] as String? ?? 'phone',
           protocolVersion: (item['protocolVersion'] as num?)?.toInt() ?? 8,
           pairedAtUnix: (item['pairedAtUnix'] as num?)?.toInt() ?? 0,
+          wanEndpointId: item['wanEndpointId'] as String?,
         ),
     ];
-    final runtime = await notifier.startRuntime(identity, trusted);
+    // Restored *before* the runtime starts: a phone asks for the command list
+    // once when its plugin starts and caches the answer, and it can connect
+    // before a post-start call lands. Ids come from persistence unchanged, so a
+    // phone's cached command ids still resolve after a desktop restart.
+    final restoredCommands = kdeRunCommandsFromJson(notifier.persistence.getKdeConnectRunCommands());
+    final runtime = await notifier.startRuntime(identity, trusted, restoredCommands);
+
     await notifier._events?.cancel();
     notifier._runtime = runtime;
     notifier._events = runtime.listen().listen(
@@ -173,7 +288,13 @@ class KdeConnectStartAction extends AsyncReduxAction<KdeConnectService, KdeConne
         _logger.warning('KDE Connect event stream failed', error, stack);
       },
     );
-    return state;
+    // Remote input is restored as a stored preference only. The OS-level
+    // session is deliberately never re-established automatically: input control
+    // must be granted by a present user, not inherited from a previous run.
+    final remoteInputEnabled = notifier.persistence.getKdeConnectRemoteInputEnabled();
+    runtime.setRemoteInputEnabled(enabled: remoteInputEnabled);
+
+    return state.copyWith(runCommands: restoredCommands, remoteInputEnabled: remoteInputEnabled, remoteInputReady: false);
   }
 }
 
@@ -250,6 +371,8 @@ class KdeConnectPingAction extends AsyncReduxAction<KdeConnectService, KdeConnec
   @override
   Future<KdeConnectState> reduce() async {
     try {
+      await notifier._runtime?.sendRelayPing(deviceId: deviceId);
+      await notifier._runtime?.requestRelayDeviceState(deviceId: deviceId);
       await notifier._runtime?.sendPing(deviceId: deviceId, message: message);
     } catch (error, stack) {
       _logger.warning('Send ping failed for device $deviceId', error, stack);
@@ -295,6 +418,116 @@ class KdeConnectSendClipboardAction extends AsyncReduxAction<KdeConnectService, 
   }
 }
 
+/// Dismisses one notification on the device that produced it.
+///
+/// Both the device id and the remote notification id are required, because the
+/// remote id alone cannot identify a notification across simultaneously
+/// connected phones. The core routes the packet to that logical device and the
+/// TransportRouter picks LAN or Relay WAN on its own, so dismissal behaves
+/// identically whether the device is Local or Remote.
+class KdeConnectDismissNotificationAction extends AsyncReduxAction<KdeConnectService, KdeConnectState> {
+  final String deviceId;
+  final String notificationId;
+
+  KdeConnectDismissNotificationAction({required this.deviceId, required this.notificationId});
+
+  @override
+  Future<KdeConnectState> reduce() async {
+    final id = kdeConnectDeviceIdFromKey(deviceId);
+    try {
+      await notifier._runtime?.dismissNotification(deviceId: id, remoteNotificationId: notificationId);
+    } catch (error, stack) {
+      // Deliberately no notification body in the log.
+      _logger.warning('Dismiss notification failed for device=$id', error, stack);
+    }
+    return state;
+  }
+}
+
+/// Decodes persisted RunCommand entries, skipping anything malformed rather
+/// than throwing away the whole list because one entry is bad.
+List<RsRunCommand> kdeRunCommandsFromJson(List<Map<String, dynamic>> raw) => [
+  for (final item in raw)
+    if (item['id'] is String && (item['id'] as String).isNotEmpty)
+      RsRunCommand(
+        id: item['id'] as String,
+        name: item['name'] as String? ?? '',
+        command: item['command'] as String? ?? '',
+        enabled: item['enabled'] as bool? ?? false,
+      ),
+];
+
+List<Map<String, dynamic>> kdeRunCommandsToJson(List<RsRunCommand> commands) => [
+  for (final command in commands)
+    {'id': command.id, 'name': command.name, 'command': command.command, 'enabled': command.enabled},
+];
+
+/// Replaces the desktop's RunCommand allow-list, persisting it and pushing it
+/// into the running KDE core.
+///
+/// Persist-then-push keeps the two in step: a phone can only ever run what is
+/// in this list, so the list that survives a restart must be the list the core
+/// is enforcing right now.
+class KdeConnectSetRunCommandsAction extends AsyncReduxAction<KdeConnectService, KdeConnectState> {
+  final List<RsRunCommand> commands;
+
+  KdeConnectSetRunCommandsAction(this.commands);
+
+  @override
+  Future<KdeConnectState> reduce() async {
+    await notifier.persistence.setKdeConnectRunCommands(kdeRunCommandsToJson(commands));
+    try {
+      await notifier._runtime?.setRunCommands(commands: commands);
+    } catch (error, stack) {
+      // Never log a command line: they routinely carry paths and secrets.
+      _logger.warning('Applying the RunCommand list failed', error, stack);
+    }
+    return state.copyWith(runCommands: commands);
+  }
+}
+
+/// Turns remote input on or off on this desktop.
+///
+/// Switching it on does not by itself let a phone move the cursor — an OS-level
+/// session still has to be authorised, which is a separate, explicit step.
+class KdeConnectSetRemoteInputEnabledAction extends AsyncReduxAction<KdeConnectService, KdeConnectState> {
+  final bool enabled;
+
+  KdeConnectSetRemoteInputEnabledAction(this.enabled);
+
+  @override
+  Future<KdeConnectState> reduce() async {
+    await notifier.persistence.setKdeConnectRemoteInputEnabled(enabled);
+    notifier._runtime?.setRemoteInputEnabled(enabled: enabled);
+    return state.copyWith(remoteInputEnabled: enabled);
+  }
+}
+
+/// Asks the desktop session for permission to inject input.
+///
+/// Triggers the compositor's own approval dialog, so it is only ever dispatched
+/// from a deliberate action in Settings.
+class KdeConnectAuthorizeRemoteInputAction extends AsyncReduxAction<KdeConnectService, KdeConnectState> {
+  @override
+  Future<KdeConnectState> reduce() async {
+    try {
+      await notifier._runtime?.authorizeRemoteInput();
+    } catch (error, stack) {
+      _logger.warning('Remote input authorization failed or was declined', error, stack);
+    }
+    final ready = await notifier._runtime?.remoteInputReady() ?? false;
+    return state.copyWith(remoteInputReady: ready);
+  }
+}
+
+class KdeConnectRevokeRemoteInputAction extends AsyncReduxAction<KdeConnectService, KdeConnectState> {
+  @override
+  Future<KdeConnectState> reduce() async {
+    await notifier._runtime?.revokeRemoteInput();
+    return state.copyWith(remoteInputReady: false);
+  }
+}
+
 class KdeConnectApplyEventAction extends ReduxAction<KdeConnectService, KdeConnectState> {
   final RsKdeConnectEvent event;
 
@@ -322,6 +555,7 @@ class KdeConnectApplyEventAction extends ReduxAction<KdeConnectService, KdeConne
                 'deviceType': device.deviceType,
                 'protocolVersion': device.protocolVersion,
                 'pairedAtUnix': device.pairedAtUnix,
+                'wanEndpointId': device.wanEndpointId,
               },
           ]),
         );

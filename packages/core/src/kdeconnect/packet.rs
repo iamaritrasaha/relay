@@ -9,12 +9,15 @@ use std::collections::BTreeMap;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 pub use super::capabilities::{
+    PACKET_TYPE_MOUSEPAD_REQUEST, PACKET_TYPE_MPRIS, PACKET_TYPE_MPRIS_REQUEST, PACKET_TYPE_RUNCOMMAND,
+    PACKET_TYPE_RUNCOMMAND_REQUEST,
     PACKET_TYPE_BATTERY, PACKET_TYPE_CLIPBOARD, PACKET_TYPE_CLIPBOARD_CONNECT,
     PACKET_TYPE_CONNECTIVITY_REPORT, PACKET_TYPE_FINDMYPHONE_REQUEST, PACKET_TYPE_IDENTITY,
     PACKET_TYPE_NOTIFICATION, PACKET_TYPE_NOTIFICATION_REQUEST, PACKET_TYPE_PAIR, PACKET_TYPE_PING,
-    PACKET_TYPE_SMS_MESSAGES, PACKET_TYPE_SMS_REQUEST, PACKET_TYPE_SMS_REQUEST_CONVERSATION,
-    PACKET_TYPE_SMS_REQUEST_CONVERSATIONS, PACKET_TYPE_TELEPHONY,
-    PACKET_TYPE_TELEPHONY_REQUEST_MUTE,
+    PACKET_TYPE_RELAY_DEVICE_STATE, PACKET_TYPE_RELAY_PING, PACKET_TYPE_RELAY_PONG,
+    PACKET_TYPE_RELAY_WAN_IDENTITY, PACKET_TYPE_SMS_MESSAGES, PACKET_TYPE_SMS_REQUEST,
+    PACKET_TYPE_SMS_REQUEST_CONVERSATION, PACKET_TYPE_SMS_REQUEST_CONVERSATIONS,
+    PACKET_TYPE_TELEPHONY, PACKET_TYPE_TELEPHONY_REQUEST_MUTE,
 };
 pub const PROTOCOL_VERSION: i64 = 8;
 
@@ -81,6 +84,43 @@ pub struct ClipboardBody {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct PingBody {
     pub message: Option<String>,
+}
+
+/// `kdeconnect.relay.wan.identity`: exchanged over an already-trusted LAN link
+/// so the desktop can bind the peer's Relay WAN `EndpointId` to its KDE
+/// device id (see [`crate::kdeconnect::wan::WanBindingRegistry`]). Namespace
+/// and field names must match the Android side exactly.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct RelayWanIdentityBody {
+    pub endpoint_id: String,
+    pub kde_device_id: String,
+}
+
+/// `kdeconnect.relay.device_state`: informational device metadata, sent
+/// request/response style. Every field is optional -- omit anything not
+/// available on this platform.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct RelayDeviceStateBody {
+    pub is_request: bool,
+    pub protocol_version: Option<i64>,
+    pub device_name: Option<String>,
+    pub device_class: Option<String>,
+    pub os: Option<String>,
+    pub os_version: Option<String>,
+    pub relay_version: Option<String>,
+    pub battery_percent: Option<i64>,
+    pub charging: Option<bool>,
+    pub capabilities: Vec<String>,
+    pub timestamp: Option<i64>,
+}
+
+/// `kdeconnect.relay.ping` / `kdeconnect.relay.pong`: the Relay-native
+/// heartbeat, distinct from `kdeconnect.ping` (a user-visible notification
+/// ping). `nonce` correlates a pong with the ping that triggered it, for RTT.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct RelayHeartbeatBody {
+    pub nonce: String,
+    pub timestamp: i64,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -265,6 +305,31 @@ impl NetworkPacket {
         NotificationBody::from_map(&self.body)
     }
 
+    pub fn as_mpris_request(&self) -> Result<MprisRequestBody, PacketError> {
+        if self.packet_type != PACKET_TYPE_MPRIS_REQUEST {
+            return Err(PacketError("not an mpris request packet".into()));
+        }
+        let body = MprisRequestBody::from_map(&self.body)?;
+        if body.is_empty() {
+            return Err(PacketError("mpris request carries no instruction".into()));
+        }
+        Ok(body)
+    }
+
+    pub fn as_mousepad_request(&self) -> Result<MousePadRequestBody, PacketError> {
+        if self.packet_type != PACKET_TYPE_MOUSEPAD_REQUEST {
+            return Err(PacketError("not a mousepad request packet".into()));
+        }
+        MousePadRequestBody::from_map(&self.body)
+    }
+
+    pub fn as_runcommand_request(&self) -> Result<RunCommandRequestBody, PacketError> {
+        if self.packet_type != PACKET_TYPE_RUNCOMMAND_REQUEST {
+            return Err(PacketError("not a runcommand request packet".into()));
+        }
+        RunCommandRequestBody::from_map(&self.body)
+    }
+
     pub fn as_notification_request(&self) -> Result<(), PacketError> {
         if self.packet_type != PACKET_TYPE_NOTIFICATION_REQUEST {
             return Err(PacketError("not a notification request packet".into()));
@@ -284,6 +349,34 @@ impl NetworkPacket {
             return Err(PacketError("not a telephony packet".into()));
         }
         TelephonyBody::from_map(&self.body)
+    }
+
+    pub fn as_relay_wan_identity(&self) -> Result<RelayWanIdentityBody, PacketError> {
+        if self.packet_type != PACKET_TYPE_RELAY_WAN_IDENTITY {
+            return Err(PacketError("not a relay wan identity packet".into()));
+        }
+        RelayWanIdentityBody::from_map(&self.body)
+    }
+
+    pub fn as_relay_device_state(&self) -> Result<RelayDeviceStateBody, PacketError> {
+        if self.packet_type != PACKET_TYPE_RELAY_DEVICE_STATE {
+            return Err(PacketError("not a relay device_state packet".into()));
+        }
+        RelayDeviceStateBody::from_map(&self.body)
+    }
+
+    pub fn as_relay_ping(&self) -> Result<RelayHeartbeatBody, PacketError> {
+        if self.packet_type != PACKET_TYPE_RELAY_PING {
+            return Err(PacketError("not a relay ping packet".into()));
+        }
+        RelayHeartbeatBody::from_map(&self.body)
+    }
+
+    pub fn as_relay_pong(&self) -> Result<RelayHeartbeatBody, PacketError> {
+        if self.packet_type != PACKET_TYPE_RELAY_PONG {
+            return Err(PacketError("not a relay pong packet".into()));
+        }
+        RelayHeartbeatBody::from_map(&self.body)
     }
 }
 
@@ -570,10 +663,128 @@ impl FindMyPhoneBody {
     }
 }
 
+impl RelayWanIdentityBody {
+    pub fn new(endpoint_id: impl Into<String>, kde_device_id: impl Into<String>) -> NetworkPacket {
+        let mut body = Map::new();
+        body.insert("endpointId".into(), Value::String(endpoint_id.into()));
+        body.insert("kdeDeviceId".into(), Value::String(kde_device_id.into()));
+        NetworkPacket::new(PACKET_TYPE_RELAY_WAN_IDENTITY, body)
+    }
+
+    fn from_map(body: &Map<String, Value>) -> Result<Self, PacketError> {
+        Ok(Self {
+            endpoint_id: required_string(body, "endpointId")?,
+            kde_device_id: required_string(body, "kdeDeviceId")?,
+        })
+    }
+}
+
+impl RelayDeviceStateBody {
+    pub fn new(self_: Self) -> NetworkPacket {
+        let mut body = Map::new();
+        if self_.is_request {
+            body.insert("isRequest".into(), Value::Bool(true));
+        }
+        if let Some(v) = self_.protocol_version {
+            body.insert("protocolVersion".into(), Value::Number(v.into()));
+        }
+        if let Some(v) = self_.device_name {
+            body.insert("deviceName".into(), Value::String(v));
+        }
+        if let Some(v) = self_.device_class {
+            body.insert("deviceClass".into(), Value::String(v));
+        }
+        if let Some(v) = self_.os {
+            body.insert("os".into(), Value::String(v));
+        }
+        if let Some(v) = self_.os_version {
+            body.insert("osVersion".into(), Value::String(v));
+        }
+        if let Some(v) = self_.relay_version {
+            body.insert("relayVersion".into(), Value::String(v));
+        }
+        if let Some(v) = self_.battery_percent {
+            body.insert("batteryPercent".into(), Value::Number(v.into()));
+        }
+        if let Some(v) = self_.charging {
+            body.insert("charging".into(), Value::Bool(v));
+        }
+        if !self_.capabilities.is_empty() {
+            body.insert(
+                "capabilities".into(),
+                Value::Array(self_.capabilities.into_iter().map(Value::String).collect()),
+            );
+        }
+        if let Some(v) = self_.timestamp {
+            body.insert("timestamp".into(), Value::Number(v.into()));
+        }
+        NetworkPacket::new(PACKET_TYPE_RELAY_DEVICE_STATE, body)
+    }
+
+    fn from_map(body: &Map<String, Value>) -> Result<Self, PacketError> {
+        Ok(Self {
+            is_request: body.get("isRequest").and_then(Value::as_bool).unwrap_or(false),
+            protocol_version: optional_i64(body, "protocolVersion"),
+            device_name: optional_string(body, "deviceName"),
+            device_class: optional_string(body, "deviceClass"),
+            os: optional_string(body, "os"),
+            os_version: optional_string(body, "osVersion"),
+            relay_version: optional_string(body, "relayVersion"),
+            battery_percent: optional_i64(body, "batteryPercent"),
+            charging: body.get("charging").and_then(Value::as_bool),
+            capabilities: optional_string_list(body, "capabilities"),
+            timestamp: optional_i64(body, "timestamp"),
+        })
+    }
+}
+
+impl RelayHeartbeatBody {
+    pub fn ping(nonce: impl Into<String>, timestamp: i64) -> NetworkPacket {
+        Self::packet(PACKET_TYPE_RELAY_PING, nonce.into(), timestamp)
+    }
+
+    pub fn pong(nonce: impl Into<String>, timestamp: i64) -> NetworkPacket {
+        Self::packet(PACKET_TYPE_RELAY_PONG, nonce.into(), timestamp)
+    }
+
+    fn packet(packet_type: &str, nonce: String, timestamp: i64) -> NetworkPacket {
+        let mut body = Map::new();
+        body.insert("nonce".into(), Value::String(nonce));
+        body.insert("timestamp".into(), Value::Number(timestamp.into()));
+        NetworkPacket::new(packet_type, body)
+    }
+
+    fn from_map(body: &Map<String, Value>) -> Result<Self, PacketError> {
+        Ok(Self {
+            nonce: required_string(body, "nonce")?,
+            timestamp: optional_i64(body, "timestamp").unwrap_or(0),
+        })
+    }
+}
+
 impl NotificationBody {
     pub fn request() -> NetworkPacket {
         let mut body = Map::new();
         body.insert("request".into(), Value::Bool(true));
+        NetworkPacket::new(PACKET_TYPE_NOTIFICATION_REQUEST, body)
+    }
+
+    /// Asks the peer to dismiss one of *its* notifications, addressed by the
+    /// remote notification id the peer itself assigned.
+    ///
+    /// The id is only unique within one device -- two phones can legitimately
+    /// both use `"0|com.whatsapp|42"` -- so this packet is meaningless without
+    /// the device it is sent to. Callers must therefore always pair it with the
+    /// originating device id; see `LanInner::dismiss_notification`.
+    ///
+    /// Wire shape matches the Android `NotificationsPlugin`, which dispatches on
+    /// `np.has("cancel")` within `kdeconnect.notification.request`.
+    pub fn dismiss(remote_notification_id: &str) -> NetworkPacket {
+        let mut body = Map::new();
+        body.insert(
+            "cancel".into(),
+            Value::String(remote_notification_id.to_owned()),
+        );
         NetworkPacket::new(PACKET_TYPE_NOTIFICATION_REQUEST, body)
     }
 
@@ -911,6 +1122,38 @@ mod tests {
             Some("+15550100"),
             "each address is an object with an address field"
         );
+    }
+
+    /// Pins `SmsRequestBody::to_packet()`'s output against the SAME JSON files
+    /// checked into the Android repo (`src/test/resources/fixtures/`), so the
+    /// two repos can't silently drift on the wire schema without a test on
+    /// this side failing too. Keep the two copies byte-identical when editing.
+    #[test]
+    fn sms_request_body_matches_the_shared_cross_repo_fixture() {
+        let packet = SmsRequestBody {
+            addresses: vec!["+15550100".into()],
+            message_body: "Hello from Relay".into(),
+            sub_id: Some(1),
+        }
+        .to_packet();
+
+        let expected: Value =
+            serde_json::from_str(include_str!("testdata/sms_request_v2.json")).unwrap();
+        assert_eq!(Value::Object(packet.body), expected);
+    }
+
+    #[test]
+    fn sms_request_body_without_sub_id_matches_the_shared_cross_repo_fixture() {
+        let packet = SmsRequestBody {
+            addresses: vec!["+15550100".into()],
+            message_body: "Hello from Relay".into(),
+            sub_id: None,
+        }
+        .to_packet();
+
+        let expected: Value =
+            serde_json::from_str(include_str!("testdata/sms_request_v2_no_subid.json")).unwrap();
+        assert_eq!(Value::Object(packet.body), expected);
     }
 
     #[test]
@@ -1404,10 +1647,395 @@ mod tests {
     }
 
     #[test]
+    fn notification_dismiss_carries_the_remote_id_and_no_request_flag() {
+        let packet = NotificationBody::dismiss("0|com.whatsapp|42");
+        assert_eq!(packet.packet_type, PACKET_TYPE_NOTIFICATION_REQUEST);
+        assert_eq!(
+            packet.body.get("cancel").and_then(Value::as_str),
+            Some("0|com.whatsapp|42")
+        );
+        // `request` would make Android re-send everything instead of cancelling.
+        assert!(packet.body.get("request").is_none());
+    }
+
+    #[test]
+    fn notification_dismiss_for_the_same_id_on_two_devices_builds_identical_packets() {
+        // The packet cannot distinguish devices -- the device id lives in the
+        // routing decision, never in the body. This is exactly why the store
+        // must key on (deviceId, notificationId).
+        assert_eq!(
+            NotificationBody::dismiss("42").serialize(),
+            NotificationBody::dismiss("42").serialize()
+        );
+    }
+
+    #[test]
     fn notification_request_roundtrip() {
         let req = NotificationBody::request();
         assert_eq!(req.packet_type, PACKET_TYPE_NOTIFICATION_REQUEST);
         let parsed = NetworkPacket::parse(&req.serialize()).unwrap();
         assert!(parsed.as_notification_request().is_ok());
     }
+
+    #[test]
+    fn relay_wan_identity_roundtrips_endpoint_and_device_id() {
+        let packet = RelayWanIdentityBody::new("endpoint-abc", "device-123");
+        assert_eq!(packet.packet_type, PACKET_TYPE_RELAY_WAN_IDENTITY);
+
+        let parsed = NetworkPacket::parse(&packet.serialize())
+            .unwrap()
+            .as_relay_wan_identity()
+            .unwrap();
+        assert_eq!(parsed.endpoint_id, "endpoint-abc");
+        assert_eq!(parsed.kde_device_id, "device-123");
+    }
+
+    #[test]
+    fn relay_device_state_omits_unset_fields_and_roundtrips_the_rest() {
+        let packet = RelayDeviceStateBody::new(RelayDeviceStateBody {
+            is_request: false,
+            protocol_version: Some(1),
+            device_name: Some("Desktop".into()),
+            device_class: Some("desktop".into()),
+            os: Some("linux".into()),
+            os_version: None,
+            relay_version: Some("0.2.0".into()),
+            battery_percent: None,
+            charging: None,
+            capabilities: vec!["kdeconnect.battery".into()],
+            timestamp: Some(1_700_000_000),
+        });
+        assert_eq!(packet.packet_type, PACKET_TYPE_RELAY_DEVICE_STATE);
+        assert!(!packet.body.contains_key("osVersion"));
+        assert!(!packet.body.contains_key("batteryPercent"));
+
+        let parsed = NetworkPacket::parse(&packet.serialize())
+            .unwrap()
+            .as_relay_device_state()
+            .unwrap();
+        assert_eq!(parsed.device_name.as_deref(), Some("Desktop"));
+        assert_eq!(parsed.os.as_deref(), Some("linux"));
+        assert_eq!(parsed.os_version, None);
+        assert_eq!(parsed.capabilities, vec!["kdeconnect.battery".to_string()]);
+        assert_eq!(parsed.timestamp, Some(1_700_000_000));
+    }
+
+    #[test]
+    fn relay_ping_pong_roundtrip_and_carry_the_same_nonce() {
+        let ping = RelayHeartbeatBody::ping("nonce-1", 1000);
+        assert_eq!(ping.packet_type, PACKET_TYPE_RELAY_PING);
+        let parsed_ping = NetworkPacket::parse(&ping.serialize()).unwrap().as_relay_ping().unwrap();
+        assert_eq!(parsed_ping.nonce, "nonce-1");
+        assert_eq!(parsed_ping.timestamp, 1000);
+
+        let pong = RelayHeartbeatBody::pong(parsed_ping.nonce, parsed_ping.timestamp);
+        assert_eq!(pong.packet_type, PACKET_TYPE_RELAY_PONG);
+        let parsed_pong = NetworkPacket::parse(&pong.serialize()).unwrap().as_relay_pong().unwrap();
+        assert_eq!(parsed_pong.nonce, "nonce-1");
+        assert_eq!(parsed_pong.timestamp, 1000);
+    }
+
+    #[test]
+    fn relay_ping_is_not_confused_with_the_relay_pong_or_plain_kdeconnect_ping() {
+        let relay_ping = RelayHeartbeatBody::ping("n", 0);
+        assert!(NetworkPacket::parse(&relay_ping.serialize()).unwrap().as_relay_pong().is_err());
+        assert!(NetworkPacket::parse(&relay_ping.serialize()).unwrap().as_ping().is_err());
+
+        let plain_ping = PingBody::new(None);
+        assert!(NetworkPacket::parse(&plain_ping.serialize()).unwrap().as_relay_ping().is_err());
+    }
 }
+
+// ---------------------------------------------------------------------------
+// MPRIS media control
+// ---------------------------------------------------------------------------
+
+/// One request from the phone's `MprisPlugin`, carried in
+/// `kdeconnect.mpris.request`.
+///
+/// Field names and semantics are taken from the Android plugin verbatim (see
+/// `MprisPlugin.sendCommand` / `requestPlayerList` / `requestPlayerStatus`) --
+/// this is KDE Connect's protocol, not a Relay-specific one. Note the
+/// inconsistent casing (`setVolume` but `SetPosition`/`Seek`): that is upstream's
+/// shape and must be matched exactly.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct MprisRequestBody {
+    /// Which player the request addresses. Absent for a bare player-list request.
+    pub player: Option<String>,
+    pub request_player_list: bool,
+    pub request_now_playing: bool,
+    pub request_volume: bool,
+    /// `Play` / `Pause` / `PlayPause` / `Stop` / `Next` / `Previous`.
+    pub action: Option<String>,
+    pub set_volume: Option<i64>,
+    /// Absolute position in milliseconds.
+    pub set_position: Option<i64>,
+    /// Relative seek offset in **microseconds** (MPRIS `Seek` unit).
+    pub seek: Option<i64>,
+    pub set_loop_status: Option<String>,
+    pub set_shuffle: Option<bool>,
+    /// The phone asking us to transfer album art for this URL.
+    pub album_art_url: Option<String>,
+}
+
+impl MprisRequestBody {
+    fn from_map(body: &Map<String, Value>) -> Result<Self, PacketError> {
+        // A player name is free-form remote text; bound it so a hostile peer
+        // cannot use it as an unbounded allocation or log-flooding vector. It is
+        // only ever compared against the locally discovered player list, never
+        // used to construct a D-Bus name directly.
+        let player = optional_string(body, "player");
+        if player.as_ref().is_some_and(|name| name.len() > MAX_MPRIS_PLAYER_NAME_LEN) {
+            return Err(PacketError("mpris player name exceeds its bound".into()));
+        }
+        Ok(Self {
+            player,
+            request_player_list: body
+                .get("requestPlayerList")
+                .and_then(Value::as_bool)
+                .unwrap_or(false),
+            request_now_playing: body
+                .get("requestNowPlaying")
+                .and_then(Value::as_bool)
+                .unwrap_or(false),
+            request_volume: body
+                .get("requestVolume")
+                .and_then(Value::as_bool)
+                .unwrap_or(false),
+            action: optional_string(body, "action"),
+            set_volume: body.get("setVolume").and_then(Value::as_i64),
+            set_position: body.get("SetPosition").and_then(Value::as_i64),
+            seek: body.get("Seek").and_then(Value::as_i64),
+            set_loop_status: optional_string(body, "setLoopStatus"),
+            set_shuffle: body.get("setShuffle").and_then(Value::as_bool),
+            album_art_url: optional_string(body, "albumArtUrl"),
+        })
+    }
+
+    /// Whether this request carries no instruction at all. Such a packet is
+    /// meaningless and is rejected rather than silently treated as a refresh.
+    pub fn is_empty(&self) -> bool {
+        !self.request_player_list
+            && !self.request_now_playing
+            && !self.request_volume
+            && self.action.is_none()
+            && self.set_volume.is_none()
+            && self.set_position.is_none()
+            && self.seek.is_none()
+            && self.set_loop_status.is_none()
+            && self.set_shuffle.is_none()
+            && self.album_art_url.is_none()
+    }
+}
+
+const MAX_MPRIS_PLAYER_NAME_LEN: usize = 256;
+
+/// Outgoing `kdeconnect.mpris` state.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct MprisBody {
+    pub player: Option<String>,
+    pub title: Option<String>,
+    pub artist: Option<String>,
+    pub album: Option<String>,
+    pub url: Option<String>,
+    pub album_art_url: Option<String>,
+    pub loop_status: Option<String>,
+    pub shuffle: Option<bool>,
+    pub volume: Option<i64>,
+    /// Track length in milliseconds.
+    pub length: Option<i64>,
+    /// Current position in milliseconds.
+    pub pos: Option<i64>,
+    pub is_playing: Option<bool>,
+    pub can_play: Option<bool>,
+    pub can_pause: Option<bool>,
+    pub can_go_next: Option<bool>,
+    pub can_go_previous: Option<bool>,
+    pub can_seek: Option<bool>,
+}
+
+impl MprisBody {
+    /// The player-list packet. Sent on its own, exactly as upstream does, so the
+    /// phone can populate its player picker before asking for any state.
+    ///
+    /// `supportAlbumArtPayload` is reported false: album art travels as a
+    /// payload over a separate channel Relay does not carry yet, so claiming
+    /// support would make the phone request bytes that never arrive. The art
+    /// *URL* is still advertised per player, which is what a phone that can
+    /// resolve it itself uses.
+    pub fn player_list(players: &[String]) -> NetworkPacket {
+        let mut body = Map::new();
+        body.insert(
+            "playerList".into(),
+            Value::Array(players.iter().cloned().map(Value::String).collect()),
+        );
+        body.insert("supportAlbumArtPayload".into(), Value::Bool(false));
+        NetworkPacket::new(PACKET_TYPE_MPRIS, body)
+    }
+
+    pub fn to_packet(&self) -> NetworkPacket {
+        let mut body = Map::new();
+        let mut put_str = |key: &str, value: &Option<String>| {
+            if let Some(value) = value {
+                body.insert(key.into(), Value::String(value.clone()));
+            }
+        };
+        put_str("player", &self.player);
+        put_str("title", &self.title);
+        put_str("artist", &self.artist);
+        put_str("album", &self.album);
+        put_str("url", &self.url);
+        put_str("albumArtUrl", &self.album_art_url);
+        put_str("loopStatus", &self.loop_status);
+
+        let mut put_bool = |key: &str, value: Option<bool>| {
+            if let Some(value) = value {
+                body.insert(key.into(), Value::Bool(value));
+            }
+        };
+        put_bool("shuffle", self.shuffle);
+        put_bool("isPlaying", self.is_playing);
+        put_bool("canPlay", self.can_play);
+        put_bool("canPause", self.can_pause);
+        put_bool("canGoNext", self.can_go_next);
+        put_bool("canGoPrevious", self.can_go_previous);
+        put_bool("canSeek", self.can_seek);
+
+        let mut put_int = |key: &str, value: Option<i64>| {
+            if let Some(value) = value {
+                body.insert(key.into(), Value::Number(value.into()));
+            }
+        };
+        put_int("volume", self.volume);
+        put_int("length", self.length);
+        put_int("pos", self.pos);
+
+        NetworkPacket::new(PACKET_TYPE_MPRIS, body)
+    }
+}
+
+// ---------------------------------------------------------------------------
+// RunCommand
+// ---------------------------------------------------------------------------
+
+/// One request from the phone's `RunCommandPlugin`, carried in
+/// `kdeconnect.runcommand.request`.
+///
+/// There is deliberately no field carrying command *text*: the phone can only
+/// name an id that Relay already has configured. See
+/// [`super::commands::RunCommandRegistry`].
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct RunCommandRequestBody {
+    pub request_command_list: bool,
+    /// Id of a command to run, as previously advertised by Relay.
+    pub key: Option<String>,
+    /// The phone asking Relay to open its own command-configuration UI.
+    pub setup: bool,
+}
+
+impl RunCommandRequestBody {
+    fn from_map(body: &Map<String, Value>) -> Result<Self, PacketError> {
+        let key = optional_string(body, "key");
+        if key.as_ref().is_some_and(|key| key.len() > MAX_COMMAND_ID_LEN) {
+            return Err(PacketError("runcommand key exceeds its bound".into()));
+        }
+        Ok(Self {
+            request_command_list: body
+                .get("requestCommandList")
+                .and_then(Value::as_bool)
+                .unwrap_or(false),
+            key,
+            setup: body.get("setup").and_then(Value::as_bool).unwrap_or(false),
+        })
+    }
+}
+
+const MAX_COMMAND_ID_LEN: usize = 128;
+
+/// Outgoing `kdeconnect.runcommand`: the command list Relay is willing to run.
+///
+/// Upstream encodes the list as a JSON *string* keyed by command id, so this
+/// serializes to a string rather than a nested object -- the Android side does
+/// `new JSONObject(np.getString("commandList"))`.
+pub struct RunCommandListBody;
+
+impl RunCommandListBody {
+    pub fn to_packet(entries: &[(String, String, String)]) -> NetworkPacket {
+        let mut list = Map::new();
+        for (id, name, command) in entries {
+            let mut entry = Map::new();
+            entry.insert("name".into(), Value::String(name.clone()));
+            entry.insert("command".into(), Value::String(command.clone()));
+            list.insert(id.clone(), Value::Object(entry));
+        }
+        let mut body = Map::new();
+        body.insert(
+            "commandList".into(),
+            Value::String(Value::Object(list).to_string()),
+        );
+        // Relay does not accept command definitions pushed from the phone.
+        body.insert("canAddCommand".into(), Value::Bool(false));
+        NetworkPacket::new(PACKET_TYPE_RUNCOMMAND, body)
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Remote input (mousepad)
+// ---------------------------------------------------------------------------
+
+/// One `kdeconnect.mousepad.request` from the phone's `MousePadPlugin`.
+///
+/// Field names come from the Android plugin verbatim. `dx`/`dy` mean relative
+/// pointer motion normally and scroll amounts when `scroll` is set, which is
+/// upstream's shape rather than a Relay choice.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct MousePadRequestBody {
+    pub dx: Option<f64>,
+    pub dy: Option<f64>,
+    pub scroll: bool,
+    pub single_click: bool,
+    pub double_click: bool,
+    pub middle_click: bool,
+    pub right_click: bool,
+    pub single_hold: bool,
+    pub single_release: bool,
+    /// Literal text to type.
+    pub key: Option<String>,
+    /// Index into KDE Connect's special-key table.
+    pub special_key: Option<i64>,
+    pub ctrl: bool,
+    pub alt: bool,
+    pub shift: bool,
+    pub super_key: bool,
+}
+
+impl MousePadRequestBody {
+    fn from_map(body: &Map<String, Value>) -> Result<Self, PacketError> {
+        let flag = |key: &str| body.get(key).and_then(Value::as_bool).unwrap_or(false);
+        let key = optional_string(body, "key");
+        if key.as_ref().is_some_and(|text| text.len() > MAX_MOUSEPAD_TEXT_LEN) {
+            return Err(PacketError("mousepad text exceeds its bound".into()));
+        }
+        Ok(Self {
+            dx: body.get("dx").and_then(Value::as_f64),
+            dy: body.get("dy").and_then(Value::as_f64),
+            scroll: flag("scroll"),
+            single_click: flag("singleclick"),
+            double_click: flag("doubleclick"),
+            middle_click: flag("middleclick"),
+            right_click: flag("rightclick"),
+            single_hold: flag("singlehold"),
+            single_release: flag("singlerelease"),
+            key,
+            special_key: body.get("specialKey").and_then(Value::as_i64),
+            ctrl: flag("ctrl"),
+            alt: flag("alt"),
+            shift: flag("shift"),
+            super_key: flag("super"),
+        })
+    }
+}
+
+/// Bound on a single text-injection payload, checked before the body is built
+/// so an oversized packet is refused at parse time rather than deeper in.
+const MAX_MOUSEPAD_TEXT_LEN: usize = 512;

@@ -12,6 +12,7 @@ import 'package:relay_app/pages/changelog_page.dart';
 import 'package:relay_app/pages/relay_home_vm.dart';
 import 'package:relay_app/pages/tabs/settings_tab_controller.dart';
 import 'package:relay_app/pages/tabs/settings_tab_vm.dart';
+import 'package:relay_app/provider/kdeconnect_provider.dart';
 import 'package:relay_app/provider/settings_provider.dart';
 import 'package:relay_app/util/alias_generator.dart';
 import 'package:relay_app/util/i18n.dart';
@@ -25,6 +26,7 @@ import 'package:relay_app/widget/gnome/adw_action_row.dart';
 import 'package:relay_app/widget/gnome/adw_boxed_list.dart';
 import 'package:relay_app/widget/relay_motion/relay_section_reveal.dart';
 import 'package:relay_isolates/model/device.dart';
+import 'package:relay_isolates/rust/api/kdeconnect.dart';
 import 'package:routerino/routerino.dart';
 import 'package:yaru/yaru.dart';
 
@@ -236,6 +238,75 @@ class GnomeSettingsView extends StatelessWidget {
                           ),
                         ]),
 
+                      if (defaultTargetPlatform == TargetPlatform.linux)
+                        group('Remote input', [
+                          AdwSwitchRow(
+                            title: 'Allow remote input',
+                            subtitle: 'Let a paired phone act as a trackpad and keyboard',
+                            value: ref.watch(kdeConnectProvider).remoteInputEnabled,
+                            onChanged: (enabled) async =>
+                                ref.redux(kdeConnectProvider).dispatchAsync(KdeConnectSetRemoteInputEnabledAction(enabled)),
+                          ),
+                          // Enabling is not sufficient: the desktop session has
+                          // to grant input control, and only a person at this
+                          // machine can approve that.
+                          if (ref.watch(kdeConnectProvider).remoteInputEnabled)
+                            AdwActionRow(
+                              leading: const Icon(YaruIcons.keyboard),
+                              title: 'Desktop permission',
+                              subtitle: ref.watch(kdeConnectProvider).remoteInputReady
+                                  ? 'Granted for this session'
+                                  : 'Required before a phone can control this computer',
+                              trailing: ref.watch(kdeConnectProvider).remoteInputReady
+                                  ? OutlinedButton(
+                                      onPressed: () async =>
+                                          ref.redux(kdeConnectProvider).dispatchAsync(KdeConnectRevokeRemoteInputAction()),
+                                      child: const Text('Revoke'),
+                                    )
+                                  : FilledButton(
+                                      onPressed: () async =>
+                                          ref.redux(kdeConnectProvider).dispatchAsync(KdeConnectAuthorizeRemoteInputAction()),
+                                      child: const Text('Allow'),
+                                    ),
+                            ),
+                        ]),
+
+                      if (defaultTargetPlatform == TargetPlatform.linux)
+                        group('Remote commands', [
+                          for (final command in ref.watch(kdeConnectProvider).runCommands)
+                            AdwActionRow(
+                              key: ValueKey('run-command-${command.id}'),
+                              leading: const Icon(YaruIcons.terminal),
+                              title: command.name.isEmpty ? 'Untitled command' : command.name,
+                              subtitle: command.command,
+                              trailing: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  YaruSwitch(
+                                    value: command.enabled,
+                                    onChanged: (enabled) => _saveRunCommand(context, command.copyWithEnabled(enabled)),
+                                  ),
+                                  IconButton(
+                                    icon: const Icon(YaruIcons.pen, size: 18),
+                                    tooltip: 'Edit',
+                                    onPressed: () => _editRunCommand(context, command),
+                                  ),
+                                  IconButton(
+                                    icon: const Icon(YaruIcons.trash, size: 18),
+                                    tooltip: 'Remove',
+                                    onPressed: () => _removeRunCommand(context, command),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          AdwActionRow(
+                            leading: const Icon(YaruIcons.plus),
+                            title: 'Add command',
+                            subtitle: 'Only commands listed here can be run from a paired phone',
+                            onTap: () => _editRunCommand(context, null),
+                          ),
+                        ]),
+
                       group('Advanced', [
                         AdwActionRow(
                           leading: const Icon(YaruIcons.shield),
@@ -311,6 +382,133 @@ Future<void> _editDeviceName(BuildContext context, SettingsTabVm vm) async {
   if (result != null && result.trim().isNotEmpty && context.mounted) {
     vm.aliasController.text = result.trim();
     await context.ref.notifier(settingsProvider).setAlias(result.trim());
+  }
+}
+
+/// Persists one added or edited command, leaving every other entry untouched.
+Future<void> _saveRunCommand(BuildContext context, RsRunCommand command) async {
+  final ref = context.ref;
+  final current = ref.read(kdeConnectProvider).runCommands;
+  final index = current.indexWhere((existing) => existing.id == command.id);
+  final next = [...current];
+  if (index >= 0) {
+    next[index] = command;
+  } else {
+    next.add(command);
+  }
+  await ref.redux(kdeConnectProvider).dispatchAsync(KdeConnectSetRunCommandsAction(next));
+}
+
+Future<void> _removeRunCommand(BuildContext context, RsRunCommand command) async {
+  final ref = context.ref;
+  final next = ref.read(kdeConnectProvider).runCommands.where((existing) => existing.id != command.id).toList();
+  await ref.redux(kdeConnectProvider).dispatchAsync(KdeConnectSetRunCommandsAction(next));
+}
+
+/// Opens the add/edit dialog. A new command gets its id from the Rust side, so
+/// ids are generated the same way wherever they come from and stay stable once
+/// written.
+Future<void> _editRunCommand(BuildContext context, RsRunCommand? existing) async {
+  final id = existing?.id ?? await kdeconnectNewRunCommandId();
+  if (!context.mounted) return;
+  final result = await showDialog<RsRunCommand>(
+    context: context,
+    builder: (_) => RunCommandDialog(
+      command: existing ?? RsRunCommand(id: id, name: '', command: '', enabled: true),
+      isNew: existing == null,
+    ),
+  );
+  if (result != null && context.mounted) {
+    await _saveRunCommand(context, result);
+  }
+}
+
+extension _RunCommandCopy on RsRunCommand {
+  RsRunCommand copyWithEnabled(bool enabled) => RsRunCommand(id: id, name: name, command: command, enabled: enabled);
+}
+
+/// Minimal add/edit form for one RunCommand entry. Public so its Save-enabling
+/// behaviour can be tested directly.
+class RunCommandDialog extends StatefulWidget {
+  final RsRunCommand command;
+  final bool isNew;
+
+  const RunCommandDialog({required this.command, required this.isNew});
+
+  @override
+  State<RunCommandDialog> createState() => _RunCommandDialogState();
+}
+
+class _RunCommandDialogState extends State<RunCommandDialog> {
+  late final TextEditingController _name = TextEditingController(text: widget.command.name);
+  late final TextEditingController _command = TextEditingController(text: widget.command.command);
+  late bool _enabled = widget.command.enabled;
+
+  @override
+  void initState() {
+    super.initState();
+    // Save is enabled only once a command line exists, and that is decided at
+    // build time -- so the field has to rebuild the dialog as it is typed into.
+    // Without this the button stays disabled forever on a new command, because
+    // it is first built while the field is still empty.
+    _command.addListener(_onCommandChanged);
+  }
+
+  void _onCommandChanged() => setState(() {});
+
+  @override
+  void dispose() {
+    _command.removeListener(_onCommandChanged);
+    _name.dispose();
+    _command.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: Text(widget.isNew ? 'Add command' : 'Edit command'),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          TextField(
+            controller: _name,
+            autofocus: true,
+            decoration: const InputDecoration(labelText: 'Name', hintText: 'Lock screen'),
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: _command,
+            decoration: const InputDecoration(labelText: 'Command', hintText: 'loginctl lock-session'),
+          ),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              YaruSwitch(value: _enabled, onChanged: (value) => setState(() => _enabled = value)),
+              const SizedBox(width: 12),
+              const Expanded(child: Text('Allow paired phones to run this')),
+            ],
+          ),
+        ],
+      ),
+      actions: [
+        TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('Cancel')),
+        FilledButton(
+          onPressed: _command.text.trim().isEmpty
+              ? null
+              : () => Navigator.of(context).pop(
+                  RsRunCommand(
+                    id: widget.command.id,
+                    name: _name.text.trim(),
+                    command: _command.text.trim(),
+                    enabled: _enabled,
+                  ),
+                ),
+          child: const Text('Save'),
+        ),
+      ],
+    );
   }
 }
 

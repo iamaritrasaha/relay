@@ -4,21 +4,31 @@
 //! never produces a RelayId and never consults Relay-native trust records.
 
 mod capabilities;
+pub mod commands;
+pub mod input;
+pub mod media;
 mod identity;
 mod lan;
 mod packet;
 mod pairing;
+#[cfg(feature = "kdeconnect-wan")]
+pub mod wan;
 
 pub use capabilities::{
     canonical_incoming_capabilities, canonical_outgoing_capabilities, PACKET_TYPE_BATTERY,
     PACKET_TYPE_CLIPBOARD, PACKET_TYPE_CLIPBOARD_CONNECT, PACKET_TYPE_CONNECTIVITY_REPORT,
     PACKET_TYPE_FINDMYPHONE_REQUEST, PACKET_TYPE_IDENTITY, PACKET_TYPE_NOTIFICATION,
-    PACKET_TYPE_NOTIFICATION_REQUEST, PACKET_TYPE_PAIR, PACKET_TYPE_PING, PACKET_TYPE_SMS_MESSAGES,
-    PACKET_TYPE_SMS_REQUEST, PACKET_TYPE_SMS_REQUEST_CONVERSATION,
-    PACKET_TYPE_SMS_REQUEST_CONVERSATIONS, PACKET_TYPE_TELEPHONY,
-    PACKET_TYPE_TELEPHONY_REQUEST_MUTE,
+    PACKET_TYPE_NOTIFICATION_REQUEST, PACKET_TYPE_PAIR, PACKET_TYPE_PING,
+    PACKET_TYPE_RELAY_DEVICE_STATE, PACKET_TYPE_RELAY_PING, PACKET_TYPE_RELAY_PONG,
+    PACKET_TYPE_MOUSEPAD_REQUEST, PACKET_TYPE_MPRIS, PACKET_TYPE_MPRIS_REQUEST,
+    PACKET_TYPE_RELAY_WAN_IDENTITY,
+    PACKET_TYPE_RUNCOMMAND, PACKET_TYPE_RUNCOMMAND_REQUEST,
+    PACKET_TYPE_SMS_MESSAGES, PACKET_TYPE_SMS_REQUEST,
+    PACKET_TYPE_SMS_REQUEST_CONVERSATION, PACKET_TYPE_SMS_REQUEST_CONVERSATIONS,
+    PACKET_TYPE_TELEPHONY, PACKET_TYPE_TELEPHONY_REQUEST_MUTE,
 };
 pub use identity::LocalIdentity;
+use media::MediaPlayerHost as _;
 pub use lan::{
     BatteryState, BindMode, ConnectivityState, DeviceTable, LanConfig, ObservedDevice,
     MAX_TCP_PORT, MIN_TCP_PORT, UDP_PORT,
@@ -26,8 +36,10 @@ pub use lan::{
 pub use packet::{
     filter_device_name, is_valid_device_id, BatteryBody, ClipboardBody, ConnectivityReportBody,
     ConnectivitySignal, FindMyPhoneBody, IdentityBody, NetworkPacket, NotificationBody,
-    PacketError, PairBody, PingBody, SmsAttachmentMetadata, SmsMessage, SmsMessagesBody,
-    SmsRequestBody, SmsRequestConversationBody, SmsRequestConversationsBody, TelephonyBody,
+    PacketError, PairBody, PingBody, RelayDeviceStateBody, RelayHeartbeatBody,
+    MousePadRequestBody, MprisBody, MprisRequestBody, RelayWanIdentityBody, RunCommandListBody,
+    RunCommandRequestBody, SmsAttachmentMetadata, SmsMessage, SmsMessagesBody, SmsRequestBody,
+    SmsRequestConversationBody, SmsRequestConversationsBody, TelephonyBody,
     TelephonyRequestMuteBody, PROTOCOL_VERSION,
 };
 pub use pairing::{
@@ -50,6 +62,10 @@ pub struct TrustedDevice {
     pub device_type: String,
     pub protocol_version: i64,
     pub paired_at_unix: i64,
+    /// Relay WAN EndpointId learned over an authenticated, already-paired LAN
+    /// session. Persisted with the KDE trust record so a desktop restart does
+    /// not forget how to authenticate the same phone on mobile data.
+    pub wan_endpoint_id: Option<String>,
 }
 
 impl TrustedDevice {
@@ -78,6 +94,21 @@ pub struct DeviceSnapshot {
     pub connectivity_stale: bool,
     pub incoming_capabilities: Vec<String>,
     pub outgoing_capabilities: Vec<String>,
+    /// Which transport is currently authoritative for this device, derived
+    /// live from the same connection state as `connected` -- never a cached
+    /// "last known" value. `RelayWan` state distinguishes a direct Iroh path
+    /// from a relayed one (`TransportState::RemoteDirect` /
+    /// `RemoteRelay`). Only populated when the `kdeconnect-wan` feature is
+    /// compiled in.
+    #[cfg(feature = "kdeconnect-wan")]
+    pub transport_kind: Option<wan::TransportKind>,
+    #[cfg(feature = "kdeconnect-wan")]
+    pub transport_state: wan::TransportState,
+    /// Round-trip time of the last successful `kdeconnect.relay.ping` /
+    /// `kdeconnect.relay.pong` exchange, and when any relay packet was last
+    /// received, over whichever transport is currently authoritative.
+    pub last_rtt_ms: Option<i64>,
+    pub last_seen_unix: Option<i64>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -152,6 +183,11 @@ pub struct KdeConnectConfig {
     pub identity: LocalIdentity,
     pub trusted: Vec<TrustedDevice>,
     pub lan: LanConfig,
+    /// The RunCommand allow-list, seeded *before* the LAN loop starts
+    /// accepting connections. Setting it afterwards races the first phone to
+    /// connect: its plugin asks for the list once at startup, and an answer of
+    /// "no commands" gets cached until it reconnects.
+    pub run_commands: Vec<commands::RunCommandEntry>,
 }
 
 pub struct KdeConnectHandle {
@@ -174,6 +210,7 @@ impl KdeConnectHandle {
             event_tx,
             cancel.clone(),
         );
+        inner.commands.replace(config.run_commands);
         let runner = Arc::clone(&inner);
         tokio::spawn(async move {
             lan::run(runner, listener, udp).await;
@@ -257,6 +294,19 @@ impl KdeConnectHandle {
         self.inner.request_notifications(device_id).await
     }
 
+    /// Dismisses one notification on the logical device that produced it. The
+    /// `(device_id, remote_notification_id)` pair is the key -- the same remote
+    /// id on another device is a different notification and is unaffected.
+    pub async fn dismiss_notification(
+        &self,
+        device_id: &str,
+        remote_notification_id: &str,
+    ) -> Result<()> {
+        self.inner
+            .dismiss_notification(device_id, remote_notification_id)
+            .await
+    }
+
     pub async fn get_notifications(&self, device_id: &str) -> Vec<KdeNotification> {
         self.inner.get_notifications(device_id).await
     }
@@ -296,8 +346,99 @@ impl KdeConnectHandle {
         self.inner.send_mute_call(device_id).await
     }
 
+    /// Starts MPRIS media support by connecting to the D-Bus session bus.
+    ///
+    /// Opt-in and fallible on purpose: a machine with no session bus (a headless
+    /// service, a container) simply runs without media control, and media
+    /// requests are answered with an empty player list instead of hanging.
+    #[cfg(all(target_os = "linux", feature = "mpris"))]
+    pub async fn enable_media(&self) -> Result<()> {
+        let host = media::dbus::DbusMediaPlayerHost::connect().await?;
+        let players = host.players().await.len();
+        self.inner.set_media_host(Arc::new(host)).await;
+        tracing::info!("[Relay MPRIS] media control enabled; {players} player(s) on the session bus");
+        Ok(())
+    }
+
+    /// Turns remote input on or off. Off by default and never implied by
+    /// pairing: a paired phone still needs this *and* an authorised OS input
+    /// session before a single event is injected.
+    pub fn set_remote_input_enabled(&self, enabled: bool) {
+        self.inner.set_input_enabled(enabled);
+    }
+
+    pub fn remote_input_enabled(&self) -> bool {
+        self.inner.input_enabled()
+    }
+
+    /// Whether an authorised input session currently exists.
+    pub async fn remote_input_ready(&self) -> bool {
+        self.inner.input_ready().await
+    }
+
+    /// Requests an OS-level remote-input session.
+    ///
+    /// This is what raises the desktop's own approval dialog, so it must only
+    /// ever run in response to a deliberate action by the person at the
+    /// keyboard -- never at startup, and never because a phone asked.
+    #[cfg(all(target_os = "linux", feature = "remote-input"))]
+    pub async fn authorize_remote_input(&self) -> Result<()> {
+        let backend = input::portal::PortalRemoteInputBackend::start().await?;
+        self.inner.set_input_backend(Some(Arc::new(backend))).await;
+        tracing::info!("[Relay Input] remote-input session authorised");
+        Ok(())
+    }
+
+    /// Drops the input session. The OS-level grant is released and every later
+    /// packet is refused until the user authorises again.
+    pub async fn revoke_remote_input(&self) {
+        self.inner.set_input_backend(None).await;
+        tracing::info!("[Relay Input] remote-input session revoked");
+    }
+
+    /// Installs the desktop's RunCommand allow-list. The phone can only ever
+    /// trigger entries from this list, by id -- see [`commands`].
+    pub fn set_run_commands(&self, entries: Vec<commands::RunCommandEntry>) {
+        self.inner.set_run_commands(entries);
+    }
+
+    pub fn run_commands(&self) -> Vec<commands::RunCommandEntry> {
+        self.inner.commands.snapshot()
+    }
+
     pub fn stop(&self) {
         self.inner.cancel.cancel();
+    }
+
+    /// Opt-in: starts the Relay WAN runtime (binding the Iroh endpoint) and
+    /// its inbound accept loop. Never called implicitly by `start` -- see
+    /// `tests/kdeconnect_wan_isolation.rs`. Safe to call multiple times.
+    #[cfg(feature = "kdeconnect-wan")]
+    pub async fn enable_wan(&self, config: wan::WanRuntimeConfig) -> Result<()> {
+        self.inner.enable_wan(config).await
+    }
+
+    /// Sends a Relay-native heartbeat ping to `device_id` over whichever
+    /// transport is currently authoritative (LAN preferred, then WAN).
+    #[cfg(feature = "kdeconnect-wan")]
+    pub async fn send_relay_ping(&self, device_id: &str, nonce: &str) -> Result<()> {
+        let timestamp = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|duration| duration.as_millis() as i64)
+            .unwrap_or(0);
+        let packet = packet::RelayHeartbeatBody::ping(nonce, timestamp);
+        self.inner.router.send_packet(device_id, &packet).await?;
+        Ok(())
+    }
+
+    #[cfg(feature = "kdeconnect-wan")]
+    pub async fn request_relay_device_state(&self, device_id: &str) -> Result<()> {
+        let packet = packet::RelayDeviceStateBody::new(packet::RelayDeviceStateBody {
+            is_request: true,
+            ..Default::default()
+        });
+        self.inner.router.send_packet(device_id, &packet).await?;
+        Ok(())
     }
 }
 
@@ -357,11 +498,13 @@ mod tests {
                 device_type: "phone".into(),
                 protocol_version: PROTOCOL_VERSION,
                 paired_at_unix: 1,
+                wan_endpoint_id: None,
             }],
             lan: LanConfig {
                 bind: BindMode::Loopback,
                 allow_loopback: true,
             },
+            run_commands: Vec::new(),
         })
         .await
         .unwrap();
@@ -386,6 +529,7 @@ mod tests {
             identity: alice_id.clone(),
             trusted: vec![],
             lan: lan.clone(),
+            run_commands: Vec::new(),
         })
         .await
         .unwrap();
@@ -393,6 +537,7 @@ mod tests {
             identity: bob_id.clone(),
             trusted: vec![],
             lan,
+            run_commands: Vec::new(),
         })
         .await
         .unwrap();
@@ -435,6 +580,7 @@ mod tests {
             identity: alice_id.clone(),
             trusted,
             lan: lan.clone(),
+            run_commands: Vec::new(),
         })
         .await
         .unwrap();
@@ -442,6 +588,7 @@ mod tests {
             identity: bob_id.clone(),
             trusted: vec![],
             lan,
+            run_commands: Vec::new(),
         })
         .await
         .unwrap();
@@ -484,6 +631,7 @@ mod tests {
             identity: alice_id.clone(),
             trusted: vec![],
             lan: lan.clone(),
+            run_commands: Vec::new(),
         })
         .await
         .unwrap();
@@ -491,6 +639,7 @@ mod tests {
             identity: bob_id.clone(),
             trusted: vec![],
             lan: lan.clone(),
+            run_commands: Vec::new(),
         })
         .await
         .unwrap();
@@ -519,6 +668,7 @@ mod tests {
             identity: alice_id.clone(),
             trusted,
             lan: lan.clone(),
+            run_commands: Vec::new(),
         })
         .await
         .unwrap();
@@ -526,6 +676,7 @@ mod tests {
             identity: bob_id.clone(),
             trusted: vec![],
             lan,
+            run_commands: Vec::new(),
         })
         .await
         .unwrap();

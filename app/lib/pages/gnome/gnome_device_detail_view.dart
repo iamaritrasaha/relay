@@ -14,6 +14,7 @@ import 'package:relay_app/util/native/open_file.dart';
 import 'package:relay_app/util/native/open_folder.dart';
 import 'package:relay_app/widget/gnome/adw_action_row.dart';
 import 'package:relay_app/widget/gnome/adw_boxed_list.dart';
+import 'package:relay_app/widget/gnome/relay_connection_stage.dart';
 import 'package:relay_app/widget/gnome/relay_connection_status.dart';
 import 'package:relay_app/widget/relay/relay_device_relationship_tile.dart';
 import 'package:relay_app/widget/relay_carbon/relay_surface.dart';
@@ -70,7 +71,11 @@ class GnomeDeviceDetailView extends StatelessWidget {
     this.onCancelTransfer,
   });
 
-  bool get _connected => device.statusSummary == 'Connected' || device.statusSummary.startsWith('Connected · ') || device.continuityConnected;
+  bool get _connected =>
+      (device.isKdeConnect && device.detail == 'Connected') ||
+      device.statusSummary == 'Connected' ||
+      device.statusSummary.startsWith('Connected · ') ||
+      device.continuityConnected;
 
   bool get _transferring =>
       device.phase == RelayDevicePhase.sending || device.phase == RelayDevicePhase.waiting || device.phase == RelayDevicePhase.verifying;
@@ -172,8 +177,8 @@ class GnomeDeviceDetailView extends StatelessWidget {
 /// Layer A: Travelling multicolor perimeter sweep
 /// Layer B: Atmospheric gradient drift
 /// Layer C: Subtle multicolor breath
-/// Layer D: Animated device icon with soft halo
-/// Layer E: Device-palette connection indicator
+/// Layer D: Connection Stage (Remote silhouette ↔ Relay Link Core ↔ Local silhouette)
+/// Layer E: Device-palette connection indicator & Secure state
 class GnomeSelectedDeviceHeader extends StatelessWidget {
   final RelayDeviceVm device;
   final String selfAlias;
@@ -230,7 +235,7 @@ class GnomeSelectedDeviceHeader extends StatelessWidget {
   }
 }
 
-/// The focused device header. Clean, flat GNOME composition with device-specific life.
+/// The focused device header with Connection Stage.
 class _DeviceHeader extends StatelessWidget {
   final RelayDeviceVm device;
   final RelayDevicePalette palette;
@@ -248,16 +253,21 @@ class _DeviceHeader extends StatelessWidget {
     this.animationsEnabled = true,
   });
 
+  bool get _isSecure =>
+      connected &&
+      (device.isCompatibilityPeer ||
+          device.continuityConnected ||
+          device.isPaired ||
+          device.isVerifiedRelay ||
+          device.isPairedRelay ||
+          device.targetKind == RelayDeviceTargetKind.kdeConnect);
+
+  bool get _connecting => device.phase == RelayDevicePhase.waiting || device.phase == RelayDevicePhase.verifying;
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
-
-    final IconData deviceIcon = switch (device.deviceType) {
-      DeviceType.mobile => YaruIcons.smartphone,
-      DeviceType.desktop => YaruIcons.desktop,
-      _ => YaruIcons.computer,
-    };
 
     final tone = switch (device.phase) {
       RelayDevicePhase.failed => RelayPresenceTone.attention,
@@ -268,181 +278,94 @@ class _DeviceHeader extends StatelessWidget {
     return YaruBorderContainer(
       borderRadius: BorderRadius.circular(RelayRadius.hero),
       clipBehavior: Clip.antiAlias,
-      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
-      child: Row(
+      padding: const EdgeInsets.fromLTRB(20, 16, 20, 16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        mainAxisSize: MainAxisSize.min,
         children: [
-          _AnimatedDeviceIcon(
-            icon: deviceIcon,
+          // Top Identity Row
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      device.alias,
+                      style: theme.textTheme.titleLarge?.copyWith(
+                        fontWeight: FontWeight.w600,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      selfAlias.isNotEmpty
+                          ? (connected ? 'Connected to $selfAlias' : 'Paired with $selfAlias')
+                          : (connected ? 'Connected' : 'Paired'),
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: colorScheme.onSurface.withValues(alpha: 0.7),
+                      ),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 12),
+              if (device.phase == RelayDevicePhase.idle)
+                RelayConnectionStatus(
+                  connected: connected,
+                  label: connected ? device.statusSummary : device.detail,
+                  palette: palette,
+                  animationsEnabled: animationsEnabled,
+                  ambient: true,
+                  compact: true,
+                )
+              else
+                RelayStatusPill(
+                  tone: tone,
+                  label: device.statusSummary,
+                  compact: true,
+                ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          // Live Connection Stage
+          RelayConnectionStage(
+            device: device,
             palette: palette,
+            selfAlias: selfAlias,
+            selfDeviceType: selfDeviceType,
             connected: connected,
+            connecting: _connecting,
             animationsEnabled: animationsEnabled,
           ),
-          const SizedBox(width: 16),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  device.alias,
-                  style: theme.textTheme.titleLarge?.copyWith(
-                    fontWeight: FontWeight.w600,
+          if (_isSecure) ...[
+            const SizedBox(height: 10),
+            Center(
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    YaruIcons.lock,
+                    size: 13,
+                    color: colorScheme.onSurface.withValues(alpha: 0.60),
                   ),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  selfAlias.isNotEmpty ? (connected ? 'Connected to $selfAlias' : 'Paired with $selfAlias') : (connected ? 'Connected' : 'Paired'),
-                  style: theme.textTheme.bodySmall?.copyWith(
-                    color: colorScheme.onSurface.withValues(alpha: 0.7),
+                  const SizedBox(width: 5),
+                  Text(
+                    'Secure connection',
+                    style: theme.textTheme.labelSmall?.copyWith(
+                      color: colorScheme.onSurface.withValues(alpha: 0.65),
+                      fontWeight: FontWeight.w500,
+                    ),
                   ),
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ],
+                ],
+              ),
             ),
-          ),
-          const SizedBox(width: 12),
-          if (device.phase == RelayDevicePhase.idle)
-            RelayConnectionStatus(
-              connected: connected,
-              label: connected ? device.statusSummary : device.detail,
-              palette: palette,
-              animationsEnabled: animationsEnabled,
-              ambient: true,
-              compact: true,
-            )
-          else
-            RelayStatusPill(
-              tone: tone,
-              label: device.statusSummary,
-              compact: true,
-            ),
+          ],
         ],
-      ),
-    );
-  }
-}
-
-/// Device icon with subtle halo breath and highlight travel when connected.
-class _AnimatedDeviceIcon extends StatefulWidget {
-  final IconData icon;
-  final RelayDevicePalette palette;
-  final bool connected;
-  final bool animationsEnabled;
-
-  const _AnimatedDeviceIcon({
-    required this.icon,
-    required this.palette,
-    required this.connected,
-    required this.animationsEnabled,
-  });
-
-  @override
-  State<_AnimatedDeviceIcon> createState() => _AnimatedDeviceIconState();
-}
-
-class _AnimatedDeviceIconState extends State<_AnimatedDeviceIcon> with SingleTickerProviderStateMixin {
-  AnimationController? _localController;
-
-  bool get _motionOn => widget.connected && widget.animationsEnabled && !(MediaQuery.maybeDisableAnimationsOf(context) ?? false);
-
-  @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    final clock = RelayAmbientClock.maybeOf(context);
-    _sync(clock);
-  }
-
-  @override
-  void didUpdateWidget(covariant _AnimatedDeviceIcon oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    final clock = RelayAmbientClock.maybeOf(context);
-    _sync(clock);
-  }
-
-  void _sync(RelayAmbientClockNotifier? sharedClock) {
-    if (sharedClock == null) {
-      if (_motionOn) {
-        _localController ??= AnimationController(vsync: this, duration: RelayMotion.ambientGlowCycle);
-        if (!_localController!.isAnimating) {
-          unawaited(_localController!.repeat(reverse: true));
-        }
-      } else if (_localController != null && _localController!.isAnimating) {
-        _localController!.stop();
-        _localController!.value = 0;
-      }
-    } else if (_localController != null) {
-      _localController!.stop();
-      _localController!.dispose();
-      _localController = null;
-    }
-  }
-
-  @override
-  void dispose() {
-    _localController?.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final colorScheme = theme.colorScheme;
-    final isDark = theme.brightness == Brightness.dark;
-
-    final staticIcon = Icon(
-      widget.icon,
-      size: 28,
-      color: widget.connected ? widget.palette.primary : colorScheme.onSurface.withValues(alpha: 0.5),
-    );
-
-    if (!_motionOn) {
-      return Container(
-        padding: const EdgeInsets.all(12),
-        decoration: BoxDecoration(
-          color: colorScheme.surfaceContainerHighest,
-          borderRadius: BorderRadius.circular(RelayRadius.card),
-        ),
-        child: staticIcon,
-      );
-    }
-
-    final sharedClock = RelayAmbientClock.maybeOf(context);
-    final repaint = (sharedClock?.cadenceClock ?? _localController)!;
-
-    return RepaintBoundary(
-      child: AnimatedBuilder(
-        animation: repaint,
-        builder: (context, child) {
-          final t = sharedClock != null ? sharedClock.breathValue : (_localController?.value ?? 0.0);
-          final glowAlpha = (isDark ? 0.12 : 0.08) + t * (isDark ? 0.10 : 0.06);
-
-          return Container(
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: Color.lerp(
-                colorScheme.surfaceContainerHighest,
-                widget.palette.primary.withValues(alpha: isDark ? 0.15 : 0.10),
-                t,
-              ),
-              borderRadius: BorderRadius.circular(RelayRadius.card),
-              border: Border.all(
-                color: widget.palette.primary.withValues(alpha: glowAlpha),
-                width: 1.2,
-              ),
-              boxShadow: [
-                BoxShadow(
-                  color: widget.palette.primary.withValues(alpha: glowAlpha * 0.6),
-                  blurRadius: (8 + t * 4).toDouble(),
-                  spreadRadius: -2,
-                ),
-              ],
-            ),
-            child: child,
-          );
-        },
-        child: staticIcon,
       ),
     );
   }
@@ -1109,7 +1032,11 @@ class _DeviceStatusSection extends StatelessWidget {
               title: 'Connection',
               trailing: RelayConnectionStatus(
                 connected: connected,
-                label: connected ? 'Connected' : device.statusSummary,
+                label: device.isKdeConnect
+                    ? device.statusSummary
+                    : connected
+                    ? 'Connected'
+                    : device.statusSummary,
                 palette: palette,
                 animationsEnabled: animationsEnabled,
                 ambient: true,
@@ -1296,8 +1223,10 @@ class _NotificationsSection extends StatelessWidget {
       );
     }
 
-    final rawId = device.key.replaceFirst('kdeconnect:', '');
-    final notifications = context.watch(kdeConnectProvider.select((s) => s.notifications[rawId] ?? const []));
+    // Scoped strictly to this device: `notificationsForDevice` never falls back
+    // to another device's list, so Device Details for phone A can only ever
+    // show phone A's notifications.
+    final notifications = context.watch(kdeConnectProvider.select((s) => s.notificationsForDevice(device.key)));
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -1415,7 +1344,11 @@ class _DeviceDetails extends StatelessWidget {
               title: 'Connection',
               subtitle: device.isKdeConnect
                   ? device.detail == 'Connected'
-                        ? 'Local network'
+                        ? device.connectionType == RelayConnectionType.local
+                              ? 'KDE LAN'
+                              : device.connectionType == RelayConnectionType.direct
+                              ? 'Relay WAN · Direct'
+                              : 'Relay WAN · Relay'
                         : device.detail == 'Paired'
                         ? 'Paired'
                         : 'Nearby on your local network'
@@ -1428,7 +1361,11 @@ class _DeviceDetails extends StatelessWidget {
                   : 'Nearby on your local network',
               trailing: RelayConnectionStatus(
                 connected: connected,
-                label: connected ? 'Connected' : device.statusSummary,
+                label: connected && device.isKdeConnect
+                    ? device.statusSummary
+                    : connected
+                    ? 'Connected'
+                    : device.statusSummary,
                 palette: palette,
                 animationsEnabled: animationsEnabled,
               ),

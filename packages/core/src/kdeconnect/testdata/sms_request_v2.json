@@ -1,0 +1,6 @@
+{
+  "version": 2,
+  "addresses": [{"address": "+15550100"}],
+  "messageBody": "Hello from Relay",
+  "subID": 1
+}
