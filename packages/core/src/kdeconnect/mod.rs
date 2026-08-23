@@ -4,6 +4,7 @@
 //! never produces a RelayId and never consults Relay-native trust records.
 
 mod capabilities;
+pub mod clipboard;
 pub mod commands;
 pub mod input;
 pub mod media;
@@ -358,6 +359,19 @@ impl KdeConnectHandle {
         self.inner.set_media_host(Arc::new(host)).await;
         tracing::info!("[Relay MPRIS] media control enabled; {players} player(s) on the session bus");
         Ok(())
+    }
+
+    /// Turns clipboard sync on or off for this desktop.
+    ///
+    /// When off, nothing is transmitted *and* an incoming clipboard packet does
+    /// not overwrite the local clipboard -- pairing alone never implies consent
+    /// to share the clipboard in either direction.
+    pub fn set_clipboard_enabled(&self, enabled: bool) {
+        self.inner.set_clipboard_enabled(enabled);
+    }
+
+    pub fn clipboard_enabled(&self) -> bool {
+        self.inner.clipboard_enabled()
     }
 
     /// Turns remote input on or off. Off by default and never implied by

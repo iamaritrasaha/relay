@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 import 'package:logging/logging.dart';
 import 'package:refena_flutter/refena_flutter.dart';
 import 'package:relay_app/provider/persistence_provider.dart';
+import 'package:relay_app/provider/relay_clipboard_service.dart';
 import 'package:relay_isolates/rust/api/kdeconnect.dart';
 
 final _logger = Logger('KdeConnect');
@@ -91,6 +92,13 @@ class KdeConnectState {
   /// device: which phone asked is carried in the request, never in the storage.
   final List<RsRunCommand> runCommands;
 
+  /// Whether clipboard sync is on for this desktop.
+  final bool clipboardEnabled;
+
+  /// Whether this session permits unattended clipboard observation. False on
+  /// Wayland, where only the focused client is offered the clipboard.
+  final bool clipboardAutoSync;
+
   /// Whether the desktop user has switched remote input on.
   final bool remoteInputEnabled;
 
@@ -110,6 +118,8 @@ class KdeConnectState {
     this.incoming,
     this.notifications = const {},
     this.runCommands = const [],
+    this.clipboardEnabled = true,
+    this.clipboardAutoSync = false,
     this.remoteInputEnabled = false,
     this.remoteInputReady = false,
     this.smsConversations = const {},
@@ -158,6 +168,8 @@ class KdeConnectState {
     bool clearIncoming = false,
     Map<String, List<RsKdeNotification>>? notifications,
     List<RsRunCommand>? runCommands,
+    bool? clipboardEnabled,
+    bool? clipboardAutoSync,
     bool? remoteInputEnabled,
     bool? remoteInputReady,
     Map<String, List<RsKdeSmsConversation>>? smsConversations,
@@ -172,6 +184,8 @@ class KdeConnectState {
     incoming: clearIncoming ? null : incoming ?? this.incoming,
     notifications: notifications ?? this.notifications,
     runCommands: runCommands ?? this.runCommands,
+    clipboardEnabled: clipboardEnabled ?? this.clipboardEnabled,
+    clipboardAutoSync: clipboardAutoSync ?? this.clipboardAutoSync,
     remoteInputEnabled: remoteInputEnabled ?? this.remoteInputEnabled,
     remoteInputReady: remoteInputReady ?? this.remoteInputReady,
     smsConversations: smsConversations ?? this.smsConversations,
@@ -202,8 +216,12 @@ class KdeConnectService extends ReduxNotifier<KdeConnectState> {
   final KdeConnectStarter startRuntime;
 
   RsKdeConnect? _runtime;
+
+  /// Watches the local clipboard and applies remote values to it.
+  late final RelayClipboardService clipboard = RelayClipboardService(
+    onLocalChange: (text) async => dispatchAsync(KdeConnectSendClipboardAction(text)),
+  );
   StreamSubscription<RsKdeConnectEvent>? _events;
-  String? _lastReceivedClipboard;
 
   KdeConnectService({
     required this.persistence,
@@ -216,6 +234,7 @@ class KdeConnectService extends ReduxNotifier<KdeConnectState> {
 
   @override
   void dispose() {
+    unawaited(clipboard.stop());
     unawaited(_events?.cancel());
     final runtime = _runtime;
     if (runtime != null) {
@@ -294,7 +313,19 @@ class KdeConnectStartAction extends AsyncReduxAction<KdeConnectService, KdeConne
     final remoteInputEnabled = notifier.persistence.getKdeConnectRemoteInputEnabled();
     runtime.setRemoteInputEnabled(enabled: remoteInputEnabled);
 
-    return state.copyWith(runCommands: restoredCommands, remoteInputEnabled: remoteInputEnabled, remoteInputReady: false);
+    final clipboardEnabled = notifier.persistence.getKdeConnectClipboardEnabled();
+    await runtime.setClipboardEnabled(enabled: clipboardEnabled);
+    if (clipboardEnabled) {
+      await notifier.clipboard.start();
+    }
+
+    return state.copyWith(
+      runCommands: restoredCommands,
+      remoteInputEnabled: remoteInputEnabled,
+      remoteInputReady: false,
+      clipboardEnabled: clipboardEnabled,
+      clipboardAutoSync: notifier.clipboard.autoSyncAvailable,
+    );
   }
 }
 
@@ -404,15 +435,17 @@ class KdeConnectSendClipboardAction extends AsyncReduxAction<KdeConnectService, 
 
   @override
   Future<KdeConnectState> reduce() async {
-    if (content.isNotEmpty && content != notifier._lastReceivedClipboard) {
-      try {
-        await notifier._runtime?.sendClipboardToAllPaired(
-          content: content,
-          timestampMs: DateTime.now().millisecondsSinceEpoch,
-        );
-      } catch (error, stack) {
-        _logger.warning('Send clipboard failed', error, stack);
-      }
+    if (content.isEmpty) return state;
+    try {
+      // Loop suppression, the enable switch and the size bound all live in the
+      // core, which is the only layer that sees both directions.
+      await notifier._runtime?.sendClipboardToAllPaired(
+        content: content,
+        timestampMs: DateTime.now().millisecondsSinceEpoch,
+      );
+    } catch (error, stack) {
+      // Never log the content itself.
+      _logger.warning('Send clipboard failed', error, stack);
     }
     return state;
   }
@@ -528,6 +561,28 @@ class KdeConnectRevokeRemoteInputAction extends AsyncReduxAction<KdeConnectServi
   }
 }
 
+/// Turns clipboard sync on or off.
+///
+/// Switching it off stops the local watcher *and* tells the core to refuse
+/// incoming clipboard packets, so neither direction can move data.
+class KdeConnectSetClipboardEnabledAction extends AsyncReduxAction<KdeConnectService, KdeConnectState> {
+  final bool enabled;
+
+  KdeConnectSetClipboardEnabledAction(this.enabled);
+
+  @override
+  Future<KdeConnectState> reduce() async {
+    await notifier.persistence.setKdeConnectClipboardEnabled(enabled);
+    await notifier._runtime?.setClipboardEnabled(enabled: enabled);
+    if (enabled) {
+      await notifier.clipboard.start();
+    } else {
+      await notifier.clipboard.stop();
+    }
+    return state.copyWith(clipboardEnabled: enabled);
+  }
+}
+
 class KdeConnectApplyEventAction extends ReduxAction<KdeConnectService, KdeConnectState> {
   final RsKdeConnectEvent event;
 
@@ -569,10 +624,11 @@ class KdeConnectApplyEventAction extends ReduxAction<KdeConnectService, KdeConne
           lastPingTimestamp: DateTime.now().millisecondsSinceEpoch,
         );
       case RsKdeConnectEvent_ClipboardReceived(:final content):
-        if (content.isNotEmpty && content != notifier._lastReceivedClipboard) {
-          notifier._lastReceivedClipboard = content;
-          unawaited(Clipboard.setData(ClipboardData(text: content)));
-        }
+        // The core has already decided this is worth applying: it checked trust,
+        // the enable switch, the size bound and loop suppression, and recorded
+        // the value so the resulting local change is not echoed back. Applying
+        // it here through the GTK channel keeps Wayland working.
+        unawaited(notifier.clipboard.applyRemote(content));
         return state;
       case RsKdeConnectEvent_NotificationsChanged(:final deviceId, :final notifications):
         return state.copyWith(

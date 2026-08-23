@@ -115,6 +115,7 @@ const _kdeConnectIdentityKey = 'kc_local_identity_v1';
 const _kdeConnectTrustedDevicesKey = 'kc_trusted_devices_v1';
 const _kdeConnectRunCommandsKey = 'kc_run_commands_v1';
 const _kdeConnectRemoteInputKey = 'kc_remote_input_enabled_v1';
+const _kdeConnectClipboardKey = 'kc_clipboard_enabled_v1';
 const _gnomePanelDeviceIdKey = 'ls_gnome_panel_device_id';
 const _gnomePanelShowNetworkTypeKey = 'ls_gnome_panel_show_network_type';
 const _gnomePanelShowBatteryPercentageKey = 'ls_gnome_panel_show_battery_percentage';
@@ -741,6 +742,14 @@ class PersistenceService {
 
   Future<void> setKdeConnectRemoteInputEnabled(bool enabled) async {
     await _prefs.setBool(_kdeConnectRemoteInputKey, enabled);
+  }
+
+  /// Whether clipboard sync is on. Defaults to on: the clipboard is the
+  /// feature users most expect to just work, and it is trivially reversible.
+  bool getKdeConnectClipboardEnabled() => _prefs.getBool(_kdeConnectClipboardKey) ?? true;
+
+  Future<void> setKdeConnectClipboardEnabled(bool enabled) async {
+    await _prefs.setBool(_kdeConnectClipboardKey, enabled);
   }
 
   String? getGnomePanelDeviceId() {

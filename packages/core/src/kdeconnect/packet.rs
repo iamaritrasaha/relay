@@ -637,6 +637,12 @@ impl ClipboardBody {
 
     fn from_map(body: &Map<String, Value>) -> Result<Self, PacketError> {
         let content = required_string(body, "content")?;
+        // Bounded at the parse boundary so oversized content never reaches the
+        // clipboard layer. The 4 MiB frame limit already caps how much can be
+        // read off the wire; this is the feature-level policy on top of it.
+        if content.len() > crate::kdeconnect::clipboard::MAX_CLIPBOARD_BYTES {
+            return Err(PacketError("clipboard content exceeds the size bound".into()));
+        }
         let timestamp = optional_i64(body, "timestamp");
         Ok(Self { content, timestamp })
     }

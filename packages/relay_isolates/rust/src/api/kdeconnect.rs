@@ -356,6 +356,17 @@ impl RsKdeConnect {
             .await
     }
 
+    /// Whether clipboard sync is switched on for this desktop.
+    pub fn clipboard_enabled(&self) -> bool {
+        self.handle.clipboard_enabled()
+    }
+
+    /// Turns clipboard sync on or off. When off nothing is transmitted and an
+    /// incoming clipboard does not overwrite the local one.
+    pub fn set_clipboard_enabled(&self, enabled: bool) {
+        self.handle.set_clipboard_enabled(enabled);
+    }
+
     /// Whether remote input is switched on for this desktop.
     pub fn remote_input_enabled(&self) -> bool {
         self.handle.remote_input_enabled()

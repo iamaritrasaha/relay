@@ -385,6 +385,12 @@ pub(crate) struct LanInner {
     /// feature off without tearing down an authorised session, and so being
     /// paired never implies permission to move the cursor.
     input_enabled: std::sync::atomic::AtomicBool,
+    /// Loop suppression shared by both clipboard directions. One guard, not one
+    /// per transport or per device: an echo must be caught wherever it returns
+    /// from.
+    clipboard_guard: Mutex<crate::kdeconnect::clipboard::ClipboardGuard>,
+    /// User-facing clipboard sync switch. Being paired is never sufficient.
+    clipboard_enabled: std::sync::atomic::AtomicBool,
     /// One input queue per logical device, so a burst from one phone cannot
     /// delay another's clicks.
     input_queues: Mutex<HashMap<String, Arc<crate::kdeconnect::input::InputQueue>>>,
@@ -450,6 +456,8 @@ impl LanInner {
             media: Mutex::new(None),
             input: Mutex::new(None),
             input_enabled: std::sync::atomic::AtomicBool::new(false),
+            clipboard_guard: Mutex::new(crate::kdeconnect::clipboard::ClipboardGuard::new()),
+            clipboard_enabled: std::sync::atomic::AtomicBool::new(true),
             input_queues: Mutex::new(HashMap::new()),
             identity,
             config,
@@ -814,6 +822,64 @@ impl LanInner {
         self.commands.replace(entries);
     }
 
+    pub(crate) fn set_clipboard_enabled(&self, enabled: bool) {
+        self.clipboard_enabled
+            .store(enabled, std::sync::atomic::Ordering::SeqCst);
+    }
+
+    pub(crate) fn clipboard_enabled(&self) -> bool {
+        self.clipboard_enabled.load(std::sync::atomic::Ordering::SeqCst)
+    }
+
+    /// Applies an incoming clipboard packet, or explains why it was refused.
+    ///
+    /// Content never reaches the log -- only the device, the length and a short
+    /// hash prefix, which is enough to correlate a send with its receive.
+    async fn handle_clipboard(
+        &self,
+        device_id: &str,
+        clipboard: crate::kdeconnect::packet::ClipboardBody,
+    ) {
+        use crate::kdeconnect::clipboard::{hash_prefix, ClipboardRejection};
+        let now_ms = now_unix_millis();
+        let trusted = self.trust.lock().await.get(device_id).is_some();
+        let enabled = self.clipboard_enabled();
+        let decision = {
+            let mut guard = self.clipboard_guard.lock().await;
+            guard.should_apply_remote(&clipboard.content, enabled, trusted, now_ms)
+        };
+        match decision {
+            Ok(hash) => {
+                tracing::info!(
+                    "[Relay Clipboard] device={device_id} direction=in bytes={} hash={}",
+                    clipboard.content.len(),
+                    hash_prefix(hash)
+                );
+                // Marked *before* the event is emitted: the local watcher will
+                // observe the resulting write, and must recognise it as ours.
+                self.clipboard_guard
+                    .lock()
+                    .await
+                    .note_handled(&clipboard.content, now_ms);
+                let _ = self.event_tx.send(KdeConnectEvent::ClipboardReceived {
+                    device_id: device_id.to_string(),
+                    content: clipboard.content,
+                    timestamp_ms: clipboard.timestamp.unwrap_or(now_ms),
+                });
+            }
+            Err(ClipboardRejection::Duplicate) => {
+                // Expected and benign: this is loop suppression working.
+                tracing::debug!("[Relay Clipboard] device={device_id} direction=in ignored=duplicate");
+            }
+            Err(rejection) => {
+                tracing::warn!(
+                    "[Relay Clipboard] device={device_id} direction=in refused={rejection} bytes={}",
+                    clipboard.content.len()
+                );
+            }
+        }
+    }
+
     /// Installs the remote-input backend, which only exists once the desktop
     /// user has approved an input session.
     pub(crate) async fn set_input_backend(
@@ -1125,25 +1191,7 @@ impl LanInner {
             );
             read_inner.emit_devices().await;
         } else if let Ok(clipboard) = packet.as_clipboard() {
-            let now_ms = std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .map(|d| d.as_millis() as i64)
-                .unwrap_or(0);
-            let ts = clipboard.timestamp.unwrap_or(now_ms);
-            let mut cb_map = read_inner.clipboard.lock().await;
-            let prev_ts = cb_map.get(&read_id).copied().unwrap_or(0);
-            if ts >= prev_ts {
-                cb_map.insert(read_id.clone(), ts);
-                drop(cb_map);
-                let _ =
-                    read_inner
-                        .event_tx
-                        .send(KdeConnectEvent::ClipboardReceived {
-                            device_id: read_id.clone(),
-                            content: clipboard.content,
-                            timestamp_ms: ts,
-                        });
-            }
+            read_inner.handle_clipboard(&read_id, clipboard).await;
         } else if let Ok(ping) = packet.as_ping() {
             tracing::info!("[KDE Connect] Received ping from {read_id}");
             let _ = read_inner.event_tx.send(KdeConnectEvent::PingReceived {
@@ -1780,44 +1828,105 @@ impl LanInner {
         if !is_paired {
             anyhow::bail!("device not paired");
         }
+        if !self.clipboard_enabled() {
+            anyhow::bail!("clipboard sync is switched off");
+        }
+        if content.is_empty()
+            || content.len() > crate::kdeconnect::clipboard::MAX_CLIPBOARD_BYTES
+        {
+            anyhow::bail!("clipboard content is empty or exceeds the size bound");
+        }
         self.ensure_peer_accepts(device_id, crate::kdeconnect::PACKET_TYPE_CLIPBOARD_CONNECT)
             .await?;
         self.clipboard
             .lock()
             .await
             .insert(device_id.to_string(), timestamp_ms);
+        // Marked so the resulting remote write cannot come back as new content.
+        self.clipboard_guard
+            .lock()
+            .await
+            .note_handled(content, now_unix_millis());
         let pkt = ClipboardBody::connect(content, timestamp_ms).serialize();
         self.send_packet(device_id, &pkt).await
     }
 
+    /// Sends a locally observed clipboard change to every trusted device that
+    /// accepts clipboard packets.
+    ///
+    /// Delivery goes through the `TransportRouter`, so a Local device is reached
+    /// over LAN and a Remote one over Relay WAN with no clipboard-specific
+    /// transport handling. This previously wrote straight into the LAN
+    /// connection map, which silently skipped every Remote device.
+    ///
+    /// Fan-out policy: this is only ever called for a *locally originated*
+    /// clipboard change. Content that arrived from another device is applied
+    /// locally and not re-broadcast -- re-broadcasting is what turns three
+    /// paired devices into a clipboard storm. The guard below would catch the
+    /// echo regardless, but not fanning out in the first place is what keeps
+    /// the traffic proportional to the number of devices rather than its square.
     pub async fn send_clipboard_to_all_paired(
         &self,
         content: &str,
         timestamp_ms: i64,
     ) -> Result<()> {
-        let trusted = self.trust.lock().await.snapshot();
-        let pkt = ClipboardBody::connect(content, timestamp_ms).serialize();
-        let connections = self.connections.lock().await;
-        let peer_capabilities = self.peer_capabilities.lock().await;
-        for t in trusted {
-            let peer_accepts_clipboard =
-                peer_capabilities
-                    .get(&t.device_id)
-                    .is_some_and(|(incoming, _)| {
-                        incoming.iter().any(|capability| {
-                            capability == crate::kdeconnect::PACKET_TYPE_CLIPBOARD_CONNECT
-                        })
-                    });
-            if peer_accepts_clipboard {
-                if let Some(conn) = connections.get(&t.device_id) {
-                    let _ = conn.packets.send(pkt.clone()).await;
-                    self.clipboard
-                        .lock()
-                        .await
-                        .insert(t.device_id, timestamp_ms);
+        use crate::kdeconnect::clipboard::{hash_prefix, ClipboardRejection};
+        let now_ms = now_unix_millis();
+        let enabled = self.clipboard_enabled();
+        let hash = {
+            let mut guard = self.clipboard_guard.lock().await;
+            match guard.should_send_local(content, enabled, now_ms) {
+                Ok(hash) => hash,
+                Err(ClipboardRejection::Duplicate) => {
+                    // The local watcher saw the write Relay itself just made.
+                    tracing::debug!("[Relay Clipboard] direction=out ignored=duplicate");
+                    return Ok(());
+                }
+                Err(rejection) => {
+                    tracing::warn!(
+                        "[Relay Clipboard] direction=out refused={rejection} bytes={}",
+                        content.len()
+                    );
+                    return Ok(());
                 }
             }
+        };
+
+        let trusted = self.trust.lock().await.snapshot();
+        let packet = ClipboardBody::connect(content, timestamp_ms);
+        let mut sent = 0_usize;
+        for device in trusted {
+            if self
+                .ensure_peer_accepts(
+                    &device.device_id,
+                    crate::kdeconnect::PACKET_TYPE_CLIPBOARD_CONNECT,
+                )
+                .await
+                .is_err()
+            {
+                continue;
+            }
+            #[cfg(feature = "kdeconnect-wan")]
+            if self.router.send_packet(&device.device_id, &packet).await.is_ok() {
+                sent += 1;
+            }
+            #[cfg(not(feature = "kdeconnect-wan"))]
+            if self
+                .send_packet(&device.device_id, &packet.serialize())
+                .await
+                .is_ok()
+            {
+                sent += 1;
+            }
         }
+        // Recorded once for the whole fan-out, so any device echoing it back is
+        // recognised as ours.
+        self.clipboard_guard.lock().await.note_handled(content, now_ms);
+        tracing::info!(
+            "[Relay Clipboard] direction=out devices={sent} bytes={} hash={}",
+            content.len(),
+            hash_prefix(hash)
+        );
         Ok(())
     }
 
@@ -5017,6 +5126,261 @@ mod tests {
         }
         fn health(&self) -> crate::kdeconnect::wan::transport::LinkFuture<'_, bool> {
             Box::pin(async move { true })
+        }
+    }
+
+    // --- Clipboard ---------------------------------------------------------
+
+    fn clipboard_packet(content: &str, timestamp_ms: i64) -> NetworkPacket {
+        let mut body = serde_json::Map::new();
+        body.insert("content".into(), content.into());
+        body.insert("timestamp".into(), timestamp_ms.into());
+        NetworkPacket::new(crate::kdeconnect::PACKET_TYPE_CLIPBOARD_CONNECT, body)
+    }
+
+    async fn clipboard_events(
+        events: &mut tokio::sync::mpsc::UnboundedReceiver<KdeConnectEvent>,
+    ) -> Vec<(String, String)> {
+        let mut received = Vec::new();
+        while let Ok(event) = events.try_recv() {
+            if let KdeConnectEvent::ClipboardReceived { device_id, content, .. } = event {
+                received.push((device_id, content));
+            }
+        }
+        received
+    }
+
+    #[tokio::test]
+    async fn an_incoming_clipboard_packet_is_applied_once() {
+        let (inner, mut events) = multi_device_harness(&[PHONE_A]);
+        let (tx, _rx) = tokio::sync::mpsc::channel(16);
+        let packet = clipboard_packet("hello", now_unix_millis());
+
+        assert!(
+            inner
+                .handle_transport_packet(PHONE_A, &packet, &PacketReplyRoute::Lan(tx.clone()))
+                .await
+        );
+        // The same packet again -- a retransmit or a reconnect replay.
+        inner
+            .handle_transport_packet(PHONE_A, &packet, &PacketReplyRoute::Lan(tx))
+            .await;
+
+        let applied = clipboard_events(&mut events).await;
+        assert_eq!(applied.len(), 1, "a duplicate packet must be idempotent");
+        assert_eq!(applied[0], (PHONE_A.to_owned(), "hello".to_owned()));
+    }
+
+    #[tokio::test]
+    async fn a_remote_clipboard_value_is_not_echoed_back_out() {
+        let (inner, mut events) = multi_device_harness(&[PHONE_A]);
+        let (tx, _rx) = tokio::sync::mpsc::channel(16);
+        inner
+            .handle_transport_packet(
+                PHONE_A,
+                &clipboard_packet("hello", now_unix_millis()),
+                &PacketReplyRoute::Lan(tx),
+            )
+            .await;
+        assert_eq!(clipboard_events(&mut events).await.len(), 1);
+
+        // The desktop's own clipboard watcher now observes that write. Sending
+        // it back out is exactly the loop this must prevent.
+        inner
+            .send_clipboard_to_all_paired("hello", now_unix_millis())
+            .await
+            .unwrap();
+
+        let guard_blocked = {
+            let mut guard = inner.clipboard_guard.lock().await;
+            guard
+                .should_send_local("hello", true, now_unix_millis())
+                .is_err()
+        };
+        assert!(guard_blocked, "the echo must still be suppressed afterwards");
+    }
+
+    #[tokio::test]
+    async fn an_untrusted_device_cannot_write_the_clipboard() {
+        let (inner, mut events) = multi_device_harness(&[PHONE_A]);
+        let (tx, _rx) = tokio::sync::mpsc::channel(16);
+
+        inner
+            .handle_transport_packet(
+                "dddddddddddddddddddddddddddddddd",
+                &clipboard_packet("hello", now_unix_millis()),
+                &PacketReplyRoute::Lan(tx),
+            )
+            .await;
+
+        assert!(clipboard_events(&mut events).await.is_empty());
+    }
+
+    #[tokio::test]
+    async fn disabling_sync_blocks_an_incoming_clipboard_from_overwriting_the_local_one() {
+        let (inner, mut events) = multi_device_harness(&[PHONE_A]);
+        inner.set_clipboard_enabled(false);
+        let (tx, _rx) = tokio::sync::mpsc::channel(16);
+
+        inner
+            .handle_transport_packet(
+                PHONE_A,
+                &clipboard_packet("hello", now_unix_millis()),
+                &PacketReplyRoute::Lan(tx),
+            )
+            .await;
+
+        assert!(
+            clipboard_events(&mut events).await.is_empty(),
+            "a disabled clipboard must not be overwritten from outside"
+        );
+    }
+
+    #[tokio::test]
+    async fn disabling_sync_blocks_sending_even_to_a_paired_device() {
+        let (inner, _events) = multi_device_harness(&[PHONE_A]);
+        inner.set_clipboard_enabled(false);
+
+        // Succeeds as a no-op rather than erroring: the user switched it off.
+        inner
+            .send_clipboard_to_all_paired("hello", now_unix_millis())
+            .await
+            .unwrap();
+        assert!(
+            inner.send_clipboard(PHONE_A, "hello", now_unix_millis()).await.is_err(),
+            "an explicit single-device send must refuse while sync is off"
+        );
+    }
+
+    #[tokio::test]
+    async fn an_oversized_clipboard_packet_is_rejected_before_it_reaches_the_clipboard() {
+        let (inner, mut events) = multi_device_harness(&[PHONE_A]);
+        let (tx, _rx) = tokio::sync::mpsc::channel(16);
+        let huge = "x".repeat(crate::kdeconnect::clipboard::MAX_CLIPBOARD_BYTES + 1);
+        let packet = clipboard_packet(&huge, now_unix_millis());
+
+        // Refused while parsing, so the dispatcher never claims it.
+        assert!(packet.as_clipboard().is_err());
+        inner
+            .handle_transport_packet(PHONE_A, &packet, &PacketReplyRoute::Lan(tx))
+            .await;
+        assert!(
+            clipboard_events(&mut events).await.is_empty(),
+            "the local clipboard must be preserved"
+        );
+    }
+
+    #[tokio::test]
+    async fn unicode_and_multiline_clipboard_content_is_applied_intact() {
+        let (inner, mut events) = multi_device_harness(&[PHONE_A]);
+        let (tx, _rx) = tokio::sync::mpsc::channel(16);
+        let text = "line one\nline two\t日本語 — 🎉\nhttps://example.com/a?b=c";
+
+        inner
+            .handle_transport_packet(
+                PHONE_A,
+                &clipboard_packet(text, now_unix_millis()),
+                &PacketReplyRoute::Lan(tx),
+            )
+            .await;
+
+        assert_eq!(clipboard_events(&mut events).await[0].1, text);
+    }
+
+    #[cfg(feature = "kdeconnect-wan")]
+    #[tokio::test]
+    async fn clipboard_arriving_over_relay_wan_behaves_identically_to_lan() {
+        let (inner, mut events) = multi_device_harness(&[PHONE_A]);
+        let (_link, route) = wan_route(PHONE_A);
+
+        inner
+            .handle_transport_packet(
+                PHONE_A,
+                &clipboard_packet("from wan", now_unix_millis()),
+                &route,
+            )
+            .await;
+
+        let applied = clipboard_events(&mut events).await;
+        assert_eq!(applied.len(), 1);
+        assert_eq!(applied[0].1, "from wan");
+    }
+
+    #[cfg(feature = "kdeconnect-wan")]
+    #[tokio::test]
+    async fn a_local_copy_fans_out_to_a_remote_device_over_wan() {
+        // The old implementation wrote straight into the LAN connection map, so
+        // a Remote device silently received nothing.
+        let (inner, _events) = multi_device_harness(&[PHONE_A]);
+        let (link, _route) = wan_route(PHONE_A);
+        inner
+            .router
+            .register(Arc::clone(&link) as Arc<dyn crate::kdeconnect::wan::TransportLink>);
+        inner.peer_capabilities.lock().await.insert(
+            PHONE_A.to_owned(),
+            (
+                vec![crate::kdeconnect::PACKET_TYPE_CLIPBOARD_CONNECT.to_owned()],
+                vec![],
+            ),
+        );
+
+        inner
+            .send_clipboard_to_all_paired("hello wan", now_unix_millis())
+            .await
+            .unwrap();
+
+        let sent = link.sent.lock().unwrap().clone();
+        assert!(
+            sent.iter().any(|packet| packet.packet_type
+                == crate::kdeconnect::PACKET_TYPE_CLIPBOARD_CONNECT),
+            "a Remote device must receive the clipboard over WAN"
+        );
+    }
+
+    #[cfg(feature = "kdeconnect-wan")]
+    #[tokio::test]
+    async fn a_remote_origin_value_is_not_fanned_out_to_the_other_devices() {
+        // Three devices: one echo must not become a broadcast to the rest.
+        let (inner, mut events) = multi_device_harness(&[PHONE_A, PHONE_B, TABLET]);
+        let (link_b, _rb) = wan_route(PHONE_B);
+        let (link_t, _rt) = wan_route(TABLET);
+        inner
+            .router
+            .register(Arc::clone(&link_b) as Arc<dyn crate::kdeconnect::wan::TransportLink>);
+        inner
+            .router
+            .register(Arc::clone(&link_t) as Arc<dyn crate::kdeconnect::wan::TransportLink>);
+        for device in [PHONE_B, TABLET] {
+            inner.peer_capabilities.lock().await.insert(
+                device.to_owned(),
+                (
+                    vec![crate::kdeconnect::PACKET_TYPE_CLIPBOARD_CONNECT.to_owned()],
+                    vec![],
+                ),
+            );
+        }
+
+        let (tx, _rx) = tokio::sync::mpsc::channel(16);
+        inner
+            .handle_transport_packet(
+                PHONE_A,
+                &clipboard_packet("from phone a", now_unix_millis()),
+                &PacketReplyRoute::Lan(tx),
+            )
+            .await;
+        assert_eq!(clipboard_events(&mut events).await.len(), 1, "applied locally once");
+
+        // Even if a fan-out were attempted for that value, the guard stops it.
+        inner
+            .send_clipboard_to_all_paired("from phone a", now_unix_millis())
+            .await
+            .unwrap();
+
+        for (name, link) in [("phone-b", &link_b), ("tablet", &link_t)] {
+            assert!(
+                link.sent.lock().unwrap().is_empty(),
+                "{name} must not receive a rebroadcast of another device's clipboard"
+            );
         }
     }
 

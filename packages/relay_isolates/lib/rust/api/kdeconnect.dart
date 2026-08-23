@@ -38,6 +38,9 @@ abstract class RsKdeConnect implements RustOpaqueInterface {
   /// because a phone sent something.
   Future<void> authorizeRemoteInput();
 
+  /// Whether clipboard sync is switched on for this desktop.
+  Future<bool> clipboardEnabled();
+
   /// Dismisses one notification on the logical device that produced it.
   ///
   /// Both arguments are required: a remote notification id is unique only
@@ -88,6 +91,10 @@ abstract class RsKdeConnect implements RustOpaqueInterface {
   Future<void> sendRelayPing({required String deviceId});
 
   Future<void> sendSms({required String deviceId, required List<String> addresses, required String body, int? subId});
+
+  /// Turns clipboard sync on or off. When off nothing is transmitted and an
+  /// incoming clipboard does not overwrite the local one.
+  Future<void> setClipboardEnabled({required bool enabled});
 
   Future<void> setRemoteInputEnabled({required bool enabled});
 

@@ -239,6 +239,23 @@ class GnomeSettingsView extends StatelessWidget {
                         ]),
 
                       if (defaultTargetPlatform == TargetPlatform.linux)
+                        group('Clipboard', [
+                          AdwSwitchRow(
+                            title: 'Clipboard sync',
+                            subtitle: ref.watch(kdeConnectProvider).clipboardAutoSync
+                                ? 'Share what you copy with your paired devices'
+                                // Stated plainly: Wayland only hands the clipboard to the
+                                // focused app, so background sync is not something Relay
+                                // can deliver and should not imply.
+                                : 'Copies from your phone arrive automatically. This session only '
+                                      'shares the clipboard while Relay is focused.',
+                            value: ref.watch(kdeConnectProvider).clipboardEnabled,
+                            onChanged: (enabled) async =>
+                                ref.redux(kdeConnectProvider).dispatchAsync(KdeConnectSetClipboardEnabledAction(enabled)),
+                          ),
+                        ]),
+
+                      if (defaultTargetPlatform == TargetPlatform.linux)
                         group('Remote input', [
                           AdwSwitchRow(
                             title: 'Allow remote input',
