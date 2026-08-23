@@ -16,6 +16,7 @@ mod packet;
 mod pairing;
 #[cfg(feature = "kdeconnect-wan")]
 pub mod wan;
+pub mod wallpaper_cache;
 
 pub use capabilities::{
     canonical_incoming_capabilities, canonical_outgoing_capabilities, PACKET_TYPE_BATTERY,
@@ -190,6 +191,12 @@ pub enum KdeConnectEvent {
     /// A file transfer changed state or made progress.
     TransferChanged {
         transfer: files::Transfer,
+    },
+    /// A peer's wallpaper preview was received and validated. Purely
+    /// decorative -- feeds the hero's phone silhouette, nothing else.
+    WallpaperChanged {
+        device_id: String,
+        path: String,
     },
 }
 
@@ -404,6 +411,20 @@ impl KdeConnectHandle {
         self.inner
             .send_wallpaper(device_id, path, hash, width, height)
             .await
+    }
+
+    /// Sets where an incoming peer wallpaper preview is cached. Until this is
+    /// set, a received preview is validated but dropped rather than written
+    /// anywhere -- same "no directory, no write" discipline as file receipt.
+    pub fn set_wallpaper_cache_dir(&self, directory: std::path::PathBuf) {
+        self.inner.wallpaper_cache.set_base_dir(directory);
+    }
+
+    /// The last successfully validated wallpaper preview cached for a device,
+    /// if any. Used to seed the hero on device selection, before the next
+    /// `WallpaperChanged` event arrives.
+    pub fn wallpaper_preview_path(&self, device_id: &str) -> Option<std::path::PathBuf> {
+        self.inner.wallpaper_cache.path_for(device_id)
     }
 
     /// Cancels an in-flight transfer. Idempotent, and never resurrects a

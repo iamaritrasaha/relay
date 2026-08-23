@@ -64,6 +64,10 @@ pub fn canonical_incoming_capabilities() -> Vec<String> {
         PACKET_TYPE_SHARE_REQUEST.to_string(),
         PACKET_TYPE_RELAY_WAN_IDENTITY.to_string(),
         PACKET_TYPE_RELAY_DEVICE_STATE.to_string(),
+        // The reverse wallpaper direction: a phone may send its own preview
+        // for the Linux hero's phone silhouette. Purely decorative -- see
+        // `wallpaper_cache.rs`.
+        PACKET_TYPE_RELAY_WALLPAPER.to_string(),
         PACKET_TYPE_RELAY_PING.to_string(),
         PACKET_TYPE_RELAY_PONG.to_string(),
     ]
@@ -147,6 +151,11 @@ mod tests {
         // advertised in both directions or one direction silently never starts.
         assert!(incoming.contains(&PACKET_TYPE_SHARE_REQUEST.to_string()));
         assert!(outgoing.contains(&PACKET_TYPE_SHARE_REQUEST.to_string()));
+
+        // Wallpaper is now bidirectional too: Linux sends its desktop preview
+        // (D1) and receives the phone's own preview (D2) for the hero.
+        assert!(incoming.contains(&PACKET_TYPE_RELAY_WALLPAPER.to_string()));
+        assert!(outgoing.contains(&PACKET_TYPE_RELAY_WALLPAPER.to_string()));
 
         // Battery is receive only on Linux desktop
         assert!(!outgoing.contains(&PACKET_TYPE_BATTERY.to_string()));

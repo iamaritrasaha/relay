@@ -256,6 +256,8 @@ pub enum RsKdeConnectEvent {
     },
     /// A file transfer changed state or made progress.
     TransferChanged { transfer: RsTransfer },
+    /// A peer's wallpaper preview was received and validated.
+    WallpaperChanged { device_id: String, path: String },
 }
 
 /// One file transfer, scoped to the logical device it belongs to.
@@ -527,6 +529,21 @@ impl RsKdeConnect {
     /// Sets where received files are written.
     pub async fn set_download_dir(&self, directory: String) {
         self.handle.set_download_dir(std::path::PathBuf::from(directory)).await;
+    }
+
+    /// Sets where an incoming peer wallpaper preview is cached. Purely
+    /// decorative storage -- see `wallpaper_cache.rs` in the core crate.
+    pub fn set_wallpaper_cache_dir(&self, directory: String) {
+        self.handle.set_wallpaper_cache_dir(std::path::PathBuf::from(directory));
+    }
+
+    /// The last cached wallpaper preview for a device, if any. Used to seed
+    /// the hero immediately on device selection, before the next
+    /// `WallpaperChanged` event arrives.
+    pub fn wallpaper_preview_path(&self, device_id: String) -> Option<String> {
+        self.handle
+            .wallpaper_preview_path(&device_id)
+            .map(|path| path.to_string_lossy().into_owned())
     }
 
     /// Sends one file to a device. Returns the transfer id; progress arrives as
@@ -891,6 +908,9 @@ impl From<KdeConnectEvent> for RsKdeConnectEvent {
             KdeConnectEvent::TransferChanged { transfer } => RsKdeConnectEvent::TransferChanged {
                 transfer: transfer.into(),
             },
+            KdeConnectEvent::WallpaperChanged { device_id, path } => {
+                RsKdeConnectEvent::WallpaperChanged { device_id, path }
+            }
         }
     }
 }

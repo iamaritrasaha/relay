@@ -81,6 +81,16 @@ pub(crate) struct PendingFile {
     pub size: u64,
 }
 
+/// A wallpaper preview announced by a control packet, waiting for its payload
+/// stream. Mirrors [`PendingFile`] but stays out of the file transfer world
+/// entirely -- a wallpaper never appears in the transfer list.
+#[derive(Clone, Debug)]
+pub(crate) struct PendingWallpaper {
+    pub device_id: String,
+    pub mime_type: String,
+    pub size: u64,
+}
+
 /// Maps a peer's advertised KDE packet types onto Relay's feature set.
 ///
 /// A feature is present when the peer can take part in it at all -- either by
@@ -495,6 +505,12 @@ pub(crate) struct LanInner {
     /// arriving stream whose id is not here has no announcement behind it and is
     /// dropped without a byte being written.
     pending_payloads: Mutex<HashMap<String, PendingFile>>,
+    /// Announced wallpaper previews awaiting their payload stream, by
+    /// `relayPayloadId`. Kept entirely separate from `pending_payloads`: a
+    /// wallpaper preview is decorative state, never a file transfer.
+    pending_wallpaper_payloads: Mutex<HashMap<String, PendingWallpaper>>,
+    /// Validated per-device wallpaper previews received from peers.
+    pub(crate) wallpaper_cache: crate::kdeconnect::wallpaper_cache::WallpaperCache,
     /// Where received files are written.
     download_dir: Mutex<Option<std::path::PathBuf>>,
     /// One input queue per logical device, so a burst from one phone cannot
@@ -566,6 +582,8 @@ impl LanInner {
             clipboard_enabled: std::sync::atomic::AtomicBool::new(true),
             transfers: Mutex::new(crate::kdeconnect::files::TransferRegistry::new()),
             pending_payloads: Mutex::new(HashMap::new()),
+            pending_wallpaper_payloads: Mutex::new(HashMap::new()),
+            wallpaper_cache: crate::kdeconnect::wallpaper_cache::WallpaperCache::new(),
             download_dir: Mutex::new(None),
             input_queues: Mutex::new(HashMap::new()),
             identity,
@@ -1454,6 +1472,216 @@ impl LanInner {
         self.receive_payload_stream(&key, &filename, size, None, &mut tls).await;
     }
 
+    /// Validates a peer's wallpaper preview announcement and arranges to
+    /// receive its payload -- the reverse of `send_wallpaper`.
+    ///
+    /// Entirely decorative: every rejection here is a `warn!` and a `return`,
+    /// never a reason to touch pairing, the Device Fabric, or the transfer
+    /// list. An untrusted or malformed announcement simply produces no
+    /// preview.
+    async fn handle_relay_wallpaper(
+        self: &Arc<Self>,
+        device_id: &str,
+        wallpaper: crate::kdeconnect::packet::RelayWallpaperBody,
+    ) {
+        use crate::kdeconnect::wallpaper_cache::{
+            is_allowed_mime, is_plausible_dimension, MAX_WALLPAPER_RECEIVE_BYTES,
+        };
+
+        tracing::info!(
+            "[WallpaperTrace] step=packet-received device={device_id} mime={} {}x{} payloadSize={:?} lanPort={:?} relayPayloadId={:?}",
+            wallpaper.mime_type,
+            wallpaper.width,
+            wallpaper.height,
+            wallpaper.payload_size,
+            wallpaper.lan_port,
+            wallpaper.relay_payload_id,
+        );
+
+        if self.trust.lock().await.get(device_id).is_none() {
+            tracing::warn!(
+                "[WallpaperTrace] step=authenticated result=FAIL device={device_id} reason=untrusted-peer"
+            );
+            return;
+        }
+        if !is_allowed_mime(&wallpaper.mime_type) {
+            tracing::warn!(
+                "[WallpaperTrace] step=validate-mime result=FAIL device={device_id} mime={}",
+                wallpaper.mime_type
+            );
+            return;
+        }
+        if !is_plausible_dimension(wallpaper.width, wallpaper.height) {
+            tracing::warn!(
+                "[WallpaperTrace] step=validate-dimensions result=FAIL device={device_id} {}x{}",
+                wallpaper.width,
+                wallpaper.height
+            );
+            return;
+        }
+        let Some(size) = wallpaper.payload_size else {
+            tracing::warn!(
+                "[WallpaperTrace] step=validate-size result=FAIL device={device_id} reason=no-declared-size"
+            );
+            return;
+        };
+        if size == 0 || size > MAX_WALLPAPER_RECEIVE_BYTES {
+            tracing::warn!(
+                "[WallpaperTrace] step=validate-size result=FAIL device={device_id} size={size} limit={MAX_WALLPAPER_RECEIVE_BYTES}"
+            );
+            return;
+        }
+        tracing::info!(
+            "[WallpaperTrace] step=authenticated result=PASS device={device_id}; step=validate-mime result=PASS; step=validate-size result=PASS size={size}"
+        );
+
+        let pending = PendingWallpaper {
+            device_id: device_id.to_owned(),
+            mime_type: wallpaper.mime_type,
+            size,
+        };
+
+        match (wallpaper.relay_payload_id, wallpaper.lan_port) {
+            // Relay WAN: remember the correlation and wait for the stream.
+            (Some(relay_payload_id), _) => {
+                tracing::info!(
+                    "[WallpaperTrace] step=await-payload result=PENDING device={device_id} transport=wan relayPayloadId={relay_payload_id}"
+                );
+                self.pending_wallpaper_payloads
+                    .lock()
+                    .await
+                    .insert(relay_payload_id, pending);
+            }
+            // KDE LAN: dial back to the port the sender advertised.
+            (None, Some(port)) => {
+                tracing::info!(
+                    "[WallpaperTrace] step=await-payload result=PENDING device={device_id} transport=lan port={port}"
+                );
+                let inner = Arc::clone(self);
+                tokio::spawn(async move {
+                    inner.fetch_lan_wallpaper(pending, port).await;
+                });
+            }
+            (None, None) => {
+                tracing::warn!(
+                    "[WallpaperTrace] step=await-payload result=FAIL device={device_id} reason=no-payload-transport-advertised"
+                );
+            }
+        }
+    }
+
+    /// Connects to a LAN sender's payload port and streams the wallpaper
+    /// preview into the validated cache. Mirrors `fetch_lan_payload`'s
+    /// pinned-TLS dial-back, minus the file transfer bookkeeping.
+    async fn fetch_lan_wallpaper(self: &Arc<Self>, pending: PendingWallpaper, port: u16) {
+        let device_id = pending.device_id.clone();
+        let Some(address) = self.devices.lock().await.get(&device_id).map(|observed| observed.ip) else {
+            tracing::warn!("[Relay Wallpaper] device={device_id} no longer reachable for payload fetch");
+            return;
+        };
+        let Some(peer_cert) = self
+            .trust
+            .lock()
+            .await
+            .get(&device_id)
+            .and_then(|device| device.certificate_der().ok())
+        else {
+            tracing::warn!("[Relay Wallpaper] device={device_id} is not paired; dropping payload fetch");
+            return;
+        };
+
+        let stream = match crate::kdeconnect::files::lan_payload::connect_to_payload(address, port).await {
+            Ok(stream) => stream,
+            Err(error) => {
+                tracing::warn!("[Relay Wallpaper] device={device_id} payload connect failed: {error}");
+                return;
+            }
+        };
+        let mut tls =
+            match start_tls_as_client(&self.identity, stream, &device_id, Some(&peer_cert)).await {
+                Ok(tls) => tls,
+                Err(error) => {
+                    tracing::warn!("[Relay Wallpaper] device={device_id} payload TLS failed: {error}");
+                    return;
+                }
+            };
+
+        let size = pending.size;
+        self.receive_wallpaper_payload(&pending, size, &mut tls).await;
+    }
+
+    /// Reads a bounded wallpaper payload, validates it, and -- on success --
+    /// publishes it to the cache and emits `WallpaperChanged`. Shared by both
+    /// the LAN dial-back path and the WAN correlated-stream path.
+    async fn receive_wallpaper_payload<R>(
+        self: &Arc<Self>,
+        pending: &PendingWallpaper,
+        payload_size: u64,
+        stream: &mut R,
+    ) where
+        R: tokio::io::AsyncRead + Unpin,
+    {
+        if payload_size != pending.size {
+            tracing::warn!(
+                "[WallpaperTrace] step=payload-stream result=FAIL device={} reason=size-mismatch declared={} streamed={payload_size}",
+                pending.device_id,
+                pending.size
+            );
+            return;
+        }
+
+        let bytes = match crate::kdeconnect::wallpaper_cache::read_bounded(
+            stream,
+            payload_size,
+            crate::kdeconnect::wallpaper_cache::MAX_WALLPAPER_RECEIVE_BYTES,
+        )
+        .await
+        {
+            Ok(bytes) => bytes,
+            Err(error) => {
+                tracing::warn!(
+                    "[WallpaperTrace] step=payload-stream result=FAIL device={} reason={error}",
+                    pending.device_id
+                );
+                return;
+            }
+        };
+        tracing::info!(
+            "[WallpaperTrace] step=payload-stream result=PASS device={} bytes={}",
+            pending.device_id,
+            bytes.len()
+        );
+
+        match self
+            .wallpaper_cache
+            .store(&pending.device_id, &pending.mime_type, &bytes)
+            .await
+        {
+            Ok(path) => {
+                tracing::info!(
+                    "[WallpaperTrace] step=cache-write result=PASS device={} bytes={} path={}",
+                    pending.device_id,
+                    bytes.len(),
+                    path.display()
+                );
+                let _ = self.event_tx.send(KdeConnectEvent::WallpaperChanged {
+                    device_id: pending.device_id.clone(),
+                    path: path.to_string_lossy().into_owned(),
+                });
+                tracing::info!(
+                    "[WallpaperTrace] step=emit-event result=PASS device={} event=WallpaperChanged",
+                    pending.device_id
+                );
+            }
+            Err(error) => {
+                tracing::warn!(
+                    "[WallpaperTrace] step=cache-write result=FAIL device={} reason={error}",
+                    pending.device_id
+                );
+            }
+        }
+    }
+
     /// Streams an arriving payload to disk, correlated to its announcement.
     ///
     /// An id with no pending announcement is dropped: matching a `relayPayloadId`
@@ -1469,29 +1697,37 @@ impl LanInner {
     {
         use crate::kdeconnect::files::TransferKey;
 
-        let Some(pending) = self.pending_payloads.lock().await.remove(relay_payload_id) else {
-            tracing::warn!("[Relay Files] dropped a payload with no matching announcement");
-            return;
-        };
-        let key = TransferKey::new(&pending.device_id, &pending.transfer_id);
-        if payload_size != pending.size {
-            tracing::warn!(
-                "[Relay Files] transfer={} declared {} but the stream declared {payload_size}",
-                pending.transfer_id,
-                pending.size
-            );
-            self.fail_transfer(&key, "declared size mismatch").await;
+        let file_pending = self.pending_payloads.lock().await.remove(relay_payload_id);
+        if let Some(pending) = file_pending {
+            let key = TransferKey::new(&pending.device_id, &pending.transfer_id);
+            if payload_size != pending.size {
+                tracing::warn!(
+                    "[Relay Files] transfer={} declared {} but the stream declared {payload_size}",
+                    pending.transfer_id,
+                    pending.size
+                );
+                self.fail_transfer(&key, "declared size mismatch").await;
+                return;
+            }
+
+            self.receive_payload_stream(
+                &key,
+                &pending.filename,
+                payload_size,
+                Some(crate::kdeconnect::wan::payload::MAX_WAN_PAYLOAD_BYTES),
+                stream,
+            )
+            .await;
             return;
         }
 
-        self.receive_payload_stream(
-            &key,
-            &pending.filename,
-            payload_size,
-            Some(crate::kdeconnect::wan::payload::MAX_WAN_PAYLOAD_BYTES),
-            stream,
-        )
-        .await;
+        let wallpaper_pending = self.pending_wallpaper_payloads.lock().await.remove(relay_payload_id);
+        if let Some(pending) = wallpaper_pending {
+            self.receive_wallpaper_payload(&pending, payload_size, stream).await;
+            return;
+        }
+
+        tracing::warn!("[Relay Files] dropped a payload with no matching announcement");
     }
 
     /// Streams any payload source to disk, whatever transport produced it.
@@ -2102,6 +2338,8 @@ impl LanInner {
             read_inner.handle_mpris_request(&read_id, request, reply).await;
         } else if let Ok(share) = packet.as_share_request() {
             read_inner.handle_share_request(&read_id, share).await;
+        } else if let Ok(wallpaper) = packet.as_relay_wallpaper() {
+            read_inner.handle_relay_wallpaper(&read_id, wallpaper).await;
         } else if let Ok(request) = packet.as_mousepad_request() {
             read_inner.handle_remote_input(&read_id, request).await;
         } else if let Ok(request) = packet.as_runcommand_request() {
@@ -6343,6 +6581,263 @@ mod tests {
         inner.handle_incoming_payload("payload-1", 4, &mut source).await;
 
         assert!(dir.path().join("passwd").exists(), "must be confined to the directory");
+    }
+
+    // --- Reverse wallpaper direction (phone -> Linux hero) ---------------
+
+    fn wallpaper_announce_packet(
+        hash: &str,
+        mime_type: &str,
+        width: u32,
+        height: u32,
+        size: u64,
+        relay_payload_id: Option<&str>,
+        lan_port: Option<u16>,
+    ) -> NetworkPacket {
+        crate::kdeconnect::packet::RelayWallpaperBody::to_packet(
+            hash,
+            mime_type,
+            width,
+            height,
+            size,
+            relay_payload_id,
+            lan_port,
+        )
+    }
+
+    fn valid_jpeg_bytes(len: usize) -> Vec<u8> {
+        let mut bytes = vec![0xFF_u8, 0xD8, 0xFF, 0xE0];
+        bytes.resize(len.max(bytes.len()), 0);
+        bytes
+    }
+
+    #[cfg(feature = "kdeconnect-wan")]
+    #[tokio::test]
+    async fn an_announced_wallpaper_is_cached_and_emits_changed_event() {
+        let (inner, mut events) = multi_device_harness(&[PHONE_A]);
+        let dir = tempfile::tempdir().unwrap();
+        inner.wallpaper_cache.set_base_dir(dir.path().to_path_buf());
+        let (tx, _rx) = tokio::sync::mpsc::channel(16);
+
+        let body = valid_jpeg_bytes(4096);
+        inner
+            .handle_transport_packet(
+                PHONE_A,
+                &wallpaper_announce_packet(
+                    "hash-1",
+                    "image/jpeg",
+                    720,
+                    1280,
+                    body.len() as u64,
+                    Some("wallpaper-payload-1"),
+                    None,
+                ),
+                &PacketReplyRoute::Lan(tx),
+            )
+            .await;
+
+        let mut source = std::io::Cursor::new(body.clone());
+        inner
+            .handle_incoming_payload("wallpaper-payload-1", body.len() as u64, &mut source)
+            .await;
+
+        let event = tokio::time::timeout(std::time::Duration::from_secs(1), events.recv())
+            .await
+            .expect("event within timeout")
+            .expect("channel open");
+        match event {
+            KdeConnectEvent::WallpaperChanged { device_id, path } => {
+                assert_eq!(device_id, PHONE_A);
+                assert!(std::path::Path::new(&path).exists());
+            }
+            other => panic!("expected WallpaperChanged, got {other:?}"),
+        }
+        assert!(inner.wallpaper_cache.path_for(PHONE_A).is_some());
+    }
+
+    #[cfg(feature = "kdeconnect-wan")]
+    #[tokio::test]
+    async fn an_untrusted_device_cannot_announce_a_wallpaper() {
+        let (inner, _events) = multi_device_harness(&[PHONE_A]);
+        let dir = tempfile::tempdir().unwrap();
+        inner.wallpaper_cache.set_base_dir(dir.path().to_path_buf());
+        let (tx, _rx) = tokio::sync::mpsc::channel(16);
+
+        let handled = inner
+            .handle_transport_packet(
+                "some-unpaired-device",
+                &wallpaper_announce_packet("hash-1", "image/jpeg", 480, 300, 4096, Some("wp-1"), None),
+                &PacketReplyRoute::Lan(tx),
+            )
+            .await;
+
+        // The packet type is still recognised (claimed=true); only the
+        // untrusted sender's content is refused.
+        assert!(handled);
+        assert!(inner.wallpaper_cache.path_for("some-unpaired-device").is_none());
+    }
+
+    #[cfg(feature = "kdeconnect-wan")]
+    #[tokio::test]
+    async fn an_unsupported_mime_wallpaper_is_never_pended() {
+        let (inner, _events) = multi_device_harness(&[PHONE_A]);
+        let dir = tempfile::tempdir().unwrap();
+        inner.wallpaper_cache.set_base_dir(dir.path().to_path_buf());
+        let (tx, _rx) = tokio::sync::mpsc::channel(16);
+
+        inner
+            .handle_transport_packet(
+                PHONE_A,
+                &wallpaper_announce_packet(
+                    "hash-1",
+                    "application/pdf",
+                    480,
+                    300,
+                    4096,
+                    Some("wp-bad-mime"),
+                    None,
+                ),
+                &PacketReplyRoute::Lan(tx),
+            )
+            .await;
+
+        let mut source = std::io::Cursor::new(vec![0_u8; 4096]);
+        inner.handle_incoming_payload("wp-bad-mime", 4096, &mut source).await;
+        assert!(inner.wallpaper_cache.path_for(PHONE_A).is_none());
+    }
+
+    #[cfg(feature = "kdeconnect-wan")]
+    #[tokio::test]
+    async fn an_oversized_wallpaper_announcement_is_refused() {
+        let (inner, _events) = multi_device_harness(&[PHONE_A]);
+        let dir = tempfile::tempdir().unwrap();
+        inner.wallpaper_cache.set_base_dir(dir.path().to_path_buf());
+        let (tx, _rx) = tokio::sync::mpsc::channel(16);
+
+        let oversized = crate::kdeconnect::wallpaper_cache::MAX_WALLPAPER_RECEIVE_BYTES + 1;
+        inner
+            .handle_transport_packet(
+                PHONE_A,
+                &wallpaper_announce_packet(
+                    "hash-1",
+                    "image/jpeg",
+                    480,
+                    300,
+                    oversized,
+                    Some("wp-oversized"),
+                    None,
+                ),
+                &PacketReplyRoute::Lan(tx),
+            )
+            .await;
+
+        let mut source = std::io::Cursor::new(vec![0_u8; 1]);
+        inner.handle_incoming_payload("wp-oversized", 1, &mut source).await;
+        assert!(inner.wallpaper_cache.path_for(PHONE_A).is_none());
+    }
+
+    #[cfg(feature = "kdeconnect-wan")]
+    #[tokio::test]
+    async fn a_malformed_wallpaper_stream_is_rejected() {
+        let (inner, _events) = multi_device_harness(&[PHONE_A]);
+        let dir = tempfile::tempdir().unwrap();
+        inner.wallpaper_cache.set_base_dir(dir.path().to_path_buf());
+        let (tx, _rx) = tokio::sync::mpsc::channel(16);
+
+        let junk = b"this is not an image at all, just junk".to_vec();
+        inner
+            .handle_transport_packet(
+                PHONE_A,
+                &wallpaper_announce_packet(
+                    "hash-1",
+                    "image/jpeg",
+                    480,
+                    300,
+                    junk.len() as u64,
+                    Some("wp-junk"),
+                    None,
+                ),
+                &PacketReplyRoute::Lan(tx),
+            )
+            .await;
+
+        let mut source = std::io::Cursor::new(junk.clone());
+        inner
+            .handle_incoming_payload("wp-junk", junk.len() as u64, &mut source)
+            .await;
+        assert!(inner.wallpaper_cache.path_for(PHONE_A).is_none());
+    }
+
+    #[cfg(feature = "kdeconnect-wan")]
+    #[tokio::test]
+    async fn peer_a_cannot_overwrite_peer_bs_cached_wallpaper() {
+        let (inner, _events) = multi_device_harness(&[PHONE_A, PHONE_B]);
+        let dir = tempfile::tempdir().unwrap();
+        inner.wallpaper_cache.set_base_dir(dir.path().to_path_buf());
+        let (tx_a, _rx_a) = tokio::sync::mpsc::channel(16);
+        let (tx_b, _rx_b) = tokio::sync::mpsc::channel(16);
+
+        let body_b = valid_jpeg_bytes(2048);
+        inner
+            .handle_transport_packet(
+                PHONE_B,
+                &wallpaper_announce_packet("hash-b", "image/jpeg", 480, 300, body_b.len() as u64, Some("wp-b"), None),
+                &PacketReplyRoute::Lan(tx_b),
+            )
+            .await;
+        let mut source_b = std::io::Cursor::new(body_b);
+        inner.handle_incoming_payload("wp-b", 2048, &mut source_b).await;
+
+        // Device A never announced anything, so it must not have a cached
+        // preview -- and B's must be untouched.
+        assert!(inner.wallpaper_cache.path_for(PHONE_A).is_none());
+        let b_path = inner.wallpaper_cache.path_for(PHONE_B).expect("B cached");
+
+        // A bad announcement from A must not disturb B's cache either.
+        inner
+            .handle_transport_packet(
+                PHONE_A,
+                &wallpaper_announce_packet("hash-a", "image/jpeg", 480, 300, 10, Some("wp-a"), None),
+                &PacketReplyRoute::Lan(tx_a),
+            )
+            .await;
+        let mut source_a = std::io::Cursor::new(b"garbage!!!".to_vec());
+        inner.handle_incoming_payload("wp-a", 10, &mut source_a).await;
+
+        assert!(inner.wallpaper_cache.path_for(PHONE_A).is_none());
+        assert_eq!(inner.wallpaper_cache.path_for(PHONE_B), Some(b_path));
+    }
+
+    #[cfg(feature = "kdeconnect-wan")]
+    #[tokio::test]
+    async fn a_wallpaper_packet_never_touches_peer_reachability_or_trust() {
+        let (inner, mut events) = multi_device_harness(&[PHONE_A]);
+        let dir = tempfile::tempdir().unwrap();
+        inner.wallpaper_cache.set_base_dir(dir.path().to_path_buf());
+        let (tx, _rx) = tokio::sync::mpsc::channel(16);
+
+        let trust_before = inner.trust.lock().await.get(PHONE_A).is_some();
+        let body = valid_jpeg_bytes(1024);
+        inner
+            .handle_transport_packet(
+                PHONE_A,
+                &wallpaper_announce_packet("hash-1", "image/jpeg", 480, 300, body.len() as u64, Some("wp-reach"), None),
+                &PacketReplyRoute::Lan(tx),
+            )
+            .await;
+        let mut source = std::io::Cursor::new(body);
+        inner.handle_incoming_payload("wp-reach", 1024, &mut source).await;
+
+        let trust_after = inner.trust.lock().await.get(PHONE_A).is_some();
+        assert_eq!(trust_before, trust_after, "wallpaper traffic must never alter trust");
+        // No DevicesChanged / TrustChanged noise from a purely decorative packet.
+        assert!(
+            tokio::time::timeout(std::time::Duration::from_millis(50), events.recv())
+                .await
+                .map(|event| matches!(event, Some(KdeConnectEvent::WallpaperChanged { .. })))
+                .unwrap_or(true),
+            "the only event a wallpaper packet may produce is its own WallpaperChanged"
+        );
     }
 
     #[cfg(feature = "kdeconnect-wan")]

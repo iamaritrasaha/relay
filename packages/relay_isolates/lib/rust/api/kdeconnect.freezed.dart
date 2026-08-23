@@ -55,7 +55,7 @@ extension RsKdeConnectEventPatterns on RsKdeConnectEvent {
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeMap<TResult extends Object?>({TResult Function( RsKdeConnectEvent_DevicesChanged value)?  devicesChanged,TResult Function( RsKdeConnectEvent_IncomingPair value)?  incomingPair,TResult Function( RsKdeConnectEvent_PairingFailed value)?  pairingFailed,TResult Function( RsKdeConnectEvent_TrustChanged value)?  trustChanged,TResult Function( RsKdeConnectEvent_PingReceived value)?  pingReceived,TResult Function( RsKdeConnectEvent_ClipboardReceived value)?  clipboardReceived,TResult Function( RsKdeConnectEvent_NotificationsChanged value)?  notificationsChanged,TResult Function( RsKdeConnectEvent_SmsChanged value)?  smsChanged,TResult Function( RsKdeConnectEvent_TelephonyReceived value)?  telephonyReceived,TResult Function( RsKdeConnectEvent_TransferChanged value)?  transferChanged,required TResult orElse(),}){
+@optionalTypeArgs TResult maybeMap<TResult extends Object?>({TResult Function( RsKdeConnectEvent_DevicesChanged value)?  devicesChanged,TResult Function( RsKdeConnectEvent_IncomingPair value)?  incomingPair,TResult Function( RsKdeConnectEvent_PairingFailed value)?  pairingFailed,TResult Function( RsKdeConnectEvent_TrustChanged value)?  trustChanged,TResult Function( RsKdeConnectEvent_PingReceived value)?  pingReceived,TResult Function( RsKdeConnectEvent_ClipboardReceived value)?  clipboardReceived,TResult Function( RsKdeConnectEvent_NotificationsChanged value)?  notificationsChanged,TResult Function( RsKdeConnectEvent_SmsChanged value)?  smsChanged,TResult Function( RsKdeConnectEvent_TelephonyReceived value)?  telephonyReceived,TResult Function( RsKdeConnectEvent_TransferChanged value)?  transferChanged,TResult Function( RsKdeConnectEvent_WallpaperChanged value)?  wallpaperChanged,required TResult orElse(),}){
 final _that = this;
 switch (_that) {
 case RsKdeConnectEvent_DevicesChanged() when devicesChanged != null:
@@ -68,7 +68,8 @@ return clipboardReceived(_that);case RsKdeConnectEvent_NotificationsChanged() wh
 return notificationsChanged(_that);case RsKdeConnectEvent_SmsChanged() when smsChanged != null:
 return smsChanged(_that);case RsKdeConnectEvent_TelephonyReceived() when telephonyReceived != null:
 return telephonyReceived(_that);case RsKdeConnectEvent_TransferChanged() when transferChanged != null:
-return transferChanged(_that);case _:
+return transferChanged(_that);case RsKdeConnectEvent_WallpaperChanged() when wallpaperChanged != null:
+return wallpaperChanged(_that);case _:
   return orElse();
 
 }
@@ -86,7 +87,7 @@ return transferChanged(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult map<TResult extends Object?>({required TResult Function( RsKdeConnectEvent_DevicesChanged value)  devicesChanged,required TResult Function( RsKdeConnectEvent_IncomingPair value)  incomingPair,required TResult Function( RsKdeConnectEvent_PairingFailed value)  pairingFailed,required TResult Function( RsKdeConnectEvent_TrustChanged value)  trustChanged,required TResult Function( RsKdeConnectEvent_PingReceived value)  pingReceived,required TResult Function( RsKdeConnectEvent_ClipboardReceived value)  clipboardReceived,required TResult Function( RsKdeConnectEvent_NotificationsChanged value)  notificationsChanged,required TResult Function( RsKdeConnectEvent_SmsChanged value)  smsChanged,required TResult Function( RsKdeConnectEvent_TelephonyReceived value)  telephonyReceived,required TResult Function( RsKdeConnectEvent_TransferChanged value)  transferChanged,}){
+@optionalTypeArgs TResult map<TResult extends Object?>({required TResult Function( RsKdeConnectEvent_DevicesChanged value)  devicesChanged,required TResult Function( RsKdeConnectEvent_IncomingPair value)  incomingPair,required TResult Function( RsKdeConnectEvent_PairingFailed value)  pairingFailed,required TResult Function( RsKdeConnectEvent_TrustChanged value)  trustChanged,required TResult Function( RsKdeConnectEvent_PingReceived value)  pingReceived,required TResult Function( RsKdeConnectEvent_ClipboardReceived value)  clipboardReceived,required TResult Function( RsKdeConnectEvent_NotificationsChanged value)  notificationsChanged,required TResult Function( RsKdeConnectEvent_SmsChanged value)  smsChanged,required TResult Function( RsKdeConnectEvent_TelephonyReceived value)  telephonyReceived,required TResult Function( RsKdeConnectEvent_TransferChanged value)  transferChanged,required TResult Function( RsKdeConnectEvent_WallpaperChanged value)  wallpaperChanged,}){
 final _that = this;
 switch (_that) {
 case RsKdeConnectEvent_DevicesChanged():
@@ -99,7 +100,8 @@ return clipboardReceived(_that);case RsKdeConnectEvent_NotificationsChanged():
 return notificationsChanged(_that);case RsKdeConnectEvent_SmsChanged():
 return smsChanged(_that);case RsKdeConnectEvent_TelephonyReceived():
 return telephonyReceived(_that);case RsKdeConnectEvent_TransferChanged():
-return transferChanged(_that);}
+return transferChanged(_that);case RsKdeConnectEvent_WallpaperChanged():
+return wallpaperChanged(_that);}
 }
 /// A variant of `map` that fallback to returning `null`.
 ///
@@ -113,7 +115,7 @@ return transferChanged(_that);}
 /// }
 /// ```
 
-@optionalTypeArgs TResult? mapOrNull<TResult extends Object?>({TResult? Function( RsKdeConnectEvent_DevicesChanged value)?  devicesChanged,TResult? Function( RsKdeConnectEvent_IncomingPair value)?  incomingPair,TResult? Function( RsKdeConnectEvent_PairingFailed value)?  pairingFailed,TResult? Function( RsKdeConnectEvent_TrustChanged value)?  trustChanged,TResult? Function( RsKdeConnectEvent_PingReceived value)?  pingReceived,TResult? Function( RsKdeConnectEvent_ClipboardReceived value)?  clipboardReceived,TResult? Function( RsKdeConnectEvent_NotificationsChanged value)?  notificationsChanged,TResult? Function( RsKdeConnectEvent_SmsChanged value)?  smsChanged,TResult? Function( RsKdeConnectEvent_TelephonyReceived value)?  telephonyReceived,TResult? Function( RsKdeConnectEvent_TransferChanged value)?  transferChanged,}){
+@optionalTypeArgs TResult? mapOrNull<TResult extends Object?>({TResult? Function( RsKdeConnectEvent_DevicesChanged value)?  devicesChanged,TResult? Function( RsKdeConnectEvent_IncomingPair value)?  incomingPair,TResult? Function( RsKdeConnectEvent_PairingFailed value)?  pairingFailed,TResult? Function( RsKdeConnectEvent_TrustChanged value)?  trustChanged,TResult? Function( RsKdeConnectEvent_PingReceived value)?  pingReceived,TResult? Function( RsKdeConnectEvent_ClipboardReceived value)?  clipboardReceived,TResult? Function( RsKdeConnectEvent_NotificationsChanged value)?  notificationsChanged,TResult? Function( RsKdeConnectEvent_SmsChanged value)?  smsChanged,TResult? Function( RsKdeConnectEvent_TelephonyReceived value)?  telephonyReceived,TResult? Function( RsKdeConnectEvent_TransferChanged value)?  transferChanged,TResult? Function( RsKdeConnectEvent_WallpaperChanged value)?  wallpaperChanged,}){
 final _that = this;
 switch (_that) {
 case RsKdeConnectEvent_DevicesChanged() when devicesChanged != null:
@@ -126,7 +128,8 @@ return clipboardReceived(_that);case RsKdeConnectEvent_NotificationsChanged() wh
 return notificationsChanged(_that);case RsKdeConnectEvent_SmsChanged() when smsChanged != null:
 return smsChanged(_that);case RsKdeConnectEvent_TelephonyReceived() when telephonyReceived != null:
 return telephonyReceived(_that);case RsKdeConnectEvent_TransferChanged() when transferChanged != null:
-return transferChanged(_that);case _:
+return transferChanged(_that);case RsKdeConnectEvent_WallpaperChanged() when wallpaperChanged != null:
+return wallpaperChanged(_that);case _:
   return null;
 
 }
@@ -143,7 +146,7 @@ return transferChanged(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeWhen<TResult extends Object?>({TResult Function( List<RsKdeConnectDevice> devices,  RsRelayDeviceFabric fabric)?  devicesChanged,TResult Function( String deviceId,  String name)?  incomingPair,TResult Function( String deviceId,  String reason)?  pairingFailed,TResult Function( List<RsKdeConnectTrustedDevice> devices)?  trustChanged,TResult Function( String deviceId,  String? message)?  pingReceived,TResult Function( String deviceId,  String content,  PlatformInt64 timestampMs)?  clipboardReceived,TResult Function( String deviceId,  List<RsKdeNotification> notifications)?  notificationsChanged,TResult Function( String deviceId,  List<RsKdeSmsConversation> conversations,  List<RsKdeSmsMessage> messages)?  smsChanged,TResult Function( String deviceId,  RsKdeTelephonyEvent event)?  telephonyReceived,TResult Function( RsTransfer transfer)?  transferChanged,required TResult orElse(),}) {final _that = this;
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>({TResult Function( List<RsKdeConnectDevice> devices,  RsRelayDeviceFabric fabric)?  devicesChanged,TResult Function( String deviceId,  String name)?  incomingPair,TResult Function( String deviceId,  String reason)?  pairingFailed,TResult Function( List<RsKdeConnectTrustedDevice> devices)?  trustChanged,TResult Function( String deviceId,  String? message)?  pingReceived,TResult Function( String deviceId,  String content,  PlatformInt64 timestampMs)?  clipboardReceived,TResult Function( String deviceId,  List<RsKdeNotification> notifications)?  notificationsChanged,TResult Function( String deviceId,  List<RsKdeSmsConversation> conversations,  List<RsKdeSmsMessage> messages)?  smsChanged,TResult Function( String deviceId,  RsKdeTelephonyEvent event)?  telephonyReceived,TResult Function( RsTransfer transfer)?  transferChanged,TResult Function( String deviceId,  String path)?  wallpaperChanged,required TResult orElse(),}) {final _that = this;
 switch (_that) {
 case RsKdeConnectEvent_DevicesChanged() when devicesChanged != null:
 return devicesChanged(_that.devices,_that.fabric);case RsKdeConnectEvent_IncomingPair() when incomingPair != null:
@@ -155,7 +158,8 @@ return clipboardReceived(_that.deviceId,_that.content,_that.timestampMs);case Rs
 return notificationsChanged(_that.deviceId,_that.notifications);case RsKdeConnectEvent_SmsChanged() when smsChanged != null:
 return smsChanged(_that.deviceId,_that.conversations,_that.messages);case RsKdeConnectEvent_TelephonyReceived() when telephonyReceived != null:
 return telephonyReceived(_that.deviceId,_that.event);case RsKdeConnectEvent_TransferChanged() when transferChanged != null:
-return transferChanged(_that.transfer);case _:
+return transferChanged(_that.transfer);case RsKdeConnectEvent_WallpaperChanged() when wallpaperChanged != null:
+return wallpaperChanged(_that.deviceId,_that.path);case _:
   return orElse();
 
 }
@@ -173,7 +177,7 @@ return transferChanged(_that.transfer);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult when<TResult extends Object?>({required TResult Function( List<RsKdeConnectDevice> devices,  RsRelayDeviceFabric fabric)  devicesChanged,required TResult Function( String deviceId,  String name)  incomingPair,required TResult Function( String deviceId,  String reason)  pairingFailed,required TResult Function( List<RsKdeConnectTrustedDevice> devices)  trustChanged,required TResult Function( String deviceId,  String? message)  pingReceived,required TResult Function( String deviceId,  String content,  PlatformInt64 timestampMs)  clipboardReceived,required TResult Function( String deviceId,  List<RsKdeNotification> notifications)  notificationsChanged,required TResult Function( String deviceId,  List<RsKdeSmsConversation> conversations,  List<RsKdeSmsMessage> messages)  smsChanged,required TResult Function( String deviceId,  RsKdeTelephonyEvent event)  telephonyReceived,required TResult Function( RsTransfer transfer)  transferChanged,}) {final _that = this;
+@optionalTypeArgs TResult when<TResult extends Object?>({required TResult Function( List<RsKdeConnectDevice> devices,  RsRelayDeviceFabric fabric)  devicesChanged,required TResult Function( String deviceId,  String name)  incomingPair,required TResult Function( String deviceId,  String reason)  pairingFailed,required TResult Function( List<RsKdeConnectTrustedDevice> devices)  trustChanged,required TResult Function( String deviceId,  String? message)  pingReceived,required TResult Function( String deviceId,  String content,  PlatformInt64 timestampMs)  clipboardReceived,required TResult Function( String deviceId,  List<RsKdeNotification> notifications)  notificationsChanged,required TResult Function( String deviceId,  List<RsKdeSmsConversation> conversations,  List<RsKdeSmsMessage> messages)  smsChanged,required TResult Function( String deviceId,  RsKdeTelephonyEvent event)  telephonyReceived,required TResult Function( RsTransfer transfer)  transferChanged,required TResult Function( String deviceId,  String path)  wallpaperChanged,}) {final _that = this;
 switch (_that) {
 case RsKdeConnectEvent_DevicesChanged():
 return devicesChanged(_that.devices,_that.fabric);case RsKdeConnectEvent_IncomingPair():
@@ -185,7 +189,8 @@ return clipboardReceived(_that.deviceId,_that.content,_that.timestampMs);case Rs
 return notificationsChanged(_that.deviceId,_that.notifications);case RsKdeConnectEvent_SmsChanged():
 return smsChanged(_that.deviceId,_that.conversations,_that.messages);case RsKdeConnectEvent_TelephonyReceived():
 return telephonyReceived(_that.deviceId,_that.event);case RsKdeConnectEvent_TransferChanged():
-return transferChanged(_that.transfer);}
+return transferChanged(_that.transfer);case RsKdeConnectEvent_WallpaperChanged():
+return wallpaperChanged(_that.deviceId,_that.path);}
 }
 /// A variant of `when` that fallback to returning `null`
 ///
@@ -199,7 +204,7 @@ return transferChanged(_that.transfer);}
 /// }
 /// ```
 
-@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>({TResult? Function( List<RsKdeConnectDevice> devices,  RsRelayDeviceFabric fabric)?  devicesChanged,TResult? Function( String deviceId,  String name)?  incomingPair,TResult? Function( String deviceId,  String reason)?  pairingFailed,TResult? Function( List<RsKdeConnectTrustedDevice> devices)?  trustChanged,TResult? Function( String deviceId,  String? message)?  pingReceived,TResult? Function( String deviceId,  String content,  PlatformInt64 timestampMs)?  clipboardReceived,TResult? Function( String deviceId,  List<RsKdeNotification> notifications)?  notificationsChanged,TResult? Function( String deviceId,  List<RsKdeSmsConversation> conversations,  List<RsKdeSmsMessage> messages)?  smsChanged,TResult? Function( String deviceId,  RsKdeTelephonyEvent event)?  telephonyReceived,TResult? Function( RsTransfer transfer)?  transferChanged,}) {final _that = this;
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>({TResult? Function( List<RsKdeConnectDevice> devices,  RsRelayDeviceFabric fabric)?  devicesChanged,TResult? Function( String deviceId,  String name)?  incomingPair,TResult? Function( String deviceId,  String reason)?  pairingFailed,TResult? Function( List<RsKdeConnectTrustedDevice> devices)?  trustChanged,TResult? Function( String deviceId,  String? message)?  pingReceived,TResult? Function( String deviceId,  String content,  PlatformInt64 timestampMs)?  clipboardReceived,TResult? Function( String deviceId,  List<RsKdeNotification> notifications)?  notificationsChanged,TResult? Function( String deviceId,  List<RsKdeSmsConversation> conversations,  List<RsKdeSmsMessage> messages)?  smsChanged,TResult? Function( String deviceId,  RsKdeTelephonyEvent event)?  telephonyReceived,TResult? Function( RsTransfer transfer)?  transferChanged,TResult? Function( String deviceId,  String path)?  wallpaperChanged,}) {final _that = this;
 switch (_that) {
 case RsKdeConnectEvent_DevicesChanged() when devicesChanged != null:
 return devicesChanged(_that.devices,_that.fabric);case RsKdeConnectEvent_IncomingPair() when incomingPair != null:
@@ -211,7 +216,8 @@ return clipboardReceived(_that.deviceId,_that.content,_that.timestampMs);case Rs
 return notificationsChanged(_that.deviceId,_that.notifications);case RsKdeConnectEvent_SmsChanged() when smsChanged != null:
 return smsChanged(_that.deviceId,_that.conversations,_that.messages);case RsKdeConnectEvent_TelephonyReceived() when telephonyReceived != null:
 return telephonyReceived(_that.deviceId,_that.event);case RsKdeConnectEvent_TransferChanged() when transferChanged != null:
-return transferChanged(_that.transfer);case _:
+return transferChanged(_that.transfer);case RsKdeConnectEvent_WallpaperChanged() when wallpaperChanged != null:
+return wallpaperChanged(_that.deviceId,_that.path);case _:
   return null;
 
 }
@@ -927,6 +933,74 @@ class _$RsKdeConnectEvent_TransferChangedCopyWithImpl<$Res>
   return _then(RsKdeConnectEvent_TransferChanged(
 transfer: null == transfer ? _self.transfer : transfer // ignore: cast_nullable_to_non_nullable
 as RsTransfer,
+  ));
+}
+
+
+}
+
+/// @nodoc
+
+
+class RsKdeConnectEvent_WallpaperChanged extends RsKdeConnectEvent {
+  const RsKdeConnectEvent_WallpaperChanged({required this.deviceId, required this.path}): super._();
+  
+
+ final  String deviceId;
+ final  String path;
+
+/// Create a copy of RsKdeConnectEvent
+/// with the given fields replaced by the non-null parameter values.
+@JsonKey(includeFromJson: false, includeToJson: false)
+@pragma('vm:prefer-inline')
+$RsKdeConnectEvent_WallpaperChangedCopyWith<RsKdeConnectEvent_WallpaperChanged> get copyWith => _$RsKdeConnectEvent_WallpaperChangedCopyWithImpl<RsKdeConnectEvent_WallpaperChanged>(this, _$identity);
+
+
+
+@override
+bool operator ==(Object other) {
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is RsKdeConnectEvent_WallpaperChanged&&(identical(other.deviceId, deviceId) || other.deviceId == deviceId)&&(identical(other.path, path) || other.path == path));
+}
+
+
+@override
+int get hashCode => Object.hash(runtimeType,deviceId,path);
+
+@override
+String toString() {
+  return 'RsKdeConnectEvent.wallpaperChanged(deviceId: $deviceId, path: $path)';
+}
+
+
+}
+
+/// @nodoc
+abstract mixin class $RsKdeConnectEvent_WallpaperChangedCopyWith<$Res> implements $RsKdeConnectEventCopyWith<$Res> {
+  factory $RsKdeConnectEvent_WallpaperChangedCopyWith(RsKdeConnectEvent_WallpaperChanged value, $Res Function(RsKdeConnectEvent_WallpaperChanged) _then) = _$RsKdeConnectEvent_WallpaperChangedCopyWithImpl;
+@useResult
+$Res call({
+ String deviceId, String path
+});
+
+
+
+
+}
+/// @nodoc
+class _$RsKdeConnectEvent_WallpaperChangedCopyWithImpl<$Res>
+    implements $RsKdeConnectEvent_WallpaperChangedCopyWith<$Res> {
+  _$RsKdeConnectEvent_WallpaperChangedCopyWithImpl(this._self, this._then);
+
+  final RsKdeConnectEvent_WallpaperChanged _self;
+  final $Res Function(RsKdeConnectEvent_WallpaperChanged) _then;
+
+/// Create a copy of RsKdeConnectEvent
+/// with the given fields replaced by the non-null parameter values.
+@pragma('vm:prefer-inline') $Res call({Object? deviceId = null,Object? path = null,}) {
+  return _then(RsKdeConnectEvent_WallpaperChanged(
+deviceId: null == deviceId ? _self.deviceId : deviceId // ignore: cast_nullable_to_non_nullable
+as String,path: null == path ? _self.path : path // ignore: cast_nullable_to_non_nullable
+as String,
   ));
 }
 

@@ -15,6 +15,13 @@ class AdwPreferencesGroup extends StatelessWidget {
   final EdgeInsetsGeometry? rowPadding;
   final double? rowMinHeight;
 
+  /// Overrides the group's own surface tone. Left null, a group matches the
+  /// page canvas (the common case); a group nested inside another elevated
+  /// surface -- a dialog card, say -- passes `palette.canvasTonalHigh` so it
+  /// reads as one tonal step *into* that surface rather than the same flat
+  /// grey repeated twice.
+  final Color? surfaceColor;
+
   const AdwPreferencesGroup({
     super.key,
     this.title,
@@ -24,6 +31,7 @@ class AdwPreferencesGroup extends StatelessWidget {
     this.uppercaseTitle = true,
     this.rowPadding,
     this.rowMinHeight,
+    this.surfaceColor,
   });
 
   @override
@@ -61,10 +69,10 @@ class AdwPreferencesGroup extends StatelessWidget {
             AdwRowGeometry(
               padding: rowPadding!,
               minHeight: rowMinHeight!,
-              child: AdwBoxedList(children: children),
+              child: AdwBoxedList(surfaceColor: surfaceColor, children: children),
             )
           else
-            AdwBoxedList(children: children),
+            AdwBoxedList(surfaceColor: surfaceColor, children: children),
         ],
       ),
     );
@@ -79,11 +87,13 @@ class AdwPreferencesGroup extends StatelessWidget {
 class AdwBoxedList extends StatelessWidget {
   final List<Widget> children;
   final double borderRadius;
+  final Color? surfaceColor;
 
   const AdwBoxedList({
     super.key,
     required this.children,
     this.borderRadius = RelayRadius.panel,
+    this.surfaceColor,
   });
 
   @override
@@ -109,7 +119,7 @@ class AdwBoxedList extends StatelessWidget {
     // rows stay contiguous, dividers finish inside the rounded outer edge, and
     // InkWell feedback from actionable rows cannot paint square corners.
     return Material(
-      color: palette.elevated,
+      color: surfaceColor ?? palette.elevated,
       shape: shape,
       clipBehavior: Clip.antiAlias,
       child: Column(
