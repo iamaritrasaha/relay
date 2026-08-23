@@ -25,6 +25,7 @@ use std::path::{Path, PathBuf};
 
 use crate::kdeconnect::wan::payload::MAX_WAN_PAYLOAD_BYTES;
 
+pub mod lan_payload;
 pub mod receive;
 
 /// Why a transfer cannot proceed.

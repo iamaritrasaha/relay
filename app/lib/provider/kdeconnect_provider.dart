@@ -624,6 +624,31 @@ class KdeConnectSendFileAction extends AsyncReduxAction<KdeConnectService, KdeCo
   }
 }
 
+/// Cancels an in-flight transfer.
+///
+/// The core marks it cancelled, drops any pending payload correlation and
+/// removes the partial file, so a cancelled transfer can never later report as
+/// completed.
+class KdeConnectCancelTransferAction extends AsyncReduxAction<KdeConnectService, KdeConnectState> {
+  final String deviceId;
+  final String transferId;
+
+  KdeConnectCancelTransferAction({required this.deviceId, required this.transferId});
+
+  @override
+  Future<KdeConnectState> reduce() async {
+    try {
+      await notifier._runtime?.cancelTransfer(
+        deviceId: kdeConnectDeviceIdFromKey(deviceId),
+        transferId: transferId,
+      );
+    } catch (error, stack) {
+      _logger.warning('Cancel transfer failed', error, stack);
+    }
+    return state;
+  }
+}
+
 class KdeConnectApplyEventAction extends ReduxAction<KdeConnectService, KdeConnectState> {
   final RsKdeConnectEvent event;
 

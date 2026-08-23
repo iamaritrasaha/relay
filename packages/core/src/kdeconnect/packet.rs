@@ -2072,6 +2072,8 @@ pub struct ShareRequestBody {
     pub number_of_files: Option<i64>,
     /// The WAN payload stream correlation id, when the packet arrived over WAN.
     pub relay_payload_id: Option<String>,
+    /// The port to dial back to, when the packet arrived over KDE LAN.
+    pub lan_port: Option<u16>,
 }
 
 impl ShareRequestBody {
@@ -2086,6 +2088,12 @@ impl ShareRequestBody {
             .get("totalPayloadSize")
             .and_then(Value::as_i64)
             .and_then(|size| u64::try_from(size).ok());
+        let lan_port = body
+            .get("payloadTransferInfo")
+            .and_then(Value::as_object)
+            .and_then(|info| info.get("port"))
+            .and_then(Value::as_u64)
+            .and_then(|port| u16::try_from(port).ok());
         let relay_payload_id = body
             .get("payloadTransferInfo")
             .and_then(Value::as_object)
@@ -2097,14 +2105,21 @@ impl ShareRequestBody {
             total_payload_size,
             number_of_files: body.get("numberOfFiles").and_then(Value::as_i64),
             relay_payload_id,
+            lan_port,
         })
     }
 
     /// Builds the outgoing announcement for a file Relay is sending.
+    /// Builds the outgoing announcement.
+    ///
+    /// `relay_payload_id` is set for a Relay WAN transfer and `lan_port` for a
+    /// KDE LAN one; exactly one applies, because a transfer uses a single
+    /// transport for its whole lifetime.
     pub fn to_packet(
         filename: &str,
         total_payload_size: u64,
         relay_payload_id: Option<&str>,
+        lan_port: Option<u16>,
     ) -> NetworkPacket {
         let mut body = Map::new();
         body.insert("filename".into(), Value::String(filename.to_owned()));
@@ -2113,12 +2128,23 @@ impl ShareRequestBody {
             Value::Number(total_payload_size.into()),
         );
         body.insert("numberOfFiles".into(), Value::Number(1.into()));
+        // `payloadSize` is a top-level field in KDE's protocol; the transport
+        // detail lives inside `payloadTransferInfo`.
+        body.insert(
+            "payloadSize".into(),
+            Value::Number(total_payload_size.into()),
+        );
+        let mut info = Map::new();
         if let Some(relay_payload_id) = relay_payload_id {
-            let mut info = Map::new();
             info.insert(
                 "relayPayloadId".into(),
                 Value::String(relay_payload_id.to_owned()),
             );
+        }
+        if let Some(port) = lan_port {
+            info.insert("port".into(), Value::Number(port.into()));
+        }
+        if !info.is_empty() {
             info.insert(
                 "payloadSize".into(),
                 Value::Number(total_payload_size.into()),

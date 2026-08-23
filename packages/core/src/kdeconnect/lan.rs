@@ -300,6 +300,13 @@ fn now_unix_millis() -> i64 {
 struct LanTransportLink {
     device_id: String,
     packets: mpsc::Sender<Vec<u8>>,
+    /// Our own identity, used as the TLS server certificate on payload
+    /// connections.
+    identity: Arc<LocalIdentity>,
+    /// The paired device's certificate. Payload connections are pinned to it, so
+    /// a local process that merely guesses the port cannot complete the
+    /// handshake.
+    peer_cert: Vec<u8>,
 }
 
 #[cfg(feature = "kdeconnect-wan")]
@@ -337,15 +344,39 @@ impl crate::kdeconnect::wan::TransportLink for LanTransportLink {
         })
     }
 
+    /// Sends a payload using KDE Connect's LAN mechanism.
+    ///
+    /// The listener is bound and its port returned to the caller *before* this
+    /// runs -- the port has to be inside the control packet, which must reach
+    /// the peer before it can dial back. So this half only accepts the dial-back,
+    /// completes the TLS handshake as the server, and streams.
+    ///
+    /// There is no Relay size ceiling here: the 20 MiB limit is a Relay WAN
+    /// policy, and LAN carries files of any size exactly as KDE Connect does.
     fn send_payload<'a>(
         &'a self,
-        _request: crate::kdeconnect::wan::PayloadRequest<'a>,
+        request: crate::kdeconnect::wan::PayloadRequest<'a>,
     ) -> crate::kdeconnect::wan::transport::LinkFuture<'a, Result<crate::kdeconnect::wan::PayloadOutcome>>
     {
         Box::pin(async move {
-            Err(anyhow::anyhow!(
-                "LAN payload transfer does not go through TransportRouter"
-            ))
+            let listener = request
+                .lan_listener
+                .context("LAN payload send requires a bound listener")?;
+            let stream = listener.accept().await?;
+            // The sender is the TLS *server* on a payload connection, which is
+            // the reverse of the TCP direction.
+            let mut tls =
+                start_tls_as_server(&self.identity, stream, Some(&self.peer_cert)).await?;
+            let on_progress = request.on_progress;
+            crate::kdeconnect::files::lan_payload::stream_payload(
+                request.source,
+                &mut tls,
+                request.payload_size,
+                on_progress,
+            )
+            .await?;
+            tokio::io::AsyncWriteExt::shutdown(&mut tls).await.ok();
+            Ok(crate::kdeconnect::wan::PayloadOutcome::Sent)
         })
     }
 
@@ -908,24 +939,23 @@ impl LanInner {
         let transfer_id = generate_transfer_id();
         let key = TransferKey::new(device_id, &transfer_id);
 
-        // Relay's desktop LAN link has no payload channel yet: KDE Connect
-        // carries LAN payloads over a second TCP+TLS connection that this
-        // implementation does not open. Refusing here, before anything is
-        // announced, is far better than letting the announcement go out and the
-        // payload fail a moment later with a generic error.
-        if active == Some(TransportKind::KdeLan) {
+        // No transport at all: nothing to announce over.
+        if active.is_none() {
             self.transfers.lock().await.insert(Transfer {
                 key: key.clone(),
                 filename,
                 total_bytes: size,
                 state: TransferState::Failed {
-                    reason: "Sending files over the local network is not available yet.".to_owned(),
+                    reason: "This device is not connected.".to_owned(),
                 },
             });
             self.emit_transfer(&key).await;
             return Ok(transfer_id);
         }
 
+        // `remote` is what makes the size ceiling apply: LAN carries files of
+        // any size, exactly as KDE Connect does, and the 20 MiB limit is a
+        // Relay WAN policy alone.
         match check_sendable(Some(size), remote) {
             Ok(_) => {}
             Err(TransferRejection::RequiresLocalConnection { .. } | TransferRejection::UnknownSize) => {
@@ -989,16 +1019,49 @@ impl LanInner {
             .then(|| WanPayloadTransferInfo::new(size))
             .transpose()
             .map_err(|error| anyhow::anyhow!(error))?;
+
+        // A LAN listener must exist *before* the announcement goes out: the
+        // packet carries the port the receiver dials back to, so binding it
+        // afterwards would advertise a port nothing is listening on.
+        let lan_listener = if remote {
+            None
+        } else {
+            Some(crate::kdeconnect::files::lan_payload::PayloadListener::bind().await?)
+        };
+
         let announcement = crate::kdeconnect::packet::ShareRequestBody::to_packet(
             filename,
             size,
             info.as_ref().map(|info| info.relay_payload_id.as_str()),
+            lan_listener.as_ref().map(|listener| listener.port()),
         );
         self.router.send_packet(device_id, &announcement).await?;
 
         let mut file = tokio::fs::File::open(path).await.context("open the file to send")?;
         let links = self.router.links_for(device_id);
         let link = links.first().context("no transport available")?;
+
+        // Progress is funnelled through a channel so the copy loop never awaits
+        // event publication, and so the throttling lives in one place.
+        let (progress_tx, mut progress_rx) = tokio::sync::mpsc::unbounded_channel::<u64>();
+        let progress_inner = Arc::clone(self);
+        let progress_key = key.clone();
+        let progress_task = tokio::spawn(async move {
+            while let Some(sent) = progress_rx.recv().await {
+                let publish = progress_inner
+                    .transfers
+                    .lock()
+                    .await
+                    .advance(&progress_key, sent, false);
+                if publish {
+                    progress_inner.emit_transfer(&progress_key).await;
+                }
+            }
+        });
+        let on_progress_guard = progress_tx.clone();
+        let mut on_progress = move |sent: u64| {
+            let _ = progress_tx.send(sent);
+        };
         let request = PayloadRequest {
             relay_payload_id: info
                 .as_ref()
@@ -1006,8 +1069,13 @@ impl LanInner {
                 .unwrap_or_default(),
             payload_size: size,
             source: &mut file,
+            lan_listener,
+            on_progress: &mut on_progress,
         };
-        link.send_payload(request).await?;
+        let outcome = link.send_payload(request).await;
+        drop(on_progress_guard);
+        let _ = progress_task.await;
+        outcome?;
 
         self.transfers
             .lock()
@@ -1026,7 +1094,7 @@ impl LanInner {
     /// Registers the pending transfer; the bytes arrive separately on their own
     /// payload stream. Nothing is written to disk here.
     async fn handle_share_request(
-        &self,
+        self: &Arc<Self>,
         device_id: &str,
         share: crate::kdeconnect::packet::ShareRequestBody,
     ) {
@@ -1042,7 +1110,12 @@ impl LanInner {
             );
             return;
         };
-        if size > crate::kdeconnect::wan::payload::MAX_WAN_PAYLOAD_BYTES {
+        // The ceiling applies only to a Relay WAN announcement. A LAN sender may
+        // offer a file of any size, exactly as KDE Connect does, so applying
+        // this unconditionally would refuse ordinary local transfers.
+        if share.relay_payload_id.is_some()
+            && size > crate::kdeconnect::wan::payload::MAX_WAN_PAYLOAD_BYTES
+        {
             tracing::warn!(
                 "[Relay Files] device={device_id} announced {size} bytes, over the remote limit"
             );
@@ -1059,21 +1132,102 @@ impl LanInner {
             state: TransferState::Preparing,
         });
 
-        if let Some(relay_payload_id) = share.relay_payload_id {
-            self.pending_payloads.lock().await.insert(
-                relay_payload_id,
-                PendingFile {
-                    device_id: device_id.to_owned(),
-                    transfer_id: transfer_id.clone(),
-                    filename: filename.clone(),
-                    size,
-                },
-            );
-        }
         tracing::info!(
             "[Relay Files] device={device_id} transfer={transfer_id} incoming file bytes={size}"
         );
         self.emit_transfer(&key).await;
+
+        match (share.relay_payload_id, share.lan_port) {
+            // Relay WAN: the sender opens a stream on the existing connection,
+            // so all we can do is remember the correlation and wait for it.
+            (Some(relay_payload_id), _) => {
+                self.pending_payloads.lock().await.insert(
+                    relay_payload_id,
+                    PendingFile {
+                        device_id: device_id.to_owned(),
+                        transfer_id,
+                        filename,
+                        size,
+                    },
+                );
+            }
+            // KDE LAN: *we* dial back to the port the sender advertised.
+            (None, Some(port)) => {
+                let inner = Arc::clone(self);
+                let device_id = device_id.to_owned();
+                tokio::spawn(async move {
+                    inner.fetch_lan_payload(&device_id, key, filename, size, port).await;
+                });
+            }
+            (None, None) => {
+                tracing::warn!(
+                    "[Relay Files] device={device_id} announced a file with no payload transport"
+                );
+                self.fail_transfer(&key, "the sender offered no way to transfer the file").await;
+            }
+        }
+    }
+
+    /// Connects to a LAN sender's payload port and streams the file to disk.
+    ///
+    /// The address comes from the *existing control session*, never from the
+    /// packet: a paired device may nominate a port, but it may not redirect
+    /// Relay to some other host. The TLS handshake is pinned to that device's
+    /// certificate, so a local process which merely guessed the port cannot
+    /// deliver a file.
+    #[cfg(feature = "kdeconnect-wan")]
+    async fn fetch_lan_payload(
+        self: &Arc<Self>,
+        device_id: &str,
+        key: crate::kdeconnect::files::TransferKey,
+        filename: String,
+        size: u64,
+        port: u16,
+    ) {
+        let Some(address) = self
+            .devices
+            .lock()
+            .await
+            .get(device_id)
+            .map(|observed| observed.ip)
+        else {
+            self.fail_transfer(&key, "the sending device is no longer reachable").await;
+            return;
+        };
+        let Some(peer_cert) = self
+            .trust
+            .lock()
+            .await
+            .get(device_id)
+            .and_then(|device| device.certificate_der().ok())
+        else {
+            self.fail_transfer(&key, "the sending device is not paired").await;
+            return;
+        };
+
+        let stream =
+            match crate::kdeconnect::files::lan_payload::connect_to_payload(address, port).await {
+                Ok(stream) => stream,
+                Err(error) => {
+                    tracing::warn!("[Relay Files] transfer={} payload connect failed: {error}", key.transfer_id);
+                    self.fail_transfer(&key, "could not open the file connection").await;
+                    return;
+                }
+            };
+        // The receiver is the TLS client on a payload connection.
+        let mut tls = match start_tls_as_client(&self.identity, stream, device_id, Some(&peer_cert))
+            .await
+        {
+            Ok(tls) => tls,
+            Err(error) => {
+                tracing::warn!("[Relay Files] transfer={} payload TLS failed: {error}", key.transfer_id);
+                self.fail_transfer(&key, "the file connection could not be secured").await;
+                return;
+            }
+        };
+
+        // No ceiling on LAN: the 20 MiB limit is a Relay WAN policy.
+        self.receive_payload_stream(&key, &filename, size, None, &mut tls).await;
     }
 
     /// Streams an arriving payload to disk, correlated to its announcement.
@@ -1089,7 +1243,7 @@ impl LanInner {
     ) where
         R: tokio::io::AsyncRead + Unpin,
     {
-        use crate::kdeconnect::files::{receive::IncomingFile, TransferKey, TransferState};
+        use crate::kdeconnect::files::TransferKey;
 
         let Some(pending) = self.pending_payloads.lock().await.remove(relay_payload_id) else {
             tracing::warn!("[Relay Files] dropped a payload with no matching announcement");
@@ -1106,19 +1260,49 @@ impl LanInner {
             return;
         }
 
+        self.receive_payload_stream(
+            &key,
+            &pending.filename,
+            payload_size,
+            Some(crate::kdeconnect::wan::payload::MAX_WAN_PAYLOAD_BYTES),
+            stream,
+        )
+        .await;
+    }
+
+    /// Streams any payload source to disk, whatever transport produced it.
+    ///
+    /// This is the single receive path: LAN's pinned-TLS socket and WAN's Iroh
+    /// stream both arrive here as `AsyncRead`, and share the same bounded
+    /// copying, filename safety, temp-file/atomic finalize, progress throttling
+    /// and terminal-state handling. The feature layer genuinely does not know
+    /// which transport delivered the bytes.
+    #[cfg(feature = "kdeconnect-wan")]
+    async fn receive_payload_stream<R>(
+        self: &Arc<Self>,
+        key: &crate::kdeconnect::files::TransferKey,
+        filename: &str,
+        payload_size: u64,
+        limit: Option<u64>,
+        stream: &mut R,
+    ) where
+        R: tokio::io::AsyncRead + Unpin,
+    {
+        use crate::kdeconnect::files::{receive::IncomingFile, TransferState};
+
         let directory = match self.download_dir.lock().await.clone() {
             Some(directory) => directory,
             None => {
-                self.fail_transfer(&key, "no download directory configured").await;
+                self.fail_transfer(key, "no download directory configured").await;
                 return;
             }
         };
-        let mut incoming = match IncomingFile::create(&directory, &pending.filename, payload_size).await
+        let mut incoming = match IncomingFile::create(&directory, filename, payload_size, limit).await
         {
             Ok(incoming) => incoming,
             Err(error) => {
-                tracing::warn!("[Relay Files] transfer={} could not start: {error}", pending.transfer_id);
-                self.fail_transfer(&key, "could not create the destination file").await;
+                tracing::warn!("[Relay Files] transfer={} could not start: {error}", key.transfer_id);
+                self.fail_transfer(key, "could not create the destination file").await;
                 return;
             }
         };
@@ -1149,32 +1333,74 @@ impl LanInner {
         drop(progress_tx);
         let _ = progress_task.await;
 
+        // A transfer cancelled while streaming must never later report success.
+        if self.is_cancelled(key).await {
+            incoming.cancel().await;
+            return;
+        }
+
         match result {
             Ok(()) => match incoming.finalize().await {
-                Ok(path) => {
+                Ok(_path) => {
                     tracing::info!(
                         "[Relay Files] device={} transfer={} completed bytes={payload_size}",
-                        pending.device_id,
-                        pending.transfer_id
+                        key.device_id,
+                        key.transfer_id
                     );
                     self.transfers
                         .lock()
                         .await
-                        .finish(&key, TransferState::Completed { total: payload_size });
-                    let _ = path;
-                    self.emit_transfer(&key).await;
+                        .finish(key, TransferState::Completed { total: payload_size });
+                    self.emit_transfer(key).await;
                 }
                 Err(error) => {
-                    tracing::warn!("[Relay Files] transfer={} failed to finalize: {error}", pending.transfer_id);
-                    self.fail_transfer(&key, "the file could not be completed").await;
+                    tracing::warn!("[Relay Files] transfer={} failed to finalize: {error}", key.transfer_id);
+                    self.fail_transfer(key, "the file could not be completed").await;
                 }
             },
             Err(error) => {
-                tracing::warn!("[Relay Files] transfer={} failed: {error}", pending.transfer_id);
+                tracing::warn!("[Relay Files] transfer={} failed: {error}", key.transfer_id);
                 // Dropping `incoming` removes the partial file.
-                self.fail_transfer(&key, "the transfer ended early").await;
+                self.fail_transfer(key, "the transfer ended early").await;
             }
         }
+    }
+
+    /// Cancels an active transfer.
+    ///
+    /// Marks it cancelled immediately so the streaming loop's completion check
+    /// discards its output, drops any pending payload correlation so a late
+    /// stream finds nothing to attach to, and lets the receiver's `Drop` remove
+    /// the partial file. A cancelled transfer can never later become Completed.
+    pub(crate) async fn cancel_transfer(&self, device_id: &str, transfer_id: &str) {
+        use crate::kdeconnect::files::{TransferKey, TransferState};
+        let key = TransferKey::new(device_id, transfer_id);
+        {
+            let mut transfers = self.transfers.lock().await;
+            match transfers.get(&key) {
+                // Cancelling something already finished would rewrite history.
+                Some(transfer) if transfer.state.is_terminal() => return,
+                None => return,
+                _ => {}
+            }
+            transfers.finish(&key, TransferState::Cancelled);
+        }
+        // Any payload still on its way now has no announcement to bind to.
+        self.pending_payloads
+            .lock()
+            .await
+            .retain(|_, pending| pending.transfer_id != transfer_id);
+        tracing::info!("[Relay Files] device={device_id} transfer={transfer_id} cancelled");
+        self.emit_transfer(&key).await;
+    }
+
+    /// Whether a transfer has been cancelled, so a completing stream can be
+    /// discarded rather than published.
+    async fn is_cancelled(&self, key: &crate::kdeconnect::files::TransferKey) -> bool {
+        matches!(
+            self.transfers.lock().await.get(key).map(|t| &t.state),
+            Some(crate::kdeconnect::files::TransferState::Cancelled)
+        )
     }
 
     async fn fail_transfer(&self, key: &crate::kdeconnect::files::TransferKey, reason: &str) {
@@ -3309,6 +3535,8 @@ async fn finish_secure_link(
     inner.router.register(Arc::new(LanTransportLink {
         device_id: secure.device_id.clone(),
         packets: tx.clone(),
+        identity: Arc::new(inner.identity.clone()),
+        peer_cert: peer_cert.clone(),
     }));
     #[cfg(feature = "kdeconnect-wan")]
     inner
@@ -5807,6 +6035,540 @@ mod tests {
             announcement.body["payloadTransferInfo"]["relayPayloadId"].is_string(),
             "a remote announcement carries its payload id"
         );
+    }
+
+    // --- KDE LAN payload transport (real sockets + real TLS) ---------------
+
+    /// Runs one full LAN payload exchange over loopback with real pinned TLS,
+    /// returning what landed on disk.
+    ///
+    /// This is the actual protocol: the sender binds a listener and is the TLS
+    /// *server*, the receiver dials back and is the TLS *client*, and both pin
+    /// the other's certificate.
+    async fn lan_payload_round_trip(
+        sender_identity: &LocalIdentity,
+        receiver_identity: &LocalIdentity,
+        sender_pin: Vec<u8>,
+        receiver_pin: Vec<u8>,
+        body: Vec<u8>,
+        filename: &str,
+    ) -> Result<(std::path::PathBuf, tempfile::TempDir)> {
+        use crate::kdeconnect::files::{lan_payload, receive::IncomingFile};
+
+        let listener = lan_payload::PayloadListener::bind().await?;
+        let port = listener.port();
+        let size = body.len() as u64;
+
+        let sender_identity = sender_identity.clone();
+        let send = tokio::spawn(async move {
+            let stream = listener.accept().await?;
+            let mut tls = start_tls_as_server(&sender_identity, stream, Some(&receiver_pin)).await?;
+            let mut source = std::io::Cursor::new(body);
+            lan_payload::stream_payload(&mut source, &mut tls, size, |_| {}).await?;
+            tokio::io::AsyncWriteExt::shutdown(&mut tls).await.ok();
+            Ok::<_, anyhow::Error>(())
+        });
+
+        let dir = tempfile::tempdir()?;
+        let stream =
+            lan_payload::connect_to_payload(std::net::IpAddr::from([127, 0, 0, 1]), port).await?;
+        let mut tls = start_tls_as_client(
+            receiver_identity,
+            stream,
+            &sender_identity_device_id(&sender_pin),
+            Some(&sender_pin),
+        )
+        .await?;
+        let mut incoming = IncomingFile::create(dir.path(), filename, size, None).await?;
+        incoming.stream_from(&mut tls, |_| {}).await?;
+        let path = incoming.finalize().await?;
+        send.await??;
+        Ok((path, dir))
+    }
+
+    /// The pinned certificate is matched by bytes, so any stable name works for
+    /// the TLS SNI field in these tests.
+    fn sender_identity_device_id(_pin: &[u8]) -> String {
+        "lan-payload-peer".to_string()
+    }
+
+    #[cfg(feature = "kdeconnect-wan")]
+    #[tokio::test]
+    async fn a_large_lan_announcement_is_accepted_while_the_same_size_over_wan_is_not() {
+        let over = (crate::kdeconnect::wan::payload::MAX_WAN_PAYLOAD_BYTES + 1) as i64;
+
+        // LAN: announced with a port, no relayPayloadId -- must be accepted.
+        let (inner, _events) = multi_device_harness(&[PHONE_A]);
+        let (tx, _rx) = tokio::sync::mpsc::channel(16);
+        let mut lan = share_packet("big.bin", over, None);
+        let mut info = serde_json::Map::new();
+        info.insert("port".into(), 1739.into());
+        lan.body.insert("payloadTransferInfo".into(), serde_json::Value::Object(info));
+        inner
+            .handle_transport_packet(PHONE_A, &lan, &PacketReplyRoute::Lan(tx))
+            .await;
+        assert_eq!(
+            inner.transfers_for(PHONE_A).await.len(),
+            1,
+            "a large local file must be accepted"
+        );
+
+        // WAN: the same size with a relayPayloadId must be refused.
+        let (inner, _events) = multi_device_harness(&[PHONE_A]);
+        let (tx, _rx) = tokio::sync::mpsc::channel(16);
+        inner
+            .handle_transport_packet(
+                PHONE_A,
+                &share_packet("big.bin", over, Some("payload-1")),
+                &PacketReplyRoute::Lan(tx),
+            )
+            .await;
+        assert!(inner.transfers_for(PHONE_A).await.is_empty());
+    }
+
+    #[cfg(feature = "kdeconnect-wan")]
+    #[tokio::test]
+    async fn a_lan_payload_streams_over_real_pinned_tls_byte_for_byte() {
+        let sender = LocalIdentity::generate("Sender").unwrap();
+        let receiver = LocalIdentity::generate("Receiver").unwrap();
+        let sender_cert = sender.certificate_der().unwrap().as_ref().to_vec();
+        let receiver_cert = receiver.certificate_der().unwrap().as_ref().to_vec();
+
+        // Multiple chunks plus a partial one.
+        let body: Vec<u8> = (0..(64 * 1024 * 2 + 913)).map(|i| (i % 251) as u8).collect();
+
+        let (path, _dir) = lan_payload_round_trip(
+            &sender,
+            &receiver,
+            sender_cert,
+            receiver_cert,
+            body.clone(),
+            "report.pdf",
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(tokio::fs::read(&path).await.unwrap(), body);
+        assert_eq!(path.file_name().unwrap(), "report.pdf");
+    }
+
+    #[cfg(feature = "kdeconnect-wan")]
+    #[tokio::test]
+    async fn a_lan_payload_larger_than_the_wan_limit_transfers_fine() {
+        // 21 MiB: over the Relay WAN ceiling, which must not apply on LAN.
+        let sender = LocalIdentity::generate("Sender").unwrap();
+        let receiver = LocalIdentity::generate("Receiver").unwrap();
+        let size = 21 * 1024 * 1024;
+        let body = vec![0x5A_u8; size];
+
+        let (path, _dir) = lan_payload_round_trip(
+            &sender,
+            &receiver,
+            sender.certificate_der().unwrap().as_ref().to_vec(),
+            receiver.certificate_der().unwrap().as_ref().to_vec(),
+            body,
+            "large.bin",
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(
+            tokio::fs::metadata(&path).await.unwrap().len(),
+            size as u64,
+            "LAN carries files of any size"
+        );
+    }
+
+    #[cfg(feature = "kdeconnect-wan")]
+    #[tokio::test]
+    async fn zero_and_single_byte_lan_payloads_round_trip() {
+        for body in [Vec::new(), vec![0x42_u8]] {
+            let sender = LocalIdentity::generate("Sender").unwrap();
+            let receiver = LocalIdentity::generate("Receiver").unwrap();
+            let expected = body.clone();
+            let (path, _dir) = lan_payload_round_trip(
+                &sender,
+                &receiver,
+                sender.certificate_der().unwrap().as_ref().to_vec(),
+                receiver.certificate_der().unwrap().as_ref().to_vec(),
+                body,
+                "edge.bin",
+            )
+            .await
+            .unwrap();
+            assert_eq!(tokio::fs::read(&path).await.unwrap(), expected);
+        }
+    }
+
+    #[cfg(feature = "kdeconnect-wan")]
+    #[tokio::test]
+    async fn a_payload_connection_from_the_wrong_peer_is_refused_by_tls() {
+        // An impostor that knows the port but is not the paired device.
+        let sender = LocalIdentity::generate("Sender").unwrap();
+        let receiver = LocalIdentity::generate("Receiver").unwrap();
+        let impostor = LocalIdentity::generate("Impostor").unwrap();
+
+        let result = lan_payload_round_trip(
+            &sender,
+            // The receiver presents the impostor's identity, while the sender
+            // still pins the real receiver's certificate.
+            &impostor,
+            sender.certificate_der().unwrap().as_ref().to_vec(),
+            receiver.certificate_der().unwrap().as_ref().to_vec(),
+            vec![1_u8; 1024],
+            "x.bin",
+        )
+        .await;
+
+        assert!(
+            result.is_err(),
+            "knowing the payload port must never be enough to deliver a file"
+        );
+    }
+
+    #[cfg(feature = "kdeconnect-wan")]
+    #[tokio::test]
+    async fn a_receiver_that_pins_the_wrong_sender_refuses_the_payload() {
+        let sender = LocalIdentity::generate("Sender").unwrap();
+        let receiver = LocalIdentity::generate("Receiver").unwrap();
+        let other = LocalIdentity::generate("Other").unwrap();
+
+        let result = lan_payload_round_trip(
+            &sender,
+            &receiver,
+            // Receiver expects `other`'s certificate, but `sender` answers.
+            other.certificate_der().unwrap().as_ref().to_vec(),
+            receiver.certificate_der().unwrap().as_ref().to_vec(),
+            vec![1_u8; 1024],
+            "x.bin",
+        )
+        .await;
+
+        assert!(result.is_err(), "an unexpected sender certificate must fail the handshake");
+    }
+
+    #[cfg(feature = "kdeconnect-wan")]
+    #[tokio::test]
+    async fn a_lan_payload_that_stops_early_leaves_no_finished_file() {
+        use crate::kdeconnect::files::{lan_payload, receive::IncomingFile};
+        let sender = LocalIdentity::generate("Sender").unwrap();
+        let receiver = LocalIdentity::generate("Receiver").unwrap();
+        let sender_cert = sender.certificate_der().unwrap().as_ref().to_vec();
+        let receiver_cert = receiver.certificate_der().unwrap().as_ref().to_vec();
+
+        let listener = lan_payload::PayloadListener::bind().await.unwrap();
+        let port = listener.port();
+
+        let send = tokio::spawn(async move {
+            let stream = listener.accept().await.unwrap();
+            let mut tls = start_tls_as_server(&sender, stream, Some(&receiver_cert)).await.unwrap();
+            // Announce 10 KiB but deliver 1 KiB, then hang up.
+            tokio::io::AsyncWriteExt::write_all(&mut tls, &vec![7_u8; 1024]).await.unwrap();
+            tokio::io::AsyncWriteExt::shutdown(&mut tls).await.ok();
+        });
+
+        let dir = tempfile::tempdir().unwrap();
+        let stream = lan_payload::connect_to_payload(std::net::IpAddr::from([127, 0, 0, 1]), port)
+            .await
+            .unwrap();
+        let mut tls =
+            start_tls_as_client(&receiver, stream, "peer", Some(&sender_cert)).await.unwrap();
+        let mut incoming = IncomingFile::create(dir.path(), "short.bin", 10_240, None).await.unwrap();
+        let error = incoming.stream_from(&mut tls, |_| {}).await.unwrap_err();
+        drop(incoming);
+        send.await.unwrap();
+
+        assert!(error.to_string().contains("ended after 1024 of 10240"));
+        let mut entries = tokio::fs::read_dir(dir.path()).await.unwrap();
+        assert!(
+            entries.next_entry().await.unwrap().is_none(),
+            "a broken LAN transfer must leave the directory clean"
+        );
+    }
+
+    // --- Route policy and cancellation -------------------------------------
+
+    /// Registers a link of the given kind so route policy can be exercised.
+    #[cfg(feature = "kdeconnect-wan")]
+    async fn with_route(
+        inner: &Arc<LanInner>,
+        device_id: &str,
+        kind: crate::kdeconnect::wan::TransportKind,
+    ) {
+        inner.router.register(Arc::new(TestRouteLink {
+            device_id: device_id.to_owned(),
+            kind,
+        }));
+        inner.peer_capabilities.lock().await.insert(
+            device_id.to_owned(),
+            (vec![crate::kdeconnect::PACKET_TYPE_SHARE_REQUEST.to_owned()], vec![]),
+        );
+    }
+
+    fn file_of(dir: &std::path::Path, name: &str, size: u64) -> std::path::PathBuf {
+        let path = dir.join(name);
+        let file = std::fs::File::create(&path).unwrap();
+        file.set_len(size).unwrap();
+        path
+    }
+
+    #[cfg(feature = "kdeconnect-wan")]
+    async fn state_of(
+        inner: &Arc<LanInner>,
+        device_id: &str,
+        transfer_id: &str,
+    ) -> crate::kdeconnect::files::TransferState {
+        inner
+            .transfers
+            .lock()
+            .await
+            .get(&crate::kdeconnect::files::TransferKey::new(device_id, transfer_id))
+            .map(|transfer| transfer.state.clone())
+            .expect("transfer should exist")
+    }
+
+    #[cfg(feature = "kdeconnect-wan")]
+    #[tokio::test]
+    async fn a_large_file_is_accepted_over_lan_because_the_limit_is_wan_only() {
+        use crate::kdeconnect::wan::TransportKind;
+        let (inner, _events) = multi_device_harness(&[PHONE_A]);
+        with_route(&inner, PHONE_A, TransportKind::KdeLan).await;
+
+        let dir = tempfile::tempdir().unwrap();
+        // 25 MiB: comfortably over the Relay WAN ceiling.
+        let path = file_of(dir.path(), "big.bin", 25 * 1024 * 1024);
+
+        let transfer_id = inner.send_file(PHONE_A, &path).await.unwrap();
+
+        assert_ne!(
+            state_of(&inner, PHONE_A, &transfer_id).await,
+            crate::kdeconnect::files::TransferState::RequiresLocalConnection,
+            "LAN must carry files of any size; the 20 MiB cap is a WAN policy"
+        );
+    }
+
+    #[cfg(feature = "kdeconnect-wan")]
+    #[tokio::test]
+    async fn the_same_large_file_is_refused_when_only_wan_is_available() {
+        use crate::kdeconnect::files::TransferState;
+        use crate::kdeconnect::wan::TransportKind;
+        let (inner, _events) = multi_device_harness(&[PHONE_A]);
+        with_route(&inner, PHONE_A, TransportKind::RelayWan).await;
+
+        let dir = tempfile::tempdir().unwrap();
+        let path = file_of(dir.path(), "big.bin", 25 * 1024 * 1024);
+
+        let transfer_id = inner.send_file(PHONE_A, &path).await.unwrap();
+
+        assert_eq!(
+            state_of(&inner, PHONE_A, &transfer_id).await,
+            TransferState::RequiresLocalConnection
+        );
+    }
+
+    #[cfg(feature = "kdeconnect-wan")]
+    #[tokio::test]
+    async fn lan_is_preferred_over_wan_when_both_routes_are_available() {
+        use crate::kdeconnect::wan::TransportKind;
+        let (inner, _events) = multi_device_harness(&[PHONE_A]);
+        with_route(&inner, PHONE_A, TransportKind::RelayWan).await;
+        with_route(&inner, PHONE_A, TransportKind::KdeLan).await;
+
+        // A file over the WAN ceiling proves LAN was chosen: had WAN been
+        // selected this would have been refused outright.
+        let dir = tempfile::tempdir().unwrap();
+        let path = file_of(dir.path(), "big.bin", 25 * 1024 * 1024);
+        let transfer_id = inner.send_file(PHONE_A, &path).await.unwrap();
+
+        assert_ne!(
+            state_of(&inner, PHONE_A, &transfer_id).await,
+            crate::kdeconnect::files::TransferState::RequiresLocalConnection,
+            "a local file must never be relayed over the Internet"
+        );
+        assert_eq!(inner.router.active_transport(PHONE_A), Some(TransportKind::KdeLan));
+    }
+
+    #[cfg(feature = "kdeconnect-wan")]
+    #[tokio::test]
+    async fn a_small_file_is_accepted_on_either_route() {
+        use crate::kdeconnect::files::TransferState;
+        use crate::kdeconnect::wan::TransportKind;
+        for kind in [TransportKind::KdeLan, TransportKind::RelayWan] {
+            let (inner, _events) = multi_device_harness(&[PHONE_A]);
+            with_route(&inner, PHONE_A, kind).await;
+            let dir = tempfile::tempdir().unwrap();
+            let path = file_of(dir.path(), "small.bin", 2 * 1024 * 1024);
+
+            let transfer_id = inner.send_file(PHONE_A, &path).await.unwrap();
+            assert_ne!(
+                state_of(&inner, PHONE_A, &transfer_id).await,
+                TransferState::RequiresLocalConnection,
+                "{kind:?} should accept 2 MiB"
+            );
+        }
+    }
+
+    #[cfg(feature = "kdeconnect-wan")]
+    #[tokio::test]
+    async fn the_remote_boundary_holds_exactly_at_twenty_mebibytes() {
+        use crate::kdeconnect::files::TransferState;
+        use crate::kdeconnect::wan::payload::MAX_WAN_PAYLOAD_BYTES;
+        use crate::kdeconnect::wan::TransportKind;
+
+        for (size, refused) in [(MAX_WAN_PAYLOAD_BYTES, false), (MAX_WAN_PAYLOAD_BYTES + 1, true)] {
+            let (inner, _events) = multi_device_harness(&[PHONE_A]);
+            with_route(&inner, PHONE_A, TransportKind::RelayWan).await;
+            let dir = tempfile::tempdir().unwrap();
+            let path = file_of(dir.path(), "edge.bin", size);
+
+            let transfer_id = inner.send_file(PHONE_A, &path).await.unwrap();
+            let state = state_of(&inner, PHONE_A, &transfer_id).await;
+            assert_eq!(
+                state == TransferState::RequiresLocalConnection,
+                refused,
+                "{size} bytes over WAN"
+            );
+        }
+    }
+
+    #[cfg(feature = "kdeconnect-wan")]
+    #[tokio::test]
+    async fn a_disconnected_device_reports_unavailable_rather_than_a_size_error() {
+        use crate::kdeconnect::files::TransferState;
+        let (inner, _events) = multi_device_harness(&[PHONE_A]);
+        inner.peer_capabilities.lock().await.insert(
+            PHONE_A.to_owned(),
+            (vec![crate::kdeconnect::PACKET_TYPE_SHARE_REQUEST.to_owned()], vec![]),
+        );
+        let dir = tempfile::tempdir().unwrap();
+        let path = file_of(dir.path(), "x.bin", 100);
+
+        let transfer_id = inner.send_file(PHONE_A, &path).await.unwrap();
+
+        assert!(matches!(
+            state_of(&inner, PHONE_A, &transfer_id).await,
+            TransferState::Failed { .. }
+        ));
+    }
+
+    #[cfg(feature = "kdeconnect-wan")]
+    #[tokio::test]
+    async fn a_retry_creates_a_new_transfer_and_re_runs_route_selection() {
+        use crate::kdeconnect::files::TransferState;
+        use crate::kdeconnect::wan::TransportKind;
+        let (inner, _events) = multi_device_harness(&[PHONE_A]);
+        with_route(&inner, PHONE_A, TransportKind::RelayWan).await;
+
+        let dir = tempfile::tempdir().unwrap();
+        let path = file_of(dir.path(), "big.bin", 25 * 1024 * 1024);
+
+        // Remote: refused for its size.
+        let first = inner.send_file(PHONE_A, &path).await.unwrap();
+        assert_eq!(
+            state_of(&inner, PHONE_A, &first).await,
+            TransferState::RequiresLocalConnection
+        );
+
+        // LAN comes back; retrying re-evaluates the route rather than reusing
+        // the old decision.
+        with_route(&inner, PHONE_A, TransportKind::KdeLan).await;
+        let second = inner.send_file(PHONE_A, &path).await.unwrap();
+
+        assert_ne!(first, second, "a retry is a new transfer, not a resumed one");
+        assert_ne!(
+            state_of(&inner, PHONE_A, &second).await,
+            TransferState::RequiresLocalConnection
+        );
+        // The original attempt keeps its own outcome.
+        assert_eq!(
+            state_of(&inner, PHONE_A, &first).await,
+            TransferState::RequiresLocalConnection
+        );
+    }
+
+    #[cfg(feature = "kdeconnect-wan")]
+    #[tokio::test]
+    async fn cancelling_marks_the_transfer_and_drops_its_pending_payload() {
+        use crate::kdeconnect::files::TransferState;
+        let (inner, _events) = multi_device_harness(&[PHONE_A]);
+        let dir = tempfile::tempdir().unwrap();
+        inner.set_download_dir(dir.path().to_path_buf()).await;
+        let (tx, _rx) = tokio::sync::mpsc::channel(16);
+
+        inner
+            .handle_transport_packet(
+                PHONE_A,
+                &share_packet("x.bin", 1_000, Some("payload-1")),
+                &PacketReplyRoute::Lan(tx),
+            )
+            .await;
+        let transfer_id = inner.transfers_for(PHONE_A).await[0].key.transfer_id.clone();
+
+        inner.cancel_transfer(PHONE_A, &transfer_id).await;
+
+        assert_eq!(state_of(&inner, PHONE_A, &transfer_id).await, TransferState::Cancelled);
+        assert!(
+            inner.pending_payloads.lock().await.is_empty(),
+            "a cancelled transfer must not still be waiting for bytes"
+        );
+
+        // A payload arriving afterwards has nothing to attach to and writes
+        // nothing.
+        let mut source = std::io::Cursor::new(vec![0_u8; 1_000]);
+        inner.handle_incoming_payload("payload-1", 1_000, &mut source).await;
+        assert_eq!(
+            state_of(&inner, PHONE_A, &transfer_id).await,
+            TransferState::Cancelled,
+            "a cancelled transfer must never become Completed"
+        );
+        let mut entries = tokio::fs::read_dir(dir.path()).await.unwrap();
+        assert!(entries.next_entry().await.unwrap().is_none());
+    }
+
+    #[cfg(feature = "kdeconnect-wan")]
+    #[tokio::test]
+    async fn cancelling_a_finished_transfer_does_not_rewrite_its_outcome() {
+        use crate::kdeconnect::files::{Transfer, TransferKey, TransferState};
+        let (inner, _events) = multi_device_harness(&[PHONE_A]);
+        let key = TransferKey::new(PHONE_A, "t1");
+        inner.transfers.lock().await.insert(Transfer {
+            key: key.clone(),
+            filename: "x.bin".into(),
+            total_bytes: 10,
+            state: TransferState::Completed { total: 10 },
+        });
+
+        inner.cancel_transfer(PHONE_A, "t1").await;
+
+        assert_eq!(
+            state_of(&inner, PHONE_A, "t1").await,
+            TransferState::Completed { total: 10 }
+        );
+    }
+
+    #[cfg(feature = "kdeconnect-wan")]
+    #[tokio::test]
+    async fn an_announcement_offering_no_payload_transport_fails_cleanly() {
+        let (inner, _events) = multi_device_harness(&[PHONE_A]);
+        let dir = tempfile::tempdir().unwrap();
+        inner.set_download_dir(dir.path().to_path_buf()).await;
+        let (tx, _rx) = tokio::sync::mpsc::channel(16);
+
+        // Neither a relayPayloadId nor a LAN port.
+        inner
+            .handle_transport_packet(
+                PHONE_A,
+                &share_packet("x.bin", 100, None),
+                &PacketReplyRoute::Lan(tx),
+            )
+            .await;
+        tokio::time::sleep(Duration::from_millis(50)).await;
+
+        let transfers = inner.transfers_for(PHONE_A).await;
+        assert!(matches!(
+            transfers[0].state,
+            crate::kdeconnect::files::TransferState::Failed { .. }
+        ));
     }
 
     // --- Clipboard ---------------------------------------------------------

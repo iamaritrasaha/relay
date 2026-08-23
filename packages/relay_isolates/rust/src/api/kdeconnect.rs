@@ -415,6 +415,12 @@ impl RsKdeConnect {
         self.handle.send_file(&device_id, std::path::Path::new(&path)).await
     }
 
+    /// Cancels an in-flight transfer. Idempotent; a transfer that already
+    /// finished keeps its outcome.
+    pub async fn cancel_transfer(&self, device_id: String, transfer_id: String) {
+        self.handle.cancel_transfer(&device_id, &transfer_id).await;
+    }
+
     pub async fn transfers_for(&self, device_id: String) -> Vec<RsTransfer> {
         self.handle
             .transfers_for(&device_id)

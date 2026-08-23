@@ -16,7 +16,7 @@ use anyhow::{Context as _, Result};
 use tokio::io::{AsyncRead, AsyncReadExt as _, AsyncWriteExt as _};
 
 use super::{sanitize_filename, unique_destination};
-use crate::kdeconnect::wan::payload::{validate_payload_size, MAX_WAN_PAYLOAD_BYTES};
+use crate::kdeconnect::wan::payload::MAX_WAN_PAYLOAD_BYTES;
 
 /// Streaming chunk size. Matches the sender's, so a chunk read is typically one
 /// chunk written with no re-buffering in between.
@@ -51,8 +51,24 @@ impl IncomingFile {
     /// The name is sanitized to a basename and de-duplicated, so nothing the
     /// sender puts in `filename` can escape `directory` or overwrite a file that
     /// is already there.
-    pub async fn create(directory: &Path, filename: &str, declared: u64) -> Result<Self> {
-        validate_payload_size(declared).map_err(|error| anyhow::anyhow!(error))?;
+    /// `limit` is the transport's own size policy, stated explicitly by the
+    /// caller rather than assumed here.
+    ///
+    /// This matters: the 20 MiB ceiling belongs to Relay WAN alone. Enforcing it
+    /// inside the shared receiver would silently apply it to LAN too and refuse
+    /// perfectly ordinary local files. `None` means the transport imposes no
+    /// ceiling, which is the LAN case.
+    pub async fn create(
+        directory: &Path,
+        filename: &str,
+        declared: u64,
+        limit: Option<u64>,
+    ) -> Result<Self> {
+        if let Some(limit) = limit {
+            if declared > limit {
+                anyhow::bail!("declared {declared} bytes exceeds the {limit}-byte transport limit");
+            }
+        }
         tokio::fs::create_dir_all(directory)
             .await
             .context("create the destination directory")?;
@@ -225,7 +241,7 @@ mod tests {
     use super::*;
 
     async fn receive(dir: &Path, name: &str, data: &[u8], declared: u64) -> Result<PathBuf> {
-        let mut incoming = IncomingFile::create(dir, name, declared).await?;
+        let mut incoming = IncomingFile::create(dir, name, declared, Some(MAX_RECEIVE_BYTES)).await?;
         let mut source = std::io::Cursor::new(data.to_vec());
         incoming.stream_from(&mut source, |_| {}).await?;
         incoming.finalize().await
@@ -265,7 +281,8 @@ mod tests {
         let size = CHUNK_BYTES * 3 + 1234;
         let data: Vec<u8> = (0..size).map(|index| (index % 251) as u8).collect();
 
-        let mut incoming = IncomingFile::create(dir.path(), "big.bin", size as u64).await.unwrap();
+        let mut incoming = IncomingFile::create(dir.path(), "big.bin", size as u64, Some(MAX_RECEIVE_BYTES))
+            .await.unwrap();
         let mut samples = Vec::new();
         let mut source = std::io::Cursor::new(data.clone());
         incoming
@@ -283,7 +300,8 @@ mod tests {
     #[tokio::test]
     async fn a_truncated_payload_fails_and_leaves_no_file() {
         let dir = tempfile::tempdir().unwrap();
-        let mut incoming = IncomingFile::create(dir.path(), "short.bin", 100).await.unwrap();
+        let mut incoming = IncomingFile::create(dir.path(), "short.bin", 100, Some(MAX_RECEIVE_BYTES))
+            .await.unwrap();
         let mut source = std::io::Cursor::new(vec![0_u8; 40]);
 
         let error = incoming.stream_from(&mut source, |_| {}).await.unwrap_err();
@@ -297,7 +315,8 @@ mod tests {
     #[tokio::test]
     async fn a_size_mismatch_at_finalize_is_refused() {
         let dir = tempfile::tempdir().unwrap();
-        let mut incoming = IncomingFile::create(dir.path(), "x.bin", 10).await.unwrap();
+        let mut incoming = IncomingFile::create(dir.path(), "x.bin", 10, Some(MAX_RECEIVE_BYTES))
+            .await.unwrap();
         // Claim ten bytes but only ever write five by lying about the declared
         // length after the fact.
         let mut source = std::io::Cursor::new(vec![1_u8; 5]);
@@ -308,7 +327,8 @@ mod tests {
     #[tokio::test]
     async fn a_sender_that_overruns_its_declared_size_is_cut_off() {
         let dir = tempfile::tempdir().unwrap();
-        let mut incoming = IncomingFile::create(dir.path(), "x.bin", 10).await.unwrap();
+        let mut incoming = IncomingFile::create(dir.path(), "x.bin", 10, Some(MAX_RECEIVE_BYTES))
+            .await.unwrap();
         let mut source = std::io::Cursor::new(vec![7_u8; 10_000]);
 
         incoming.stream_from(&mut source, |_| {}).await.unwrap();
@@ -325,8 +345,8 @@ mod tests {
     async fn an_oversized_declaration_is_refused_before_a_file_is_created() {
         let dir = tempfile::tempdir().unwrap();
         assert!(
-            IncomingFile::create(dir.path(), "huge.bin", MAX_RECEIVE_BYTES + 1)
-                .await
+            IncomingFile::create(dir.path(), "huge.bin", MAX_RECEIVE_BYTES + 1, Some(MAX_RECEIVE_BYTES))
+            .await
                 .is_err()
         );
         // Nothing at all should have been created.
@@ -337,13 +357,15 @@ mod tests {
     #[tokio::test]
     async fn exactly_the_limit_is_accepted_as_a_declaration() {
         let dir = tempfile::tempdir().unwrap();
-        assert!(IncomingFile::create(dir.path(), "x.bin", MAX_RECEIVE_BYTES).await.is_ok());
+        assert!(IncomingFile::create(dir.path(), "x.bin", MAX_RECEIVE_BYTES, Some(MAX_RECEIVE_BYTES))
+            .await.is_ok());
     }
 
     #[tokio::test]
     async fn cancelling_removes_the_partial_file() {
         let dir = tempfile::tempdir().unwrap();
-        let mut incoming = IncomingFile::create(dir.path(), "x.bin", 1_000).await.unwrap();
+        let mut incoming = IncomingFile::create(dir.path(), "x.bin", 1_000, Some(MAX_RECEIVE_BYTES))
+            .await.unwrap();
         let mut source = std::io::Cursor::new(vec![0_u8; 500]);
         let _ = incoming.stream_from(&mut source, |_| {}).await;
 

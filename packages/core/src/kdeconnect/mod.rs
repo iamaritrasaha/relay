@@ -384,6 +384,12 @@ impl KdeConnectHandle {
         self.inner.send_file(device_id, path).await
     }
 
+    /// Cancels an in-flight transfer. Idempotent, and never resurrects a
+    /// transfer that already finished.
+    pub async fn cancel_transfer(&self, device_id: &str, transfer_id: &str) {
+        self.inner.cancel_transfer(device_id, transfer_id).await;
+    }
+
     /// Transfers belonging to one logical device.
     pub async fn transfers_for(&self, device_id: &str) -> Vec<files::Transfer> {
         self.inner.transfers_for(device_id).await

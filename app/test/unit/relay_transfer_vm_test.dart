@@ -77,9 +77,42 @@ void main() {
     }
   });
 
+  _affordanceTests();
+
   test('a failure surfaces its reason when there is one', () {
     final vm = RelayTransferVm(transfer(state: 'failed', error: 'the transfer ended early'));
     expect(vm.title, 'Could not send photo.jpg');
     expect(vm.detail, 'the transfer ended early');
+  });
+}
+
+/// Cancel and retry affordances follow the transfer's state, not the transport.
+void _affordanceTests() {
+  RsTransfer at(String state) => RsTransfer(
+    deviceId: 'device-a',
+    transferId: 't1',
+    filename: 'photo.jpg',
+    totalBytes: BigInt.from(100),
+    transferredBytes: BigInt.zero,
+    state: state,
+    progress: 0,
+    error: null,
+  );
+
+  test('only an active transfer can be cancelled', () {
+    expect(RelayTransferVm(at('sending')).canCancel, isTrue);
+    expect(RelayTransferVm(at('receiving')).canCancel, isTrue);
+    expect(RelayTransferVm(at('preparing')).canCancel, isTrue);
+    for (final state in ['completed', 'failed', 'cancelled', 'requiresLocalConnection']) {
+      expect(RelayTransferVm(at(state)).canCancel, isFalse, reason: state);
+    }
+  });
+
+  test('retry is offered for every unsuccessful outcome, including oversized', () {
+    for (final state in ['failed', 'cancelled', 'requiresLocalConnection']) {
+      expect(RelayTransferVm(at(state)).canRetry, isTrue, reason: state);
+    }
+    expect(RelayTransferVm(at('completed')).canRetry, isFalse);
+    expect(RelayTransferVm(at('sending')).canRetry, isFalse);
   });
 }

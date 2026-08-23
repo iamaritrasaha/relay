@@ -645,6 +645,7 @@ mod tests {
                     dir.path(),
                     "greeting.txt",
                     payload_size,
+                    Some(super::super::payload::MAX_WAN_PAYLOAD_BYTES),
                 )
                 .await
                 .unwrap();

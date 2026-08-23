@@ -73,7 +73,7 @@ async fn transfer(body: Vec<u8>, filename: &str) -> anyhow::Result<(Vec<u8>, Vec
     let (id, size) = read_header(&mut server).await?;
     assert_eq!(id, "payload-1");
 
-    let mut incoming = IncomingFile::create(dir.path(), filename, size).await?;
+    let mut incoming = IncomingFile::create(dir.path(), filename, size, Some(MAX_WAN_PAYLOAD_BYTES)).await?;
     let mut samples = Vec::new();
     incoming
         .stream_from(&mut server, |written| samples.push(written))
@@ -118,12 +118,12 @@ async fn a_payload_at_exactly_the_remote_limit_is_accepted_by_the_receiver() {
     // Only the declaration is exercised here; moving 20 MiB through a duplex
     // pipe would make the suite slow for no additional coverage.
     assert!(
-        IncomingFile::create(dir.path(), "max.bin", MAX_WAN_PAYLOAD_BYTES)
+        IncomingFile::create(dir.path(), "max.bin", MAX_WAN_PAYLOAD_BYTES, Some(MAX_WAN_PAYLOAD_BYTES))
             .await
             .is_ok()
     );
     assert!(
-        IncomingFile::create(dir.path(), "over.bin", MAX_WAN_PAYLOAD_BYTES + 1)
+        IncomingFile::create(dir.path(), "over.bin", MAX_WAN_PAYLOAD_BYTES + 1, Some(MAX_WAN_PAYLOAD_BYTES))
             .await
             .is_err(),
         "one byte over the limit must be refused before any file is created"
@@ -146,7 +146,7 @@ async fn a_truncated_stream_never_produces_a_finished_file() {
     });
 
     let (_, size) = read_header(&mut server).await.unwrap();
-    let mut incoming = IncomingFile::create(dir.path(), "short.bin", size).await.unwrap();
+    let mut incoming = IncomingFile::create(dir.path(), "short.bin", size, Some(MAX_WAN_PAYLOAD_BYTES)).await.unwrap();
     let error = incoming.stream_from(&mut server, |_| {}).await.unwrap_err();
     assert!(error.to_string().contains("ended after 1024 of 10240"));
     drop(incoming);
@@ -171,7 +171,7 @@ async fn concurrent_transfers_of_the_same_filename_stay_separate() {
             client.shutdown().await.unwrap();
         });
         let (_, declared) = read_header(&mut server).await.unwrap();
-        let mut incoming = IncomingFile::create(&dir, "photo.jpg", declared).await.unwrap();
+        let mut incoming = IncomingFile::create(&dir, "photo.jpg", declared, None).await.unwrap();
         incoming.stream_from(&mut server, |_| {}).await.unwrap();
         incoming.finalize().await.unwrap()
     }

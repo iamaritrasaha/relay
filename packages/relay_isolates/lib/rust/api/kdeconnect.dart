@@ -38,6 +38,10 @@ abstract class RsKdeConnect implements RustOpaqueInterface {
   /// because a phone sent something.
   Future<void> authorizeRemoteInput();
 
+  /// Cancels an in-flight transfer. Idempotent; a transfer that already
+  /// finished keeps its outcome.
+  Future<void> cancelTransfer({required String deviceId, required String transferId});
+
   /// Whether clipboard sync is switched on for this desktop.
   Future<bool> clipboardEnabled();
 

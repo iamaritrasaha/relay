@@ -48,6 +48,18 @@ class RelayTransferVm {
   };
 
   double get progress => transfer.progress;
+
+  /// Whether the user can stop this transfer. Only an active one can be
+  /// cancelled; offering it on a finished transfer would be misleading.
+  bool get canCancel => !isTerminal;
+
+  /// Whether offering a retry makes sense. A retry starts a fresh attempt and
+  /// re-runs route selection, so it is worth offering whenever the outcome was
+  /// not success — including the oversized-remote case, which may well succeed
+  /// once both devices are on the same network.
+  bool get canRetry => transfer.state == 'failed' ||
+      transfer.state == 'cancelled' ||
+      transfer.state == 'requiresLocalConnection';
 }
 
 /// Formats a byte count the way a person reads it.
