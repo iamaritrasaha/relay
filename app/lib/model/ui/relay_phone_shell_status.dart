@@ -1,4 +1,5 @@
 import 'package:collection/collection.dart';
+import 'package:relay_app/model/ui/relay_connection_state.dart';
 import 'package:relay_app/model/ui/relay_capability_vm.dart';
 import 'package:relay_app/model/ui/relay_device_vm.dart';
 import 'package:relay_isolates/model/device.dart';
@@ -259,7 +260,8 @@ class RelayPhoneShellStatus {
   static bool isEligiblePhone(RelayDeviceVm device) => device.deviceType == DeviceType.mobile && device.isPaired;
 
   /// Whether a live link exists, across every transport Relay speaks.
-  static bool isConnected(RelayDeviceVm device) => device.isKdeConnect ? device.detail == 'Connected' : device.continuityConnected;
+  static bool isConnected(RelayDeviceVm device) =>
+      device.isKdeConnect ? device.connectionState.isConnected : device.continuityConnected;
 
   static int _boolRank(bool value) => value ? 1 : 0;
 

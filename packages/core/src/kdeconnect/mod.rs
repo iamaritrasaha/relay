@@ -6,6 +6,7 @@
 mod capabilities;
 pub mod clipboard;
 pub mod commands;
+pub mod fabric;
 pub mod files;
 pub mod input;
 pub mod media;
@@ -388,6 +389,15 @@ impl KdeConnectHandle {
     /// transfer that already finished.
     pub async fn cancel_transfer(&self, device_id: &str, transfer_id: &str) {
         self.inner.cancel_transfer(device_id, transfer_id).await;
+    }
+
+    /// The Device Fabric: one authoritative record per trusted logical device.
+    ///
+    /// A device reachable over both LAN and WAN appears once, with both routes
+    /// recorded against it -- never as two entries.
+    #[cfg(feature = "kdeconnect-wan")]
+    pub async fn device_fabric(&self) -> Vec<fabric::RelayDeviceRecord> {
+        self.inner.device_fabric().await
     }
 
     /// Transfers belonging to one logical device.

@@ -3,6 +3,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:refena_flutter/refena_flutter.dart';
+import 'package:relay_app/model/ui/relay_connection_state.dart';
 import 'package:relay_app/config/relay_brand.dart';
 import 'package:relay_app/config/relay_motion.dart';
 import 'package:relay_app/model/ui/relay_capability_vm.dart';
@@ -72,7 +73,7 @@ class GnomeDeviceDetailView extends StatelessWidget {
   });
 
   bool get _connected =>
-      (device.isKdeConnect && device.detail == 'Connected') ||
+      (device.isKdeConnect && device.connectionState.isConnected) ||
       device.statusSummary == 'Connected' ||
       device.statusSummary.startsWith('Connected · ') ||
       device.continuityConnected;

@@ -1,3 +1,4 @@
+import 'package:relay_app/model/ui/relay_connection_state.dart';
 import 'package:relay_app/model/ui/relay_capability_vm.dart';
 import 'package:relay_isolates/model/device.dart';
 
@@ -18,12 +19,22 @@ enum RelayDeviceTargetKind { unresolvedLan, verifiedRelay, pairedRelay, kdeConne
 
 /// Immutable, presentation-only description of a Relay target device.
 class RelayDeviceVm {
+  // NOTE: reachability lives in [connectionState]. Do not re-derive it from
+  // [detail] — see RelayConnectionState for why that produced wrong answers.
+
   final String key;
   final String alias;
   final DeviceType deviceType;
   final RelayDevicePhase phase;
   final double? progress;
   final String detail;
+
+  /// How this device is reachable, from the core's single derivation.
+  ///
+  /// Null for view models built without core transport data — continuity
+  /// devices, and fixtures that predate this field. [connectionState] falls back
+  /// for those; read that, never this.
+  final RelayConnectionState? explicitConnectionState;
   final RelayDeviceTargetKind targetKind;
   final String? relayId;
   final String? lanFingerprint;
@@ -53,6 +64,18 @@ class RelayDeviceVm {
   final int? port;
   final String? deviceModel;
 
+  /// How this device is reachable. **The** answer — every surface reads this.
+  ///
+  /// A KDE device carries the core's authoritative state in
+  /// [explicitConnectionState]. Anything else (a continuity peer, a test
+  /// fixture) has no transport state to report, so it falls back to the coarse
+  /// connected/not-connected meaning of [detail]. The fallback deliberately
+  /// cannot distinguish Local from Remote: only the core knows that, and
+  /// guessing here is exactly the mistake this type exists to prevent.
+  RelayConnectionState get connectionState =>
+      explicitConnectionState ??
+      (detail == 'Connected' ? RelayConnectionState.local : RelayConnectionState.offline);
+
   const RelayDeviceVm({
     required this.key,
     required this.alias,
@@ -60,6 +83,7 @@ class RelayDeviceVm {
     required this.phase,
     required this.progress,
     required this.detail,
+    this.explicitConnectionState,
     this.targetKind = RelayDeviceTargetKind.unresolvedLan,
     this.relayId,
     this.lanFingerprint,

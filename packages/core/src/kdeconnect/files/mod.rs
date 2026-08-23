@@ -297,6 +297,13 @@ impl TransferRegistry {
         Some(transfer)
     }
 
+    /// Drops every transfer belonging to one device, leaving other devices'
+    /// transfers untouched. Used when a device is forgotten.
+    pub fn remove_device(&mut self, device_id: &str) {
+        self.transfers.retain(|key, _| key.device_id != device_id);
+        self.last_reported.retain(|key, _| key.device_id != device_id);
+    }
+
     pub fn remove(&mut self, key: &TransferKey) -> Option<Transfer> {
         self.last_reported.remove(key);
         self.transfers.remove(key)

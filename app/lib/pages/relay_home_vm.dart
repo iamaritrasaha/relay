@@ -10,6 +10,7 @@ import 'package:relay_app/model/state/send/send_session_state.dart';
 import 'package:relay_app/model/state/server/receive_session_state.dart';
 import 'package:relay_app/model/state/server/server_state.dart';
 import 'package:relay_app/model/ui/relay_capability_vm.dart';
+import 'package:relay_app/model/ui/relay_connection_state.dart';
 import 'package:relay_app/model/ui/relay_device_vm.dart';
 import 'package:relay_app/provider/continuity/continuity_provider.dart';
 import 'package:relay_app/provider/device_info_provider.dart';
@@ -360,6 +361,11 @@ class RelayHomeVm {
   static RelayDeviceVm kdeDeviceVm(RsKdeConnectDevice device) => _kdeConnectDeviceVm(device);
 
   static RelayDeviceVm _kdeConnectDeviceVm(RsKdeConnectDevice device) {
+    // One derivation, from the core. Trust and reachability are separate facts:
+    // a paired device that is not connected is Offline, not "Local".
+    final connectionState = device.paired && device.connected
+        ? RelayConnectionState.fromCore(device.transportState)
+        : RelayConnectionState.offline;
     final detail = device.connected && device.paired
         ? 'Connected'
         : device.paired
@@ -379,11 +385,16 @@ class RelayHomeVm {
       progress: null,
       detail: detail,
       targetKind: RelayDeviceTargetKind.kdeConnect,
-      connectionType: switch (device.transportState) {
-        'remoteDirect' => RelayConnectionType.direct,
-        'remoteRelay' => RelayConnectionType.relayed,
-        'reconnecting' => RelayConnectionType.unspecified,
-        _ => RelayConnectionType.local,
+      explicitConnectionState: connectionState,
+      // Derived from the same authoritative state rather than a second switch.
+      // The previous catch-all mapped 'offline' onto `local`, so a disconnected
+      // device was presented as being on the local network.
+      connectionType: switch (connectionState) {
+        RelayConnectionState.remoteDirect => RelayConnectionType.direct,
+        RelayConnectionState.remoteRelay => RelayConnectionType.relayed,
+        RelayConnectionState.reconnecting => RelayConnectionType.unspecified,
+        RelayConnectionState.local => RelayConnectionType.local,
+        RelayConnectionState.offline => RelayConnectionType.unspecified,
       },
       securityState: RelaySecurityState.unauthenticated,
       battery: RelayBatteryVm(
