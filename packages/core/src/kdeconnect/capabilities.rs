@@ -42,6 +42,7 @@ pub const PACKET_TYPE_SHARE_REQUEST: &str = "kdeconnect.share.request";
 /// `kdeconnect/wan/mod.rs` for the transport these travel over.
 pub const PACKET_TYPE_RELAY_WAN_IDENTITY: &str = "kdeconnect.relay.wan.identity";
 pub const PACKET_TYPE_RELAY_DEVICE_STATE: &str = "kdeconnect.relay.device_state";
+pub const PACKET_TYPE_RELAY_WALLPAPER: &str = "kdeconnect.relay.wallpaper";
 pub const PACKET_TYPE_RELAY_PING: &str = "kdeconnect.relay.ping";
 pub const PACKET_TYPE_RELAY_PONG: &str = "kdeconnect.relay.pong";
 
@@ -86,6 +87,7 @@ pub fn canonical_outgoing_capabilities() -> Vec<String> {
         PACKET_TYPE_SHARE_REQUEST.to_string(),
         PACKET_TYPE_RELAY_WAN_IDENTITY.to_string(),
         PACKET_TYPE_RELAY_DEVICE_STATE.to_string(),
+        PACKET_TYPE_RELAY_WALLPAPER.to_string(),
         PACKET_TYPE_RELAY_PING.to_string(),
         PACKET_TYPE_RELAY_PONG.to_string(),
     ]

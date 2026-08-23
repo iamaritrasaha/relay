@@ -113,6 +113,8 @@ abstract class RsKdeConnect implements RustOpaqueInterface {
 
   Future<void> sendSms({required String deviceId, required List<String> addresses, required String body, int? subId});
 
+  Future<void> sendWallpaper({required String deviceId, required String path, required String hash, required int width, required int height});
+
   /// Turns clipboard sync on or off. When off nothing is transmitted and an
   /// incoming clipboard does not overwrite the local one.
   Future<void> setClipboardEnabled({required bool enabled});

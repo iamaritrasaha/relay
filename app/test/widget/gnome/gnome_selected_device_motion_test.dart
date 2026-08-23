@@ -86,7 +86,7 @@ Future<Uint8List> _captureHeader(WidgetTester tester) async {
 
 void main() {
   testWidgets('selected connected device produces visible finite frame differences without moving content', (tester) async {
-    tester.view.physicalSize = const Size(800, 300);
+    tester.view.physicalSize = const Size(800, 400);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.resetPhysicalSize);
 

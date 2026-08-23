@@ -22,7 +22,7 @@ pub use capabilities::{
     PACKET_TYPE_CLIPBOARD, PACKET_TYPE_CLIPBOARD_CONNECT, PACKET_TYPE_CONNECTIVITY_REPORT,
     PACKET_TYPE_FINDMYPHONE_REQUEST, PACKET_TYPE_IDENTITY, PACKET_TYPE_NOTIFICATION,
     PACKET_TYPE_NOTIFICATION_REQUEST, PACKET_TYPE_PAIR, PACKET_TYPE_PING,
-    PACKET_TYPE_RELAY_DEVICE_STATE, PACKET_TYPE_RELAY_PING, PACKET_TYPE_RELAY_PONG,
+    PACKET_TYPE_RELAY_DEVICE_STATE, PACKET_TYPE_RELAY_WALLPAPER, PACKET_TYPE_RELAY_PING, PACKET_TYPE_RELAY_PONG,
     PACKET_TYPE_MOUSEPAD_REQUEST, PACKET_TYPE_MPRIS, PACKET_TYPE_MPRIS_REQUEST, PACKET_TYPE_SHARE_REQUEST,
     PACKET_TYPE_RELAY_WAN_IDENTITY,
     PACKET_TYPE_RUNCOMMAND, PACKET_TYPE_RUNCOMMAND_REQUEST,
@@ -39,7 +39,7 @@ pub use lan::{
 pub use packet::{
     filter_device_name, is_valid_device_id, BatteryBody, ClipboardBody, ConnectivityReportBody,
     ConnectivitySignal, FindMyPhoneBody, IdentityBody, NetworkPacket, NotificationBody,
-    PacketError, PairBody, PingBody, RelayDeviceStateBody, RelayHeartbeatBody,
+    PacketError, PairBody, PingBody, RelayDeviceStateBody, RelayWallpaperBody, RelayHeartbeatBody,
     MousePadRequestBody, MprisBody, ShareRequestBody, MprisRequestBody, RelayWanIdentityBody, RunCommandListBody,
     RunCommandRequestBody, SmsAttachmentMetadata, SmsMessage, SmsMessagesBody, SmsRequestBody,
     SmsRequestConversationBody, SmsRequestConversationsBody, TelephonyBody,
@@ -390,6 +390,20 @@ impl KdeConnectHandle {
     #[cfg(feature = "kdeconnect-wan")]
     pub async fn send_file(&self, device_id: &str, path: &std::path::Path) -> Result<String> {
         self.inner.send_file(device_id, path).await
+    }
+
+    #[cfg(feature = "kdeconnect-wan")]
+    pub async fn send_wallpaper(
+        &self,
+        device_id: &str,
+        path: &std::path::Path,
+        hash: &str,
+        width: u32,
+        height: u32,
+    ) -> Result<()> {
+        self.inner
+            .send_wallpaper(device_id, path, hash, width, height)
+            .await
     }
 
     /// Cancels an in-flight transfer. Idempotent, and never resurrects a

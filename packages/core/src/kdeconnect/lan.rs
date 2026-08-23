@@ -1152,6 +1152,80 @@ impl LanInner {
     }
 
     #[cfg(feature = "kdeconnect-wan")]
+    pub(crate) async fn send_wallpaper(
+        self: &Arc<Self>,
+        device_id: &str,
+        path: &std::path::Path,
+        hash: &str,
+        width: u32,
+        height: u32,
+    ) -> Result<()> {
+        use crate::kdeconnect::wan::{payload::WanPayloadTransferInfo, PayloadRequest};
+
+        if self.trust.lock().await.get(device_id).is_none() {
+            anyhow::bail!("device {device_id} is not paired");
+        }
+
+        self.ensure_peer_accepts(device_id, crate::kdeconnect::PACKET_TYPE_RELAY_WALLPAPER)
+            .await?;
+
+        let metadata = tokio::fs::metadata(path).await?;
+        let size = metadata.len();
+        if size > 512 * 1024 {
+            anyhow::bail!("wallpaper thumbnail exceeds maximum size (512 KiB)");
+        }
+
+        let links = self.router.links_for(device_id);
+        let link = links.first().context("no transport available for device")?;
+        let remote = link.kind() == crate::kdeconnect::wan::TransportKind::RelayWan;
+
+        let info = remote
+            .then(|| WanPayloadTransferInfo::new(size))
+            .transpose()
+            .map_err(|error| anyhow::anyhow!(error))?;
+
+        let lan_listener = if remote {
+            None
+        } else {
+            Some(crate::kdeconnect::files::lan_payload::PayloadListener::bind().await?)
+        };
+
+        let announcement = crate::kdeconnect::packet::RelayWallpaperBody::to_packet(
+            hash,
+            "image/jpeg",
+            width,
+            height,
+            size,
+            info.as_ref().map(|info| info.relay_payload_id.as_str()),
+            lan_listener.as_ref().map(|listener| listener.port()),
+        );
+
+        self.router.send_packet(device_id, &announcement).await?;
+
+        let mut file = tokio::fs::File::open(path)
+            .await
+            .context("open the wallpaper file to send")?;
+        let mut noop_progress = |_sent: u64| {};
+        let request = PayloadRequest {
+            relay_payload_id: info
+                .as_ref()
+                .map(|info| info.relay_payload_id.as_str())
+                .unwrap_or_default(),
+            payload_size: size,
+            source: &mut file,
+            lan_listener,
+            on_progress: &mut noop_progress,
+        };
+
+        let outcome = link.send_payload(request).await;
+        outcome?;
+        tracing::info!(
+            "[Relay Wallpaper] sent wallpaper thumbnail to device={device_id} bytes={size} hash={hash}"
+        );
+        Ok(())
+    }
+
+    #[cfg(feature = "kdeconnect-wan")]
     async fn stream_file_out(
         self: &Arc<Self>,
         device_id: &str,
@@ -2230,7 +2304,68 @@ impl LanInner {
                 }
             }
         });
+
+        // Periodically attempt to reconnect known WAN bindings for trusted devices
+        // that are currently offline on both LAN and WAN.
+        let reconnect_inner = Arc::clone(self);
+        let reconnect_cancel = self.cancel.clone();
+        tokio::spawn(async move {
+            loop {
+                tokio::select! {
+                    _ = reconnect_cancel.cancelled() => break,
+                    _ = tokio::time::sleep(Duration::from_secs(10)) => {
+                        reconnect_inner.reconnect_known_wan_bindings().await;
+                    }
+                }
+            }
+        });
+        self.reconnect_known_wan_bindings().await;
+
         Ok(())
+    }
+
+    /// Dials known WAN endpoints for trusted devices that are currently not connected
+    /// on either LAN or WAN.
+    #[cfg(feature = "kdeconnect-wan")]
+    pub(crate) async fn reconnect_known_wan_bindings(self: &Arc<Self>) {
+        let runtime = {
+            let guard = self.wan_runtime.lock().await;
+            guard.clone()
+        };
+        let Some(runtime) = runtime else { return };
+        let trusted = self.trust.lock().await.snapshot();
+        let connections = self.connections.lock().await;
+        let wan_active = self.wan_active.lock().await;
+
+        for device in trusted {
+            let is_connected = connections.contains_key(&device.device_id)
+                || wan_active.contains(&device.device_id);
+            if is_connected {
+                continue;
+            }
+            let Some(endpoint_id_str) = device.wan_endpoint_id.as_deref() else {
+                continue;
+            };
+            let Ok(endpoint_id) = endpoint_id_str.parse::<iroh::EndpointId>() else {
+                continue;
+            };
+
+            let target_id = device.device_id.clone();
+            let runtime = runtime.clone();
+            let inner = Arc::clone(self);
+            tokio::spawn(async move {
+                let addr = iroh::EndpointAddr::from(endpoint_id);
+                match runtime.connect_outbound(&target_id, addr).await {
+                    Ok(link) => {
+                        tracing::info!("[Relay WAN] outbound connect succeeded for {target_id}");
+                        inner.adopt_wan_link(link).await;
+                    }
+                    Err(error) => {
+                        tracing::debug!("[Relay WAN] outbound connect to {target_id} failed: {error}");
+                    }
+                }
+            });
+        }
     }
 
     /// A WAN device whose heartbeat hasn't been seen within
@@ -2246,9 +2381,18 @@ impl LanInner {
         let stale: Vec<String> = {
             let active = self.wan_active.lock().await;
             let route_last_seen = self.route_last_seen.lock().await;
+            let connections = self.connections.lock().await;
             active
                 .iter()
                 .filter(|device_id| {
+                    // If LAN is currently connected and healthy, do not sweep standby WAN link
+                    let lan_healthy = connections.contains_key(*device_id)
+                        && route_last_seen
+                            .get(&(device_id.to_string(), TransportKind::KdeLan))
+                            .is_some_and(|last_seen| now - *last_seen <= FAILOVER_TIMEOUT_SECS);
+                    if lan_healthy {
+                        return false;
+                    }
                     route_last_seen
                         .get(&(device_id.to_string(), TransportKind::RelayWan))
                         .copied()
@@ -2281,24 +2425,45 @@ impl LanInner {
         let stale: Vec<(String, TransportKind)> = {
             let route_last_seen = self.route_last_seen.lock().await;
             let trusted = self.trust.lock().await.snapshot();
+            let connections = self.connections.lock().await;
             let mut stale = Vec::new();
             for device in trusted {
                 let transports = self.router.available_transports(&device.device_id);
-                // A route with a live alternative is failed over quickly; the
-                // last remaining route keeps the generous budget so a hiccup
-                // does not present the device as Offline.
+                if transports.is_empty() {
+                    continue;
+                }
                 let has_alternative = transports.len() > 1;
-                let budget = if has_alternative {
-                    FAILOVER_TIMEOUT_SECS
-                } else {
-                    HEARTBEAT_TIMEOUT_SECS
-                };
                 for kind in transports {
-                    if route_last_seen
-                        .get(&(device.device_id.clone(), kind))
-                        .is_none_or(|last_seen| now - *last_seen > budget)
-                    {
-                        stale.push((device.device_id.clone(), kind));
+                    match kind {
+                        TransportKind::KdeLan => {
+                            let budget = if has_alternative {
+                                FAILOVER_TIMEOUT_SECS
+                            } else {
+                                HEARTBEAT_TIMEOUT_SECS
+                            };
+                            let is_stale = route_last_seen
+                                .get(&(device.device_id.clone(), TransportKind::KdeLan))
+                                .is_none_or(|last_seen| now - *last_seen > budget);
+                            if is_stale {
+                                stale.push((device.device_id.clone(), TransportKind::KdeLan));
+                            }
+                        }
+                        TransportKind::RelayWan => {
+                            // When LAN is actively connected and healthy, WAN is a standby backup
+                            // and does not receive regular KDE traffic. It must not be swept as stale.
+                            let lan_healthy = connections.contains_key(&device.device_id)
+                                && route_last_seen
+                                    .get(&(device.device_id.clone(), TransportKind::KdeLan))
+                                    .is_some_and(|last_seen| now - *last_seen <= FAILOVER_TIMEOUT_SECS);
+                            if !lan_healthy {
+                                let is_stale = route_last_seen
+                                    .get(&(device.device_id.clone(), TransportKind::RelayWan))
+                                    .is_none_or(|last_seen| now - *last_seen > HEARTBEAT_TIMEOUT_SECS);
+                                if is_stale {
+                                    stale.push((device.device_id.clone(), TransportKind::RelayWan));
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -2346,8 +2511,9 @@ impl LanInner {
         true
     }
 
-    /// Registers an accepted (inbound or outbound) [`WanLink`] with the
-    /// transport router, marks its device live, and spawns the task that
+    /// Adopts an authenticated Relay WAN link into the running KDE engine:
+    /// registers it with the [`crate::kdeconnect::wan::TransportRouter`], marks
+    /// the device active in `wan_active` (for legacy list consumers), and
     /// drains its packets into the same heartbeat/device-state handling LAN
     /// uses. A LAN link for the same device_id, if present, keeps priority
     /// (see `TransportKind::priority`) -- this never displaces it.
@@ -2401,6 +2567,23 @@ impl LanInner {
         let _ = link.send_packet(&RelayHeartbeatBody::ping(
             uuid::Uuid::new_v4().to_string(), now_unix_millis()
         )).await;
+
+        if self.trust.lock().await.get(&device_id).is_some() {
+            if self
+                .ensure_peer_accepts(&device_id, crate::kdeconnect::PACKET_TYPE_NOTIFICATION_REQUEST)
+                .await
+                .is_ok()
+            {
+                let _ = link.send_packet(&NotificationBody::request()).await;
+            }
+            if self
+                .ensure_peer_accepts(&device_id, crate::kdeconnect::PACKET_TYPE_SMS_REQUEST_CONVERSATIONS)
+                .await
+                .is_ok()
+            {
+                let _ = link.send_packet(&SmsRequestConversationsBody::request()).await;
+            }
+        }
 
         let inner = Arc::clone(self);
         tokio::spawn(async move {
@@ -3917,6 +4100,7 @@ async fn finish_secure_link(
                 read_id.clone(),
                 crate::kdeconnect::wan::TransportKind::KdeLan,
             ));
+            read_inner.reconnect_known_wan_bindings().await;
         }
         #[cfg(not(feature = "kdeconnect-wan"))]
         let _ = removed_current_lan;
@@ -7724,6 +7908,44 @@ mod tests {
             Some(TransportKind::KdeLan),
             "LAN still within budget must keep priority"
         );
+    }
+
+    #[cfg(feature = "kdeconnect-wan")]
+    #[tokio::test]
+    async fn standby_wan_route_is_retained_while_lan_is_healthy() {
+        use crate::kdeconnect::wan::TransportKind;
+        let (inner, _events) = multi_device_harness(&[PHONE_A]);
+        let (packets, _rx) = tokio::sync::mpsc::channel(1);
+        inner.connections.lock().await.insert(
+            PHONE_A.to_owned(),
+            Conn {
+                packets,
+                peer_cert_der: Vec::new(),
+                name: PHONE_A.to_owned(),
+                device_type: "phone".into(),
+                protocol_version: PROTOCOL_VERSION,
+                epoch: 1,
+            },
+        );
+        inner.router.register(Arc::new(TestRouteLink { device_id: PHONE_A.to_owned(), kind: TransportKind::KdeLan }));
+        let (wan, _wan_route) = wan_route(PHONE_A);
+        inner.router.register(Arc::clone(&wan) as Arc<dyn crate::kdeconnect::wan::TransportLink>);
+        inner.wan_active.lock().await.insert(PHONE_A.to_owned());
+
+        let now = now_unix();
+        // LAN is active and healthy; WAN has received no packet for longer than the failover budget.
+        set_route_seen(&inner, PHONE_A, TransportKind::KdeLan, now).await;
+        set_route_seen(&inner, PHONE_A, TransportKind::RelayWan, now - FAILOVER_TIMEOUT_SECS - 10).await;
+
+        inner.sweep_stale_routes().await;
+        inner.sweep_stale_wan_links().await;
+
+        assert_eq!(
+            inner.router.available_transports(PHONE_A).len(),
+            2,
+            "standby WAN route must not be evicted while LAN is healthy"
+        );
+        assert!(inner.wan_active.lock().await.contains(PHONE_A));
     }
 
     #[cfg(feature = "kdeconnect-wan")]

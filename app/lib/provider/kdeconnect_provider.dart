@@ -5,9 +5,11 @@ import 'package:collection/collection.dart';
 import 'package:flutter/services.dart';
 import 'package:logging/logging.dart';
 import 'package:refena_flutter/refena_flutter.dart';
+import 'package:relay_app/provider/local_wallpaper_provider.dart';
 import 'package:relay_app/provider/persistence_provider.dart';
-import 'package:relay_app/util/native/directories.dart';
 import 'package:relay_app/provider/relay_clipboard_service.dart';
+import 'package:relay_app/util/native/directories.dart';
+import 'package:relay_app/util/native/linux_wallpaper_thumbnail.dart';
 import 'package:relay_isolates/rust/api/kdeconnect.dart';
 
 final _logger = Logger('KdeConnect');
@@ -242,6 +244,7 @@ typedef KdeConnectStarter =
 
 final kdeConnectProvider = ReduxProvider<KdeConnectService, KdeConnectState>((ref) {
   return KdeConnectService(
+    ref: ref,
     persistence: ref.read(persistenceProvider),
     generateIdentity: kdeconnectGenerateIdentity,
     startRuntime: (identity, trusted, runCommands) => startKdeconnect(identity: identity, trusted: trusted, runCommands: runCommands),
@@ -249,6 +252,7 @@ final kdeConnectProvider = ReduxProvider<KdeConnectService, KdeConnectState>((re
 });
 
 class KdeConnectService extends ReduxNotifier<KdeConnectState> {
+  final Ref? ref;
   final PersistenceService persistence;
   final KdeConnectIdentityFactory generateIdentity;
   final KdeConnectStarter startRuntime;
@@ -257,11 +261,12 @@ class KdeConnectService extends ReduxNotifier<KdeConnectState> {
 
   /// Watches the local clipboard and applies remote values to it.
   late final RelayClipboardService clipboard = RelayClipboardService(
-    onLocalChange: (text) async => dispatchAsync(KdeConnectSendClipboardAction(text)),
+    onLocalChange: (text) async => ref?.redux(kdeConnectProvider).dispatchAsync(KdeConnectSendClipboardAction(text)),
   );
   StreamSubscription<RsKdeConnectEvent>? _events;
 
   KdeConnectService({
+    this.ref,
     required this.persistence,
     required this.generateIdentity,
     required this.startRuntime,
@@ -684,6 +689,53 @@ class KdeConnectCancelTransferAction extends AsyncReduxAction<KdeConnectService,
   }
 }
 
+/// Lazily sends the local Linux desktop wallpaper thumbnail to a connected peer
+/// that advertises incoming capability for `kdeconnect.relay.wallpaper`.
+class KdeConnectSyncWallpaperAction extends AsyncReduxAction<KdeConnectService, KdeConnectState> {
+  final String deviceId;
+
+  KdeConnectSyncWallpaperAction(this.deviceId);
+
+  static final Map<String, String> _lastSentHash = {};
+
+  @override
+  Future<KdeConnectState> reduce() async {
+    try {
+      final wallpaperPath = notifier.ref?.read(localWallpaperProvider);
+      if (wallpaperPath == null) return state;
+
+      final id = kdeConnectDeviceIdFromKey(deviceId);
+      final device = state.devices.firstWhereOrNull((d) => d.deviceId == id);
+      if (device == null || !device.connected || !device.paired) return state;
+
+      if (!device.incomingCapabilities.contains('kdeconnect.relay.wallpaper')) {
+        return state;
+      }
+
+      final thumb = await LinuxWallpaperThumbnailService.getThumbnailForWallpaper(wallpaperPath);
+      if (thumb == null) return state;
+
+      if (_lastSentHash[id] == thumb.hash) {
+        return state;
+      }
+
+      await notifier._runtime?.sendWallpaper(
+        deviceId: id,
+        path: thumb.path,
+        hash: thumb.hash,
+        width: thumb.width,
+        height: thumb.height,
+      );
+
+      _lastSentHash[id] = thumb.hash;
+      _logger.info('Synced wallpaper to device=$id hash=${thumb.hash}');
+    } catch (error, stack) {
+      _logger.warning('Sync wallpaper failed for device=$deviceId', error, stack);
+    }
+    return state;
+  }
+}
+
 class KdeConnectApplyEventAction extends ReduxAction<KdeConnectService, KdeConnectState> {
   final RsKdeConnectEvent event;
 
@@ -699,6 +751,11 @@ class KdeConnectApplyEventAction extends ReduxAction<KdeConnectService, KdeConne
         // removes a Fabric record, no stale message, notification, transfer or
         // phone state can keep living behind a vanished card.
         final retainedIds = fabric.devices.map((device) => device.deviceId).toSet();
+        for (final device in devices) {
+          if (device.connected && device.paired && device.incomingCapabilities.contains('kdeconnect.relay.wallpaper')) {
+            unawaited(notifier.ref?.redux(kdeConnectProvider).dispatchAsync(KdeConnectSyncWallpaperAction(device.deviceId)));
+          }
+        }
         return state.copyWith(
           devices: devices,
           fabric: fabric,

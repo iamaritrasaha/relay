@@ -539,6 +539,25 @@ impl RsKdeConnect {
         self.handle.send_file(&device_id, std::path::Path::new(&path)).await
     }
 
+    pub async fn send_wallpaper(
+        &self,
+        device_id: String,
+        path: String,
+        hash: String,
+        width: u32,
+        height: u32,
+    ) -> anyhow::Result<()> {
+        self.handle
+            .send_wallpaper(
+                &device_id,
+                std::path::Path::new(&path),
+                &hash,
+                width,
+                height,
+            )
+            .await
+    }
+
     /// Cancels an in-flight transfer. Idempotent; a transfer that already
     /// finished keeps its outcome.
     pub async fn cancel_transfer(&self, device_id: String, transfer_id: String) {

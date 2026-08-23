@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:collection/collection.dart';
 import 'package:flutter/material.dart';
@@ -17,6 +18,7 @@ import 'package:relay_app/pages/gnome/gnome_messages_view.dart';
 import 'package:relay_app/pages/gnome/gnome_phone_view.dart';
 import 'package:relay_app/pages/gnome/gnome_settings_view.dart';
 import 'package:relay_app/pages/relay_home_vm.dart';
+import 'package:relay_app/provider/local_wallpaper_provider.dart';
 import 'package:relay_app/provider/network/nearby_devices_provider.dart';
 import 'package:relay_app/provider/network/relay_send_service.dart';
 import 'package:relay_app/provider/network/server/server_provider.dart';
@@ -96,6 +98,11 @@ class _GnomeShellState extends State<GnomeShell> with Refena {
           }
         });
       }
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          ref.notifier(localWallpaperProvider).fetchWallpaper();
+        }
+      });
     }
   }
 
@@ -143,6 +150,7 @@ class _GnomeShellState extends State<GnomeShell> with Refena {
 
   @override
   Widget build(BuildContext context) {
+    final localWallpaperPath = ref.watch(localWallpaperProvider);
     final activeDeviceKey = _selectedDeviceKey ?? (widget.vm.devices.isNotEmpty ? widget.vm.devices.first.key : null);
 
     final selectedDevice =
@@ -233,7 +241,7 @@ class _GnomeShellState extends State<GnomeShell> with Refena {
                       child: _PageTransition(
                         destinationKey: '${_subView.name}:${selectedDevice?.key ?? '-'}',
                         enabled: widget.animationsEnabled,
-                        child: _buildDetailContent(selectedDevice),
+                        child: _buildDetailContent(selectedDevice, localWallpaperPath != null ? FileImage(File(localWallpaperPath)) : null),
                       ),
                     ),
                   ),
@@ -264,7 +272,7 @@ class _GnomeShellState extends State<GnomeShell> with Refena {
     };
   }
 
-  Widget _buildDetailContent(RelayDeviceVm? selectedDevice) {
+  Widget _buildDetailContent(RelayDeviceVm? selectedDevice, ImageProvider? localWallpaper) {
     if (_subView == GnomeSubView.about) {
       return Scaffold(
         body: SingleChildScrollView(
@@ -361,6 +369,7 @@ class _GnomeShellState extends State<GnomeShell> with Refena {
       selfDeviceType: widget.vm.selfDeviceType,
       activeTransfer: widget.vm.activeTransfer,
       animationsEnabled: widget.animationsEnabled,
+      localWallpaper: localWallpaper,
       onSelectDevice: (device) {
         setState(() => _selectedDeviceKey = device.key);
         ref.notifier(selectedDeviceProvider).selectDevice(device.key);
