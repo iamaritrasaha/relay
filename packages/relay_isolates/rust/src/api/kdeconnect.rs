@@ -140,6 +140,50 @@ pub enum RsKdeConnectEvent {
         device_id: String,
         event: RsKdeTelephonyEvent,
     },
+    /// A file transfer changed state or made progress.
+    TransferChanged { transfer: RsTransfer },
+}
+
+/// One file transfer, scoped to the logical device it belongs to.
+#[derive(Clone, Debug, PartialEq)]
+pub struct RsTransfer {
+    pub device_id: String,
+    pub transfer_id: String,
+    pub filename: String,
+    pub total_bytes: u64,
+    pub transferred_bytes: u64,
+    /// One of: preparing, sending, receiving, completed, failed, cancelled,
+    /// requiresLocalConnection.
+    pub state: String,
+    /// 0.0 to 1.0.
+    pub progress: f64,
+    pub error: Option<String>,
+}
+
+impl From<relay_core::kdeconnect::files::Transfer> for RsTransfer {
+    fn from(value: relay_core::kdeconnect::files::Transfer) -> Self {
+        use relay_core::kdeconnect::files::TransferState;
+        let progress = value.state.progress();
+        let (state, transferred, error) = match &value.state {
+            TransferState::Preparing => ("preparing", 0, None),
+            TransferState::Sending { transferred, .. } => ("sending", *transferred, None),
+            TransferState::Receiving { transferred, .. } => ("receiving", *transferred, None),
+            TransferState::Completed { total } => ("completed", *total, None),
+            TransferState::Failed { reason } => ("failed", 0, Some(reason.clone())),
+            TransferState::Cancelled => ("cancelled", 0, None),
+            TransferState::RequiresLocalConnection => ("requiresLocalConnection", 0, None),
+        };
+        Self {
+            device_id: value.key.device_id,
+            transfer_id: value.key.transfer_id,
+            filename: value.filename,
+            total_bytes: value.total_bytes,
+            transferred_bytes: transferred,
+            state: state.to_owned(),
+            progress,
+            error,
+        }
+    }
 }
 
 pub fn kdeconnect_generate_identity(device_name: String) -> anyhow::Result<RsKdeConnectIdentity> {
@@ -354,6 +398,30 @@ impl RsKdeConnect {
         self.handle
             .dismiss_notification(&device_id, &remote_notification_id)
             .await
+    }
+
+    /// Sets where received files are written.
+    pub async fn set_download_dir(&self, directory: String) {
+        self.handle.set_download_dir(std::path::PathBuf::from(directory)).await;
+    }
+
+    /// Sends one file to a device. Returns the transfer id; progress arrives as
+    /// `TransferChanged` events.
+    ///
+    /// A file too large for the current remote route resolves to the
+    /// `requiresLocalConnection` state rather than an error — nothing failed,
+    /// the file simply needs a local network.
+    pub async fn send_file(&self, device_id: String, path: String) -> anyhow::Result<String> {
+        self.handle.send_file(&device_id, std::path::Path::new(&path)).await
+    }
+
+    pub async fn transfers_for(&self, device_id: String) -> Vec<RsTransfer> {
+        self.handle
+            .transfers_for(&device_id)
+            .await
+            .into_iter()
+            .map(Into::into)
+            .collect()
     }
 
     /// Whether clipboard sync is switched on for this desktop.
@@ -668,6 +736,9 @@ impl From<KdeConnectEvent> for RsKdeConnectEvent {
                     event: event.into(),
                 }
             }
+            KdeConnectEvent::TransferChanged { transfer } => RsKdeConnectEvent::TransferChanged {
+                transfer: transfer.into(),
+            },
         }
     }
 }

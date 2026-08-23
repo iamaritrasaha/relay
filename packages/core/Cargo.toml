@@ -49,6 +49,8 @@ iroh = { version = "=1.0.3", features = ["metrics", "tls-ring"], optional = true
 zbus = { version = "5", default-features = false, features = ["tokio"], optional = true }
 
 [dev-dependencies]
+# Real temporary directories for file-transfer receive tests.
+tempfile = "3"
 # Lowers this process' descriptor limit in `accept_resilience`, to reproduce
 # the exhaustion the accept loop has to survive. Already in the tree as a
 # transitive dependency, so it costs no extra compilation.
@@ -68,6 +70,10 @@ required-features = ["anywhere"]
 
 [[test]]
 name = "kdeconnect_wan_isolation"
+required-features = ["kdeconnect-wan"]
+
+[[test]]
+name = "file_transfer_streaming"
 required-features = ["kdeconnect-wan"]
 
 [[test]]

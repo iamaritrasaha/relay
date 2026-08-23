@@ -9,7 +9,7 @@ import 'package:relay_isolates/rust/frb_generated.dart';
 
 part 'kdeconnect.freezed.dart';
 
-// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `clone`, `eq`, `fmt`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `try_from`
+// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `clone`, `clone`, `eq`, `eq`, `fmt`, `fmt`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `try_from`
 // These functions are ignored (category: IgnoreBecauseExplicitAttribute): `_keep_frb_imports`
 
 Future<RsKdeConnectIdentity> kdeconnectGenerateIdentity({required String deviceName}) =>
@@ -86,6 +86,14 @@ abstract class RsKdeConnect implements RustOpaqueInterface {
 
   Future<void> sendClipboardToAllPaired({required String content, required PlatformInt64 timestampMs});
 
+  /// Sends one file to a device. Returns the transfer id; progress arrives as
+  /// `TransferChanged` events.
+  ///
+  /// A file too large for the current remote route resolves to the
+  /// `requiresLocalConnection` state rather than an error — nothing failed,
+  /// the file simply needs a local network.
+  Future<String> sendFile({required String deviceId, required String path});
+
   Future<void> sendPing({required String deviceId, String? message});
 
   Future<void> sendRelayPing({required String deviceId});
@@ -96,6 +104,9 @@ abstract class RsKdeConnect implements RustOpaqueInterface {
   /// incoming clipboard does not overwrite the local one.
   Future<void> setClipboardEnabled({required bool enabled});
 
+  /// Sets where received files are written.
+  Future<void> setDownloadDir({required String directory});
+
   Future<void> setRemoteInputEnabled({required bool enabled});
 
   /// Replaces the RunCommand allow-list. Effective immediately for every
@@ -105,6 +116,8 @@ abstract class RsKdeConnect implements RustOpaqueInterface {
   Future<List<RsKdeConnectDevice>> snapshot();
 
   Future<void> stop();
+
+  Future<List<RsTransfer>> transfersFor({required String deviceId});
 
   Future<void> unpair({required String deviceId});
 }
@@ -244,6 +257,11 @@ sealed class RsKdeConnectEvent with _$RsKdeConnectEvent {
     required String deviceId,
     required RsKdeTelephonyEvent event,
   }) = RsKdeConnectEvent_TelephonyReceived;
+
+  /// A file transfer changed state or made progress.
+  const factory RsKdeConnectEvent.transferChanged({
+    required RsTransfer transfer,
+  }) = RsKdeConnectEvent_TransferChanged;
 }
 
 class RsKdeConnectIdentity {
@@ -521,4 +539,57 @@ class RsRunCommand {
           name == other.name &&
           command == other.command &&
           enabled == other.enabled;
+}
+
+/// One file transfer, scoped to the logical device it belongs to.
+class RsTransfer {
+  final String deviceId;
+  final String transferId;
+  final String filename;
+  final BigInt totalBytes;
+  final BigInt transferredBytes;
+
+  /// One of: preparing, sending, receiving, completed, failed, cancelled,
+  /// requiresLocalConnection.
+  final String state;
+
+  /// 0.0 to 1.0.
+  final double progress;
+  final String? error;
+
+  const RsTransfer({
+    required this.deviceId,
+    required this.transferId,
+    required this.filename,
+    required this.totalBytes,
+    required this.transferredBytes,
+    required this.state,
+    required this.progress,
+    this.error,
+  });
+
+  @override
+  int get hashCode =>
+      deviceId.hashCode ^
+      transferId.hashCode ^
+      filename.hashCode ^
+      totalBytes.hashCode ^
+      transferredBytes.hashCode ^
+      state.hashCode ^
+      progress.hashCode ^
+      error.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is RsTransfer &&
+          runtimeType == other.runtimeType &&
+          deviceId == other.deviceId &&
+          transferId == other.transferId &&
+          filename == other.filename &&
+          totalBytes == other.totalBytes &&
+          transferredBytes == other.transferredBytes &&
+          state == other.state &&
+          progress == other.progress &&
+          error == other.error;
 }

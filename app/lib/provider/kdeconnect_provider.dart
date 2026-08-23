@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 import 'package:logging/logging.dart';
 import 'package:refena_flutter/refena_flutter.dart';
 import 'package:relay_app/provider/persistence_provider.dart';
+import 'package:relay_app/util/native/directories.dart';
 import 'package:relay_app/provider/relay_clipboard_service.dart';
 import 'package:relay_isolates/rust/api/kdeconnect.dart';
 
@@ -92,6 +93,10 @@ class KdeConnectState {
   /// device: which phone asked is carried in the request, never in the storage.
   final List<RsRunCommand> runCommands;
 
+  /// File transfers, keyed by "deviceId:transferId" — never by filename, so two
+  /// devices sending the same name stay independent.
+  final Map<String, RsTransfer> transfers;
+
   /// Whether clipboard sync is on for this desktop.
   final bool clipboardEnabled;
 
@@ -118,6 +123,7 @@ class KdeConnectState {
     this.incoming,
     this.notifications = const {},
     this.runCommands = const [],
+    this.transfers = const {},
     this.clipboardEnabled = true,
     this.clipboardAutoSync = false,
     this.remoteInputEnabled = false,
@@ -155,6 +161,12 @@ class KdeConnectState {
         ),
   ];
 
+  /// Transfers belonging to one logical device, newest activity included.
+  List<RsTransfer> transfersForDevice(String deviceId) {
+    final id = kdeConnectDeviceIdFromKey(deviceId);
+    return transfers.values.where((transfer) => transfer.deviceId == id).toList();
+  }
+
   /// Display name for a device id, falling back to the raw id so a merged view
   /// can always attribute a notification to *something*.
   String deviceNameFor(String deviceId) {
@@ -168,6 +180,7 @@ class KdeConnectState {
     bool clearIncoming = false,
     Map<String, List<RsKdeNotification>>? notifications,
     List<RsRunCommand>? runCommands,
+    Map<String, RsTransfer>? transfers,
     bool? clipboardEnabled,
     bool? clipboardAutoSync,
     bool? remoteInputEnabled,
@@ -184,6 +197,7 @@ class KdeConnectState {
     incoming: clearIncoming ? null : incoming ?? this.incoming,
     notifications: notifications ?? this.notifications,
     runCommands: runCommands ?? this.runCommands,
+    transfers: transfers ?? this.transfers,
     clipboardEnabled: clipboardEnabled ?? this.clipboardEnabled,
     clipboardAutoSync: clipboardAutoSync ?? this.clipboardAutoSync,
     remoteInputEnabled: remoteInputEnabled ?? this.remoteInputEnabled,
@@ -312,6 +326,10 @@ class KdeConnectStartAction extends AsyncReduxAction<KdeConnectService, KdeConne
     // must be granted by a present user, not inherited from a previous run.
     final remoteInputEnabled = notifier.persistence.getKdeConnectRemoteInputEnabled();
     runtime.setRemoteInputEnabled(enabled: remoteInputEnabled);
+
+    // Received files need a destination before any transfer can be accepted.
+    final downloadDir = notifier.persistence.getDestination() ?? await getDefaultDestinationDirectory();
+    await runtime.setDownloadDir(directory: downloadDir);
 
     final clipboardEnabled = notifier.persistence.getKdeConnectClipboardEnabled();
     await runtime.setClipboardEnabled(enabled: clipboardEnabled);
@@ -583,6 +601,29 @@ class KdeConnectSetClipboardEnabledAction extends AsyncReduxAction<KdeConnectSer
   }
 }
 
+/// Sends one file to a device.
+///
+/// The core decides the route and applies the remote size policy; an oversized
+/// file resolves to `requiresLocalConnection` rather than failing, so the UI can
+/// explain what to do instead of showing an error.
+class KdeConnectSendFileAction extends AsyncReduxAction<KdeConnectService, KdeConnectState> {
+  final String deviceId;
+  final String path;
+
+  KdeConnectSendFileAction({required this.deviceId, required this.path});
+
+  @override
+  Future<KdeConnectState> reduce() async {
+    try {
+      await notifier._runtime?.sendFile(deviceId: kdeConnectDeviceIdFromKey(deviceId), path: path);
+    } catch (error, stack) {
+      // Log the failure, not the file's contents or full path.
+      _logger.warning('Send file failed for device=$deviceId', error, stack);
+    }
+    return state;
+  }
+}
+
 class KdeConnectApplyEventAction extends ReduxAction<KdeConnectService, KdeConnectState> {
   final RsKdeConnectEvent event;
 
@@ -656,6 +697,12 @@ class KdeConnectApplyEventAction extends ReduxAction<KdeConnectService, KdeConne
           'messages=${nextState.smsMessages[deviceId]?.values.fold<int>(0, (total, thread) => total + thread.length) ?? 0}',
         );
         return nextState;
+      case RsKdeConnectEvent_TransferChanged(:final transfer):
+        // Keyed by device *and* transfer id: a second device sending the same
+        // filename must not overwrite the first one's progress.
+        return state.copyWith(
+          transfers: {...state.transfers, '${transfer.deviceId}:${transfer.transferId}': transfer},
+        );
       case RsKdeConnectEvent_TelephonyReceived(:final deviceId, :final event):
         final currentEvent = KdeTelephonyState(
           event: event.event,

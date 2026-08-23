@@ -33,6 +33,10 @@ pub const PACKET_TYPE_RUNCOMMAND_REQUEST: &str = "kdeconnect.runcommand.request"
 /// sends input requests, so this is incoming only.
 pub const PACKET_TYPE_MOUSEPAD_REQUEST: &str = "kdeconnect.mousepad.request";
 
+/// File transfer. Relay both receives and sends files, so this is advertised in
+/// both directions -- unlike the control-only features above.
+pub const PACKET_TYPE_SHARE_REQUEST: &str = "kdeconnect.share.request";
+
 /// Relay-specific extension packets, carried over either KDE LAN or Relay WAN.
 /// Namespace must match the Android side exactly -- see
 /// `kdeconnect/wan/mod.rs` for the transport these travel over.
@@ -56,6 +60,7 @@ pub fn canonical_incoming_capabilities() -> Vec<String> {
         PACKET_TYPE_MPRIS_REQUEST.to_string(),
         PACKET_TYPE_RUNCOMMAND_REQUEST.to_string(),
         PACKET_TYPE_MOUSEPAD_REQUEST.to_string(),
+        PACKET_TYPE_SHARE_REQUEST.to_string(),
         PACKET_TYPE_RELAY_WAN_IDENTITY.to_string(),
         PACKET_TYPE_RELAY_DEVICE_STATE.to_string(),
         PACKET_TYPE_RELAY_PING.to_string(),
@@ -78,6 +83,7 @@ pub fn canonical_outgoing_capabilities() -> Vec<String> {
         // ...and sends the resulting player state / command list back.
         PACKET_TYPE_MPRIS.to_string(),
         PACKET_TYPE_RUNCOMMAND.to_string(),
+        PACKET_TYPE_SHARE_REQUEST.to_string(),
         PACKET_TYPE_RELAY_WAN_IDENTITY.to_string(),
         PACKET_TYPE_RELAY_DEVICE_STATE.to_string(),
         PACKET_TYPE_RELAY_PING.to_string(),
@@ -134,6 +140,11 @@ mod tests {
         // Relay to drive *it*.
         assert!(incoming.contains(&PACKET_TYPE_MOUSEPAD_REQUEST.to_string()));
         assert!(!outgoing.contains(&PACKET_TYPE_MOUSEPAD_REQUEST.to_string()));
+
+        // Files go both ways, so unlike the control-only features this must be
+        // advertised in both directions or one direction silently never starts.
+        assert!(incoming.contains(&PACKET_TYPE_SHARE_REQUEST.to_string()));
+        assert!(outgoing.contains(&PACKET_TYPE_SHARE_REQUEST.to_string()));
 
         // Battery is receive only on Linux desktop
         assert!(!outgoing.contains(&PACKET_TYPE_BATTERY.to_string()));

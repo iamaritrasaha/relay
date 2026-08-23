@@ -9,7 +9,7 @@ use std::collections::BTreeMap;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 pub use super::capabilities::{
-    PACKET_TYPE_MOUSEPAD_REQUEST, PACKET_TYPE_MPRIS, PACKET_TYPE_MPRIS_REQUEST, PACKET_TYPE_RUNCOMMAND,
+    PACKET_TYPE_MOUSEPAD_REQUEST, PACKET_TYPE_MPRIS, PACKET_TYPE_SHARE_REQUEST, PACKET_TYPE_MPRIS_REQUEST, PACKET_TYPE_RUNCOMMAND,
     PACKET_TYPE_RUNCOMMAND_REQUEST,
     PACKET_TYPE_BATTERY, PACKET_TYPE_CLIPBOARD, PACKET_TYPE_CLIPBOARD_CONNECT,
     PACKET_TYPE_CONNECTIVITY_REPORT, PACKET_TYPE_FINDMYPHONE_REQUEST, PACKET_TYPE_IDENTITY,
@@ -314,6 +314,13 @@ impl NetworkPacket {
             return Err(PacketError("mpris request carries no instruction".into()));
         }
         Ok(body)
+    }
+
+    pub fn as_share_request(&self) -> Result<ShareRequestBody, PacketError> {
+        if self.packet_type != PACKET_TYPE_SHARE_REQUEST {
+            return Err(PacketError("not a share request packet".into()));
+        }
+        ShareRequestBody::from_map(&self.body)
     }
 
     pub fn as_mousepad_request(&self) -> Result<MousePadRequestBody, PacketError> {
@@ -2045,3 +2052,81 @@ impl MousePadRequestBody {
 /// Bound on a single text-injection payload, checked before the body is built
 /// so an oversized packet is refused at parse time rather than deeper in.
 const MAX_MOUSEPAD_TEXT_LEN: usize = 512;
+
+// ---------------------------------------------------------------------------
+// File share
+// ---------------------------------------------------------------------------
+
+/// One `kdeconnect.share.request` announcing an incoming file.
+///
+/// Field names are upstream KDE Connect's, as produced by the Android
+/// `SharePlugin` (`FilesHelper.uriToNetworkPacket`). Relay adds no fields of its
+/// own to the control packet; the WAN correlation id lives in
+/// `payloadTransferInfo`, which is already link-specific by design.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct ShareRequestBody {
+    pub filename: String,
+    /// Declared payload size. Android sends -1 when the ContentResolver could
+    /// not report one, which Relay treats as "unknown" rather than as zero.
+    pub total_payload_size: Option<u64>,
+    pub number_of_files: Option<i64>,
+    /// The WAN payload stream correlation id, when the packet arrived over WAN.
+    pub relay_payload_id: Option<String>,
+}
+
+impl ShareRequestBody {
+    fn from_map(body: &Map<String, Value>) -> Result<Self, PacketError> {
+        let filename = required_string(body, "filename")?;
+        if filename.len() > MAX_SHARE_FILENAME_LEN {
+            return Err(PacketError("share filename exceeds its bound".into()));
+        }
+        // A negative size means "unknown"; anything else is taken at face value
+        // and checked against the transport limit by the caller.
+        let total_payload_size = body
+            .get("totalPayloadSize")
+            .and_then(Value::as_i64)
+            .and_then(|size| u64::try_from(size).ok());
+        let relay_payload_id = body
+            .get("payloadTransferInfo")
+            .and_then(Value::as_object)
+            .and_then(|info| info.get("relayPayloadId"))
+            .and_then(Value::as_str)
+            .map(str::to_owned);
+        Ok(Self {
+            filename,
+            total_payload_size,
+            number_of_files: body.get("numberOfFiles").and_then(Value::as_i64),
+            relay_payload_id,
+        })
+    }
+
+    /// Builds the outgoing announcement for a file Relay is sending.
+    pub fn to_packet(
+        filename: &str,
+        total_payload_size: u64,
+        relay_payload_id: Option<&str>,
+    ) -> NetworkPacket {
+        let mut body = Map::new();
+        body.insert("filename".into(), Value::String(filename.to_owned()));
+        body.insert(
+            "totalPayloadSize".into(),
+            Value::Number(total_payload_size.into()),
+        );
+        body.insert("numberOfFiles".into(), Value::Number(1.into()));
+        if let Some(relay_payload_id) = relay_payload_id {
+            let mut info = Map::new();
+            info.insert(
+                "relayPayloadId".into(),
+                Value::String(relay_payload_id.to_owned()),
+            );
+            info.insert(
+                "payloadSize".into(),
+                Value::Number(total_payload_size.into()),
+            );
+            body.insert("payloadTransferInfo".into(), Value::Object(info));
+        }
+        NetworkPacket::new(PACKET_TYPE_SHARE_REQUEST, body)
+    }
+}
+
+const MAX_SHARE_FILENAME_LEN: usize = 1024;

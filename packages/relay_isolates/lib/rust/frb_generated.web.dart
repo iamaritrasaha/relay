@@ -338,6 +338,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   RsSmsMessage dco_decode_box_autoadd_rs_sms_message(dynamic raw);
 
   @protected
+  RsTransfer dco_decode_box_autoadd_rs_transfer(dynamic raw);
+
+  @protected
   RTCSendFileResponse dco_decode_box_autoadd_rtc_send_file_response(dynamic raw);
 
   @protected
@@ -465,6 +468,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   List<RsSmsMessage> dco_decode_list_rs_sms_message(dynamic raw);
+
+  @protected
+  List<RsTransfer> dco_decode_list_rs_transfer(dynamic raw);
 
   @protected
   LsHttpClientVersion dco_decode_ls_http_client_version(dynamic raw);
@@ -694,6 +700,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   RsStoredDevice dco_decode_rs_stored_device(dynamic raw);
+
+  @protected
+  RsTransfer dco_decode_rs_transfer(dynamic raw);
 
   @protected
   RsUploadEvent dco_decode_rs_upload_event(dynamic raw);
@@ -1033,6 +1042,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   RsSmsMessage sse_decode_box_autoadd_rs_sms_message(SseDeserializer deserializer);
 
   @protected
+  RsTransfer sse_decode_box_autoadd_rs_transfer(SseDeserializer deserializer);
+
+  @protected
   RTCSendFileResponse sse_decode_box_autoadd_rtc_send_file_response(SseDeserializer deserializer);
 
   @protected
@@ -1160,6 +1172,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   List<RsSmsMessage> sse_decode_list_rs_sms_message(SseDeserializer deserializer);
+
+  @protected
+  List<RsTransfer> sse_decode_list_rs_transfer(SseDeserializer deserializer);
 
   @protected
   LsHttpClientVersion sse_decode_ls_http_client_version(SseDeserializer deserializer);
@@ -1391,6 +1406,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   RsStoredDevice sse_decode_rs_stored_device(SseDeserializer deserializer);
+
+  @protected
+  RsTransfer sse_decode_rs_transfer(SseDeserializer deserializer);
 
   @protected
   RsUploadEvent sse_decode_rs_upload_event(SseDeserializer deserializer);
@@ -1775,6 +1793,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   void sse_encode_box_autoadd_rs_sms_message(RsSmsMessage self, SseSerializer serializer);
 
   @protected
+  void sse_encode_box_autoadd_rs_transfer(RsTransfer self, SseSerializer serializer);
+
+  @protected
   void sse_encode_box_autoadd_rtc_send_file_response(RTCSendFileResponse self, SseSerializer serializer);
 
   @protected
@@ -1902,6 +1923,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   void sse_encode_list_rs_sms_message(List<RsSmsMessage> self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_list_rs_transfer(List<RsTransfer> self, SseSerializer serializer);
 
   @protected
   void sse_encode_ls_http_client_version(LsHttpClientVersion self, SseSerializer serializer);
@@ -2134,6 +2158,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   void sse_encode_rs_stored_device(RsStoredDevice self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_rs_transfer(RsTransfer self, SseSerializer serializer);
 
   @protected
   void sse_encode_rs_upload_event(RsUploadEvent self, SseSerializer serializer);
