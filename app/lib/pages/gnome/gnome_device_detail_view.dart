@@ -44,6 +44,8 @@ class GnomeDeviceDetailView extends StatelessWidget {
   final DeviceType selfDeviceType;
   final RelayTransferVm? activeTransfer;
   final bool animationsEnabled;
+  final ImageProvider? remoteWallpaper;
+  final ImageProvider? localWallpaper;
   final ValueChanged<RelayDeviceVm>? onSelectDevice;
   final VoidCallback onSendFiles;
   final VoidCallback onSendFolder;
@@ -61,6 +63,8 @@ class GnomeDeviceDetailView extends StatelessWidget {
     this.selfDeviceType = DeviceType.desktop,
     this.activeTransfer,
     this.animationsEnabled = true,
+    this.remoteWallpaper,
+    this.localWallpaper,
     this.onSelectDevice,
     required this.onSendFiles,
     required this.onSendFolder,
@@ -108,6 +112,8 @@ class GnomeDeviceDetailView extends StatelessWidget {
                     selfDeviceType: selfDeviceType,
                     connected: _connected,
                     animationsEnabled: animationsEnabled,
+                    remoteWallpaper: remoteWallpaper,
+                    localWallpaper: localWallpaper,
                   ),
                   if (devices.length > 1 && onSelectDevice != null) ...[
                     const SizedBox(height: 16),
@@ -190,6 +196,8 @@ class GnomeSelectedDeviceHeader extends StatelessWidget {
   final bool selected;
   final bool connected;
   final bool animationsEnabled;
+  final ImageProvider? remoteWallpaper;
+  final ImageProvider? localWallpaper;
 
   const GnomeSelectedDeviceHeader({
     super.key,
@@ -199,6 +207,8 @@ class GnomeSelectedDeviceHeader extends StatelessWidget {
     this.selected = true,
     required this.connected,
     required this.animationsEnabled,
+    this.remoteWallpaper,
+    this.localWallpaper,
   });
 
   @override
@@ -232,6 +242,8 @@ class GnomeSelectedDeviceHeader extends StatelessWidget {
             selfDeviceType: selfDeviceType,
             connected: connected,
             animationsEnabled: animationsEnabled,
+            remoteWallpaper: remoteWallpaper,
+            localWallpaper: localWallpaper,
           ),
         ),
       ),
@@ -247,6 +259,8 @@ class _DeviceHeader extends StatelessWidget {
   final DeviceType selfDeviceType;
   final bool connected;
   final bool animationsEnabled;
+  final ImageProvider? remoteWallpaper;
+  final ImageProvider? localWallpaper;
 
   const _DeviceHeader({
     required this.device,
@@ -255,6 +269,8 @@ class _DeviceHeader extends StatelessWidget {
     required this.selfDeviceType,
     required this.connected,
     this.animationsEnabled = true,
+    this.remoteWallpaper,
+    this.localWallpaper,
   });
 
   bool get _isSecure =>
@@ -348,6 +364,8 @@ class _DeviceHeader extends StatelessWidget {
             connected: connected,
             connecting: _connecting,
             animationsEnabled: animationsEnabled,
+            remoteWallpaper: remoteWallpaper,
+            localWallpaper: localWallpaper,
           ),
           if (_isSecure) ...[
             const SizedBox(height: 10),

@@ -14,7 +14,7 @@ pub use super::capabilities::{
     PACKET_TYPE_BATTERY, PACKET_TYPE_CLIPBOARD, PACKET_TYPE_CLIPBOARD_CONNECT,
     PACKET_TYPE_CONNECTIVITY_REPORT, PACKET_TYPE_FINDMYPHONE_REQUEST, PACKET_TYPE_IDENTITY,
     PACKET_TYPE_NOTIFICATION, PACKET_TYPE_NOTIFICATION_REQUEST, PACKET_TYPE_PAIR, PACKET_TYPE_PING,
-    PACKET_TYPE_RELAY_DEVICE_STATE, PACKET_TYPE_RELAY_PING, PACKET_TYPE_RELAY_PONG,
+    PACKET_TYPE_RELAY_DEVICE_STATE, PACKET_TYPE_RELAY_WALLPAPER, PACKET_TYPE_RELAY_PING, PACKET_TYPE_RELAY_PONG,
     PACKET_TYPE_RELAY_WAN_IDENTITY, PACKET_TYPE_SMS_MESSAGES, PACKET_TYPE_SMS_REQUEST,
     PACKET_TYPE_SMS_REQUEST_CONVERSATION, PACKET_TYPE_SMS_REQUEST_CONVERSATIONS,
     PACKET_TYPE_TELEPHONY, PACKET_TYPE_TELEPHONY_REQUEST_MUTE,
@@ -215,6 +215,12 @@ impl NetworkPacket {
         root.insert("id".into(), Value::Number(id.into()));
         root.insert("type".into(), Value::String(self.packet_type.clone()));
         root.insert("body".into(), Value::Object(self.body.clone()));
+        if let Some(size) = self.body.get("payloadSize") {
+            root.insert("payloadSize".into(), size.clone());
+        }
+        if let Some(info) = self.body.get("payloadTransferInfo") {
+            root.insert("payloadTransferInfo".into(), info.clone());
+        }
         let mut bytes = serde_json::to_vec(&Value::Object(root)).unwrap_or_else(|_| b"{}".to_vec());
         bytes.push(b'\n');
         bytes
@@ -321,6 +327,13 @@ impl NetworkPacket {
             return Err(PacketError("not a share request packet".into()));
         }
         ShareRequestBody::from_map(&self.body)
+    }
+
+    pub fn as_relay_wallpaper(&self) -> Result<RelayWallpaperBody, PacketError> {
+        if self.packet_type != PACKET_TYPE_RELAY_WALLPAPER {
+            return Err(PacketError("not a relay wallpaper packet".into()));
+        }
+        RelayWallpaperBody::from_map(&self.body)
     }
 
     pub fn as_mousepad_request(&self) -> Result<MousePadRequestBody, PacketError> {
@@ -1225,6 +1238,32 @@ mod tests {
 
         assert_eq!(packet.packet_type, PACKET_TYPE_SMS_REQUEST_CONVERSATIONS);
         assert!(packet.body.is_empty());
+    }
+
+    #[test]
+    fn wallpaper_packet_serializes_and_round_trips_correctly() {
+        let packet = RelayWallpaperBody::to_packet(
+            "abc123hash",
+            "image/jpeg",
+            480,
+            300,
+            65536,
+            Some("wan-payload-123"),
+            Some(1739),
+        );
+        let serialized = packet.serialize();
+        let parsed = NetworkPacket::parse(&serialized).expect("must parse back");
+        assert_eq!(parsed.packet_type, PACKET_TYPE_RELAY_WALLPAPER);
+        let wallpaper = parsed.as_relay_wallpaper().expect("must parse wallpaper body");
+        assert_eq!(wallpaper.version, 1);
+        assert_eq!(wallpaper.kind, "preview");
+        assert_eq!(wallpaper.hash, "abc123hash");
+        assert_eq!(wallpaper.mime_type, "image/jpeg");
+        assert_eq!(wallpaper.width, 480);
+        assert_eq!(wallpaper.height, 300);
+        assert_eq!(wallpaper.payload_size, Some(65536));
+        assert_eq!(wallpaper.lan_port, Some(1739));
+        assert_eq!(wallpaper.relay_payload_id.as_deref(), Some("wan-payload-123"));
     }
 
     #[test]
@@ -2156,3 +2195,100 @@ impl ShareRequestBody {
 }
 
 const MAX_SHARE_FILENAME_LEN: usize = 1024;
+
+/// `kdeconnect.relay.wallpaper`: wallpaper preview metadata and payload transfer.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct RelayWallpaperBody {
+    pub version: i32,
+    pub kind: String,
+    pub hash: String,
+    pub mime_type: String,
+    pub width: u32,
+    pub height: u32,
+    pub updated_at: i64,
+    pub payload_size: Option<u64>,
+    pub lan_port: Option<u16>,
+    pub relay_payload_id: Option<String>,
+}
+
+impl RelayWallpaperBody {
+    pub fn to_packet(
+        hash: &str,
+        mime_type: &str,
+        width: u32,
+        height: u32,
+        size: u64,
+        relay_payload_id: Option<&str>,
+        lan_port: Option<u16>,
+    ) -> NetworkPacket {
+        let updated_at = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|d| d.as_millis() as i64)
+            .unwrap_or(0);
+        let mut body = Map::new();
+        body.insert("version".into(), Value::Number(1.into()));
+        body.insert("kind".into(), Value::String("preview".into()));
+        body.insert("hash".into(), Value::String(hash.into()));
+        body.insert("mimeType".into(), Value::String(mime_type.into()));
+        body.insert("width".into(), Value::Number(width.into()));
+        body.insert("height".into(), Value::Number(height.into()));
+        body.insert("updatedAt".into(), Value::Number(updated_at.into()));
+        body.insert("payloadSize".into(), Value::Number(size.into()));
+
+        let mut info = Map::new();
+        if let Some(relay_payload_id) = relay_payload_id {
+            info.insert(
+                "relayPayloadId".into(),
+                Value::String(relay_payload_id.to_owned()),
+            );
+        }
+        if let Some(port) = lan_port {
+            info.insert("port".into(), Value::Number(port.into()));
+        }
+        if !info.is_empty() {
+            info.insert("payloadSize".into(), Value::Number(size.into()));
+            body.insert("payloadTransferInfo".into(), Value::Object(info));
+        }
+
+        NetworkPacket::new(PACKET_TYPE_RELAY_WALLPAPER, body)
+    }
+
+    pub fn from_map(body: &Map<String, Value>) -> Result<Self, PacketError> {
+        let version = body.get("version").and_then(Value::as_i64).unwrap_or(1) as i32;
+        let kind = optional_string(body, "kind").unwrap_or_else(|| "preview".into());
+        let hash = required_string(body, "hash")?;
+        let mime_type = optional_string(body, "mimeType").unwrap_or_else(|| "image/jpeg".into());
+        let width = body.get("width").and_then(Value::as_u64).unwrap_or(480) as u32;
+        let height = body.get("height").and_then(Value::as_u64).unwrap_or(300) as u32;
+        let updated_at = body.get("updatedAt").and_then(Value::as_i64).unwrap_or(0);
+        let payload_size = body
+            .get("payloadSize")
+            .and_then(Value::as_i64)
+            .and_then(|size| u64::try_from(size).ok());
+        let lan_port = body
+            .get("payloadTransferInfo")
+            .and_then(Value::as_object)
+            .and_then(|info| info.get("port"))
+            .and_then(Value::as_u64)
+            .and_then(|port| u16::try_from(port).ok());
+        let relay_payload_id = body
+            .get("payloadTransferInfo")
+            .and_then(Value::as_object)
+            .and_then(|info| info.get("relayPayloadId"))
+            .and_then(Value::as_str)
+            .map(str::to_owned);
+
+        Ok(Self {
+            version,
+            kind,
+            hash,
+            mime_type,
+            width,
+            height,
+            updated_at,
+            payload_size,
+            lan_port,
+            relay_payload_id,
+        })
+    }
+}

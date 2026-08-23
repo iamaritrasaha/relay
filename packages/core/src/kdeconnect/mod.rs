@@ -16,13 +16,14 @@ mod packet;
 mod pairing;
 #[cfg(feature = "kdeconnect-wan")]
 pub mod wan;
+pub mod wallpaper_cache;
 
 pub use capabilities::{
     canonical_incoming_capabilities, canonical_outgoing_capabilities, PACKET_TYPE_BATTERY,
     PACKET_TYPE_CLIPBOARD, PACKET_TYPE_CLIPBOARD_CONNECT, PACKET_TYPE_CONNECTIVITY_REPORT,
     PACKET_TYPE_FINDMYPHONE_REQUEST, PACKET_TYPE_IDENTITY, PACKET_TYPE_NOTIFICATION,
     PACKET_TYPE_NOTIFICATION_REQUEST, PACKET_TYPE_PAIR, PACKET_TYPE_PING,
-    PACKET_TYPE_RELAY_DEVICE_STATE, PACKET_TYPE_RELAY_PING, PACKET_TYPE_RELAY_PONG,
+    PACKET_TYPE_RELAY_DEVICE_STATE, PACKET_TYPE_RELAY_WALLPAPER, PACKET_TYPE_RELAY_PING, PACKET_TYPE_RELAY_PONG,
     PACKET_TYPE_MOUSEPAD_REQUEST, PACKET_TYPE_MPRIS, PACKET_TYPE_MPRIS_REQUEST, PACKET_TYPE_SHARE_REQUEST,
     PACKET_TYPE_RELAY_WAN_IDENTITY,
     PACKET_TYPE_RUNCOMMAND, PACKET_TYPE_RUNCOMMAND_REQUEST,
@@ -39,7 +40,7 @@ pub use lan::{
 pub use packet::{
     filter_device_name, is_valid_device_id, BatteryBody, ClipboardBody, ConnectivityReportBody,
     ConnectivitySignal, FindMyPhoneBody, IdentityBody, NetworkPacket, NotificationBody,
-    PacketError, PairBody, PingBody, RelayDeviceStateBody, RelayHeartbeatBody,
+    PacketError, PairBody, PingBody, RelayDeviceStateBody, RelayWallpaperBody, RelayHeartbeatBody,
     MousePadRequestBody, MprisBody, ShareRequestBody, MprisRequestBody, RelayWanIdentityBody, RunCommandListBody,
     RunCommandRequestBody, SmsAttachmentMetadata, SmsMessage, SmsMessagesBody, SmsRequestBody,
     SmsRequestConversationBody, SmsRequestConversationsBody, TelephonyBody,
@@ -190,6 +191,12 @@ pub enum KdeConnectEvent {
     /// A file transfer changed state or made progress.
     TransferChanged {
         transfer: files::Transfer,
+    },
+    /// A peer's wallpaper preview was received and validated. Purely
+    /// decorative -- feeds the hero's phone silhouette, nothing else.
+    WallpaperChanged {
+        device_id: String,
+        path: String,
     },
 }
 
@@ -390,6 +397,34 @@ impl KdeConnectHandle {
     #[cfg(feature = "kdeconnect-wan")]
     pub async fn send_file(&self, device_id: &str, path: &std::path::Path) -> Result<String> {
         self.inner.send_file(device_id, path).await
+    }
+
+    #[cfg(feature = "kdeconnect-wan")]
+    pub async fn send_wallpaper(
+        &self,
+        device_id: &str,
+        path: &std::path::Path,
+        hash: &str,
+        width: u32,
+        height: u32,
+    ) -> Result<()> {
+        self.inner
+            .send_wallpaper(device_id, path, hash, width, height)
+            .await
+    }
+
+    /// Sets where an incoming peer wallpaper preview is cached. Until this is
+    /// set, a received preview is validated but dropped rather than written
+    /// anywhere -- same "no directory, no write" discipline as file receipt.
+    pub fn set_wallpaper_cache_dir(&self, directory: std::path::PathBuf) {
+        self.inner.wallpaper_cache.set_base_dir(directory);
+    }
+
+    /// The last successfully validated wallpaper preview cached for a device,
+    /// if any. Used to seed the hero on device selection, before the next
+    /// `WallpaperChanged` event arrives.
+    pub fn wallpaper_preview_path(&self, device_id: &str) -> Option<std::path::PathBuf> {
+        self.inner.wallpaper_cache.path_for(device_id)
     }
 
     /// Cancels an in-flight transfer. Idempotent, and never resurrects a

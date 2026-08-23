@@ -113,6 +113,8 @@ abstract class RsKdeConnect implements RustOpaqueInterface {
 
   Future<void> sendSms({required String deviceId, required List<String> addresses, required String body, int? subId});
 
+  Future<void> sendWallpaper({required String deviceId, required String path, required String hash, required int width, required int height});
+
   /// Turns clipboard sync on or off. When off nothing is transmitted and an
   /// incoming clipboard does not overwrite the local one.
   Future<void> setClipboardEnabled({required bool enabled});
@@ -126,6 +128,10 @@ abstract class RsKdeConnect implements RustOpaqueInterface {
   /// connected device, over both LAN and Relay WAN.
   Future<void> setRunCommands({required List<RsRunCommand> commands});
 
+  /// Sets where an incoming peer wallpaper preview is cached. Purely
+  /// decorative storage -- see `wallpaper_cache.rs` in the core crate.
+  Future<void> setWallpaperCacheDir({required String directory});
+
   Future<List<RsKdeConnectDevice>> snapshot();
 
   Future<void> stop();
@@ -133,6 +139,11 @@ abstract class RsKdeConnect implements RustOpaqueInterface {
   Future<List<RsTransfer>> transfersFor({required String deviceId});
 
   Future<void> unpair({required String deviceId});
+
+  /// The last cached wallpaper preview for a device, if any. Used to seed
+  /// the hero immediately on device selection, before the next
+  /// `WallpaperChanged` event arrives.
+  Future<String?> wallpaperPreviewPath({required String deviceId});
 }
 
 /// Whether a feature can be used with a device right now, and if not, why.
@@ -291,6 +302,12 @@ sealed class RsKdeConnectEvent with _$RsKdeConnectEvent {
   const factory RsKdeConnectEvent.transferChanged({
     required RsTransfer transfer,
   }) = RsKdeConnectEvent_TransferChanged;
+
+  /// A peer's wallpaper preview was received and validated.
+  const factory RsKdeConnectEvent.wallpaperChanged({
+    required String deviceId,
+    required String path,
+  }) = RsKdeConnectEvent_WallpaperChanged;
 }
 
 class RsKdeConnectIdentity {

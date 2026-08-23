@@ -264,16 +264,16 @@ void main() {
       expect((startAnchor.dy - coreLeft.dy).abs(), lessThanOrEqualTo(1.0));
       expect((coreLeft.dy - coreRight.dy).abs(), lessThanOrEqualTo(1.0));
       expect((coreRight.dy - endAnchor.dy).abs(), lessThanOrEqualTo(1.0));
-      expect(startAnchor.dy, equals(46.0));
-      expect(endAnchor.dy, equals(46.0));
+      expect(startAnchor.dy, equals(82.0));
+      expect(endAnchor.dy, equals(82.0));
 
-      // Phone silhouette contact point: padX(16) + phoneWidth(48) = 64
-      expect(startAnchor.dx, equals(64.0));
-      // Local desktop contact point: stageWidth(600) - padX(16) - desktopWidth(76) = 508
-      expect(endAnchor.dx, equals(508.0));
-      // Core contact points: center(300) ± radius(22) = 278 and 322
-      expect(coreLeft.dx, equals(278.0));
-      expect(coreRight.dx, equals(322.0));
+      // Phone silhouette contact point: padX(30.4) + phoneWidth(92) = 122.4
+      expect(startAnchor.dx, closeTo(122.4, 0.1));
+      // Local desktop contact point: stageWidth(600) - padX(30.4) - desktopWidth(200) = 369.6
+      expect(endAnchor.dx, closeTo(369.6, 0.1));
+      // Core contact points: center(300) ± radius(29) = 271 and 329
+      expect(coreLeft.dx, equals(271.0));
+      expect(coreRight.dx, equals(329.0));
     });
 
     testWidgets('horizontal layout tablet contact points meet tablet width', (tester) async {
@@ -300,9 +300,9 @@ void main() {
       final dynamic painter = bridgePaint.painter;
 
       final startAnchor = painter.startAnchor as Offset;
-      // Tablet silhouette contact point: padX(16) + tabletWidth(66) = 82
-      expect(startAnchor.dx, equals(82.0));
-      expect(startAnchor.dy, equals(46.0));
+      // Tablet silhouette contact point: padX(30.4) + tabletWidth(140) = 170.4
+      expect(startAnchor.dx, closeTo(170.4, 0.1));
+      expect(startAnchor.dy, equals(82.0));
     });
 
     testWidgets('horizontal layout desktop contact points meet desktop width', (tester) async {
@@ -329,9 +329,9 @@ void main() {
       final dynamic painter = bridgePaint.painter;
 
       final startAnchor = painter.startAnchor as Offset;
-      // Desktop silhouette contact point: padX(16) + desktopWidth(76) = 92
-      expect(startAnchor.dx, equals(92.0));
-      expect(startAnchor.dy, equals(46.0));
+      // Desktop silhouette contact point: padX(30.4) + desktopWidth(200) = 230.4
+      expect(startAnchor.dx, closeTo(230.4, 0.1));
+      expect(startAnchor.dy, equals(82.0));
     });
 
     testWidgets('narrow vertical layout has shared connection axis (dx within 1px)', (tester) async {
@@ -591,6 +591,53 @@ void main() {
 
       expect(find.text('Galaxy Tab S6 Lite'), findsNWidgets(2));
       expect(find.text('Falcon'), findsOneWidget);
+    });
+
+    testWidgets('renders gracefully with wallpaper image providers provided', (tester) async {
+      final palette = RelayDevicePalette.fromDevice(phoneDevice, brightness: Brightness.dark);
+      const testImage = AssetImage('assets/img/relay-launcher-android.svg');
+
+      await tester.pumpWidget(
+        _wrapWithApp(
+          RelayConnectionStage(
+            device: phoneDevice,
+            palette: palette,
+            selfAlias: 'Falcon',
+            selfDeviceType: DeviceType.desktop,
+            connected: true,
+            remoteWallpaper: testImage,
+            localWallpaper: testImage,
+          ),
+        ),
+      );
+      await tester.pump();
+
+      expect(find.text('Redmi Note 14 Pro 5G'), findsOneWidget);
+      expect(find.text('Falcon'), findsOneWidget);
+      expect(find.byType(Image), findsNWidgets(2));
+    });
+
+    testWidgets('gracefully renders fallback gradient when wallpaper is null', (tester) async {
+      final palette = RelayDevicePalette.fromDevice(phoneDevice, brightness: Brightness.dark);
+
+      await tester.pumpWidget(
+        _wrapWithApp(
+          RelayConnectionStage(
+            device: phoneDevice,
+            palette: palette,
+            selfAlias: 'Falcon',
+            selfDeviceType: DeviceType.desktop,
+            connected: true,
+            remoteWallpaper: null,
+            localWallpaper: null,
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('Redmi Note 14 Pro 5G'), findsOneWidget);
+      expect(find.text('Falcon'), findsOneWidget);
+      expect(find.byType(Image), findsNothing);
     });
   });
 }

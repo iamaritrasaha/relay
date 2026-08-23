@@ -25,6 +25,8 @@ class RelayConnectionStage extends StatelessWidget {
   final bool connected;
   final bool connecting;
   final bool animationsEnabled;
+  final ImageProvider? remoteWallpaper;
+  final ImageProvider? localWallpaper;
 
   const RelayConnectionStage({
     super.key,
@@ -35,6 +37,8 @@ class RelayConnectionStage extends StatelessWidget {
     required this.connected,
     this.connecting = false,
     this.animationsEnabled = true,
+    this.remoteWallpaper,
+    this.localWallpaper,
   });
 
   @override
@@ -64,6 +68,8 @@ class RelayConnectionStage extends StatelessWidget {
                 isDark: isDark,
                 disableMotion: disableMotion,
                 sharedClock: sharedClock,
+                remoteWallpaper: remoteWallpaper,
+                localWallpaper: localWallpaper,
               );
             } else {
               return _VerticalConnectionStage(
@@ -76,6 +82,8 @@ class RelayConnectionStage extends StatelessWidget {
                 isDark: isDark,
                 disableMotion: disableMotion,
                 sharedClock: sharedClock,
+                remoteWallpaper: remoteWallpaper,
+                localWallpaper: localWallpaper,
               );
             }
           },
@@ -122,48 +130,48 @@ class _SilhouetteOpticalMetrics {
     if (compact) {
       if (isTablet) {
         return const _SilhouetteOpticalMetrics(
-          width: 52,
-          height: 44,
-          anchorOffsetY: 22,
-          displayHeight: 44,
+          width: 100,
+          height: 80,
+          anchorOffsetY: 40,
+          displayHeight: 80,
         );
       }
       return switch (deviceType) {
         DeviceType.mobile => const _SilhouetteOpticalMetrics(
-          width: 38,
-          height: 64,
-          anchorOffsetY: 32,
-          displayHeight: 64,
+          width: 68,
+          height: 114,
+          anchorOffsetY: 57,
+          displayHeight: 114,
         ),
         _ => const _SilhouetteOpticalMetrics(
-          width: 58,
-          height: 44,
-          anchorOffsetY: 18, // displayHeight = 36, 36/2 = 18
-          displayHeight: 36,
+          width: 130,
+          height: 96,
+          anchorOffsetY: 41, // displayHeight = 82, 82/2 = 41
+          displayHeight: 82,
         ),
       };
     }
 
     if (isTablet) {
       return const _SilhouetteOpticalMetrics(
-        width: 66,
-        height: 54,
-        anchorOffsetY: 27,
-        displayHeight: 54,
+        width: 140,
+        height: 112,
+        anchorOffsetY: 56,
+        displayHeight: 112,
       );
     }
     return switch (deviceType) {
       DeviceType.mobile => const _SilhouetteOpticalMetrics(
-        width: 48,
-        height: 80,
-        anchorOffsetY: 40,
-        displayHeight: 80,
+        width: 92,
+        height: 154,
+        anchorOffsetY: 77,
+        displayHeight: 154,
       ),
       _ => const _SilhouetteOpticalMetrics(
-        width: 76,
-        height: 54,
-        anchorOffsetY: 23, // displayHeight = 46, 46/2 = 23
-        displayHeight: 46,
+        width: 200,
+        height: 139,
+        anchorOffsetY: 62.5, // displayHeight = 125, 125/2 = 62.5
+        displayHeight: 125,
       ),
     };
   }
@@ -179,6 +187,8 @@ class _HorizontalConnectionStage extends StatelessWidget {
   final bool isDark;
   final bool disableMotion;
   final RelayAmbientClockNotifier? sharedClock;
+  final ImageProvider? remoteWallpaper;
+  final ImageProvider? localWallpaper;
 
   const _HorizontalConnectionStage({
     required this.device,
@@ -190,6 +200,8 @@ class _HorizontalConnectionStage extends StatelessWidget {
     required this.isDark,
     required this.disableMotion,
     required this.sharedClock,
+    this.remoteWallpaper,
+    this.localWallpaper,
   });
 
   bool get _isTabletDevice {
@@ -204,12 +216,11 @@ class _HorizontalConnectionStage extends StatelessWidget {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
 
-    const stageHeight = 120.0;
-    const connectionAxisY = 46.0;
-    const coreDiameter = 44.0;
+    const stageHeight = 196.0;
+    const connectionAxisY = 82.0;
+    const coreDiameter = 58.0;
     const coreRadius = coreDiameter / 2;
-    const padX = 16.0;
-    const labelTop = 92.0;
+    const labelTop = 166.0;
 
     final remoteMetrics = _SilhouetteOpticalMetrics.of(
       deviceType: device.deviceType,
@@ -229,6 +240,7 @@ class _HorizontalConnectionStage extends StatelessWidget {
         builder: (context, constraints) {
           final stageWidth = constraints.maxWidth;
           final centerX = stageWidth / 2;
+          final padX = ((stageWidth - 480.0) * 0.12 + 16.0).clamp(16.0, 96.0);
 
           // Explicit optical contact anchors (all exactly on connectionAxisY)
           final remoteAnchor = Offset(padX + remoteMetrics.width, connectionAxisY);
@@ -273,18 +285,18 @@ class _HorizontalConnectionStage extends StatelessWidget {
                   child: KeyedSubtree(
                     key: ValueKey('${device.key}-${device.deviceType}'),
                     child: RepaintBoundary(
-                      child: CustomPaint(
-                        size: Size(remoteMetrics.width, remoteMetrics.height),
-                        painter: _SilhouettePainter(
-                          deviceType: device.deviceType,
-                          palette: palette,
-                          connected: connected,
-                          connecting: connecting,
-                          isDark: isDark,
-                          isLocal: false,
-                          sharedClock: sharedClock,
-                          disableMotion: disableMotion,
-                        ),
+                      child: _DeviceSilhouette(
+                        deviceType: device.deviceType,
+                        isTablet: _isTabletDevice,
+                        compact: false,
+                        palette: palette,
+                        wallpaper: remoteWallpaper,
+                        connected: connected,
+                        connecting: connecting,
+                        isDark: isDark,
+                        isLocal: false,
+                        sharedClock: sharedClock,
+                        disableMotion: disableMotion,
                       ),
                     ),
                   ),
@@ -317,27 +329,27 @@ class _HorizontalConnectionStage extends StatelessWidget {
                 width: localMetrics.width,
                 height: localMetrics.height,
                 child: RepaintBoundary(
-                  child: CustomPaint(
-                    size: Size(localMetrics.width, localMetrics.height),
-                    painter: _SilhouettePainter(
-                      deviceType: selfDeviceType,
-                      palette: palette,
-                      connected: connected,
-                      connecting: connecting,
-                      isDark: isDark,
-                      isLocal: true,
-                      sharedClock: sharedClock,
-                      disableMotion: disableMotion,
-                    ),
+                  child: _DeviceSilhouette(
+                    deviceType: selfDeviceType,
+                    isTablet: false,
+                    compact: false,
+                    palette: palette,
+                    wallpaper: localWallpaper,
+                    connected: connected,
+                    connecting: connecting,
+                    isDark: isDark,
+                    isLocal: true,
+                    sharedClock: sharedClock,
+                    disableMotion: disableMotion,
                   ),
                 ),
               ),
 
               // Remote device label (shared baseline at labelTop)
               Positioned(
-                left: math.max(0.0, padX + (remoteMetrics.width / 2) - 60.0),
+                left: math.max(0.0, padX + (remoteMetrics.width / 2) - 80.0),
                 top: labelTop,
-                width: 120.0,
+                width: 160.0,
                 child: Text(
                   device.alias,
                   style: theme.textTheme.labelSmall?.copyWith(
@@ -352,9 +364,9 @@ class _HorizontalConnectionStage extends StatelessWidget {
 
               // Local device label (shared baseline at labelTop)
               Positioned(
-                right: math.max(0.0, padX + (localMetrics.width / 2) - 60.0),
+                right: math.max(0.0, padX + (localMetrics.width / 2) - 80.0),
                 top: labelTop,
-                width: 120.0,
+                width: 160.0,
                 child: Text(
                   localDisplayName,
                   style: theme.textTheme.labelSmall?.copyWith(
@@ -384,6 +396,8 @@ class _VerticalConnectionStage extends StatelessWidget {
   final bool isDark;
   final bool disableMotion;
   final RelayAmbientClockNotifier? sharedClock;
+  final ImageProvider? remoteWallpaper;
+  final ImageProvider? localWallpaper;
 
   const _VerticalConnectionStage({
     required this.device,
@@ -395,6 +409,8 @@ class _VerticalConnectionStage extends StatelessWidget {
     required this.isDark,
     required this.disableMotion,
     required this.sharedClock,
+    this.remoteWallpaper,
+    this.localWallpaper,
   });
 
   bool get _isTabletDevice {
@@ -409,10 +425,10 @@ class _VerticalConnectionStage extends StatelessWidget {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
 
-    const stageHeight = 220.0;
-    const coreDiameter = 38.0;
+    const stageHeight = 310.0;
+    const coreDiameter = 44.0;
     const coreRadius = coreDiameter / 2;
-    const padY = 8.0;
+    const padY = 12.0;
 
     final remoteMetrics = _SilhouetteOpticalMetrics.of(
       deviceType: device.deviceType,
@@ -481,18 +497,18 @@ class _VerticalConnectionStage extends StatelessWidget {
                   child: KeyedSubtree(
                     key: ValueKey('${device.key}-${device.deviceType}'),
                     child: RepaintBoundary(
-                      child: CustomPaint(
-                        size: Size(remoteMetrics.width, remoteMetrics.height),
-                        painter: _SilhouettePainter(
-                          deviceType: device.deviceType,
-                          palette: palette,
-                          connected: connected,
-                          connecting: connecting,
-                          isDark: isDark,
-                          isLocal: false,
-                          sharedClock: sharedClock,
-                          disableMotion: disableMotion,
-                        ),
+                      child: _DeviceSilhouette(
+                        deviceType: device.deviceType,
+                        isTablet: _isTabletDevice,
+                        compact: true,
+                        palette: palette,
+                        wallpaper: remoteWallpaper,
+                        connected: connected,
+                        connecting: connecting,
+                        isDark: isDark,
+                        isLocal: false,
+                        sharedClock: sharedClock,
+                        disableMotion: disableMotion,
                       ),
                     ),
                   ),
@@ -542,18 +558,18 @@ class _VerticalConnectionStage extends StatelessWidget {
                 width: localMetrics.width,
                 height: localMetrics.height,
                 child: RepaintBoundary(
-                  child: CustomPaint(
-                    size: Size(localMetrics.width, localMetrics.height),
-                    painter: _SilhouettePainter(
-                      deviceType: selfDeviceType,
-                      palette: palette,
-                      connected: connected,
-                      connecting: connecting,
-                      isDark: isDark,
-                      isLocal: true,
-                      sharedClock: sharedClock,
-                      disableMotion: disableMotion,
-                    ),
+                  child: _DeviceSilhouette(
+                    deviceType: selfDeviceType,
+                    isTablet: false,
+                    compact: true,
+                    palette: palette,
+                    wallpaper: localWallpaper,
+                    connected: connected,
+                    connecting: connecting,
+                    isDark: isDark,
+                    isLocal: true,
+                    sharedClock: sharedClock,
+                    disableMotion: disableMotion,
                   ),
                 ),
               ),
@@ -605,8 +621,8 @@ class _RelayLinkCore extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final size = compact ? 38.0 : 44.0;
-    final symbolSize = compact ? 20.0 : 24.0;
+    final size = compact ? 44.0 : 58.0;
+    final symbolSize = compact ? 22.0 : 30.0;
 
     final isMotionActive = !disableMotion && (connected || connecting) && sharedClock != null;
 
@@ -717,10 +733,13 @@ class _RelayLinkCore extends StatelessWidget {
   }
 }
 
-/// Stylized vector silhouette for a remote device or local desktop.
-class _SilhouettePainter extends CustomPainter {
+/// Stylized hardware silhouette (PC monitor or mobile device) with optional wallpaper screen clipping.
+class _DeviceSilhouette extends StatelessWidget {
   final DeviceType deviceType;
+  final bool isTablet;
+  final bool compact;
   final RelayDevicePalette palette;
+  final ImageProvider? wallpaper;
   final bool connected;
   final bool connecting;
   final bool isDark;
@@ -728,211 +747,376 @@ class _SilhouettePainter extends CustomPainter {
   final RelayAmbientClockNotifier? sharedClock;
   final bool disableMotion;
 
-  _SilhouettePainter({
+  const _DeviceSilhouette({
     required this.deviceType,
+    required this.isTablet,
+    required this.compact,
     required this.palette,
+    this.wallpaper,
     required this.connected,
     required this.connecting,
     required this.isDark,
     required this.isLocal,
     required this.sharedClock,
     required this.disableMotion,
-  }) : super(repaint: (!disableMotion && connected) ? sharedClock?.cadenceClock : null);
-
-  double get phase => (!disableMotion && connected && sharedClock != null) ? sharedClock!.phaseSlow : 0.0;
+  });
 
   @override
-  void paint(Canvas canvas, Size size) {
-    switch (deviceType) {
-      case DeviceType.mobile:
-        if (size.width > size.height * 0.9) {
-          _paintTablet(canvas, size);
-        } else {
-          _paintPhone(canvas, size);
-        }
-      case DeviceType.desktop:
-      case DeviceType.headless:
-      case DeviceType.server:
-      case DeviceType.web:
-        _paintDesktop(canvas, size);
-    }
-  }
-
-  void _paintPhone(Canvas canvas, Size size) {
-    final w = size.width;
-    final h = size.height;
-    final rrect = RRect.fromRectAndRadius(Rect.fromLTWH(0, 0, w, h), const Radius.circular(10));
-    final screenRrect = RRect.fromRectAndRadius(Rect.fromLTWH(3, 4, w - 6, h - 8), const Radius.circular(7));
-
-    // Outer frame fill
-    final framePaint = Paint()
-      ..color = isDark ? const Color(0xFF282828) : const Color(0xFFE2E2E2)
-      ..style = PaintingStyle.fill;
-    canvas.drawRRect(rrect, framePaint);
-
-    // Screen fill with palette reflection
-    final screenPaint = Paint()..style = PaintingStyle.fill;
-    if (connected) {
-      screenPaint.shader = LinearGradient(
-        begin: Alignment.topLeft,
-        end: Alignment.bottomRight,
-        colors: [
-          palette.primary.withValues(alpha: isDark ? 0.32 : 0.22),
-          palette.secondary.withValues(alpha: isDark ? 0.16 : 0.10),
-        ],
-      ).createShader(screenRrect.outerRect);
-    } else {
-      screenPaint.color = isDark ? const Color(0xFF1E1E1E) : const Color(0xFFEBEBEB);
-    }
-    canvas.drawRRect(screenRrect, screenPaint);
-
-    // Subtle ambient screen highlight drift
-    if (connected && phase > 0) {
-      canvas.save();
-      canvas.clipRRect(screenRrect);
-      final sweepX = (phase * (w * 2.5)) - (w * 0.75);
-      final highlightPaint = Paint()
-        ..shader = LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [
-            Colors.white.withValues(alpha: 0.0),
-            Colors.white.withValues(alpha: isDark ? 0.12 : 0.20),
-            Colors.white.withValues(alpha: 0.0),
-          ],
-        ).createShader(Rect.fromLTWH(sweepX, 0, w * 0.6, h));
-      canvas.drawRect(Rect.fromLTWH(0, 0, w, h), highlightPaint);
-      canvas.restore();
-    }
-
-    // Bezel border
-    final borderPaint = Paint()
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 1.2
-      ..color = connected ? palette.primary.withValues(alpha: isDark ? 0.40 : 0.30) : (isDark ? const Color(0xFF444444) : const Color(0xFFCCCCCC));
-    canvas.drawRRect(rrect, borderPaint);
-
-    // Top speaker slit
-    final notchPaint = Paint()
-      ..color = isDark ? const Color(0xFF181818) : const Color(0xFFB0B0B0)
-      ..style = PaintingStyle.fill;
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(
-        Rect.fromCenter(center: Offset(w / 2, 2.5), width: 12, height: 2),
-        const Radius.circular(1),
-      ),
-      notchPaint,
+  Widget build(BuildContext context) {
+    final metrics = _SilhouetteOpticalMetrics.of(
+      deviceType: deviceType,
+      isTablet: isTablet,
+      compact: compact,
     );
 
-    // Bottom home bar
-    final barPaint = Paint()
-      ..color = connected ? palette.primary.withValues(alpha: isDark ? 0.5 : 0.35) : (isDark ? const Color(0xFF383838) : const Color(0xFFC0C0C0))
-      ..style = PaintingStyle.fill;
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(
-        Rect.fromCenter(center: Offset(w / 2, h - 3), width: 16, height: 2),
-        const Radius.circular(1),
-      ),
-      barPaint,
-    );
-  }
+    final isPhone = deviceType == DeviceType.mobile && !isTablet;
+    final isTab = deviceType == DeviceType.mobile && isTablet;
 
-  void _paintTablet(Canvas canvas, Size size) {
-    final w = size.width;
-    final h = size.height;
-    final rrect = RRect.fromRectAndRadius(Rect.fromLTWH(0, 0, w, h), const Radius.circular(8));
-    final screenRrect = RRect.fromRectAndRadius(Rect.fromLTWH(3.5, 3.5, w - 7, h - 7), const Radius.circular(5));
+    final Rect screenRect;
+    final double screenRadius;
+    final double outerRadius;
 
-    final framePaint = Paint()
-      ..color = isDark ? const Color(0xFF282828) : const Color(0xFFE2E2E2)
-      ..style = PaintingStyle.fill;
-    canvas.drawRRect(rrect, framePaint);
-
-    final screenPaint = Paint()..style = PaintingStyle.fill;
-    if (connected) {
-      screenPaint.shader = LinearGradient(
-        begin: Alignment.topLeft,
-        end: Alignment.bottomRight,
-        colors: [
-          palette.primary.withValues(alpha: isDark ? 0.28 : 0.18),
-          palette.secondary.withValues(alpha: isDark ? 0.14 : 0.08),
-        ],
-      ).createShader(screenRrect.outerRect);
-    } else {
-      screenPaint.color = isDark ? const Color(0xFF1E1E1E) : const Color(0xFFEBEBEB);
-    }
-    canvas.drawRRect(screenRrect, screenPaint);
-
-    final borderPaint = Paint()
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 1.2
-      ..color = connected ? palette.primary.withValues(alpha: isDark ? 0.40 : 0.30) : (isDark ? const Color(0xFF444444) : const Color(0xFFCCCCCC));
-    canvas.drawRRect(rrect, borderPaint);
-
-    // Camera dot
-    final dotPaint = Paint()
-      ..color = isDark ? const Color(0xFF181818) : const Color(0xFFB0B0B0)
-      ..style = PaintingStyle.fill;
-    canvas.drawCircle(Offset(w / 2, 2), 1.2, dotPaint);
-  }
-
-  void _paintDesktop(Canvas canvas, Size size) {
-    final w = size.width;
-    final h = size.height;
-    final displayHeight = h - 8;
-    final rrect = RRect.fromRectAndRadius(Rect.fromLTWH(0, 0, w, displayHeight), const Radius.circular(6));
-    final screenRrect = RRect.fromRectAndRadius(Rect.fromLTWH(3, 3, w - 6, displayHeight - 6), const Radius.circular(4));
-
-    // Stand neck & foot
-    final standPaint = Paint()
-      ..color = isDark ? const Color(0xFF383838) : const Color(0xFFCCCCCC)
-      ..style = PaintingStyle.fill;
-
-    // Neck
-    canvas.drawRect(Rect.fromCenter(center: Offset(w / 2, displayHeight + 2), width: 7, height: 5), standPaint);
-    // Foot
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(
-        Rect.fromCenter(center: Offset(w / 2, h - 1.5), width: 28, height: 3),
-        const Radius.circular(1.5),
-      ),
-      standPaint,
-    );
-
-    // Frame
-    final framePaint = Paint()
-      ..color = isDark ? const Color(0xFF282828) : const Color(0xFFE2E2E2)
-      ..style = PaintingStyle.fill;
-    canvas.drawRRect(rrect, framePaint);
-
-    // Screen fill
-    final screenPaint = Paint()..style = PaintingStyle.fill;
-    if (connected) {
-      if (isLocal) {
-        screenPaint.shader = LinearGradient(
-          begin: Alignment.topCenter,
-          end: Alignment.bottomCenter,
-          colors: [
-            palette.primary.withValues(alpha: isDark ? 0.20 : 0.12),
-            isDark ? const Color(0xFF1C1C1C) : const Color(0xFFE8E8E8),
-          ],
-        ).createShader(screenRrect.outerRect);
+    if (isPhone) {
+      if (compact) {
+        screenRect = const Rect.fromLTWH(3.5, 4.0, 61.0, 106.0);
+        screenRadius = 9.0;
+        outerRadius = 13.0;
       } else {
-        screenPaint.shader = LinearGradient(
+        screenRect = const Rect.fromLTWH(5.0, 6.0, 82.0, 142.0);
+        screenRadius = 12.0;
+        outerRadius = 16.0;
+      }
+    } else if (isTab) {
+      if (compact) {
+        screenRect = const Rect.fromLTWH(3.5, 3.5, 93.0, 73.0);
+        screenRadius = 6.0;
+        outerRadius = 9.0;
+      } else {
+        screenRect = const Rect.fromLTWH(5.0, 5.0, 130.0, 102.0);
+        screenRadius = 8.0;
+        outerRadius = 12.0;
+      }
+    } else {
+      if (compact) {
+        screenRect = const Rect.fromLTWH(3.5, 3.5, 123.0, 75.0);
+        screenRadius = 5.0;
+        outerRadius = 8.0;
+      } else {
+        screenRect = const Rect.fromLTWH(5.0, 5.0, 190.0, 115.0);
+        screenRadius = 6.0;
+        outerRadius = 10.0;
+      }
+    }
+
+    return SizedBox(
+      width: metrics.width,
+      height: metrics.height,
+      child: Stack(
+        children: [
+          // Layer 1: Frame and stand background
+          Positioned.fill(
+            child: CustomPaint(
+              painter: _SilhouetteFramePainter(
+                deviceType: deviceType,
+                isTablet: isTablet,
+                compact: compact,
+                isDark: isDark,
+                displayHeight: metrics.displayHeight,
+                outerRadius: outerRadius,
+              ),
+            ),
+          ),
+
+          // Layer 2: Clipped screen (wallpaper or palette gradient)
+          Positioned(
+            left: screenRect.left,
+            top: screenRect.top,
+            width: screenRect.width,
+            height: screenRect.height,
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(screenRadius),
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  if (wallpaper != null)
+                    Image(
+                      image: wallpaper!,
+                      fit: BoxFit.cover,
+                      filterQuality: FilterQuality.medium,
+                      errorBuilder: (context, error, stackTrace) => _FallbackScreenGradient(
+                        palette: palette,
+                        connected: connected,
+                        isDark: isDark,
+                        isLocal: isLocal,
+                      ),
+                    )
+                  else
+                    _FallbackScreenGradient(
+                      palette: palette,
+                      connected: connected,
+                      isDark: isDark,
+                      isLocal: isLocal,
+                    ),
+                  if (wallpaper != null)
+                    Container(
+                      color: isDark ? Colors.black.withValues(alpha: 0.16) : Colors.black.withValues(alpha: 0.05),
+                    ),
+                  if (connected && !disableMotion && sharedClock != null)
+                    _SilhouetteHighlightSweep(
+                      sharedClock: sharedClock!,
+                      isDark: isDark,
+                    ),
+                ],
+              ),
+            ),
+          ),
+
+          // Layer 3: Foreground bezel border & hardware accents
+          Positioned.fill(
+            child: IgnorePointer(
+              child: CustomPaint(
+                painter: _SilhouetteAccentsPainter(
+                  deviceType: deviceType,
+                  isTablet: isTablet,
+                  compact: compact,
+                  palette: palette,
+                  connected: connected,
+                  isDark: isDark,
+                  isLocal: isLocal,
+                  displayHeight: metrics.displayHeight,
+                  outerRadius: outerRadius,
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _FallbackScreenGradient extends StatelessWidget {
+  final RelayDevicePalette palette;
+  final bool connected;
+  final bool isDark;
+  final bool isLocal;
+
+  const _FallbackScreenGradient({
+    required this.palette,
+    required this.connected,
+    required this.isDark,
+    required this.isLocal,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    if (!connected) {
+      return Container(
+        color: isDark ? const Color(0xFF1E1E1E) : const Color(0xFFEBEBEB),
+      );
+    }
+
+    if (isLocal) {
+      return Container(
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [
+              palette.primary.withValues(alpha: isDark ? 0.20 : 0.12),
+              isDark ? const Color(0xFF1C1C1C) : const Color(0xFFE8E8E8),
+            ],
+          ),
+        ),
+      );
+    }
+
+    return Container(
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
           colors: [
             palette.primary.withValues(alpha: isDark ? 0.28 : 0.18),
             palette.secondary.withValues(alpha: isDark ? 0.14 : 0.08),
           ],
-        ).createShader(screenRrect.outerRect);
-      }
-    } else {
-      screenPaint.color = isDark ? const Color(0xFF1E1E1E) : const Color(0xFFEBEBEB);
-    }
-    canvas.drawRRect(screenRrect, screenPaint);
+        ),
+      ),
+    );
+  }
+}
 
-    // Bezel border
+class _SilhouetteHighlightSweep extends StatelessWidget {
+  final RelayAmbientClockNotifier sharedClock;
+  final bool isDark;
+
+  const _SilhouetteHighlightSweep({
+    required this.sharedClock,
+    required this.isDark,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: sharedClock.cadenceClock,
+      builder: (context, _) {
+        final phase = sharedClock.phaseSlow;
+        if (phase <= 0) return const SizedBox.shrink();
+
+        return LayoutBuilder(
+          builder: (context, constraints) {
+            final w = constraints.maxWidth;
+            final sweepX = (phase * (w * 2.5)) - (w * 0.75);
+
+            return CustomPaint(
+              size: Size(constraints.maxWidth, constraints.maxHeight),
+              painter: _HighlightSweepPainter(
+                sweepX: sweepX,
+                isDark: isDark,
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+}
+
+class _HighlightSweepPainter extends CustomPainter {
+  final double sweepX;
+  final bool isDark;
+
+  const _HighlightSweepPainter({
+    required this.sweepX,
+    required this.isDark,
+  });
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final highlightPaint = Paint()
+      ..shader = LinearGradient(
+        begin: Alignment.topLeft,
+        end: Alignment.bottomRight,
+        colors: [
+          Colors.white.withValues(alpha: 0.0),
+          Colors.white.withValues(alpha: isDark ? 0.12 : 0.20),
+          Colors.white.withValues(alpha: 0.0),
+        ],
+      ).createShader(Rect.fromLTWH(sweepX, 0, size.width * 0.6, size.height));
+    canvas.drawRect(Rect.fromLTWH(0, 0, size.width, size.height), highlightPaint);
+  }
+
+  @override
+  bool shouldRepaint(_HighlightSweepPainter oldDelegate) => sweepX != oldDelegate.sweepX || isDark != oldDelegate.isDark;
+}
+
+class _SilhouetteFramePainter extends CustomPainter {
+  final DeviceType deviceType;
+  final bool isTablet;
+  final bool compact;
+  final bool isDark;
+  final double displayHeight;
+  final double outerRadius;
+
+  const _SilhouetteFramePainter({
+    required this.deviceType,
+    required this.isTablet,
+    required this.compact,
+    required this.isDark,
+    required this.displayHeight,
+    required this.outerRadius,
+  });
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final w = size.width;
+    final h = size.height;
+
+    final isPhone = deviceType == DeviceType.mobile && !isTablet;
+    final isTab = deviceType == DeviceType.mobile && isTablet;
+    final isDesktop = !isPhone && !isTab;
+
+    if (isDesktop) {
+      // Stand neck & foot
+      final standPaint = Paint()
+        ..color = isDark ? const Color(0xFF383838) : const Color(0xFFCCCCCC)
+        ..style = PaintingStyle.fill;
+
+      if (compact) {
+        canvas.drawRect(Rect.fromCenter(center: Offset(w / 2, displayHeight + 4.0), width: 14.0, height: 8.0), standPaint);
+        canvas.drawRRect(
+          RRect.fromRectAndRadius(
+            Rect.fromCenter(center: Offset(w / 2, h - 2.5), width: 48.0, height: 5.0),
+            const Radius.circular(2.5),
+          ),
+          standPaint,
+        );
+      } else {
+        canvas.drawRect(Rect.fromCenter(center: Offset(w / 2, displayHeight + 4.0), width: 22.0, height: 8.0), standPaint);
+        canvas.drawRRect(
+          RRect.fromRectAndRadius(
+            Rect.fromCenter(center: Offset(w / 2, h - 3.0), width: 76.0, height: 6.0),
+            const Radius.circular(3.0),
+          ),
+          standPaint,
+        );
+      }
+    }
+
+    final frameH = isDesktop ? displayHeight : h;
+    final rrect = RRect.fromRectAndRadius(Rect.fromLTWH(0, 0, w, frameH), Radius.circular(outerRadius));
+    final framePaint = Paint()
+      ..color = isDark ? const Color(0xFF282828) : const Color(0xFFE2E2E2)
+      ..style = PaintingStyle.fill;
+    canvas.drawRRect(rrect, framePaint);
+  }
+
+  @override
+  bool shouldRepaint(_SilhouetteFramePainter oldDelegate) =>
+      deviceType != oldDelegate.deviceType ||
+      isTablet != oldDelegate.isTablet ||
+      compact != oldDelegate.compact ||
+      isDark != oldDelegate.isDark ||
+      displayHeight != oldDelegate.displayHeight ||
+      outerRadius != oldDelegate.outerRadius;
+}
+
+class _SilhouetteAccentsPainter extends CustomPainter {
+  final DeviceType deviceType;
+  final bool isTablet;
+  final bool compact;
+  final RelayDevicePalette palette;
+  final bool connected;
+  final bool isDark;
+  final bool isLocal;
+  final double displayHeight;
+  final double outerRadius;
+
+  const _SilhouetteAccentsPainter({
+    required this.deviceType,
+    required this.isTablet,
+    required this.compact,
+    required this.palette,
+    required this.connected,
+    required this.isDark,
+    required this.isLocal,
+    required this.displayHeight,
+    required this.outerRadius,
+  });
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final w = size.width;
+    final h = size.height;
+
+    final isPhone = deviceType == DeviceType.mobile && !isTablet;
+    final isTab = deviceType == DeviceType.mobile && isTablet;
+    final isDesktop = !isPhone && !isTab;
+
+    final frameH = isDesktop ? displayHeight : h;
+    final rrect = RRect.fromRectAndRadius(Rect.fromLTWH(0, 0, w, frameH), Radius.circular(outerRadius));
+
+    // Outer bezel border
     final borderPaint = Paint()
       ..style = PaintingStyle.stroke
       ..strokeWidth = 1.2
@@ -940,17 +1124,51 @@ class _SilhouettePainter extends CustomPainter {
           ? (isLocal ? palette.primary.withValues(alpha: isDark ? 0.30 : 0.20) : palette.primary.withValues(alpha: isDark ? 0.40 : 0.30))
           : (isDark ? const Color(0xFF444444) : const Color(0xFFCCCCCC));
     canvas.drawRRect(rrect, borderPaint);
+
+    if (isPhone) {
+      // Top speaker slit
+      final notchPaint = Paint()
+        ..color = isDark ? const Color(0xFF181818) : const Color(0xFFB0B0B0)
+        ..style = PaintingStyle.fill;
+      canvas.drawRRect(
+        RRect.fromRectAndRadius(
+          Rect.fromCenter(center: Offset(w / 2, compact ? 2.5 : 3.5), width: compact ? 16.0 : 22.0, height: compact ? 2.0 : 3.0),
+          const Radius.circular(1.0),
+        ),
+        notchPaint,
+      );
+
+      // Bottom home bar
+      final barPaint = Paint()
+        ..color = connected ? palette.primary.withValues(alpha: isDark ? 0.5 : 0.35) : (isDark ? const Color(0xFF383838) : const Color(0xFFC0C0C0))
+        ..style = PaintingStyle.fill;
+      canvas.drawRRect(
+        RRect.fromRectAndRadius(
+          Rect.fromCenter(center: Offset(w / 2, h - (compact ? 2.5 : 3.5)), width: compact ? 20.0 : 28.0, height: compact ? 2.0 : 3.0),
+          const Radius.circular(1.0),
+        ),
+        barPaint,
+      );
+    } else if (isTab) {
+      // Camera dot
+      final dotPaint = Paint()
+        ..color = isDark ? const Color(0xFF181818) : const Color(0xFFB0B0B0)
+        ..style = PaintingStyle.fill;
+      canvas.drawCircle(Offset(w / 2, compact ? 2.0 : 2.8), compact ? 1.2 : 1.8, dotPaint);
+    }
   }
 
   @override
-  bool shouldRepaint(_SilhouettePainter oldDelegate) =>
+  bool shouldRepaint(_SilhouetteAccentsPainter oldDelegate) =>
       deviceType != oldDelegate.deviceType ||
+      isTablet != oldDelegate.isTablet ||
+      compact != oldDelegate.compact ||
       palette != oldDelegate.palette ||
       connected != oldDelegate.connected ||
-      connecting != oldDelegate.connecting ||
       isDark != oldDelegate.isDark ||
       isLocal != oldDelegate.isLocal ||
-      disableMotion != oldDelegate.disableMotion;
+      displayHeight != oldDelegate.displayHeight ||
+      outerRadius != oldDelegate.outerRadius;
 }
 
 /// Single lightweight CustomPainter for the restrained base bridge line and the

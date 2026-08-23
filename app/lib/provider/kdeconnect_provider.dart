@@ -5,9 +5,11 @@ import 'package:collection/collection.dart';
 import 'package:flutter/services.dart';
 import 'package:logging/logging.dart';
 import 'package:refena_flutter/refena_flutter.dart';
+import 'package:relay_app/provider/local_wallpaper_provider.dart';
 import 'package:relay_app/provider/persistence_provider.dart';
-import 'package:relay_app/util/native/directories.dart';
 import 'package:relay_app/provider/relay_clipboard_service.dart';
+import 'package:relay_app/util/native/directories.dart';
+import 'package:relay_app/util/native/linux_wallpaper_thumbnail.dart';
 import 'package:relay_isolates/rust/api/kdeconnect.dart';
 
 final _logger = Logger('KdeConnect');
@@ -108,6 +110,10 @@ class KdeConnectState {
   /// devices sending the same name stay independent.
   final Map<String, RsTransfer> transfers;
 
+  /// A device's last validated wallpaper preview, keyed by device id. Purely
+  /// decorative -- feeds the hero's phone silhouette, never device-state v1.
+  final Map<String, String> remoteWallpaperPaths;
+
   /// Whether clipboard sync is on for this desktop.
   final bool clipboardEnabled;
 
@@ -136,6 +142,7 @@ class KdeConnectState {
     this.notifications = const {},
     this.runCommands = const [],
     this.transfers = const {},
+    this.remoteWallpaperPaths = const {},
     this.clipboardEnabled = true,
     this.clipboardAutoSync = false,
     this.remoteInputEnabled = false,
@@ -204,6 +211,7 @@ class KdeConnectState {
     Map<String, List<RsKdeNotification>>? notifications,
     List<RsRunCommand>? runCommands,
     Map<String, RsTransfer>? transfers,
+    Map<String, String>? remoteWallpaperPaths,
     bool? clipboardEnabled,
     bool? clipboardAutoSync,
     bool? remoteInputEnabled,
@@ -222,6 +230,7 @@ class KdeConnectState {
     notifications: notifications ?? this.notifications,
     runCommands: runCommands ?? this.runCommands,
     transfers: transfers ?? this.transfers,
+    remoteWallpaperPaths: remoteWallpaperPaths ?? this.remoteWallpaperPaths,
     clipboardEnabled: clipboardEnabled ?? this.clipboardEnabled,
     clipboardAutoSync: clipboardAutoSync ?? this.clipboardAutoSync,
     remoteInputEnabled: remoteInputEnabled ?? this.remoteInputEnabled,
@@ -242,6 +251,7 @@ typedef KdeConnectStarter =
 
 final kdeConnectProvider = ReduxProvider<KdeConnectService, KdeConnectState>((ref) {
   return KdeConnectService(
+    ref: ref,
     persistence: ref.read(persistenceProvider),
     generateIdentity: kdeconnectGenerateIdentity,
     startRuntime: (identity, trusted, runCommands) => startKdeconnect(identity: identity, trusted: trusted, runCommands: runCommands),
@@ -249,6 +259,7 @@ final kdeConnectProvider = ReduxProvider<KdeConnectService, KdeConnectState>((re
 });
 
 class KdeConnectService extends ReduxNotifier<KdeConnectState> {
+  final Ref? ref;
   final PersistenceService persistence;
   final KdeConnectIdentityFactory generateIdentity;
   final KdeConnectStarter startRuntime;
@@ -257,11 +268,12 @@ class KdeConnectService extends ReduxNotifier<KdeConnectState> {
 
   /// Watches the local clipboard and applies remote values to it.
   late final RelayClipboardService clipboard = RelayClipboardService(
-    onLocalChange: (text) async => dispatchAsync(KdeConnectSendClipboardAction(text)),
+    onLocalChange: (text) async => ref?.redux(kdeConnectProvider).dispatchAsync(KdeConnectSendClipboardAction(text)),
   );
   StreamSubscription<RsKdeConnectEvent>? _events;
 
   KdeConnectService({
+    this.ref,
     required this.persistence,
     required this.generateIdentity,
     required this.startRuntime,
@@ -354,6 +366,11 @@ class KdeConnectStartAction extends AsyncReduxAction<KdeConnectService, KdeConne
     // Received files need a destination before any transfer can be accepted.
     final downloadDir = notifier.persistence.getDestination() ?? await getDefaultDestinationDirectory();
     await runtime.setDownloadDir(directory: downloadDir);
+
+    // A phone's wallpaper preview is decorative cache, not a download: it
+    // lives under the app cache directory, never the user's Downloads.
+    final wallpaperCacheDir = '${await getCacheDirectory()}/relay-wallpaper';
+    await runtime.setWallpaperCacheDir(directory: wallpaperCacheDir);
 
     final clipboardEnabled = notifier.persistence.getKdeConnectClipboardEnabled();
     await runtime.setClipboardEnabled(enabled: clipboardEnabled);
@@ -684,6 +701,75 @@ class KdeConnectCancelTransferAction extends AsyncReduxAction<KdeConnectService,
   }
 }
 
+/// Lazily sends the local Linux desktop wallpaper thumbnail to a connected peer
+/// that advertises incoming capability for `kdeconnect.relay.wallpaper`.
+class KdeConnectSyncWallpaperAction extends AsyncReduxAction<KdeConnectService, KdeConnectState> {
+  final String deviceId;
+
+  KdeConnectSyncWallpaperAction(this.deviceId);
+
+  static final Map<String, String> _lastSentHash = {};
+
+  @override
+  Future<KdeConnectState> reduce() async {
+    try {
+      final wallpaperPath = notifier.ref?.read(localWallpaperProvider);
+      if (wallpaperPath == null) return state;
+
+      final id = kdeConnectDeviceIdFromKey(deviceId);
+      final device = state.devices.firstWhereOrNull((d) => d.deviceId == id);
+      if (device == null || !device.connected || !device.paired) return state;
+
+      if (!device.incomingCapabilities.contains('kdeconnect.relay.wallpaper')) {
+        return state;
+      }
+
+      final thumb = await LinuxWallpaperThumbnailService.getThumbnailForWallpaper(wallpaperPath);
+      if (thumb == null) return state;
+
+      if (_lastSentHash[id] == thumb.hash) {
+        return state;
+      }
+
+      await notifier._runtime?.sendWallpaper(
+        deviceId: id,
+        path: thumb.path,
+        hash: thumb.hash,
+        width: thumb.width,
+        height: thumb.height,
+      );
+
+      _lastSentHash[id] = thumb.hash;
+      _logger.info('Synced wallpaper to device=$id hash=${thumb.hash}');
+    } catch (error, stack) {
+      _logger.warning('Sync wallpaper failed for device=$deviceId', error, stack);
+    }
+    return state;
+  }
+}
+
+/// Seeds the last cached wallpaper preview the phone sent us, so a reconnect
+/// (or a WAN/LAN handover) shows it immediately rather than waiting on the
+/// next `WallpaperChanged` event. A miss is a normal, silent no-op.
+class KdeConnectSeedWallpaperPreviewAction extends AsyncReduxAction<KdeConnectService, KdeConnectState> {
+  final String deviceId;
+
+  KdeConnectSeedWallpaperPreviewAction(this.deviceId);
+
+  @override
+  Future<KdeConnectState> reduce() async {
+    try {
+      final id = kdeConnectDeviceIdFromKey(deviceId);
+      final path = await notifier._runtime?.wallpaperPreviewPath(deviceId: id);
+      if (path == null) return state;
+      return state.copyWith(remoteWallpaperPaths: {...state.remoteWallpaperPaths, id: path});
+    } catch (error, stack) {
+      _logger.warning('Seed wallpaper preview failed for device=$deviceId', error, stack);
+      return state;
+    }
+  }
+}
+
 class KdeConnectApplyEventAction extends ReduxAction<KdeConnectService, KdeConnectState> {
   final RsKdeConnectEvent event;
 
@@ -699,11 +785,27 @@ class KdeConnectApplyEventAction extends ReduxAction<KdeConnectService, KdeConne
         // removes a Fabric record, no stale message, notification, transfer or
         // phone state can keep living behind a vanished card.
         final retainedIds = fabric.devices.map((device) => device.deviceId).toSet();
+        for (final device in devices) {
+          if (device.connected && device.paired && device.incomingCapabilities.contains('kdeconnect.relay.wallpaper')) {
+            unawaited(notifier.ref?.redux(kdeConnectProvider).dispatchAsync(KdeConnectSyncWallpaperAction(device.deviceId)));
+          }
+          // The reverse direction: seed the last cached preview the phone
+          // sent us, so a reconnect shows it immediately rather than waiting
+          // on the next `WallpaperChanged` event.
+          if (device.connected && device.paired && !state.remoteWallpaperPaths.containsKey(device.deviceId)) {
+            unawaited(
+              notifier.ref?.redux(kdeConnectProvider).dispatchAsync(KdeConnectSeedWallpaperPreviewAction(device.deviceId)),
+            );
+          }
+        }
         return state.copyWith(
           devices: devices,
           fabric: fabric,
           notifications: Map.fromEntries(state.notifications.entries.where((entry) => retainedIds.contains(entry.key))),
           transfers: Map.fromEntries(state.transfers.entries.where((entry) => retainedIds.contains(entry.value.deviceId))),
+          remoteWallpaperPaths: Map.fromEntries(
+            state.remoteWallpaperPaths.entries.where((entry) => retainedIds.contains(entry.key)),
+          ),
           smsConversations: Map.fromEntries(state.smsConversations.entries.where((entry) => retainedIds.contains(entry.key))),
           smsMessages: Map.fromEntries(state.smsMessages.entries.where((entry) => retainedIds.contains(entry.key))),
           activeCalls: Map.fromEntries(state.activeCalls.entries.where((entry) => retainedIds.contains(entry.key))),
@@ -778,6 +880,9 @@ class KdeConnectApplyEventAction extends ReduxAction<KdeConnectService, KdeConne
         return state.copyWith(
           transfers: {...state.transfers, '${transfer.deviceId}:${transfer.transferId}': transfer},
         );
+      case RsKdeConnectEvent_WallpaperChanged(:final deviceId, :final path):
+        // Purely decorative: feeds the hero's phone silhouette only.
+        return state.copyWith(remoteWallpaperPaths: {...state.remoteWallpaperPaths, deviceId: path});
       case RsKdeConnectEvent_TelephonyReceived(:final deviceId, :final event):
         final currentEvent = KdeTelephonyState(
           event: event.event,

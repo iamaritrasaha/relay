@@ -2,202 +2,395 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:relay_app/config/relay_brand.dart';
+import 'package:relay_app/model/ui/relay_connection_state.dart';
 import 'package:relay_app/model/ui/relay_device_vm.dart';
 import 'package:relay_app/model/ui/relay_last_seen.dart';
 import 'package:relay_app/widget/gnome/adw_action_row.dart';
 import 'package:relay_app/widget/gnome/adw_boxed_list.dart';
+import 'package:relay_app/widget/gnome/adw_header_bar.dart';
+import 'package:relay_app/widget/relay/relay_dialog.dart';
+import 'package:relay_app/widget/relay_carbon/relay_surface.dart';
+import 'package:relay_isolates/model/device.dart';
 import 'package:yaru/yaru.dart';
 
-/// GNOME Advanced Diagnostics modal dialog.
+/// Device Diagnostics: a GNOME/libadwaita-style preferences surface, not a
+/// generic modal. A proper header bar (device icon, title/subtitle, top-right
+/// close) sits above four AdwPreferencesGroup sections -- Identity,
+/// Connection, Device, Capabilities -- each one boxed surface of hairline-
+/// separated rows, the same language as Relay Settings and Device Details.
 ///
-/// Houses technical telemetry and diagnostics (logical id, route health and
-/// feature metadata)
-/// without cluttering the main user-facing product UI.
+/// Presentation only: every field the original panel showed is still here.
 class GnomeDiagnosticsDialog extends StatelessWidget {
   final RelayDeviceVm device;
 
   const GnomeDiagnosticsDialog({super.key, required this.device});
 
-  static Widget _yesNo(ThemeData theme, ColorScheme colorScheme, bool value) => Text(
-    value ? 'Available' : 'Unavailable',
-    style: theme.textTheme.bodyMedium?.copyWith(color: colorScheme.onSurface.withValues(alpha: 0.7)),
-  );
+  static const _rowPadding = EdgeInsets.symmetric(horizontal: 14, vertical: 14);
+  static const _groupSpacing = EdgeInsets.only(bottom: 20);
 
-  /// Every feature and the core's verdict on it, in one line.
-  ///
-  static String _featureSummary(RelayDeviceVm device) {
-    final entries = device.featureAvailability.entries.toList()..sort((a, b) => a.key.name.compareTo(b.key.name));
-    if (entries.isEmpty) {
-      return 'None reported';
-    }
-    return entries.map((entry) => '${entry.key.title}: ${entry.value.reason ?? 'Available'}').join(', ');
-  }
+  String get _targetLabel => switch (device.targetKind) {
+    RelayDeviceTargetKind.kdeConnect => 'KDE Connect',
+    RelayDeviceTargetKind.verifiedRelay || RelayDeviceTargetKind.pairedRelay => 'Relay',
+    RelayDeviceTargetKind.unresolvedLan => 'LocalSend',
+  };
+
+  RelayPresenceTone get _connectionTone => switch (device.connectionState) {
+    RelayConnectionState.local => RelayPresenceTone.online,
+    RelayConnectionState.remoteDirect || RelayConnectionState.remoteRelay => RelayPresenceTone.busy,
+    RelayConnectionState.reconnecting => RelayPresenceTone.attention,
+    RelayConnectionState.offline => RelayPresenceTone.offline,
+  };
+
+  IconData get _deviceIcon => switch (device.deviceType) {
+    DeviceType.mobile => YaruIcons.smartphone,
+    DeviceType.desktop => YaruIcons.desktop,
+    _ => YaruIcons.computer,
+  };
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final colorScheme = theme.colorScheme;
+    final palette = Theme.of(context).relayPalette;
+    final fingerprint = device.lanFingerprint ?? (device.key.startsWith('relay:') ? null : device.key);
+    final groupSurface = palette.canvasTonalHigh;
 
-    return Dialog(
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(kYaruContainerRadius)),
+    return RelayDialog(
+      maxWidth: 640,
+      header: _DiagnosticsHeader(
+        icon: _deviceIcon,
+        alias: device.alias,
+        tone: _connectionTone,
+        statusLabel: device.connectionState.userLabel,
+      ),
       child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 520),
-        child: Padding(
-          padding: const EdgeInsets.all(20),
+        // The dialog never asks for more height than a normal desktop
+        // viewport has to give -- header, dialog padding and inset margins
+        // cost roughly 220px on top of this scrollable region.
+        constraints: BoxConstraints(maxHeight: (MediaQuery.sizeOf(context).height - 220).clamp(260, 520)),
+        child: SingleChildScrollView(
           child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              // Title
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text(
-                    'Device Diagnostics',
-                    style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600),
-                  ),
-                  YaruIconButton(
-                    icon: const Icon(YaruIcons.window_close, size: 18),
-                    onPressed: () => Navigator.of(context).pop(),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 16),
-
               AdwPreferencesGroup(
-                title: 'Identity & Transport',
-                uppercaseTitle: false,
+                title: 'Identity',
+                margin: _groupSpacing,
+                rowPadding: _rowPadding,
+                rowMinHeight: 0,
+                surfaceColor: groupSurface,
                 children: [
-                  AdwActionRow(
-                    title: 'Alias',
-                    trailing: Text(device.alias, style: theme.textTheme.bodyMedium?.copyWith(color: colorScheme.onSurface.withValues(alpha: 0.7))),
-                  ),
-                  AdwActionRow(
-                    title: 'Target Kind',
-                    trailing: Text(
-                      device.targetKind.name,
-                      style: theme.textTheme.bodyMedium?.copyWith(color: colorScheme.onSurface.withValues(alpha: 0.7)),
-                    ),
-                  ),
+                  AdwActionRow(title: 'Alias', trailing: _ValueText(device.alias)),
+                  AdwActionRow(title: 'Target', trailing: _ValueText(_targetLabel)),
                   if (device.relayId != null)
                     AdwActionRow(
                       title: 'Relay ID',
-                      subtitle: device.relayId,
-                      trailing: YaruIconButton(
-                        icon: const Icon(YaruIcons.copy, size: 16),
-                        tooltip: 'Copy Relay ID',
-                        onPressed: () {
-                          unawaited(Clipboard.setData(ClipboardData(text: device.relayId!)));
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(content: Text('Relay ID copied to clipboard')),
-                          );
-                        },
-                      ),
+                      trailing: _CopyableValue(value: device.relayId!, label: 'Relay ID', monospace: true, truncate: true),
                     ),
-                  if (device.lanFingerprint != null || !device.key.startsWith('relay:'))
+                  if (fingerprint != null)
                     AdwActionRow(
                       title: 'Fingerprint',
-                      subtitle: device.lanFingerprint ?? device.key,
-                      trailing: YaruIconButton(
-                        icon: const Icon(YaruIcons.copy, size: 16),
-                        tooltip: 'Copy Fingerprint',
-                        onPressed: () {
-                          unawaited(Clipboard.setData(ClipboardData(text: device.lanFingerprint ?? device.key)));
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(content: Text('Fingerprint copied to clipboard')),
-                          );
-                        },
-                      ),
+                      trailing: _CopyableValue(value: fingerprint, label: 'fingerprint', monospace: true, truncate: true),
                     ),
                 ],
               ),
 
               if (device.hasFabricRecord) ...[
-                const SizedBox(height: 12),
                 AdwPreferencesGroup(
-                  key: const ValueKey('diagnostics-fabric-group'),
-                  title: 'Routes',
-                  uppercaseTitle: false,
+                  title: 'Connection',
+                  margin: _groupSpacing,
+                  rowPadding: _rowPadding,
+                  rowMinHeight: 0,
+                  surfaceColor: groupSurface,
                   children: [
+                    AdwActionRow(title: 'Route', trailing: _ValueText(device.connectionState.diagnosticLabel)),
                     AdwActionRow(
-                      title: 'Logical device ID',
-                      subtitle: device.key.replaceFirst('kdeconnect:', ''),
-                    ),
-                    AdwActionRow(
-                      title: 'Route',
-                      // The precise route, which the product surfaces
-                      // deliberately reduce to Local / Remote / Offline.
-                      trailing: Text(
-                        device.connectionState.diagnosticLabel,
-                        style: theme.textTheme.bodyMedium?.copyWith(color: colorScheme.onSurface.withValues(alpha: 0.7)),
+                      title: 'Local network',
+                      trailing: _StatusValue(
+                        tone: device.lanAvailable ? RelayPresenceTone.online : RelayPresenceTone.offline,
+                        label: device.lanAvailable ? 'Available' : 'Unavailable',
                       ),
                     ),
                     AdwActionRow(
-                      title: 'Local network route',
-                      trailing: _yesNo(theme, colorScheme, device.lanAvailable),
-                    ),
-                    AdwActionRow(
                       title: 'Remote binding',
-                      // Whether remote reachability is possible at all, which is
-                      // a different fact from whether it is up right now.
-                      subtitle: device.wanBound ? 'Bound' : 'Not bound',
-                      trailing: Text(
-                        device.wanAvailable ? (device.wanPath == 'relay' ? 'Up · relayed' : 'Up · direct') : 'Down',
-                        style: theme.textTheme.bodyMedium?.copyWith(color: colorScheme.onSurface.withValues(alpha: 0.7)),
+                      trailing: _StatusValue(
+                        tone: !device.wanBound
+                            ? RelayPresenceTone.offline
+                            : device.wanAvailable
+                            ? RelayPresenceTone.online
+                            : RelayPresenceTone.attention,
+                        label: device.wanBound ? 'Bound' : 'Not bound',
+                        detail: switch ((device.wanBound, device.wanAvailable, device.wanPath)) {
+                          (false, _, _) => null,
+                          (true, true, 'relay') => 'Relayed · Up',
+                          (true, true, _) => 'Direct · Up',
+                          (true, false, _) => 'Down',
+                        },
                       ),
                     ),
                     AdwActionRow(
                       title: 'Last local activity',
-                      trailing: Text(
+                      trailing: _ValueText(
                         device.lanLastSeenUnix == null ? 'Never' : relayLastSeenLabel(device.lanLastSeenUnix, now: DateTime.now()),
-                        style: theme.textTheme.bodySmall?.copyWith(fontFamily: 'monospace'),
                       ),
                     ),
                     AdwActionRow(
                       title: 'Last remote activity',
-                      trailing: Text(
+                      trailing: _ValueText(
                         device.wanLastSeenUnix == null ? 'Never' : relayLastSeenLabel(device.wanLastSeenUnix, now: DateTime.now()),
-                        style: theme.textTheme.bodySmall?.copyWith(fontFamily: 'monospace'),
                       ),
-                    ),
-                    if (device.platform != null)
-                      AdwActionRow(
-                        title: 'Platform',
-                        trailing: Text(
-                          [device.platform, device.platformVersion].whereType<String>().join(' '),
-                          style: theme.textTheme.bodyMedium?.copyWith(color: colorScheme.onSurface.withValues(alpha: 0.7)),
-                        ),
-                      ),
-                    if (device.relayVersion != null)
-                      AdwActionRow(
-                        title: 'Protocol version',
-                        trailing: Text(
-                          device.relayVersion!,
-                          style: theme.textTheme.bodyMedium?.copyWith(color: colorScheme.onSurface.withValues(alpha: 0.7)),
-                        ),
-                      ),
-                    AdwActionRow(
-                      title: 'Features',
-                      subtitle: _featureSummary(device),
                     ),
                   ],
                 ),
-              ],
 
-              const SizedBox(height: 8),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.end,
-                children: [
-                  OutlinedButton(
-                    onPressed: () => Navigator.of(context).pop(),
-                    child: const Text('Close'),
-                  ),
-                ],
-              ),
+                AdwPreferencesGroup(
+                  title: 'Device',
+                  margin: _groupSpacing,
+                  rowPadding: _rowPadding,
+                  rowMinHeight: 0,
+                  surfaceColor: groupSurface,
+                  children: [
+                    if (device.deviceClass != null) AdwActionRow(title: 'Device class', trailing: _ValueText(device.deviceClass!.label)),
+                    // The real reported value only -- never a fabricated "Android"
+                    // when the backend has actually reported something else (or
+                    // nothing at all).
+                    if (device.platform != null)
+                      AdwActionRow(
+                        title: 'Operating system',
+                        trailing: _ValueText([_titleCase(device.platform!), device.platformVersion].whereType<String>().join(' ')),
+                      ),
+                    if (device.relayVersion != null) AdwActionRow(title: 'Protocol version', trailing: _ValueText(device.relayVersion!)),
+                  ],
+                ),
+
+                _CapabilitiesGroup(device: device, groupSpacing: _groupSpacing, rowPadding: _rowPadding, surfaceColor: groupSurface),
+              ],
             ],
           ),
         ),
       ),
+    );
+  }
+}
+
+String _titleCase(String value) => value.isEmpty ? value : '${value[0].toUpperCase()}${value.substring(1)}';
+
+/// The GNOME-style header bar: device icon, alias + live status as the
+/// title/subtitle group on the left, a single close affordance on the right.
+/// Full-bleed edge to edge, with the same bottom hairline GNOME headerbars use
+/// to separate themselves from the content below.
+class _DiagnosticsHeader extends StatelessWidget {
+  final IconData icon;
+  final String alias;
+  final RelayPresenceTone tone;
+  final String statusLabel;
+
+  const _DiagnosticsHeader({
+    required this.icon,
+    required this.alias,
+    required this.tone,
+    required this.statusLabel,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = Theme.of(context).relayPalette;
+
+    return Container(
+      decoration: BoxDecoration(border: Border(bottom: BorderSide(color: palette.hairline))),
+      padding: const EdgeInsets.fromLTRB(20, 14, 10, 14),
+      child: Row(
+        children: [
+          Icon(icon, size: 22, color: palette.textSecondary),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Device diagnostics',
+                  style: RelayTypography.heading(palette.textPrimary, isGnome: true),
+                  overflow: TextOverflow.ellipsis,
+                ),
+                const SizedBox(height: 2),
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Flexible(
+                      child: Text(
+                        alias,
+                        style: RelayTypography.caption(palette.textSecondary, isGnome: true),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    RelayStatusPill(tone: tone, label: statusLabel, compact: true),
+                  ],
+                ),
+              ],
+            ),
+          ),
+          AdwIconButton(
+            icon: YaruIcons.window_close,
+            tooltip: 'Close',
+            onPressed: () => Navigator.of(context).pop(),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// A single value, right-aligned, in the same secondary tone the rest of
+/// Relay uses for a row's trailing fact.
+class _ValueText extends StatelessWidget {
+  final String value;
+
+  const _ValueText(this.value);
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = Theme.of(context).relayPalette;
+    return Text(
+      value,
+      style: RelayTypography.body(palette.textSecondary, isGnome: true),
+      overflow: TextOverflow.ellipsis,
+      textAlign: TextAlign.right,
+    );
+  }
+}
+
+/// A restrained status readout: small dot + word, with an optional smaller
+/// technical detail line beneath it (e.g. "Direct · Up"). Only the dot
+/// carries the semantic color -- the label stays the normal secondary tone,
+/// never a wall of bright green text.
+class _StatusValue extends StatelessWidget {
+  final RelayPresenceTone tone;
+  final String label;
+  final String? detail;
+
+  const _StatusValue({required this.tone, required this.label, this.detail});
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = Theme.of(context).relayPalette;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.end,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 6,
+              height: 6,
+              margin: const EdgeInsets.only(right: 7),
+              decoration: BoxDecoration(shape: BoxShape.circle, color: tone.color(palette)),
+            ),
+            Text(label, style: RelayTypography.body(palette.textSecondary, isGnome: true)),
+          ],
+        ),
+        if (detail != null) ...[
+          const SizedBox(height: 2),
+          Text(detail!, style: RelayTypography.caption(palette.textTertiary, isGnome: true)),
+        ],
+      ],
+    );
+  }
+}
+
+/// A value with an unobtrusive inline copy affordance -- a bare icon, never a
+/// second boxed button competing with the row itself. Long/opaque values are
+/// shown truncated but the full value is what actually gets copied.
+class _CopyableValue extends StatelessWidget {
+  final String value;
+  final String label;
+  final bool monospace;
+  final bool truncate;
+
+  const _CopyableValue({
+    required this.value,
+    required this.label,
+    this.monospace = false,
+    this.truncate = false,
+  });
+
+  String get _display {
+    if (!truncate || value.length <= 18) return value;
+    return '${value.substring(0, 10)}…${value.substring(value.length - 6)}';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = Theme.of(context).relayPalette;
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(
+          _display,
+          style: monospace ? RelayTypography.monospace(palette.textSecondary) : RelayTypography.body(palette.textSecondary, isGnome: true),
+        ),
+        const SizedBox(width: 2),
+        Tooltip(
+          message: 'Copy $label',
+          child: InkResponse(
+            radius: 16,
+            onTap: () {
+              unawaited(Clipboard.setData(ClipboardData(text: value)));
+              ScaffoldMessenger.of(
+                context,
+              ).showSnackBar(SnackBar(content: Text('${label[0].toUpperCase()}${label.substring(1)} copied to clipboard')));
+            },
+            child: Padding(
+              padding: const EdgeInsets.all(6),
+              child: Icon(YaruIcons.copy, size: 13, color: palette.textTertiary),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+/// Capabilities as ordinary boxed preference rows -- one column, a status dot
+/// per feature -- not a badge/pill dashboard. Same group treatment as the
+/// other three sections.
+class _CapabilitiesGroup extends StatelessWidget {
+  final RelayDeviceVm device;
+  final EdgeInsetsGeometry groupSpacing;
+  final EdgeInsetsGeometry rowPadding;
+  final Color surfaceColor;
+
+  const _CapabilitiesGroup({
+    required this.device,
+    required this.groupSpacing,
+    required this.rowPadding,
+    required this.surfaceColor,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final entries = device.featureAvailability.entries.where((entry) => entry.value.isVisible).toList()
+      ..sort((a, b) => a.key.title.compareTo(b.key.title));
+
+    return AdwPreferencesGroup(
+      title: 'Capabilities',
+      margin: groupSpacing,
+      rowPadding: rowPadding,
+      rowMinHeight: 0,
+      surfaceColor: surfaceColor,
+      children: entries.isEmpty
+          ? const [AdwActionRow(title: 'None reported')]
+          : [
+              for (final entry in entries)
+                AdwActionRow(
+                  title: entry.key.title,
+                  trailing: _StatusValue(
+                    tone: entry.value.isAvailable ? RelayPresenceTone.online : RelayPresenceTone.offline,
+                    label: entry.value.isAvailable ? 'Available' : (entry.value.reason ?? 'Unavailable'),
+                  ),
+                ),
+            ],
     );
   }
 }
