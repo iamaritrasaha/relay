@@ -68,6 +68,47 @@ const _localSend = Device(
   channels: [],
 );
 
+RsRelayDeviceFabric testFabric(Iterable<RsKdeConnectDevice> devices) {
+  final records = [
+    for (final device in devices)
+      if (device.paired)
+        RsRelayDevice(
+          deviceId: device.deviceId,
+          displayName: device.name,
+          deviceClass: RsRelayDeviceClass.phone,
+          platform: 'android',
+          relayVersion: '8',
+          trusted: true,
+          connectionState: switch (device.transportState) {
+            'local' when device.connected => RsRelayConnectionState.local,
+            'remoteDirect' when device.connected => RsRelayConnectionState.remoteDirect,
+            'remoteRelay' when device.connected => RsRelayConnectionState.remoteRelay,
+            _ => RsRelayConnectionState.offline,
+          },
+          lanAvailable: device.connected && device.transportState == 'local',
+          wanAvailable: device.connected && (device.transportState == 'remoteDirect' || device.transportState == 'remoteRelay'),
+          wanBound: device.transportState == 'remoteDirect' || device.transportState == 'remoteRelay',
+          wanPath: device.transportState == 'remoteRelay'
+              ? 'relay'
+              : device.transportState == 'remoteDirect'
+              ? 'direct'
+              : null,
+          batteryPercent: device.batteryPercentage,
+          charging: device.batteryIsCharging,
+          capabilities: const [],
+          featureAvailability: const [],
+        ),
+  ];
+  return RsRelayDeviceFabric(
+    devices: records,
+    primaryDeviceId: records.firstOrNull?.deviceId,
+    clipboardEnabled: true,
+    remoteInputEnabled: false,
+    remoteInputAuthorized: false,
+    hasConfiguredCommands: false,
+  );
+}
+
 RelayHomeVm homeVm({
   NearbyDevicesState? nearby,
   List<RsKdeConnectDevice> kdeConnectDevices = const [],
@@ -87,6 +128,7 @@ RelayHomeVm homeVm({
   transfers: FileTransferNotifier(),
   selectedFiles: const [],
   kdeConnectDevices: kdeConnectDevices,
+  kdeFabric: testFabric(kdeConnectDevices),
 );
 
 void main() {
@@ -124,15 +166,16 @@ void main() {
   });
 
   test('live transport state drives Local Remote and Offline without duplicating the device', () {
-    RelayDeviceVm mapped(String transportState, {bool connected = true}) => RelayHomeVm.kdeDeviceVm(
-      kdeDevice(
+    RelayDeviceVm mapped(String transportState, {bool connected = true}) {
+      final device = kdeDevice(
         id: _phoneId,
         name: 'Pixel',
         paired: true,
         connected: connected,
         transportState: transportState,
-      ),
-    );
+      );
+      return RelayHomeVm.kdeDevices(fabric: testFabric([device]), discovered: [device]).single;
+    }
 
     final local = mapped('local');
     final remoteDirect = mapped('remoteDirect');
@@ -378,6 +421,63 @@ void main() {
 
     expect(it.state.smsConversations[_phoneId]?.single.threadId, 4_294_967_297);
     expect(it.state.smsMessages[_phoneId]?[4_294_967_297]?.single.id, 9_223_372_036);
+  });
+
+  test('the same conversation id on two phones stays independent', () {
+    const phoneB = 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
+    final it = service();
+    RsKdeConnectEvent eventFor(String deviceId, int messageId, String body) {
+      final message = RsKdeSmsMessage(
+        id: messageId,
+        threadId: 42,
+        addresses: const ['+15550100'],
+        body: body,
+        date: messageId,
+        messageType: 1,
+        read: false,
+        attachments: const [],
+      );
+      return RsKdeConnectEvent.smsChanged(
+        deviceId: deviceId,
+        conversations: [RsKdeSmsConversation(threadId: 42, participants: message.addresses, latestMessage: message, unreadCount: 1)],
+        messages: [message],
+      );
+    }
+
+    it.dispatch(KdeConnectApplyEventAction(eventFor(_phoneId, 1, 'from A')));
+    it.dispatch(KdeConnectApplyEventAction(eventFor(phoneB, 1, 'from B')));
+    expect(it.state.smsMessages[_phoneId]?[42]?.single.body, 'from A');
+    expect(it.state.smsMessages[phoneB]?[42]?.single.body, 'from B');
+
+    it.dispatch(KdeConnectApplyEventAction(eventFor(_phoneId, 2, 'A updated')));
+    expect(it.state.smsMessages[_phoneId]?[42]?.map((message) => message.body), ['from A', 'A updated']);
+    expect(it.state.smsMessages[phoneB]?[42]?.single.body, 'from B', reason: 'an update to phone A must not mutate phone B');
+  });
+
+  test('a Fabric removal prunes only the forgotten device caches', () {
+    const phoneB = 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
+    final it = service();
+    const notification = RsKdeNotification(
+      id: '42',
+      appName: 'Messages',
+      title: 'Title',
+      text: 'Body',
+      time: null,
+      isClearable: true,
+      silent: false,
+    );
+    it.dispatch(KdeConnectApplyEventAction(const RsKdeConnectEvent.notificationsChanged(deviceId: _phoneId, notifications: [notification])));
+    it.dispatch(KdeConnectApplyEventAction(const RsKdeConnectEvent.notificationsChanged(deviceId: phoneB, notifications: [notification])));
+    final kept = kdeDevice(id: phoneB, name: 'Phone B', paired: true);
+    it.dispatch(
+      KdeConnectApplyEventAction(
+        RsKdeConnectEvent.devicesChanged(devices: [kept], fabric: testFabric([kept])),
+      ),
+    );
+
+    expect(it.state.notifications, contains(phoneB));
+    expect(it.state.notifications, isNot(contains(_phoneId)));
+    expect(it.state.fabric?.devices.map((device) => device.deviceId), [phoneB]);
   });
 
   test('GNOME-prefixed device key normalizes to the Rust event map key', () {

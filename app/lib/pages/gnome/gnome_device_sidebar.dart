@@ -50,6 +50,15 @@ class GnomeDeviceSidebar extends StatelessWidget {
     required this.onAddDevice,
   });
 
+  /// Devices Relay is trusted with, whatever their current reachability.
+  ///
+  /// Trust is the criterion, not connectivity, so a phone the user paired stays
+  /// in their own list while it is asleep.
+  List<RelayDeviceVm> get myDevices => vm.devices.where((device) => device.isPaired || !device.isKdeConnect).toList();
+
+  /// Peers Relay can see but has no relationship with.
+  List<RelayDeviceVm> get pairingCandidates => vm.devices.where((device) => device.isKdeConnect && !device.isPaired).toList();
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -108,34 +117,44 @@ class GnomeDeviceSidebar extends StatelessWidget {
                   ),
                 ),
               const SizedBox(height: 20),
-              Padding(
-                padding: const EdgeInsets.fromLTRB(12, 0, 4, 8),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: Text(
-                        'DEVICES',
-                        style: theme.textTheme.labelSmall?.copyWith(
-                          color: colorScheme.onSurface.withValues(alpha: 0.6),
-                          fontWeight: FontWeight.w600,
-                          letterSpacing: 1.0,
-                        ),
-                      ),
-                    ),
-                    _AddDeviceButton(onPressed: onAddDevice),
-                  ],
-                ),
+              _SidebarSectionHeader(
+                key: const ValueKey('relay-sidebar-my-devices-header'),
+                title: 'MY DEVICES',
+                trailing: _AddDeviceButton(onPressed: onAddDevice),
               ),
-              if (vm.devices.isEmpty)
+              if (myDevices.isEmpty && pairingCandidates.isEmpty)
                 _EmptySidebarState(presence: vm.presence)
+              else if (myDevices.isEmpty)
+                const _SidebarHint(
+                  key: ValueKey('relay-sidebar-no-paired-devices'),
+                  text: 'No paired devices yet.',
+                )
               else
-                for (final device in vm.devices)
+                for (final device in myDevices)
                   _DeviceSidebarCard(
                     key: ValueKey('relay-sidebar-${device.key}'),
                     device: device,
                     selected: device.key == selectedDeviceKey && subView == GnomeSubView.overview,
                     onTap: () => onSelectDevice(device.key),
                   ),
+              // Kept strictly apart from the section above. A phone the user has
+              // already paired must never reappear here just because it went
+              // offline: "forgotten" and "asleep" are different situations, and
+              // offering to pair a device again implies the first pairing is gone.
+              if (pairingCandidates.isNotEmpty) ...[
+                const SizedBox(height: 16),
+                _SidebarSectionHeader(
+                  key: const ValueKey('relay-sidebar-available-header'),
+                  title: 'AVAILABLE TO PAIR',
+                ),
+                for (final device in pairingCandidates)
+                  _DeviceSidebarCard(
+                    key: ValueKey('relay-sidebar-${device.key}'),
+                    device: device,
+                    selected: device.key == selectedDeviceKey && subView == GnomeSubView.overview,
+                    onTap: () => onSelectDevice(device.key),
+                  ),
+              ],
             ],
           ),
         ),
@@ -173,6 +192,56 @@ class GnomeDeviceSidebar extends StatelessWidget {
           ),
         ),
       ],
+    );
+  }
+}
+
+class _SidebarSectionHeader extends StatelessWidget {
+  final String title;
+  final Widget? trailing;
+
+  const _SidebarSectionHeader({super.key, required this.title, this.trailing});
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(12, 0, 4, 8),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(
+              title,
+              style: theme.textTheme.labelSmall?.copyWith(
+                color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
+                fontWeight: FontWeight.w600,
+                letterSpacing: 1.0,
+              ),
+            ),
+          ),
+          ?trailing,
+        ],
+      ),
+    );
+  }
+}
+
+class _SidebarHint extends StatelessWidget {
+  final String text;
+
+  const _SidebarHint({super.key, required this.text});
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
+      child: Text(
+        text,
+        style: theme.textTheme.bodySmall?.copyWith(
+          color: theme.colorScheme.onSurface.withValues(alpha: 0.5),
+        ),
+      ),
     );
   }
 }
@@ -283,6 +352,18 @@ class _DeviceSidebarCardState extends State<_DeviceSidebarCard> with SingleTicke
                 style: theme.textTheme.labelSmall?.copyWith(
                   color: colorScheme.onSurface.withValues(alpha: 0.6),
                 ),
+              ),
+            ] else if (!_online && device.hasFabricRecord) ...[
+              const SizedBox(width: 6),
+              Text(
+                // The fabric's own timestamp. Never a rebuild time, which would
+                // make every offline device look freshly seen on every repaint.
+                device.lastSeenLabel(now: DateTime.now()),
+                key: const ValueKey('relay-sidebar-last-seen'),
+                style: theme.textTheme.labelSmall?.copyWith(
+                  color: colorScheme.onSurface.withValues(alpha: 0.6),
+                ),
+                overflow: TextOverflow.ellipsis,
               ),
             ],
           ],

@@ -10,6 +10,7 @@
 #include "relay_identity_secret_channel.h"
 #include "relay_shell_status_channel.h"
 #include "relay_desktop_notification_channel.h"
+#include "relay_clipboard_channel.h"
 
 #include <stdlib.h>
 #include <string.h>
@@ -81,6 +82,7 @@ static void my_application_activate(GApplication* application) {
   relay_identity_secret_channel_register(fl_engine_get_binary_messenger(fl_view_get_engine(view)));
   relay_shell_status_channel_register(fl_engine_get_binary_messenger(fl_view_get_engine(view)));
   relay_desktop_notification_channel_register(fl_engine_get_binary_messenger(fl_view_get_engine(view)));
+  relay_clipboard_channel_register(fl_engine_get_binary_messenger(fl_view_get_engine(view)));
 
   const bool handy_window_active =
       g_object_get_data(G_OBJECT(window), "hdy_window_mixin") != nullptr;

@@ -24,14 +24,39 @@ use crate::kdeconnect::packet::{NetworkPacket, PROTOCOL_VERSION as KDE_PROTOCOL_
 /// packet's `payloadTransferInfo`). Buffered fully in memory rather than
 /// exposed as a raw stream -- the 20 MiB [`super::payload::MAX_WAN_PAYLOAD_BYTES`]
 /// cap makes that a bounded, simple choice, matching the Android WAN link.
-#[derive(Debug)]
 pub enum WanIncomingEvent {
     Packet(NetworkPacket),
+    /// A payload stream, handed over *unread* so the consumer can copy it
+    /// straight to its destination through a bounded buffer.
+    ///
+    /// Previously the whole payload was buffered into a `Vec<u8>` before being
+    /// surfaced, which cost as much memory as the file was large -- up to the
+    /// full 20 MiB ceiling for a single transfer. Passing the stream keeps
+    /// memory flat regardless of file size.
     Payload {
         relay_payload_id: String,
         payload_size: u64,
-        data: Vec<u8>,
+        stream: iroh::endpoint::RecvStream,
     },
+}
+
+impl std::fmt::Debug for WanIncomingEvent {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            WanIncomingEvent::Packet(packet) => {
+                formatter.debug_tuple("Packet").field(packet).finish()
+            }
+            WanIncomingEvent::Payload {
+                relay_payload_id,
+                payload_size,
+                ..
+            } => formatter
+                .debug_struct("Payload")
+                .field("relay_payload_id", relay_payload_id)
+                .field("payload_size", payload_size)
+                .finish_non_exhaustive(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Eq, PartialEq, thiserror::Error)]
@@ -290,8 +315,18 @@ fn spawn_payload_receive_loop(
             };
             let tx = tx.clone();
             tokio::spawn(async move {
-                if let Some(event) = read_incoming_payload(&mut recv).await {
-                    let _ = tx.send(event).await;
+                // Only the header is read here; the body stays in the stream and
+                // is streamed to disk by whoever claims the payload.
+                if let Some((relay_payload_id, payload_size)) =
+                    read_payload_header(&mut recv).await
+                {
+                    let _ = tx
+                        .send(WanIncomingEvent::Payload {
+                            relay_payload_id,
+                            payload_size,
+                            stream: recv,
+                        })
+                        .await;
                 }
             });
         }
@@ -303,22 +338,19 @@ fn spawn_payload_receive_loop(
 /// drops the stream) on any malformed header or an over-limit declaration.
 /// Generic over the reader so this can be unit-tested without a real Iroh
 /// connection (see `tests::read_incoming_payload_*` below).
-async fn read_incoming_payload<R: tokio::io::AsyncRead + Unpin>(recv: &mut R) -> Option<WanIncomingEvent> {
+async fn read_payload_header<R: tokio::io::AsyncRead + Unpin>(
+    recv: &mut R,
+) -> Option<(String, u64)> {
     let header_bytes = protocol::read_frame(recv, protocol::MAX_HELLO_FRAME_BYTES)
         .await
         .ok()?;
     let header: serde_json::Value = serde_json::from_slice(&header_bytes).ok()?;
     let relay_payload_id = header.get("relayPayloadId")?.as_str()?.to_owned();
     let payload_size = header.get("payloadSize")?.as_u64()?;
+    // Refuse an over-limit declaration before a single body byte is read, so an
+    // oversized payload costs nothing.
     validate_payload_size(payload_size).ok()?;
-
-    let mut data = vec![0_u8; payload_size as usize];
-    tokio::io::AsyncReadExt::read_exact(recv, &mut data).await.ok()?;
-    Some(WanIncomingEvent::Payload {
-        relay_payload_id,
-        payload_size,
-        data,
-    })
+    Some((relay_payload_id, payload_size))
 }
 
 impl TransportLink for WanLink {
@@ -446,40 +478,50 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn read_incoming_payload_round_trips_header_and_body() {
+    async fn the_payload_header_is_parsed_without_touching_the_body() {
         let mut buf = payload_header_frame("payload-a", 5);
         buf.extend_from_slice(b"hello");
         let mut cursor = std::io::Cursor::new(buf);
 
-        let event = read_incoming_payload(&mut cursor).await.unwrap();
-        match event {
-            WanIncomingEvent::Payload { relay_payload_id, payload_size, data } => {
-                assert_eq!(relay_payload_id, "payload-a");
-                assert_eq!(payload_size, 5);
-                assert_eq!(data, b"hello");
-            }
-            WanIncomingEvent::Packet(_) => panic!("expected a Payload event"),
-        }
+        let (relay_payload_id, payload_size) = read_payload_header(&mut cursor).await.unwrap();
+        assert_eq!(relay_payload_id, "payload-a");
+        assert_eq!(payload_size, 5);
+        // The body is deliberately still unread, so the consumer can stream it
+        // straight to disk rather than it being buffered here.
+        let mut rest = Vec::new();
+        tokio::io::AsyncReadExt::read_to_end(&mut cursor, &mut rest).await.unwrap();
+        assert_eq!(rest, b"hello");
     }
 
     #[tokio::test]
-    async fn read_incoming_payload_rejects_a_declaration_over_the_wan_cap_without_reading_a_body() {
+    async fn a_declaration_over_the_wan_cap_is_refused_without_reading_a_body() {
         // Declares an oversized payload but never supplies a body -- if the
         // reader tried to read the body first this would hang instead of
         // rejecting immediately from the header check.
-        let buf = payload_header_frame("payload-too-big", super::super::payload::MAX_WAN_PAYLOAD_BYTES + 1);
+        let buf = payload_header_frame(
+            "payload-too-big",
+            super::super::payload::MAX_WAN_PAYLOAD_BYTES + 1,
+        );
         let mut cursor = std::io::Cursor::new(buf);
 
-        assert!(read_incoming_payload(&mut cursor).await.is_none());
+        assert!(read_payload_header(&mut cursor).await.is_none());
     }
 
     #[tokio::test]
-    async fn read_incoming_payload_rejects_a_truncated_body() {
-        let mut buf = payload_header_frame("payload-b", 5);
-        buf.extend_from_slice(b"ab"); // fewer than the declared 5 bytes
-        let mut cursor = std::io::Cursor::new(buf);
+    async fn a_malformed_payload_header_is_refused() {
+        let bad = protocol::encode_frame(b"not json", protocol::MAX_HELLO_FRAME_BYTES).unwrap();
+        let mut cursor = std::io::Cursor::new(bad);
+        assert!(read_payload_header(&mut cursor).await.is_none());
 
-        assert!(read_incoming_payload(&mut cursor).await.is_none());
+        // A header missing its correlation id cannot be matched to a transfer.
+        let header = serde_json::json!({ "payloadSize": 5 });
+        let framed = protocol::encode_frame(
+            &serde_json::to_vec(&header).unwrap(),
+            protocol::MAX_HELLO_FRAME_BYTES,
+        )
+        .unwrap();
+        let mut cursor = std::io::Cursor::new(framed);
+        assert!(read_payload_header(&mut cursor).await.is_none());
     }
 
     /// An in-process Iroh handshake exercising the full accept algorithm:
@@ -592,10 +634,24 @@ mod tests {
         tokio::io::AsyncWriteExt::flush(&mut payload_send).await.unwrap();
 
         match link.recv_incoming().await.unwrap() {
-            WanIncomingEvent::Payload { relay_payload_id, payload_size, data } => {
+            WanIncomingEvent::Payload { relay_payload_id, payload_size, mut stream } => {
                 assert_eq!(relay_payload_id, "payload-a");
                 assert_eq!(payload_size, 5);
-                assert_eq!(data, b"hello");
+                // Stream it to disk exactly as the file feature does, so this
+                // exercises the real receive path over a real QUIC stream
+                // rather than a buffer comparison.
+                let dir = tempfile::tempdir().unwrap();
+                let mut incoming = crate::kdeconnect::files::receive::IncomingFile::create(
+                    dir.path(),
+                    "greeting.txt",
+                    payload_size,
+                    Some(super::super::payload::MAX_WAN_PAYLOAD_BYTES),
+                )
+                .await
+                .unwrap();
+                incoming.stream_from(&mut stream, |_| {}).await.unwrap();
+                let path = incoming.finalize().await.unwrap();
+                assert_eq!(tokio::fs::read(&path).await.unwrap(), b"hello");
             }
             WanIncomingEvent::Packet(_) => panic!("expected the payload, not a control packet"),
         }

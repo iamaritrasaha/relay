@@ -68,6 +68,7 @@ add_executable(${BINARY_NAME}
   "relay_identity_secret_channel.cc"
   "relay_shell_status_channel.cc"
   "relay_desktop_notification_channel.cc"
+  "relay_clipboard_channel.cc"
   "${FLUTTER_MANAGED_DIR}/generated_plugin_registrant.cc"
 )
 

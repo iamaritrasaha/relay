@@ -60,6 +60,17 @@ pub struct PayloadRequest<'a> {
     pub relay_payload_id: &'a str,
     pub payload_size: u64,
     pub source: &'a mut (dyn tokio::io::AsyncRead + Send + Unpin),
+    /// A payload listener already bound by the caller, for transports that need
+    /// the peer to dial back.
+    ///
+    /// KDE's LAN transport advertises a port inside the control packet, so the
+    /// listener must exist *before* that packet is sent -- the link cannot bind
+    /// it itself at send time. Relay WAN ignores this and opens a stream on the
+    /// existing connection instead.
+    pub lan_listener: Option<crate::kdeconnect::files::lan_payload::PayloadListener>,
+    /// Called with the running byte count so the feature layer can publish
+    /// progress without the link knowing what a transfer is.
+    pub on_progress: &'a mut (dyn FnMut(u64) + Send),
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

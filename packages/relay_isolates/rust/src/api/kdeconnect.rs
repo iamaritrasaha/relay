@@ -12,6 +12,10 @@ use relay_core::kdeconnect::{
     SmsMessage, TrustedDevice,
 };
 use relay_core::kdeconnect::commands::RunCommandEntry;
+use relay_core::kdeconnect::fabric::{
+    FeatureAvailability, LocalFeaturePolicy, RelayConnectionState, RelayDeviceClass,
+    RelayDeviceRecord, RelayFabricSnapshot, RelayFeature,
+};
 use relay_core::kdeconnect::wan::{TransportKind, TransportState, WanIdentity, WanRuntimeConfig};
 
 use crate::frb_generated::StreamSink;
@@ -55,6 +59,111 @@ pub struct RsKdeConnectDevice {
     pub transport_state: String,
     pub last_rtt_ms: Option<i64>,
     pub last_seen_unix: Option<i64>,
+}
+
+/// How a logical device is reachable right now, as the core derived it.
+///
+/// Mirrors `relay_core::kdeconnect::fabric::RelayConnectionState` one-for-one so
+/// the product never re-derives reachability from a display string. `Offline` is
+/// a real answer, not a fallback for "unknown".
+pub enum RsRelayConnectionState {
+    Offline,
+    Local,
+    RemoteDirect,
+    RemoteRelay,
+    Reconnecting,
+}
+
+/// Physical form factor, already normalised by the core.
+pub enum RsRelayDeviceClass {
+    Desktop,
+    Laptop,
+    Phone,
+    Tablet,
+    Tv,
+    Other,
+}
+
+/// A feature Relay can offer for a device.
+pub enum RsRelayFeature {
+    Notifications,
+    Messages,
+    Media,
+    Commands,
+    RemoteInput,
+    Clipboard,
+    Files,
+    Battery,
+    Ping,
+}
+
+/// Whether a feature can be used with a device right now, and if not, why.
+pub enum RsFeatureAvailability {
+    Available,
+    Unsupported,
+    NotConnected,
+    Disabled,
+    NeedsPermission,
+    NotConfigured,
+}
+
+/// One feature's availability for one device.
+pub struct RsRelayFeatureState {
+    pub feature: RsRelayFeature,
+    pub availability: RsFeatureAvailability,
+}
+
+/// One logical Relay device, as the Device Fabric knows it.
+///
+/// This is the product's device identity: LAN and Relay WAN are routes recorded
+/// against it, never separate devices. Nothing route-private crosses here --
+/// no secret key, no certificate, no filesystem path. The WAN `EndpointId`
+/// itself is deliberately absent; only whether a binding exists is exposed,
+/// because that is the whole of what the product needs to reason about.
+pub struct RsRelayDevice {
+    /// The stable logical id (the KDE device id, reused as the compatibility key).
+    pub device_id: String,
+    pub display_name: String,
+    pub device_class: RsRelayDeviceClass,
+    /// Peer-reported platform string, e.g. "android".
+    pub platform: Option<String>,
+    pub platform_version: Option<String>,
+    pub relay_version: Option<String>,
+    /// Trust persists across restarts and is independent of connectivity.
+    pub trusted: bool,
+    pub connection_state: RsRelayConnectionState,
+    pub lan_available: bool,
+    pub wan_available: bool,
+    /// Whether a WAN binding exists at all, i.e. whether remote reachability is
+    /// even possible. Distinct from [`Self::wan_available`], which is about now.
+    pub wan_bound: bool,
+    /// "direct" or "relay" while a WAN route is up; absent otherwise.
+    pub wan_path: Option<String>,
+    /// Unix seconds of the last authenticated activity on each route, kept
+    /// apart so WAN traffic cannot make a dead LAN link look alive.
+    pub lan_last_seen_unix: Option<i64>,
+    pub wan_last_seen_unix: Option<i64>,
+    /// The most recent genuine activity on any route.
+    pub last_seen_unix: Option<i64>,
+    pub battery_percent: Option<i32>,
+    pub charging: Option<bool>,
+    /// Everything the peer advertised, independent of the current route.
+    pub capabilities: Vec<RsRelayFeature>,
+    /// The availability of every feature, already answered by the core's single
+    /// rule so no screen has to reimplement the policy.
+    pub feature_availability: Vec<RsRelayFeatureState>,
+}
+
+/// The whole fabric as one consistent observation.
+pub struct RsRelayDeviceFabric {
+    pub devices: Vec<RsRelayDevice>,
+    /// The id of the device a single-device surface should present, chosen by
+    /// the core's deterministic rule. Null when there is nothing to show.
+    pub primary_device_id: Option<String>,
+    pub clipboard_enabled: bool,
+    pub remote_input_enabled: bool,
+    pub remote_input_authorized: bool,
+    pub has_configured_commands: bool,
 }
 
 pub struct RsKdeNotification {
@@ -106,6 +215,11 @@ pub struct RsKdeSmsConversation {
 pub enum RsKdeConnectEvent {
     DevicesChanged {
         devices: Vec<RsKdeConnectDevice>,
+        /// The Device Fabric as of the same observation. This is the
+        /// authoritative product device model; `devices` remains for the
+        /// discovery/pairing surface, which sees untrusted peers the fabric
+        /// deliberately does not contain.
+        fabric: RsRelayDeviceFabric,
     },
     IncomingPair {
         device_id: String,
@@ -140,6 +254,50 @@ pub enum RsKdeConnectEvent {
         device_id: String,
         event: RsKdeTelephonyEvent,
     },
+    /// A file transfer changed state or made progress.
+    TransferChanged { transfer: RsTransfer },
+}
+
+/// One file transfer, scoped to the logical device it belongs to.
+#[derive(Clone, Debug, PartialEq)]
+pub struct RsTransfer {
+    pub device_id: String,
+    pub transfer_id: String,
+    pub filename: String,
+    pub total_bytes: u64,
+    pub transferred_bytes: u64,
+    /// One of: preparing, sending, receiving, completed, failed, cancelled,
+    /// requiresLocalConnection.
+    pub state: String,
+    /// 0.0 to 1.0.
+    pub progress: f64,
+    pub error: Option<String>,
+}
+
+impl From<relay_core::kdeconnect::files::Transfer> for RsTransfer {
+    fn from(value: relay_core::kdeconnect::files::Transfer) -> Self {
+        use relay_core::kdeconnect::files::TransferState;
+        let progress = value.state.progress();
+        let (state, transferred, error) = match &value.state {
+            TransferState::Preparing => ("preparing", 0, None),
+            TransferState::Sending { transferred, .. } => ("sending", *transferred, None),
+            TransferState::Receiving { transferred, .. } => ("receiving", *transferred, None),
+            TransferState::Completed { total } => ("completed", *total, None),
+            TransferState::Failed { reason } => ("failed", 0, Some(reason.clone())),
+            TransferState::Cancelled => ("cancelled", 0, None),
+            TransferState::RequiresLocalConnection => ("requiresLocalConnection", 0, None),
+        };
+        Self {
+            device_id: value.key.device_id,
+            transfer_id: value.key.transfer_id,
+            filename: value.filename,
+            total_bytes: value.total_bytes,
+            transferred_bytes: transferred,
+            state: state.to_owned(),
+            progress,
+            error,
+        }
+    }
 }
 
 pub fn kdeconnect_generate_identity(device_name: String) -> anyhow::Result<RsKdeConnectIdentity> {
@@ -278,6 +436,16 @@ impl RsKdeConnect {
             .collect()
     }
 
+    /// The Device Fabric: the authoritative product device model.
+    ///
+    /// One record per trusted logical device, with LAN and Relay WAN recorded
+    /// as routes against it. Normally the UI receives this on the
+    /// `DevicesChanged` event; this call exists for the initial read, before
+    /// any event has arrived.
+    pub async fn device_fabric(&self) -> RsRelayDeviceFabric {
+        self.handle.device_fabric().await.into()
+    }
+
     pub async fn request_pair(&self, device_id: String) -> anyhow::Result<()> {
         self.handle.request_pair(&device_id).await
     }
@@ -354,6 +522,47 @@ impl RsKdeConnect {
         self.handle
             .dismiss_notification(&device_id, &remote_notification_id)
             .await
+    }
+
+    /// Sets where received files are written.
+    pub async fn set_download_dir(&self, directory: String) {
+        self.handle.set_download_dir(std::path::PathBuf::from(directory)).await;
+    }
+
+    /// Sends one file to a device. Returns the transfer id; progress arrives as
+    /// `TransferChanged` events.
+    ///
+    /// A file too large for the current remote route resolves to the
+    /// `requiresLocalConnection` state rather than an error — nothing failed,
+    /// the file simply needs a local network.
+    pub async fn send_file(&self, device_id: String, path: String) -> anyhow::Result<String> {
+        self.handle.send_file(&device_id, std::path::Path::new(&path)).await
+    }
+
+    /// Cancels an in-flight transfer. Idempotent; a transfer that already
+    /// finished keeps its outcome.
+    pub async fn cancel_transfer(&self, device_id: String, transfer_id: String) {
+        self.handle.cancel_transfer(&device_id, &transfer_id).await;
+    }
+
+    pub async fn transfers_for(&self, device_id: String) -> Vec<RsTransfer> {
+        self.handle
+            .transfers_for(&device_id)
+            .await
+            .into_iter()
+            .map(Into::into)
+            .collect()
+    }
+
+    /// Whether clipboard sync is switched on for this desktop.
+    pub fn clipboard_enabled(&self) -> bool {
+        self.handle.clipboard_enabled()
+    }
+
+    /// Turns clipboard sync on or off. When off nothing is transmitted and an
+    /// incoming clipboard does not overwrite the local one.
+    pub fn set_clipboard_enabled(&self, enabled: bool) {
+        self.handle.set_clipboard_enabled(enabled);
     }
 
     /// Whether remote input is switched on for this desktop.
@@ -611,9 +820,12 @@ impl From<KdeNotification> for RsKdeNotification {
 impl From<KdeConnectEvent> for RsKdeConnectEvent {
     fn from(value: KdeConnectEvent) -> Self {
         match value {
-            KdeConnectEvent::DevicesChanged { devices } => RsKdeConnectEvent::DevicesChanged {
-                devices: devices.into_iter().map(Into::into).collect(),
-            },
+            KdeConnectEvent::DevicesChanged { devices, fabric } => {
+                RsKdeConnectEvent::DevicesChanged {
+                    devices: devices.into_iter().map(Into::into).collect(),
+                    fabric: fabric.into(),
+                }
+            }
             KdeConnectEvent::IncomingPair { device_id, name } => {
                 RsKdeConnectEvent::IncomingPair { device_id, name }
             }
@@ -657,6 +869,9 @@ impl From<KdeConnectEvent> for RsKdeConnectEvent {
                     event: event.into(),
                 }
             }
+            KdeConnectEvent::TransferChanged { transfer } => RsKdeConnectEvent::TransferChanged {
+                transfer: transfer.into(),
+            },
         }
     }
 }
@@ -673,9 +888,227 @@ impl From<KdeTelephonyEvent> for RsKdeTelephonyEvent {
     }
 }
 
+
+impl From<RelayConnectionState> for RsRelayConnectionState {
+    fn from(value: RelayConnectionState) -> Self {
+        match value {
+            RelayConnectionState::Offline => RsRelayConnectionState::Offline,
+            RelayConnectionState::Local => RsRelayConnectionState::Local,
+            RelayConnectionState::RemoteDirect => RsRelayConnectionState::RemoteDirect,
+            RelayConnectionState::RemoteRelay => RsRelayConnectionState::RemoteRelay,
+            RelayConnectionState::Reconnecting => RsRelayConnectionState::Reconnecting,
+        }
+    }
+}
+
+impl From<RelayDeviceClass> for RsRelayDeviceClass {
+    fn from(value: RelayDeviceClass) -> Self {
+        match value {
+            RelayDeviceClass::Desktop => RsRelayDeviceClass::Desktop,
+            RelayDeviceClass::Laptop => RsRelayDeviceClass::Laptop,
+            RelayDeviceClass::Phone => RsRelayDeviceClass::Phone,
+            RelayDeviceClass::Tablet => RsRelayDeviceClass::Tablet,
+            RelayDeviceClass::Tv => RsRelayDeviceClass::Tv,
+            RelayDeviceClass::Other => RsRelayDeviceClass::Other,
+        }
+    }
+}
+
+impl From<RelayFeature> for RsRelayFeature {
+    fn from(value: RelayFeature) -> Self {
+        match value {
+            RelayFeature::Notifications => RsRelayFeature::Notifications,
+            RelayFeature::Messages => RsRelayFeature::Messages,
+            RelayFeature::Media => RsRelayFeature::Media,
+            RelayFeature::Commands => RsRelayFeature::Commands,
+            RelayFeature::RemoteInput => RsRelayFeature::RemoteInput,
+            RelayFeature::Clipboard => RsRelayFeature::Clipboard,
+            RelayFeature::Files => RsRelayFeature::Files,
+            RelayFeature::Battery => RsRelayFeature::Battery,
+            RelayFeature::Ping => RsRelayFeature::Ping,
+        }
+    }
+}
+
+impl From<FeatureAvailability> for RsFeatureAvailability {
+    fn from(value: FeatureAvailability) -> Self {
+        match value {
+            FeatureAvailability::Available => RsFeatureAvailability::Available,
+            FeatureAvailability::Unsupported => RsFeatureAvailability::Unsupported,
+            FeatureAvailability::NotConnected => RsFeatureAvailability::NotConnected,
+            FeatureAvailability::Disabled => RsFeatureAvailability::Disabled,
+            FeatureAvailability::NeedsPermission => RsFeatureAvailability::NeedsPermission,
+            FeatureAvailability::NotConfigured => RsFeatureAvailability::NotConfigured,
+        }
+    }
+}
+
+/// Maps one fabric record for the product layer.
+///
+/// Takes the policy explicitly rather than reading it again: availability is a
+/// function of both, and the two must come from the same observation.
+#[frb(ignore)]
+fn relay_device_from_record(record: &RelayDeviceRecord, policy: &LocalFeaturePolicy) -> RsRelayDevice {
+    RsRelayDevice {
+        device_id: record.id.clone(),
+        display_name: record.display_name.clone(),
+        device_class: record.class.into(),
+        platform: record.platform.clone(),
+        platform_version: record.platform_version.clone(),
+        relay_version: record.relay_version.clone(),
+        trusted: record.trusted,
+        connection_state: record.connection.into(),
+        lan_available: record.routes.lan_available,
+        wan_available: record.routes.wan_available,
+        wan_bound: record.routes.wan_bound,
+        // Only meaningful while a WAN route is actually up; a remembered
+        // binding is not a path.
+        wan_path: record.routes.wan_available.then(|| {
+            if record.routes.wan_relayed { "relay" } else { "direct" }.to_owned()
+        }),
+        lan_last_seen_unix: record.routes.lan_last_seen,
+        wan_last_seen_unix: record.routes.wan_last_seen,
+        last_seen_unix: record.last_seen(),
+        battery_percent: record.battery_percent,
+        charging: record.charging,
+        capabilities: record.capabilities.iter().copied().map(Into::into).collect(),
+        feature_availability: record
+            .availability_map(policy)
+            .into_iter()
+            .map(|(feature, availability)| RsRelayFeatureState {
+                feature: feature.into(),
+                availability: availability.into(),
+            })
+            .collect(),
+    }
+}
+
+impl From<RelayFabricSnapshot> for RsRelayDeviceFabric {
+    fn from(value: RelayFabricSnapshot) -> Self {
+        // The primary is chosen by the core's rule, not by whichever device the
+        // UI happened to iterate first. Pinning is a presentation preference and
+        // is applied on the Dart side, over this default.
+        let primary_device_id = value.primary(None).map(|device| device.id.clone());
+        Self {
+            devices: value
+                .devices
+                .iter()
+                .map(|record| relay_device_from_record(record, &value.policy))
+                .collect(),
+            primary_device_id,
+            clipboard_enabled: value.policy.clipboard_enabled,
+            remote_input_enabled: value.policy.remote_input_enabled,
+            remote_input_authorized: value.policy.remote_input_authorized,
+            has_configured_commands: value.policy.has_configured_commands,
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn phone_record() -> RelayDeviceRecord {
+        let mut record =
+            RelayDeviceRecord::remembered("phone-a", "Galaxy M14", RelayDeviceClass::Phone);
+        record.capabilities = [RelayFeature::Messages, RelayFeature::Clipboard]
+            .into_iter()
+            .collect();
+        record.routes.wan_available = true;
+        record.routes.wan_bound = true;
+        record.routes.wan_relayed = true;
+        record.routes.wan_last_seen = Some(1_700_000_000);
+        record.battery_percent = Some(58);
+        record.charging = Some(false);
+        record.refresh_connection(false);
+        record
+    }
+
+    #[test]
+    fn a_fabric_record_crosses_the_bridge_without_losing_its_connection_state() {
+        let snapshot = RelayFabricSnapshot {
+            devices: vec![phone_record()],
+            policy: LocalFeaturePolicy {
+                clipboard_enabled: true,
+                ..LocalFeaturePolicy::default()
+            },
+        };
+        let fabric: RsRelayDeviceFabric = snapshot.into();
+
+        assert_eq!(fabric.devices.len(), 1, "LAN and WAN are routes, not devices");
+        let device = &fabric.devices[0];
+        assert_eq!(device.device_id, "phone-a");
+        assert!(matches!(device.device_class, RsRelayDeviceClass::Phone));
+        assert!(matches!(
+            device.connection_state,
+            RsRelayConnectionState::RemoteRelay
+        ));
+        assert_eq!(device.wan_path.as_deref(), Some("relay"));
+        assert!(device.wan_bound);
+        assert!(!device.lan_available);
+        assert_eq!(device.last_seen_unix, Some(1_700_000_000));
+        assert_eq!(device.battery_percent, Some(58));
+        assert_eq!(fabric.primary_device_id.as_deref(), Some("phone-a"));
+    }
+
+    #[test]
+    fn every_feature_crosses_with_the_answer_the_core_gave() {
+        let record = phone_record();
+        let policy = LocalFeaturePolicy::default();
+        let fabric: RsRelayDeviceFabric = RelayFabricSnapshot {
+            devices: vec![record.clone()],
+            policy,
+        }
+        .into();
+
+        let states = &fabric.devices[0].feature_availability;
+        assert_eq!(states.len(), RelayFeature::ALL.len(), "no feature is dropped");
+
+        let availability = |wanted: RelayFeature| {
+            states
+                .iter()
+                .find(|state| {
+                    std::mem::discriminant(&state.feature)
+                        == std::mem::discriminant(&RsRelayFeature::from(wanted))
+                })
+                .map(|state| std::mem::discriminant(&state.availability))
+                .expect("feature present")
+        };
+        // Advertised and connected.
+        assert_eq!(
+            availability(RelayFeature::Messages),
+            std::mem::discriminant(&RsFeatureAvailability::Available)
+        );
+        // Advertised, connected, but switched off locally -- not the same thing
+        // as a peer that cannot do it.
+        assert_eq!(
+            availability(RelayFeature::Clipboard),
+            std::mem::discriminant(&RsFeatureAvailability::Disabled)
+        );
+        // Never advertised.
+        assert_eq!(
+            availability(RelayFeature::Files),
+            std::mem::discriminant(&RsFeatureAvailability::Unsupported)
+        );
+    }
+
+    #[test]
+    fn a_wan_binding_without_a_live_route_reports_no_path() {
+        let mut record = phone_record();
+        record.routes.wan_available = false;
+        record.refresh_connection(false);
+        let fabric: RsRelayDeviceFabric = RelayFabricSnapshot {
+            devices: vec![record],
+            policy: LocalFeaturePolicy::default(),
+        }
+        .into();
+
+        let device = &fabric.devices[0];
+        // Remembered reachability is not current reachability.
+        assert!(device.wan_bound);
+        assert_eq!(device.wan_path, None);
+        assert!(matches!(device.connection_state, RsRelayConnectionState::Offline));
+    }
 
     #[test]
     fn sms_changed_crosses_the_bridge_without_narrowing_or_dropping_lists() {

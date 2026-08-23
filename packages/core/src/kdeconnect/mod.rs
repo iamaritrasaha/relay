@@ -4,7 +4,10 @@
 //! never produces a RelayId and never consults Relay-native trust records.
 
 mod capabilities;
+pub mod clipboard;
 pub mod commands;
+pub mod fabric;
+pub mod files;
 pub mod input;
 pub mod media;
 mod identity;
@@ -20,7 +23,7 @@ pub use capabilities::{
     PACKET_TYPE_FINDMYPHONE_REQUEST, PACKET_TYPE_IDENTITY, PACKET_TYPE_NOTIFICATION,
     PACKET_TYPE_NOTIFICATION_REQUEST, PACKET_TYPE_PAIR, PACKET_TYPE_PING,
     PACKET_TYPE_RELAY_DEVICE_STATE, PACKET_TYPE_RELAY_PING, PACKET_TYPE_RELAY_PONG,
-    PACKET_TYPE_MOUSEPAD_REQUEST, PACKET_TYPE_MPRIS, PACKET_TYPE_MPRIS_REQUEST,
+    PACKET_TYPE_MOUSEPAD_REQUEST, PACKET_TYPE_MPRIS, PACKET_TYPE_MPRIS_REQUEST, PACKET_TYPE_SHARE_REQUEST,
     PACKET_TYPE_RELAY_WAN_IDENTITY,
     PACKET_TYPE_RUNCOMMAND, PACKET_TYPE_RUNCOMMAND_REQUEST,
     PACKET_TYPE_SMS_MESSAGES, PACKET_TYPE_SMS_REQUEST,
@@ -37,7 +40,7 @@ pub use packet::{
     filter_device_name, is_valid_device_id, BatteryBody, ClipboardBody, ConnectivityReportBody,
     ConnectivitySignal, FindMyPhoneBody, IdentityBody, NetworkPacket, NotificationBody,
     PacketError, PairBody, PingBody, RelayDeviceStateBody, RelayHeartbeatBody,
-    MousePadRequestBody, MprisBody, MprisRequestBody, RelayWanIdentityBody, RunCommandListBody,
+    MousePadRequestBody, MprisBody, ShareRequestBody, MprisRequestBody, RelayWanIdentityBody, RunCommandListBody,
     RunCommandRequestBody, SmsAttachmentMetadata, SmsMessage, SmsMessagesBody, SmsRequestBody,
     SmsRequestConversationBody, SmsRequestConversationsBody, TelephonyBody,
     TelephonyRequestMuteBody, PROTOCOL_VERSION,
@@ -143,6 +146,13 @@ pub struct KdeTelephonyEvent {
 pub enum KdeConnectEvent {
     DevicesChanged {
         devices: Vec<DeviceSnapshot>,
+        /// The Device Fabric as of the same observation.
+        ///
+        /// Carried on the existing event rather than emitted as a second one:
+        /// every change that alters the fabric already produces exactly one
+        /// `DevicesChanged`, so this keeps the coalescing that already exists
+        /// instead of doubling the traffic to the UI.
+        fabric: fabric::RelayFabricSnapshot,
     },
     IncomingPair {
         device_id: String,
@@ -176,6 +186,10 @@ pub enum KdeConnectEvent {
     TelephonyReceived {
         device_id: String,
         event: KdeTelephonyEvent,
+    },
+    /// A file transfer changed state or made progress.
+    TransferChanged {
+        transfer: files::Transfer,
     },
 }
 
@@ -358,6 +372,57 @@ impl KdeConnectHandle {
         self.inner.set_media_host(Arc::new(host)).await;
         tracing::info!("[Relay MPRIS] media control enabled; {players} player(s) on the session bus");
         Ok(())
+    }
+
+    /// Sets where received files are written. Until this is set, incoming files
+    /// are refused rather than guessed at.
+    pub async fn set_download_dir(&self, directory: std::path::PathBuf) {
+        self.inner.set_download_dir(directory).await;
+    }
+
+    /// Sends one file to a logical device.
+    ///
+    /// Returns the transfer id immediately; progress arrives as
+    /// [`KdeConnectEvent::TransferChanged`]. A file too large for the current
+    /// remote route resolves to [`files::TransferState::RequiresLocalConnection`]
+    /// rather than an error, because nothing went wrong -- it is a policy
+    /// outcome the UI should phrase as "Local connection required".
+    #[cfg(feature = "kdeconnect-wan")]
+    pub async fn send_file(&self, device_id: &str, path: &std::path::Path) -> Result<String> {
+        self.inner.send_file(device_id, path).await
+    }
+
+    /// Cancels an in-flight transfer. Idempotent, and never resurrects a
+    /// transfer that already finished.
+    pub async fn cancel_transfer(&self, device_id: &str, transfer_id: &str) {
+        self.inner.cancel_transfer(device_id, transfer_id).await;
+    }
+
+    /// The Device Fabric: one authoritative record per trusted logical device,
+    /// with the local feature policy that was in force when it was read.
+    ///
+    /// A device reachable over both LAN and WAN appears once, with both routes
+    /// recorded against it -- never as two entries.
+    pub async fn device_fabric(&self) -> fabric::RelayFabricSnapshot {
+        self.inner.device_fabric().await
+    }
+
+    /// Transfers belonging to one logical device.
+    pub async fn transfers_for(&self, device_id: &str) -> Vec<files::Transfer> {
+        self.inner.transfers_for(device_id).await
+    }
+
+    /// Turns clipboard sync on or off for this desktop.
+    ///
+    /// When off, nothing is transmitted *and* an incoming clipboard packet does
+    /// not overwrite the local clipboard -- pairing alone never implies consent
+    /// to share the clipboard in either direction.
+    pub fn set_clipboard_enabled(&self, enabled: bool) {
+        self.inner.set_clipboard_enabled(enabled);
+    }
+
+    pub fn clipboard_enabled(&self) -> bool {
+        self.inner.clipboard_enabled()
     }
 
     /// Turns remote input on or off. Off by default and never implied by

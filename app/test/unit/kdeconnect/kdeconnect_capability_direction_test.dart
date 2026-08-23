@@ -1,4 +1,5 @@
 import 'package:relay_app/model/ui/relay_capability_vm.dart';
+import 'package:relay_app/model/ui/relay_device_vm.dart';
 import 'package:relay_app/pages/relay_home_vm.dart';
 import 'package:relay_isolates/rust/api/kdeconnect.dart';
 import 'package:test/test.dart';
@@ -51,22 +52,59 @@ const _androidSends = [
   'kdeconnect.telephony',
 ];
 
+RelayDeviceVm vmFor(RsKdeConnectDevice live) {
+  final readsMessages = live.incomingCapabilities.contains('kdeconnect.sms.request_conversations');
+  final connected = live.paired && live.connected;
+  final fabric = RsRelayDeviceFabric(
+    devices: live.paired
+        ? [
+            RsRelayDevice(
+              deviceId: live.deviceId,
+              displayName: live.name,
+              deviceClass: RsRelayDeviceClass.phone,
+              trusted: true,
+              connectionState: connected ? RsRelayConnectionState.local : RsRelayConnectionState.offline,
+              lanAvailable: connected,
+              wanAvailable: false,
+              wanBound: false,
+              capabilities: readsMessages ? const [RsRelayFeature.messages] : const [],
+              featureAvailability: [
+                RsRelayFeatureState(
+                  feature: RsRelayFeature.messages,
+                  availability: !readsMessages
+                      ? RsFeatureAvailability.unsupported
+                      : connected
+                      ? RsFeatureAvailability.available
+                      : RsFeatureAvailability.notConnected,
+                ),
+              ],
+            ),
+          ]
+        : const [],
+    clipboardEnabled: true,
+    remoteInputEnabled: false,
+    remoteInputAuthorized: false,
+    hasConfiguredCommands: false,
+  );
+  return RelayHomeVm.kdeDevices(fabric: fabric, discovered: [live]).single;
+}
+
 void main() {
   group('SMS capabilities are derived independently per direction', () {
     test('a peer that accepts both read and send requests enables both', () {
-      final vm = RelayHomeVm.kdeDeviceVm(device(incoming: _androidAccepts, outgoing: _androidSends));
+      final vm = vmFor(device(incoming: _androidAccepts, outgoing: _androidSends));
 
       expect(vm.canSendSms, isTrue);
-      expect(vm.capabilities[RelayCapability.messages], CapabilityStatus.available);
+      expect(vm.capabilityStatuses[RelayCapability.messages], CapabilityStatus.available);
     });
 
     test('reading stays available when the peer refuses send requests', () {
       final incoming = _androidAccepts.where((type) => type != 'kdeconnect.sms.request').toList();
-      final vm = RelayHomeVm.kdeDeviceVm(device(incoming: incoming, outgoing: _androidSends));
+      final vm = vmFor(device(incoming: incoming, outgoing: _androidSends));
 
       expect(vm.canSendSms, isFalse, reason: 'send must follow kdeconnect.sms.request alone');
       expect(
-        vm.capabilities[RelayCapability.messages],
+        vm.capabilityStatuses[RelayCapability.messages],
         CapabilityStatus.available,
         reason: 'a peer that cannot be sent to can still be read from',
       );
@@ -74,13 +112,13 @@ void main() {
 
     test('sending stays available when the peer refuses conversation requests', () {
       final incoming = _androidAccepts.where((type) => type != 'kdeconnect.sms.request_conversations').toList();
-      final vm = RelayHomeVm.kdeDeviceVm(device(incoming: incoming, outgoing: _androidSends));
+      final vm = vmFor(device(incoming: incoming, outgoing: _androidSends));
 
       expect(vm.canSendSms, isTrue, reason: 'send must not be disabled by an unrelated read capability');
     });
 
     test('send is never offered to a peer that does not accept the request packet', () {
-      final vm = RelayHomeVm.kdeDeviceVm(device(incoming: const ['kdeconnect.ping'], outgoing: _androidSends));
+      final vm = vmFor(device(incoming: const ['kdeconnect.ping'], outgoing: _androidSends));
 
       expect(vm.canSendSms, isFalse);
     });
@@ -88,19 +126,19 @@ void main() {
     test('a peer advertising sms.request only as outgoing does not enable send', () {
       // The wrong-direction case: the type is present, but on the list of things
       // the peer sends rather than the list of things it accepts.
-      final vm = RelayHomeVm.kdeDeviceVm(device(incoming: const [], outgoing: const ['kdeconnect.sms.request']));
+      final vm = vmFor(device(incoming: const [], outgoing: const ['kdeconnect.sms.request']));
 
       expect(vm.canSendSms, isFalse);
     });
 
     test('an unpaired or disconnected peer offers neither', () {
-      final unpaired = RelayHomeVm.kdeDeviceVm(device(paired: false, incoming: _androidAccepts, outgoing: _androidSends));
-      final offline = RelayHomeVm.kdeDeviceVm(device(connected: false, incoming: _androidAccepts, outgoing: _androidSends));
+      final unpaired = vmFor(device(paired: false, incoming: _androidAccepts, outgoing: _androidSends));
+      final offline = vmFor(device(connected: false, incoming: _androidAccepts, outgoing: _androidSends));
 
       expect(unpaired.canSendSms, isFalse);
       expect(offline.canSendSms, isFalse);
-      expect(unpaired.capabilities[RelayCapability.messages], CapabilityStatus.unavailable);
-      expect(offline.capabilities[RelayCapability.messages], CapabilityStatus.unavailable);
+      expect(unpaired.capabilityStatuses[RelayCapability.messages], CapabilityStatus.unavailable);
+      expect(offline.capabilityStatuses[RelayCapability.messages], CapabilityStatus.disabled);
     });
 
     /// Regression guard for the capability-refresh bug: once the Rust core
@@ -116,40 +154,40 @@ void main() {
     /// `capability_refresh_completes_end_to_end_and_survives_stale_reader_cleanup`
     /// in `packages/core/src/kdeconnect/lan.rs` for that coverage.
     test('canSendSms flips true when a fresh snapshot adds the capability', () {
-      final before = RelayHomeVm.kdeDeviceVm(
+      final before = vmFor(
         device(incoming: const ['kdeconnect.ping'], outgoing: _androidSends),
       );
       expect(before.canSendSms, isFalse, reason: 'SEND_SMS not yet granted on the phone');
 
-      final after = RelayHomeVm.kdeDeviceVm(device(incoming: _androidAccepts, outgoing: _androidSends));
+      final after = vmFor(device(incoming: _androidAccepts, outgoing: _androidSends));
       expect(after.canSendSms, isTrue, reason: 'capability refresh should surface the newly-granted permission');
     });
   });
 
   group('telephony capabilities follow their own direction', () {
     test('a peer that sends telephony events enables the phone surface', () {
-      final vm = RelayHomeVm.kdeDeviceVm(device(incoming: const [], outgoing: const ['kdeconnect.telephony']));
+      final vm = vmFor(device(incoming: const [], outgoing: const ['kdeconnect.telephony']));
 
-      expect(vm.capabilities[RelayCapability.phone], CapabilityStatus.available);
+      expect(vm.capabilityStatuses[RelayCapability.phone], CapabilityStatus.available);
     });
 
     test('muting follows the peer accepting the mute request, not sending events', () {
-      final eventsOnly = RelayHomeVm.kdeDeviceVm(device(incoming: const [], outgoing: const ['kdeconnect.telephony']));
-      final muteOnly = RelayHomeVm.kdeDeviceVm(device(incoming: const ['kdeconnect.telephony.request_mute'], outgoing: const []));
+      final eventsOnly = vmFor(device(incoming: const [], outgoing: const ['kdeconnect.telephony']));
+      final muteOnly = vmFor(device(incoming: const ['kdeconnect.telephony.request_mute'], outgoing: const []));
 
       expect(eventsOnly.canMuteRinger, isFalse, reason: 'sending events says nothing about accepting a mute request');
       expect(muteOnly.canMuteRinger, isTrue);
     });
 
     test('a real Android peer gets both event awareness and ringer mute', () {
-      final vm = RelayHomeVm.kdeDeviceVm(device(incoming: _androidAccepts, outgoing: _androidSends));
+      final vm = vmFor(device(incoming: _androidAccepts, outgoing: _androidSends));
 
-      expect(vm.capabilities[RelayCapability.phone], CapabilityStatus.available);
+      expect(vm.capabilityStatuses[RelayCapability.phone], CapabilityStatus.available);
       expect(vm.canMuteRinger, isTrue);
     });
 
     test('mute is not offered while disconnected', () {
-      final vm = RelayHomeVm.kdeDeviceVm(device(connected: false, incoming: _androidAccepts, outgoing: _androidSends));
+      final vm = vmFor(device(connected: false, incoming: _androidAccepts, outgoing: _androidSends));
 
       expect(vm.canMuteRinger, isFalse);
     });
@@ -162,20 +200,20 @@ void main() {
   /// that very moment.
   group('the display capability map keeps the derived SMS result', () {
     test('a peer that accepts conversation requests reports messages available', () {
-      final vm = RelayHomeVm.kdeDeviceVm(device(incoming: _androidAccepts, outgoing: _androidSends));
+      final vm = vmFor(device(incoming: _androidAccepts, outgoing: _androidSends));
 
       expect(vm.capabilityStatuses[RelayCapability.messages], CapabilityStatus.available);
     });
 
     test('the display map agrees with the derived map', () {
-      final vm = RelayHomeVm.kdeDeviceVm(device(incoming: _androidAccepts, outgoing: _androidSends));
+      final vm = vmFor(device(incoming: _androidAccepts, outgoing: _androidSends));
 
-      expect(vm.capabilityStatuses[RelayCapability.messages], vm.capabilities[RelayCapability.messages]);
+      expect(vm.capabilityStatuses[RelayCapability.messages], CapabilityStatus.available);
     });
 
     test('a peer that refuses conversation requests still reports unavailable', () {
       final incoming = _androidAccepts.where((type) => type != 'kdeconnect.sms.request_conversations').toList();
-      final vm = RelayHomeVm.kdeDeviceVm(device(incoming: incoming, outgoing: _androidSends));
+      final vm = vmFor(device(incoming: incoming, outgoing: _androidSends));
 
       expect(vm.capabilityStatuses[RelayCapability.messages], CapabilityStatus.unavailable);
     });

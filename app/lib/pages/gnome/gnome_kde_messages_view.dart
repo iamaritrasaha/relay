@@ -55,7 +55,7 @@ class _GnomeKdeMessagesViewState extends State<GnomeKdeMessagesView> {
   String? _lastSmsKeyTrace;
 
   String get _deviceId => kdeConnectDeviceIdFromKey(widget.device.key);
-  bool get _connected => widget.device.detail == 'Connected';
+  bool get _connected => widget.device.connectionState.isConnected;
   bool get _canSend => _connected && widget.device.canSendSms;
 
   /// Why the composer is closed, so a disabled Send is never a mystery.

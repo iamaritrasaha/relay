@@ -68,6 +68,68 @@ impl Default for LanConfig {
     }
 }
 
+/// A file announced by a control packet, waiting for its payload stream.
+///
+/// Held only between the announcement and the stream arriving; a stream that
+/// never comes simply leaves an entry that is replaced or dropped, and no file
+/// is ever created for it.
+#[derive(Clone, Debug)]
+pub(crate) struct PendingFile {
+    pub device_id: String,
+    pub transfer_id: String,
+    pub filename: String,
+    pub size: u64,
+}
+
+/// Maps a peer's advertised KDE packet types onto Relay's feature set.
+///
+/// A feature is present when the peer can take part in it at all -- either by
+/// accepting Relay's requests or by sending Relay the data. Which direction
+/// matters differs per feature, so each is stated explicitly rather than
+/// guessed from one list.
+fn relay_features_from_capabilities(
+    incoming: &[String],
+    outgoing: &[String],
+) -> std::collections::BTreeSet<crate::kdeconnect::fabric::RelayFeature> {
+    use crate::kdeconnect::fabric::RelayFeature;
+    let accepts = |packet: &str| incoming.iter().any(|value| value == packet);
+    let sends = |packet: &str| outgoing.iter().any(|value| value == packet);
+
+    let mut features = std::collections::BTreeSet::new();
+    if sends(crate::kdeconnect::PACKET_TYPE_NOTIFICATION) {
+        features.insert(RelayFeature::Notifications);
+    }
+    if accepts(crate::kdeconnect::PACKET_TYPE_SMS_REQUEST_CONVERSATIONS) {
+        features.insert(RelayFeature::Messages);
+    }
+    if accepts(crate::kdeconnect::PACKET_TYPE_MPRIS_REQUEST) || sends(crate::kdeconnect::PACKET_TYPE_MPRIS) {
+        features.insert(RelayFeature::Media);
+    }
+    if sends(crate::kdeconnect::PACKET_TYPE_RUNCOMMAND_REQUEST) {
+        features.insert(RelayFeature::Commands);
+    }
+    if sends(crate::kdeconnect::PACKET_TYPE_MOUSEPAD_REQUEST) {
+        features.insert(RelayFeature::RemoteInput);
+    }
+    if accepts(crate::kdeconnect::PACKET_TYPE_CLIPBOARD_CONNECT)
+        || sends(crate::kdeconnect::PACKET_TYPE_CLIPBOARD)
+    {
+        features.insert(RelayFeature::Clipboard);
+    }
+    if accepts(crate::kdeconnect::PACKET_TYPE_SHARE_REQUEST)
+        || sends(crate::kdeconnect::PACKET_TYPE_SHARE_REQUEST)
+    {
+        features.insert(RelayFeature::Files);
+    }
+    if sends(crate::kdeconnect::PACKET_TYPE_BATTERY) {
+        features.insert(RelayFeature::Battery);
+    }
+    if accepts(crate::kdeconnect::PACKET_TYPE_PING) {
+        features.insert(RelayFeature::Ping);
+    }
+    features
+}
+
 /// Where a reply produced while handling an inbound packet is sent: always the
 /// transport the packet itself arrived on. Answering a `kdeconnect.relay.ping`
 /// over a *different* route than it came in on would make one route's liveness
@@ -137,6 +199,10 @@ impl DeviceTable {
 
     pub fn iter(&self) -> impl Iterator<Item = &ObservedDevice> {
         self.by_id.values()
+    }
+
+    fn remove(&mut self, device_id: &str) {
+        self.by_id.remove(device_id);
     }
 }
 
@@ -287,6 +353,13 @@ fn now_unix_millis() -> i64 {
 struct LanTransportLink {
     device_id: String,
     packets: mpsc::Sender<Vec<u8>>,
+    /// Our own identity, used as the TLS server certificate on payload
+    /// connections.
+    identity: Arc<LocalIdentity>,
+    /// The paired device's certificate. Payload connections are pinned to it, so
+    /// a local process that merely guesses the port cannot complete the
+    /// handshake.
+    peer_cert: Vec<u8>,
 }
 
 #[cfg(feature = "kdeconnect-wan")]
@@ -324,15 +397,39 @@ impl crate::kdeconnect::wan::TransportLink for LanTransportLink {
         })
     }
 
+    /// Sends a payload using KDE Connect's LAN mechanism.
+    ///
+    /// The listener is bound and its port returned to the caller *before* this
+    /// runs -- the port has to be inside the control packet, which must reach
+    /// the peer before it can dial back. So this half only accepts the dial-back,
+    /// completes the TLS handshake as the server, and streams.
+    ///
+    /// There is no Relay size ceiling here: the 20 MiB limit is a Relay WAN
+    /// policy, and LAN carries files of any size exactly as KDE Connect does.
     fn send_payload<'a>(
         &'a self,
-        _request: crate::kdeconnect::wan::PayloadRequest<'a>,
+        request: crate::kdeconnect::wan::PayloadRequest<'a>,
     ) -> crate::kdeconnect::wan::transport::LinkFuture<'a, Result<crate::kdeconnect::wan::PayloadOutcome>>
     {
         Box::pin(async move {
-            Err(anyhow::anyhow!(
-                "LAN payload transfer does not go through TransportRouter"
-            ))
+            let listener = request
+                .lan_listener
+                .context("LAN payload send requires a bound listener")?;
+            let stream = listener.accept().await?;
+            // The sender is the TLS *server* on a payload connection, which is
+            // the reverse of the TCP direction.
+            let mut tls =
+                start_tls_as_server(&self.identity, stream, Some(&self.peer_cert)).await?;
+            let on_progress = request.on_progress;
+            crate::kdeconnect::files::lan_payload::stream_payload(
+                request.source,
+                &mut tls,
+                request.payload_size,
+                on_progress,
+            )
+            .await?;
+            tokio::io::AsyncWriteExt::shutdown(&mut tls).await.ok();
+            Ok(crate::kdeconnect::wan::PayloadOutcome::Sent)
         })
     }
 
@@ -385,6 +482,21 @@ pub(crate) struct LanInner {
     /// feature off without tearing down an authorised session, and so being
     /// paired never implies permission to move the cursor.
     input_enabled: std::sync::atomic::AtomicBool,
+    /// Loop suppression shared by both clipboard directions. One guard, not one
+    /// per transport or per device: an echo must be caught wherever it returns
+    /// from.
+    clipboard_guard: Mutex<crate::kdeconnect::clipboard::ClipboardGuard>,
+    /// User-facing clipboard sync switch. Being paired is never sufficient.
+    clipboard_enabled: std::sync::atomic::AtomicBool,
+    /// Every transfer, keyed by (device, transfer id). Never by filename or
+    /// route, so two devices sending the same name stay independent.
+    transfers: Mutex<crate::kdeconnect::files::TransferRegistry>,
+    /// Announced files awaiting their payload stream, by `relayPayloadId`. An
+    /// arriving stream whose id is not here has no announcement behind it and is
+    /// dropped without a byte being written.
+    pending_payloads: Mutex<HashMap<String, PendingFile>>,
+    /// Where received files are written.
+    download_dir: Mutex<Option<std::path::PathBuf>>,
     /// One input queue per logical device, so a burst from one phone cannot
     /// delay another's clicks.
     input_queues: Mutex<HashMap<String, Arc<crate::kdeconnect::input::InputQueue>>>,
@@ -450,6 +562,11 @@ impl LanInner {
             media: Mutex::new(None),
             input: Mutex::new(None),
             input_enabled: std::sync::atomic::AtomicBool::new(false),
+            clipboard_guard: Mutex::new(crate::kdeconnect::clipboard::ClipboardGuard::new()),
+            clipboard_enabled: std::sync::atomic::AtomicBool::new(true),
+            transfers: Mutex::new(crate::kdeconnect::files::TransferRegistry::new()),
+            pending_payloads: Mutex::new(HashMap::new()),
+            download_dir: Mutex::new(None),
             input_queues: Mutex::new(HashMap::new()),
             identity,
             config,
@@ -597,11 +714,17 @@ impl LanInner {
         out
     }
 
+    /// The one place device state reaches the product.
+    ///
+    /// Both the legacy snapshot and the Device Fabric are computed here from the
+    /// same observation, so the two can never describe different moments, and
+    /// one event still covers one change.
     async fn emit_devices(&self) {
         let devices = self.snapshot().await;
+        let fabric = self.device_fabric().await;
         let _ = self
             .event_tx
-            .send(KdeConnectEvent::DevicesChanged { devices });
+            .send(KdeConnectEvent::DevicesChanged { devices, fabric });
     }
 
     async fn emit_trust(&self) {
@@ -812,6 +935,696 @@ impl LanInner {
         entries: Vec<crate::kdeconnect::commands::RunCommandEntry>,
     ) {
         self.commands.replace(entries);
+    }
+
+    /// The Device Fabric: one record per trusted logical device, plus the local
+    /// feature policy that was in force when it was read.
+    ///
+    /// Assembled from live state each time rather than cached, so it cannot
+    /// disagree with the routes, trust store and capability sets it summarises.
+    /// A device that is reachable over both LAN and WAN appears exactly once,
+    /// with both routes recorded against it.
+    ///
+    /// The policy travels with the records because availability is a function of
+    /// both: reading them separately could produce an answer that neither state
+    /// ever actually justified.
+    pub(crate) async fn device_fabric(&self) -> crate::kdeconnect::fabric::RelayFabricSnapshot {
+        use crate::kdeconnect::fabric::{
+            LocalFeaturePolicy, RelayDeviceClass, RelayDeviceRecord, RelayFabricSnapshot,
+        };
+
+        let trusted = self.trust.lock().await.snapshot();
+        let battery = self.battery.lock().await.clone();
+        let capabilities = self.peer_capabilities.lock().await.clone();
+        #[cfg(not(feature = "kdeconnect-wan"))]
+        let heartbeat = self.heartbeat.lock().await.clone();
+        #[cfg(feature = "kdeconnect-wan")]
+        let route_last_seen = self.route_last_seen.lock().await.clone();
+        let connections = self.connections.lock().await;
+
+        let mut records = Vec::with_capacity(trusted.len());
+        for device in trusted {
+            let id = device.device_id.clone();
+            let mut record = RelayDeviceRecord::remembered(
+                id.clone(),
+                device.name.clone(),
+                RelayDeviceClass::from_peer_string(&device.device_type),
+            );
+            record.platform = Some(device.device_type.clone());
+            record.relay_version = Some(device.protocol_version.to_string());
+
+            // Route availability is runtime truth, read from the router rather
+            // than from anything persisted.
+            #[cfg(feature = "kdeconnect-wan")]
+            {
+                use crate::kdeconnect::wan::TransportKind;
+                let transports = self.router.available_transports(&id);
+                record.routes.lan_available =
+                    transports.contains(&TransportKind::KdeLan) && connections.contains_key(&id);
+                record.routes.wan_available = transports.contains(&TransportKind::RelayWan);
+                record.routes.wan_bound = device.wan_endpoint_id.is_some();
+                record.routes.wan_relayed = self.router.snapshot(&id).state
+                    == crate::kdeconnect::wan::TransportState::RemoteRelay;
+                record.routes.lan_last_seen = route_last_seen
+                    .get(&(id.clone(), TransportKind::KdeLan))
+                    .copied();
+                record.routes.wan_last_seen = route_last_seen
+                    .get(&(id.clone(), TransportKind::RelayWan))
+                    .copied();
+            }
+            #[cfg(not(feature = "kdeconnect-wan"))]
+            {
+                // Without the WAN feature there is exactly one route, and the
+                // live LAN session is the only evidence of it.
+                record.routes.lan_available = connections.contains_key(&id);
+                record.routes.lan_last_seen =
+                    heartbeat.get(&id).and_then(|state| state.last_seen_unix);
+            }
+            record.refresh_connection(false);
+
+            // Capabilities belong to the logical device, taken from what the
+            // peer advertised over whichever transport introduced it.
+            if let Some((incoming, outgoing)) = capabilities.get(&id) {
+                record.capabilities = relay_features_from_capabilities(incoming, outgoing);
+            }
+
+            if let Some(state) = battery.get(&id) {
+                record.battery_percent = Some(state.current_charge);
+                record.charging = Some(state.is_charging);
+            }
+            records.push(record);
+        }
+        drop(connections);
+        records.sort_by(|a, b| a.id.cmp(&b.id));
+
+        let policy = LocalFeaturePolicy {
+            clipboard_enabled: self.clipboard_enabled(),
+            remote_input_enabled: self.input_enabled(),
+            remote_input_authorized: self.input_ready().await,
+            has_configured_commands: !self.commands.snapshot().is_empty(),
+        };
+        RelayFabricSnapshot {
+            devices: records,
+            policy,
+        }
+    }
+
+    pub(crate) async fn set_download_dir(&self, directory: std::path::PathBuf) {
+        *self.download_dir.lock().await = Some(directory);
+    }
+
+    /// Transfers for one logical device.
+    pub(crate) async fn transfers_for(
+        &self,
+        device_id: &str,
+    ) -> Vec<crate::kdeconnect::files::Transfer> {
+        self.transfers
+            .lock()
+            .await
+            .for_device(device_id)
+            .into_iter()
+            .cloned()
+            .collect()
+    }
+
+    /// Sends one file to a logical device.
+    ///
+    /// The route is decided first, then the policy: LAN keeps its existing
+    /// behaviour with no size ceiling, while a remote route refuses anything
+    /// over the 20 MiB limit **before** a byte moves. Starting a transfer and
+    /// abandoning it partway would waste the user's data and time on a result
+    /// that was knowable up front.
+    ///
+    /// Whichever transport is selected here owns the transfer for its lifetime;
+    /// Relay does not migrate a payload mid-stream.
+    #[cfg(feature = "kdeconnect-wan")]
+    pub(crate) async fn send_file(
+        self: &Arc<Self>,
+        device_id: &str,
+        path: &std::path::Path,
+    ) -> Result<String> {
+        use crate::kdeconnect::files::{
+            check_sendable, generate_transfer_id, Transfer, TransferKey, TransferRejection,
+            TransferState,
+        };
+        use crate::kdeconnect::wan::TransportKind;
+
+        if self.trust.lock().await.get(device_id).is_none() {
+            anyhow::bail!("device not paired");
+        }
+        self.ensure_peer_accepts(device_id, crate::kdeconnect::PACKET_TYPE_SHARE_REQUEST)
+            .await?;
+
+        let filename = path
+            .file_name()
+            .and_then(|name| name.to_str())
+            .context("file has no usable name")?
+            .to_owned();
+        let size = tokio::fs::metadata(path)
+            .await
+            .context("read the file size")?
+            .len();
+
+        let active = self.router.active_transport(device_id);
+        let remote = active == Some(TransportKind::RelayWan);
+        let transfer_id = generate_transfer_id();
+        let key = TransferKey::new(device_id, &transfer_id);
+
+        // No transport at all: nothing to announce over.
+        if active.is_none() {
+            self.transfers.lock().await.insert(Transfer {
+                key: key.clone(),
+                filename,
+                total_bytes: size,
+                state: TransferState::Failed {
+                    reason: "This device is not connected.".to_owned(),
+                },
+            });
+            self.emit_transfer(&key).await;
+            return Ok(transfer_id);
+        }
+
+        // `remote` is what makes the size ceiling apply: LAN carries files of
+        // any size, exactly as KDE Connect does, and the 20 MiB limit is a
+        // Relay WAN policy alone.
+        match check_sendable(Some(size), remote) {
+            Ok(_) => {}
+            Err(TransferRejection::RequiresLocalConnection { .. } | TransferRejection::UnknownSize) => {
+                // A policy outcome, not a failure: recorded as its own state so
+                // the UI can say "Local connection required" rather than
+                // presenting it as a network error.
+                self.transfers.lock().await.insert(Transfer {
+                    key: key.clone(),
+                    filename,
+                    total_bytes: size,
+                    state: TransferState::RequiresLocalConnection,
+                });
+                self.emit_transfer(&key).await;
+                return Ok(transfer_id);
+            }
+            Err(other) => anyhow::bail!(other),
+        }
+
+        self.transfers.lock().await.insert(Transfer {
+            key: key.clone(),
+            filename: filename.clone(),
+            total_bytes: size,
+            state: TransferState::Preparing,
+        });
+        self.emit_transfer(&key).await;
+
+        let inner = Arc::clone(self);
+        let device_id = device_id.to_owned();
+        let path = path.to_path_buf();
+        tokio::spawn(async move {
+            if let Err(error) = inner
+                .stream_file_out(&device_id, &key, &path, &filename, size, remote)
+                .await
+            {
+                tracing::warn!(
+                    "[Relay Files] device={device_id} transfer={} failed: {error}",
+                    key.transfer_id
+                );
+                inner.fail_transfer(&key, "the transfer could not be completed").await;
+            }
+        });
+        Ok(transfer_id)
+    }
+
+    #[cfg(feature = "kdeconnect-wan")]
+    async fn stream_file_out(
+        self: &Arc<Self>,
+        device_id: &str,
+        key: &crate::kdeconnect::files::TransferKey,
+        path: &std::path::Path,
+        filename: &str,
+        size: u64,
+        remote: bool,
+    ) -> Result<()> {
+        use crate::kdeconnect::files::TransferState;
+        use crate::kdeconnect::wan::{payload::WanPayloadTransferInfo, PayloadRequest};
+
+        // The correlation id only means anything on WAN; LAN payload transfer
+        // uses KDE's own port-based mechanism.
+        let info = remote
+            .then(|| WanPayloadTransferInfo::new(size))
+            .transpose()
+            .map_err(|error| anyhow::anyhow!(error))?;
+
+        // A LAN listener must exist *before* the announcement goes out: the
+        // packet carries the port the receiver dials back to, so binding it
+        // afterwards would advertise a port nothing is listening on.
+        let lan_listener = if remote {
+            None
+        } else {
+            Some(crate::kdeconnect::files::lan_payload::PayloadListener::bind().await?)
+        };
+
+        let announcement = crate::kdeconnect::packet::ShareRequestBody::to_packet(
+            filename,
+            size,
+            info.as_ref().map(|info| info.relay_payload_id.as_str()),
+            lan_listener.as_ref().map(|listener| listener.port()),
+        );
+        self.router.send_packet(device_id, &announcement).await?;
+
+        let mut file = tokio::fs::File::open(path).await.context("open the file to send")?;
+        let links = self.router.links_for(device_id);
+        let link = links.first().context("no transport available")?;
+
+        // Progress is funnelled through a channel so the copy loop never awaits
+        // event publication, and so the throttling lives in one place.
+        let (progress_tx, mut progress_rx) = tokio::sync::mpsc::unbounded_channel::<u64>();
+        let progress_inner = Arc::clone(self);
+        let progress_key = key.clone();
+        let progress_task = tokio::spawn(async move {
+            while let Some(sent) = progress_rx.recv().await {
+                let publish = progress_inner
+                    .transfers
+                    .lock()
+                    .await
+                    .advance(&progress_key, sent, false);
+                if publish {
+                    progress_inner.emit_transfer(&progress_key).await;
+                }
+            }
+        });
+        let on_progress_guard = progress_tx.clone();
+        let mut on_progress = move |sent: u64| {
+            let _ = progress_tx.send(sent);
+        };
+        let request = PayloadRequest {
+            relay_payload_id: info
+                .as_ref()
+                .map(|info| info.relay_payload_id.as_str())
+                .unwrap_or_default(),
+            payload_size: size,
+            source: &mut file,
+            lan_listener,
+            on_progress: &mut on_progress,
+        };
+        let outcome = link.send_payload(request).await;
+        drop(on_progress_guard);
+        let _ = progress_task.await;
+        outcome?;
+
+        self.transfers
+            .lock()
+            .await
+            .finish(key, TransferState::Completed { total: size });
+        self.emit_transfer(key).await;
+        tracing::info!(
+            "[Relay Files] device={device_id} transfer={} sent bytes={size}",
+            key.transfer_id
+        );
+        Ok(())
+    }
+
+    /// Handles a `kdeconnect.share.request` announcing an incoming file.
+    ///
+    /// Registers the pending transfer; the bytes arrive separately on their own
+    /// payload stream. Nothing is written to disk here.
+    async fn handle_share_request(
+        self: &Arc<Self>,
+        device_id: &str,
+        share: crate::kdeconnect::packet::ShareRequestBody,
+    ) {
+        use crate::kdeconnect::files::{sanitize_filename, Transfer, TransferKey, TransferState};
+
+        if self.trust.lock().await.get(device_id).is_none() {
+            tracing::warn!("[Relay Files] refused a file from untrusted device={device_id}");
+            return;
+        }
+        let Some(size) = share.total_payload_size else {
+            tracing::warn!(
+                "[Relay Files] device={device_id} announced a file with no usable size; ignored"
+            );
+            return;
+        };
+        // The ceiling applies only to a Relay WAN announcement. A LAN sender may
+        // offer a file of any size, exactly as KDE Connect does, so applying
+        // this unconditionally would refuse ordinary local transfers.
+        if share.relay_payload_id.is_some()
+            && size > crate::kdeconnect::files::MAX_WAN_PAYLOAD_BYTES
+        {
+            tracing::warn!(
+                "[Relay Files] device={device_id} announced {size} bytes, over the remote limit"
+            );
+            return;
+        }
+
+        let filename = sanitize_filename(&share.filename);
+        let transfer_id = crate::kdeconnect::files::generate_transfer_id();
+        let key = TransferKey::new(device_id, &transfer_id);
+        self.transfers.lock().await.insert(Transfer {
+            key: key.clone(),
+            filename: filename.clone(),
+            total_bytes: size,
+            state: TransferState::Preparing,
+        });
+
+        tracing::info!(
+            "[Relay Files] device={device_id} transfer={transfer_id} incoming file bytes={size}"
+        );
+        self.emit_transfer(&key).await;
+
+        match (share.relay_payload_id, share.lan_port) {
+            // Relay WAN: the sender opens a stream on the existing connection,
+            // so all we can do is remember the correlation and wait for it.
+            (Some(relay_payload_id), _) => {
+                self.pending_payloads.lock().await.insert(
+                    relay_payload_id,
+                    PendingFile {
+                        device_id: device_id.to_owned(),
+                        transfer_id,
+                        filename,
+                        size,
+                    },
+                );
+            }
+            // KDE LAN: *we* dial back to the port the sender advertised.
+            (None, Some(port)) => {
+                let inner = Arc::clone(self);
+                let device_id = device_id.to_owned();
+                tokio::spawn(async move {
+                    inner.fetch_lan_payload(&device_id, key, filename, size, port).await;
+                });
+            }
+            (None, None) => {
+                tracing::warn!(
+                    "[Relay Files] device={device_id} announced a file with no payload transport"
+                );
+                self.fail_transfer(&key, "the sender offered no way to transfer the file").await;
+            }
+        }
+    }
+
+    /// Connects to a LAN sender's payload port and streams the file to disk.
+    ///
+    /// The address comes from the *existing control session*, never from the
+    /// packet: a paired device may nominate a port, but it may not redirect
+    /// Relay to some other host. The TLS handshake is pinned to that device's
+    /// certificate, so a local process which merely guessed the port cannot
+    /// deliver a file.
+    async fn fetch_lan_payload(
+        self: &Arc<Self>,
+        device_id: &str,
+        key: crate::kdeconnect::files::TransferKey,
+        filename: String,
+        size: u64,
+        port: u16,
+    ) {
+        let Some(address) = self
+            .devices
+            .lock()
+            .await
+            .get(device_id)
+            .map(|observed| observed.ip)
+        else {
+            self.fail_transfer(&key, "the sending device is no longer reachable").await;
+            return;
+        };
+        let Some(peer_cert) = self
+            .trust
+            .lock()
+            .await
+            .get(device_id)
+            .and_then(|device| device.certificate_der().ok())
+        else {
+            self.fail_transfer(&key, "the sending device is not paired").await;
+            return;
+        };
+
+        let stream =
+            match crate::kdeconnect::files::lan_payload::connect_to_payload(address, port).await {
+                Ok(stream) => stream,
+                Err(error) => {
+                    tracing::warn!("[Relay Files] transfer={} payload connect failed: {error}", key.transfer_id);
+                    self.fail_transfer(&key, "could not open the file connection").await;
+                    return;
+                }
+            };
+        // The receiver is the TLS client on a payload connection.
+        let mut tls = match start_tls_as_client(&self.identity, stream, device_id, Some(&peer_cert))
+            .await
+        {
+            Ok(tls) => tls,
+            Err(error) => {
+                tracing::warn!("[Relay Files] transfer={} payload TLS failed: {error}", key.transfer_id);
+                self.fail_transfer(&key, "the file connection could not be secured").await;
+                return;
+            }
+        };
+
+        // No ceiling on LAN: the 20 MiB limit is a Relay WAN policy.
+        self.receive_payload_stream(&key, &filename, size, None, &mut tls).await;
+    }
+
+    /// Streams an arriving payload to disk, correlated to its announcement.
+    ///
+    /// An id with no pending announcement is dropped: matching a `relayPayloadId`
+    /// is never on its own sufficient reason to accept file content.
+    #[cfg(feature = "kdeconnect-wan")]
+    async fn handle_incoming_payload<R>(
+        self: &Arc<Self>,
+        relay_payload_id: &str,
+        payload_size: u64,
+        stream: &mut R,
+    ) where
+        R: tokio::io::AsyncRead + Unpin,
+    {
+        use crate::kdeconnect::files::TransferKey;
+
+        let Some(pending) = self.pending_payloads.lock().await.remove(relay_payload_id) else {
+            tracing::warn!("[Relay Files] dropped a payload with no matching announcement");
+            return;
+        };
+        let key = TransferKey::new(&pending.device_id, &pending.transfer_id);
+        if payload_size != pending.size {
+            tracing::warn!(
+                "[Relay Files] transfer={} declared {} but the stream declared {payload_size}",
+                pending.transfer_id,
+                pending.size
+            );
+            self.fail_transfer(&key, "declared size mismatch").await;
+            return;
+        }
+
+        self.receive_payload_stream(
+            &key,
+            &pending.filename,
+            payload_size,
+            Some(crate::kdeconnect::wan::payload::MAX_WAN_PAYLOAD_BYTES),
+            stream,
+        )
+        .await;
+    }
+
+    /// Streams any payload source to disk, whatever transport produced it.
+    ///
+    /// This is the single receive path: LAN's pinned-TLS socket and WAN's Iroh
+    /// stream both arrive here as `AsyncRead`, and share the same bounded
+    /// copying, filename safety, temp-file/atomic finalize, progress throttling
+    /// and terminal-state handling. The feature layer genuinely does not know
+    /// which transport delivered the bytes.
+    async fn receive_payload_stream<R>(
+        self: &Arc<Self>,
+        key: &crate::kdeconnect::files::TransferKey,
+        filename: &str,
+        payload_size: u64,
+        limit: Option<u64>,
+        stream: &mut R,
+    ) where
+        R: tokio::io::AsyncRead + Unpin,
+    {
+        use crate::kdeconnect::files::{receive::IncomingFile, TransferState};
+
+        let directory = match self.download_dir.lock().await.clone() {
+            Some(directory) => directory,
+            None => {
+                self.fail_transfer(key, "no download directory configured").await;
+                return;
+            }
+        };
+        let mut incoming = match IncomingFile::create(&directory, filename, payload_size, limit).await
+        {
+            Ok(incoming) => incoming,
+            Err(error) => {
+                tracing::warn!("[Relay Files] transfer={} could not start: {error}", key.transfer_id);
+                self.fail_transfer(key, "could not create the destination file").await;
+                return;
+            }
+        };
+
+        // Progress is sampled into a channel rather than awaited inline, so the
+        // copy loop never blocks on event emission.
+        let (progress_tx, mut progress_rx) = tokio::sync::mpsc::unbounded_channel::<u64>();
+        let progress_inner = Arc::clone(self);
+        let progress_key = key.clone();
+        let progress_task = tokio::spawn(async move {
+            while let Some(written) = progress_rx.recv().await {
+                let publish = progress_inner
+                    .transfers
+                    .lock()
+                    .await
+                    .advance(&progress_key, written, true);
+                if publish {
+                    progress_inner.emit_transfer(&progress_key).await;
+                }
+            }
+        });
+
+        let result = incoming
+            .stream_from(stream, |written| {
+                let _ = progress_tx.send(written);
+            })
+            .await;
+        drop(progress_tx);
+        let _ = progress_task.await;
+
+        // A transfer cancelled while streaming must never later report success.
+        if self.is_cancelled(key).await {
+            incoming.cancel().await;
+            return;
+        }
+
+        match result {
+            Ok(()) => match incoming.finalize().await {
+                Ok(_path) => {
+                    tracing::info!(
+                        "[Relay Files] device={} transfer={} completed bytes={payload_size}",
+                        key.device_id,
+                        key.transfer_id
+                    );
+                    self.transfers
+                        .lock()
+                        .await
+                        .finish(key, TransferState::Completed { total: payload_size });
+                    self.emit_transfer(key).await;
+                }
+                Err(error) => {
+                    tracing::warn!("[Relay Files] transfer={} failed to finalize: {error}", key.transfer_id);
+                    self.fail_transfer(key, "the file could not be completed").await;
+                }
+            },
+            Err(error) => {
+                tracing::warn!("[Relay Files] transfer={} failed: {error}", key.transfer_id);
+                // Dropping `incoming` removes the partial file.
+                self.fail_transfer(key, "the transfer ended early").await;
+            }
+        }
+    }
+
+    /// Cancels an active transfer.
+    ///
+    /// Marks it cancelled immediately so the streaming loop's completion check
+    /// discards its output, drops any pending payload correlation so a late
+    /// stream finds nothing to attach to, and lets the receiver's `Drop` remove
+    /// the partial file. A cancelled transfer can never later become Completed.
+    pub(crate) async fn cancel_transfer(&self, device_id: &str, transfer_id: &str) {
+        use crate::kdeconnect::files::{TransferKey, TransferState};
+        let key = TransferKey::new(device_id, transfer_id);
+        {
+            let mut transfers = self.transfers.lock().await;
+            match transfers.get(&key) {
+                // Cancelling something already finished would rewrite history.
+                Some(transfer) if transfer.state.is_terminal() => return,
+                None => return,
+                _ => {}
+            }
+            transfers.finish(&key, TransferState::Cancelled);
+        }
+        // Any payload still on its way now has no announcement to bind to.
+        self.pending_payloads
+            .lock()
+            .await
+            .retain(|_, pending| pending.transfer_id != transfer_id);
+        tracing::info!("[Relay Files] device={device_id} transfer={transfer_id} cancelled");
+        self.emit_transfer(&key).await;
+    }
+
+    /// Whether a transfer has been cancelled, so a completing stream can be
+    /// discarded rather than published.
+    async fn is_cancelled(&self, key: &crate::kdeconnect::files::TransferKey) -> bool {
+        matches!(
+            self.transfers.lock().await.get(key).map(|t| &t.state),
+            Some(crate::kdeconnect::files::TransferState::Cancelled)
+        )
+    }
+
+    async fn fail_transfer(&self, key: &crate::kdeconnect::files::TransferKey, reason: &str) {
+        self.transfers.lock().await.finish(
+            key,
+            crate::kdeconnect::files::TransferState::Failed {
+                reason: reason.to_owned(),
+            },
+        );
+        self.emit_transfer(key).await;
+    }
+
+    async fn emit_transfer(&self, key: &crate::kdeconnect::files::TransferKey) {
+        let transfer = self.transfers.lock().await.get(key).cloned();
+        if let Some(transfer) = transfer {
+            let _ = self.event_tx.send(KdeConnectEvent::TransferChanged { transfer });
+        }
+    }
+
+    pub(crate) fn set_clipboard_enabled(&self, enabled: bool) {
+        self.clipboard_enabled
+            .store(enabled, std::sync::atomic::Ordering::SeqCst);
+    }
+
+    pub(crate) fn clipboard_enabled(&self) -> bool {
+        self.clipboard_enabled.load(std::sync::atomic::Ordering::SeqCst)
+    }
+
+    /// Applies an incoming clipboard packet, or explains why it was refused.
+    ///
+    /// Content never reaches the log -- only the device, the length and a short
+    /// hash prefix, which is enough to correlate a send with its receive.
+    async fn handle_clipboard(
+        &self,
+        device_id: &str,
+        clipboard: crate::kdeconnect::packet::ClipboardBody,
+    ) {
+        use crate::kdeconnect::clipboard::{hash_prefix, ClipboardRejection};
+        let now_ms = now_unix_millis();
+        let trusted = self.trust.lock().await.get(device_id).is_some();
+        let enabled = self.clipboard_enabled();
+        let decision = {
+            let mut guard = self.clipboard_guard.lock().await;
+            guard.should_apply_remote(&clipboard.content, enabled, trusted, now_ms)
+        };
+        match decision {
+            Ok(hash) => {
+                tracing::info!(
+                    "[Relay Clipboard] device={device_id} direction=in bytes={} hash={}",
+                    clipboard.content.len(),
+                    hash_prefix(hash)
+                );
+                // Marked *before* the event is emitted: the local watcher will
+                // observe the resulting write, and must recognise it as ours.
+                self.clipboard_guard
+                    .lock()
+                    .await
+                    .note_handled(&clipboard.content, now_ms);
+                let _ = self.event_tx.send(KdeConnectEvent::ClipboardReceived {
+                    device_id: device_id.to_string(),
+                    content: clipboard.content,
+                    timestamp_ms: clipboard.timestamp.unwrap_or(now_ms),
+                });
+            }
+            Err(ClipboardRejection::Duplicate) => {
+                // Expected and benign: this is loop suppression working.
+                tracing::debug!("[Relay Clipboard] device={device_id} direction=in ignored=duplicate");
+            }
+            Err(rejection) => {
+                tracing::warn!(
+                    "[Relay Clipboard] device={device_id} direction=in refused={rejection} bytes={}",
+                    clipboard.content.len()
+                );
+            }
+        }
     }
 
     /// Installs the remote-input backend, which only exists once the desktop
@@ -1125,25 +1938,7 @@ impl LanInner {
             );
             read_inner.emit_devices().await;
         } else if let Ok(clipboard) = packet.as_clipboard() {
-            let now_ms = std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .map(|d| d.as_millis() as i64)
-                .unwrap_or(0);
-            let ts = clipboard.timestamp.unwrap_or(now_ms);
-            let mut cb_map = read_inner.clipboard.lock().await;
-            let prev_ts = cb_map.get(&read_id).copied().unwrap_or(0);
-            if ts >= prev_ts {
-                cb_map.insert(read_id.clone(), ts);
-                drop(cb_map);
-                let _ =
-                    read_inner
-                        .event_tx
-                        .send(KdeConnectEvent::ClipboardReceived {
-                            device_id: read_id.clone(),
-                            content: clipboard.content,
-                            timestamp_ms: ts,
-                        });
-            }
+            read_inner.handle_clipboard(&read_id, clipboard).await;
         } else if let Ok(ping) = packet.as_ping() {
             tracing::info!("[KDE Connect] Received ping from {read_id}");
             let _ = read_inner.event_tx.send(KdeConnectEvent::PingReceived {
@@ -1231,6 +2026,8 @@ impl LanInner {
             }
         } else if let Ok(request) = packet.as_mpris_request() {
             read_inner.handle_mpris_request(&read_id, request, reply).await;
+        } else if let Ok(share) = packet.as_share_request() {
+            read_inner.handle_share_request(&read_id, share).await;
         } else if let Ok(request) = packet.as_mousepad_request() {
             read_inner.handle_remote_input(&read_id, request).await;
         } else if let Ok(request) = packet.as_runcommand_request() {
@@ -1636,9 +2433,14 @@ impl LanInner {
                             );
                         }
                     }
-                    Some(WanIncomingEvent::Payload { .. }) => {
-                        // Payload transfer over Relay WAN is not wired into the
-                        // KDE plugin layer in this pass.
+                    Some(WanIncomingEvent::Payload {
+                        relay_payload_id,
+                        payload_size,
+                        mut stream,
+                    }) => {
+                        inner
+                            .handle_incoming_payload(&relay_payload_id, payload_size, &mut stream)
+                            .await;
                     }
                     None => break,
                 }
@@ -1722,27 +2524,68 @@ impl LanInner {
     }
 
     pub async fn unpair(&self, device_id: &str) -> Result<()> {
-        if let Some(session) = self.pairing.lock().await.get_mut(device_id) {
-            session.local_cancel();
-        }
+        // Tell the peer while its route and trust record still exist. Once the
+        // router registrations below are removed there is deliberately no way
+        // to deliver another packet to this logical device.
+        let _ = self
+            .send_packet(device_id, &PairBody::unpair().serialize())
+            .await;
+
+        self.clear_forgotten_device(device_id).await;
+        self.emit_trust().await;
+        self.emit_devices().await;
+        Ok(())
+    }
+
+    /// Removes every piece of runtime and persisted ownership for one logical
+    /// device. Both a local Forget and a peer-originated unpair use the same
+    /// teardown, so neither path can leave a reconnectable WAN binding or stale
+    /// feature data behind.
+    async fn clear_forgotten_device(&self, device_id: &str) {
+        self.pairing.lock().await.remove(device_id);
         self.incoming.lock().await.remove(device_id);
         self.trust.lock().await.remove(device_id);
+        self.devices.lock().await.remove(device_id);
+        self.connections.lock().await.remove(device_id);
         self.battery.lock().await.remove(device_id);
         self.connectivity.lock().await.remove(device_id);
         self.clipboard.lock().await.remove(device_id);
         self.notifications.lock().await.remove(device_id);
         self.sms.lock().await.remove(device_id);
         self.peer_capabilities.lock().await.remove(device_id);
+        self.heartbeat.lock().await.remove(device_id);
+        self.last_connect.lock().await.remove(device_id);
+        self.mismatches.lock().await.remove(device_id);
+        self.input_queues.lock().await.remove(device_id);
+        self.transfers.lock().await.remove_device(device_id);
+        self.pending_payloads
+            .lock()
+            .await
+            .retain(|_, pending| pending.device_id != device_id);
+
+        // Everything that could let a forgotten device come back, or leave its
+        // data behind, has to go with the trust record. Leaving the WAN binding
+        // in particular would let the device reconnect over Iroh after the user
+        // deliberately forgot it -- trust is what authorises that binding, so
+        // removing one without the other is a security hole, not untidiness.
+        #[cfg(feature = "kdeconnect-wan")]
+        {
+            use crate::kdeconnect::wan::TransportKind;
+            self.wan_bindings.remove(device_id);
+            self.wan_active.lock().await.remove(device_id);
+            self.wan_epoch.lock().await.remove(device_id);
+            self.router.unregister(device_id, TransportKind::KdeLan);
+            self.router.unregister(device_id, TransportKind::RelayWan);
+            self.route_last_seen
+                .lock()
+                .await
+                .retain(|(id, _), _| id != device_id);
+        }
+
         let _ = self.event_tx.send(KdeConnectEvent::NotificationsChanged {
             device_id: device_id.to_string(),
             notifications: Vec::new(),
         });
-        let _ = self
-            .send_packet(device_id, &PairBody::unpair().serialize())
-            .await;
-        self.emit_trust().await;
-        self.emit_devices().await;
-        Ok(())
     }
 
     pub async fn send_ping(&self, device_id: &str, message: Option<String>) -> Result<()> {
@@ -1780,44 +2623,105 @@ impl LanInner {
         if !is_paired {
             anyhow::bail!("device not paired");
         }
+        if !self.clipboard_enabled() {
+            anyhow::bail!("clipboard sync is switched off");
+        }
+        if content.is_empty()
+            || content.len() > crate::kdeconnect::clipboard::MAX_CLIPBOARD_BYTES
+        {
+            anyhow::bail!("clipboard content is empty or exceeds the size bound");
+        }
         self.ensure_peer_accepts(device_id, crate::kdeconnect::PACKET_TYPE_CLIPBOARD_CONNECT)
             .await?;
         self.clipboard
             .lock()
             .await
             .insert(device_id.to_string(), timestamp_ms);
+        // Marked so the resulting remote write cannot come back as new content.
+        self.clipboard_guard
+            .lock()
+            .await
+            .note_handled(content, now_unix_millis());
         let pkt = ClipboardBody::connect(content, timestamp_ms).serialize();
         self.send_packet(device_id, &pkt).await
     }
 
+    /// Sends a locally observed clipboard change to every trusted device that
+    /// accepts clipboard packets.
+    ///
+    /// Delivery goes through the `TransportRouter`, so a Local device is reached
+    /// over LAN and a Remote one over Relay WAN with no clipboard-specific
+    /// transport handling. This previously wrote straight into the LAN
+    /// connection map, which silently skipped every Remote device.
+    ///
+    /// Fan-out policy: this is only ever called for a *locally originated*
+    /// clipboard change. Content that arrived from another device is applied
+    /// locally and not re-broadcast -- re-broadcasting is what turns three
+    /// paired devices into a clipboard storm. The guard below would catch the
+    /// echo regardless, but not fanning out in the first place is what keeps
+    /// the traffic proportional to the number of devices rather than its square.
     pub async fn send_clipboard_to_all_paired(
         &self,
         content: &str,
         timestamp_ms: i64,
     ) -> Result<()> {
-        let trusted = self.trust.lock().await.snapshot();
-        let pkt = ClipboardBody::connect(content, timestamp_ms).serialize();
-        let connections = self.connections.lock().await;
-        let peer_capabilities = self.peer_capabilities.lock().await;
-        for t in trusted {
-            let peer_accepts_clipboard =
-                peer_capabilities
-                    .get(&t.device_id)
-                    .is_some_and(|(incoming, _)| {
-                        incoming.iter().any(|capability| {
-                            capability == crate::kdeconnect::PACKET_TYPE_CLIPBOARD_CONNECT
-                        })
-                    });
-            if peer_accepts_clipboard {
-                if let Some(conn) = connections.get(&t.device_id) {
-                    let _ = conn.packets.send(pkt.clone()).await;
-                    self.clipboard
-                        .lock()
-                        .await
-                        .insert(t.device_id, timestamp_ms);
+        use crate::kdeconnect::clipboard::{hash_prefix, ClipboardRejection};
+        let now_ms = now_unix_millis();
+        let enabled = self.clipboard_enabled();
+        let hash = {
+            let mut guard = self.clipboard_guard.lock().await;
+            match guard.should_send_local(content, enabled, now_ms) {
+                Ok(hash) => hash,
+                Err(ClipboardRejection::Duplicate) => {
+                    // The local watcher saw the write Relay itself just made.
+                    tracing::debug!("[Relay Clipboard] direction=out ignored=duplicate");
+                    return Ok(());
+                }
+                Err(rejection) => {
+                    tracing::warn!(
+                        "[Relay Clipboard] direction=out refused={rejection} bytes={}",
+                        content.len()
+                    );
+                    return Ok(());
                 }
             }
+        };
+
+        let trusted = self.trust.lock().await.snapshot();
+        let packet = ClipboardBody::connect(content, timestamp_ms);
+        let mut sent = 0_usize;
+        for device in trusted {
+            if self
+                .ensure_peer_accepts(
+                    &device.device_id,
+                    crate::kdeconnect::PACKET_TYPE_CLIPBOARD_CONNECT,
+                )
+                .await
+                .is_err()
+            {
+                continue;
+            }
+            #[cfg(feature = "kdeconnect-wan")]
+            if self.router.send_packet(&device.device_id, &packet).await.is_ok() {
+                sent += 1;
+            }
+            #[cfg(not(feature = "kdeconnect-wan"))]
+            if self
+                .send_packet(&device.device_id, &packet.serialize())
+                .await
+                .is_ok()
+            {
+                sent += 1;
+            }
         }
+        // Recorded once for the whole fan-out, so any device echoing it back is
+        // recognised as ours.
+        self.clipboard_guard.lock().await.note_handled(content, now_ms);
+        tracing::info!(
+            "[Relay Clipboard] direction=out devices={sent} bytes={} hash={}",
+            content.len(),
+            hash_prefix(hash)
+        );
         Ok(())
     }
 
@@ -2267,8 +3171,7 @@ impl LanInner {
                 self.emit_devices().await;
             }
             PairingEffect::Unpaired => {
-                self.incoming.lock().await.remove(device_id);
-                self.trust.lock().await.remove(device_id);
+                self.clear_forgotten_device(device_id).await;
                 self.emit_trust().await;
                 self.emit_devices().await;
             }
@@ -2821,6 +3724,8 @@ async fn finish_secure_link(
     inner.router.register(Arc::new(LanTransportLink {
         device_id: secure.device_id.clone(),
         packets: tx.clone(),
+        identity: Arc::new(inner.identity.clone()),
+        peer_cert: peer_cert.clone(),
     }));
     #[cfg(feature = "kdeconnect-wan")]
     inner
@@ -2958,9 +3863,15 @@ async fn finish_secure_link(
                                 .await;
                         } else if let Ok(wan_identity) = packet.as_relay_wan_identity() {
                             #[cfg(feature = "kdeconnect-wan")]
-                            read_inner
-                                .register_wan_binding(&read_id, &name, &device_type, wan_identity)
-                                .await;
+                            {
+                                read_inner
+                                    .register_wan_binding(&read_id, &name, &device_type, wan_identity)
+                                    .await;
+                                // A binding changes diagnostics and future
+                                // reachability even though it does not itself
+                                // create a live WAN route.
+                                read_inner.emit_devices().await;
+                            }
                             #[cfg(not(feature = "kdeconnect-wan"))]
                             let _ = wan_identity;
                         } else if !read_inner
@@ -3007,6 +3918,8 @@ async fn finish_secure_link(
                 crate::kdeconnect::wan::TransportKind::KdeLan,
             ));
         }
+        #[cfg(not(feature = "kdeconnect-wan"))]
+        let _ = removed_current_lan;
         if let Some(state) = read_inner.connectivity.lock().await.get_mut(&read_id) {
             state.stale = true;
         }
@@ -5020,6 +5933,1464 @@ mod tests {
         }
     }
 
+    // --- File transfer -----------------------------------------------------
+
+    fn share_packet(filename: &str, size: i64, relay_payload_id: Option<&str>) -> NetworkPacket {
+        let mut body = serde_json::Map::new();
+        body.insert("filename".into(), filename.into());
+        body.insert("totalPayloadSize".into(), size.into());
+        body.insert("numberOfFiles".into(), 1.into());
+        if let Some(id) = relay_payload_id {
+            let mut info = serde_json::Map::new();
+            info.insert("relayPayloadId".into(), id.into());
+            info.insert("payloadSize".into(), size.into());
+            body.insert("payloadTransferInfo".into(), serde_json::Value::Object(info));
+        }
+        NetworkPacket::new(crate::kdeconnect::PACKET_TYPE_SHARE_REQUEST, body)
+    }
+
+    async fn transfer_events(
+        events: &mut tokio::sync::mpsc::UnboundedReceiver<KdeConnectEvent>,
+    ) -> Vec<crate::kdeconnect::files::Transfer> {
+        let mut seen = Vec::new();
+        while let Ok(event) = events.try_recv() {
+            if let KdeConnectEvent::TransferChanged { transfer } = event {
+                seen.push(transfer);
+            }
+        }
+        seen
+    }
+
+    #[tokio::test]
+    async fn an_announced_file_registers_a_transfer_for_its_own_device() {
+        let (inner, mut events) = multi_device_harness(&[PHONE_A, PHONE_B]);
+        let (tx, _rx) = tokio::sync::mpsc::channel(16);
+
+        inner
+            .handle_transport_packet(
+                PHONE_A,
+                &share_packet("photo.jpg", 1024, Some("payload-1")),
+                &PacketReplyRoute::Lan(tx),
+            )
+            .await;
+
+        let seen = transfer_events(&mut events).await;
+        assert_eq!(seen.len(), 1);
+        assert_eq!(seen[0].filename, "photo.jpg");
+        assert_eq!(seen[0].total_bytes, 1024);
+        assert_eq!(seen[0].key.device_id, PHONE_A);
+        assert!(inner.transfers_for(PHONE_B).await.is_empty(), "scoped to its device");
+    }
+
+    #[tokio::test]
+    async fn an_untrusted_device_cannot_announce_a_file() {
+        let (inner, mut events) = multi_device_harness(&[PHONE_A]);
+        let (tx, _rx) = tokio::sync::mpsc::channel(16);
+
+        inner
+            .handle_transport_packet(
+                "dddddddddddddddddddddddddddddddd",
+                &share_packet("evil.bin", 10, Some("payload-1")),
+                &PacketReplyRoute::Lan(tx),
+            )
+            .await;
+
+        assert!(transfer_events(&mut events).await.is_empty());
+    }
+
+    #[tokio::test]
+    async fn an_oversized_announcement_is_refused_without_registering_a_transfer() {
+        let (inner, mut events) = multi_device_harness(&[PHONE_A]);
+        let (tx, _rx) = tokio::sync::mpsc::channel(16);
+        let over = (crate::kdeconnect::wan::payload::MAX_WAN_PAYLOAD_BYTES + 1) as i64;
+
+        inner
+            .handle_transport_packet(
+                PHONE_A,
+                &share_packet("huge.bin", over, Some("payload-1")),
+                &PacketReplyRoute::Lan(tx),
+            )
+            .await;
+
+        assert!(transfer_events(&mut events).await.is_empty());
+        assert!(inner.transfers_for(PHONE_A).await.is_empty());
+    }
+
+    #[tokio::test]
+    async fn an_unknown_size_announcement_is_ignored() {
+        // Android sends -1 when the ContentResolver cannot report a size.
+        let (inner, mut events) = multi_device_harness(&[PHONE_A]);
+        let (tx, _rx) = tokio::sync::mpsc::channel(16);
+
+        inner
+            .handle_transport_packet(
+                PHONE_A,
+                &share_packet("mystery.bin", -1, Some("payload-1")),
+                &PacketReplyRoute::Lan(tx),
+            )
+            .await;
+
+        assert!(transfer_events(&mut events).await.is_empty());
+    }
+
+    #[cfg(feature = "kdeconnect-wan")]
+    #[tokio::test]
+    async fn an_announced_payload_streams_to_disk_and_completes() {
+        let (inner, mut events) = multi_device_harness(&[PHONE_A]);
+        let dir = tempfile::tempdir().unwrap();
+        inner.set_download_dir(dir.path().to_path_buf()).await;
+        let (tx, _rx) = tokio::sync::mpsc::channel(16);
+
+        let body = vec![7_u8; 4096];
+        inner
+            .handle_transport_packet(
+                PHONE_A,
+                &share_packet("data.bin", body.len() as i64, Some("payload-1")),
+                &PacketReplyRoute::Lan(tx),
+            )
+            .await;
+
+        let mut source = std::io::Cursor::new(body.clone());
+        inner
+            .handle_incoming_payload("payload-1", body.len() as u64, &mut source)
+            .await;
+
+        let seen = transfer_events(&mut events).await;
+        let last = seen.last().expect("a terminal event");
+        assert_eq!(
+            last.state,
+            crate::kdeconnect::files::TransferState::Completed { total: 4096 }
+        );
+        assert_eq!(tokio::fs::read(dir.path().join("data.bin")).await.unwrap(), body);
+    }
+
+    #[cfg(feature = "kdeconnect-wan")]
+    #[tokio::test]
+    async fn a_payload_with_no_announcement_is_dropped_without_writing_anything() {
+        let (inner, _events) = multi_device_harness(&[PHONE_A]);
+        let dir = tempfile::tempdir().unwrap();
+        inner.set_download_dir(dir.path().to_path_buf()).await;
+
+        let mut source = std::io::Cursor::new(vec![1_u8; 100]);
+        inner.handle_incoming_payload("never-announced", 100, &mut source).await;
+
+        let mut entries = tokio::fs::read_dir(dir.path()).await.unwrap();
+        assert!(
+            entries.next_entry().await.unwrap().is_none(),
+            "matching a payload id alone must never be enough to accept content"
+        );
+    }
+
+    #[cfg(feature = "kdeconnect-wan")]
+    #[tokio::test]
+    async fn a_duplicate_payload_id_is_only_honoured_once() {
+        let (inner, _events) = multi_device_harness(&[PHONE_A]);
+        let dir = tempfile::tempdir().unwrap();
+        inner.set_download_dir(dir.path().to_path_buf()).await;
+        let (tx, _rx) = tokio::sync::mpsc::channel(16);
+
+        inner
+            .handle_transport_packet(
+                PHONE_A,
+                &share_packet("once.bin", 10, Some("payload-1")),
+                &PacketReplyRoute::Lan(tx),
+            )
+            .await;
+
+        let mut first = std::io::Cursor::new(vec![1_u8; 10]);
+        inner.handle_incoming_payload("payload-1", 10, &mut first).await;
+        let mut second = std::io::Cursor::new(vec![2_u8; 10]);
+        inner.handle_incoming_payload("payload-1", 10, &mut second).await;
+
+        // The announcement is consumed by the first stream; the replay writes
+        // nothing, so only one file exists.
+        let mut count = 0;
+        let mut entries = tokio::fs::read_dir(dir.path()).await.unwrap();
+        while entries.next_entry().await.unwrap().is_some() {
+            count += 1;
+        }
+        assert_eq!(count, 1);
+    }
+
+    #[cfg(feature = "kdeconnect-wan")]
+    #[tokio::test]
+    async fn a_stream_that_contradicts_its_announcement_fails_without_a_file() {
+        let (inner, mut events) = multi_device_harness(&[PHONE_A]);
+        let dir = tempfile::tempdir().unwrap();
+        inner.set_download_dir(dir.path().to_path_buf()).await;
+        let (tx, _rx) = tokio::sync::mpsc::channel(16);
+
+        inner
+            .handle_transport_packet(
+                PHONE_A,
+                &share_packet("x.bin", 100, Some("payload-1")),
+                &PacketReplyRoute::Lan(tx),
+            )
+            .await;
+
+        let mut source = std::io::Cursor::new(vec![0_u8; 40]);
+        inner.handle_incoming_payload("payload-1", 40, &mut source).await;
+
+        let seen = transfer_events(&mut events).await;
+        assert!(matches!(
+            seen.last().unwrap().state,
+            crate::kdeconnect::files::TransferState::Failed { .. }
+        ));
+        let mut entries = tokio::fs::read_dir(dir.path()).await.unwrap();
+        assert!(entries.next_entry().await.unwrap().is_none());
+    }
+
+    #[cfg(feature = "kdeconnect-wan")]
+    #[tokio::test]
+    async fn a_traversing_filename_lands_inside_the_download_directory() {
+        let (inner, _events) = multi_device_harness(&[PHONE_A]);
+        let dir = tempfile::tempdir().unwrap();
+        inner.set_download_dir(dir.path().to_path_buf()).await;
+        let (tx, _rx) = tokio::sync::mpsc::channel(16);
+
+        inner
+            .handle_transport_packet(
+                PHONE_A,
+                &share_packet("../../../etc/passwd", 4, Some("payload-1")),
+                &PacketReplyRoute::Lan(tx),
+            )
+            .await;
+        let mut source = std::io::Cursor::new(b"nope".to_vec());
+        inner.handle_incoming_payload("payload-1", 4, &mut source).await;
+
+        assert!(dir.path().join("passwd").exists(), "must be confined to the directory");
+    }
+
+    #[cfg(feature = "kdeconnect-wan")]
+    #[tokio::test]
+    async fn an_oversized_file_is_refused_before_sending_when_the_route_is_remote() {
+        use crate::kdeconnect::files::TransferState;
+        let (inner, mut events) = multi_device_harness(&[PHONE_A]);
+        let (link, _route) = wan_route(PHONE_A);
+        inner
+            .router
+            .register(Arc::clone(&link) as Arc<dyn crate::kdeconnect::wan::TransportLink>);
+        inner.peer_capabilities.lock().await.insert(
+            PHONE_A.to_owned(),
+            (vec![crate::kdeconnect::PACKET_TYPE_SHARE_REQUEST.to_owned()], vec![]),
+        );
+
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("huge.bin");
+        // Sparse file: the size is what matters, not the bytes.
+        let file = std::fs::File::create(&path).unwrap();
+        file.set_len(crate::kdeconnect::wan::payload::MAX_WAN_PAYLOAD_BYTES + 1).unwrap();
+        drop(file);
+
+        inner.send_file(PHONE_A, &path).await.unwrap();
+
+        let seen = transfer_events(&mut events).await;
+        assert_eq!(
+            seen.last().unwrap().state,
+            TransferState::RequiresLocalConnection,
+            "an oversized remote file is a policy outcome, not a network error"
+        );
+        assert!(
+            link.sent.lock().unwrap().is_empty(),
+            "not a single packet may go out for a file that cannot be sent"
+        );
+    }
+
+    #[cfg(feature = "kdeconnect-wan")]
+    #[tokio::test]
+    async fn a_file_at_exactly_the_limit_is_announced_over_a_remote_route() {
+        let (inner, _events) = multi_device_harness(&[PHONE_A]);
+        let (link, _route) = wan_route(PHONE_A);
+        inner
+            .router
+            .register(Arc::clone(&link) as Arc<dyn crate::kdeconnect::wan::TransportLink>);
+        inner.peer_capabilities.lock().await.insert(
+            PHONE_A.to_owned(),
+            (vec![crate::kdeconnect::PACKET_TYPE_SHARE_REQUEST.to_owned()], vec![]),
+        );
+
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("exact.bin");
+        std::fs::write(&path, b"small").unwrap();
+
+        inner.send_file(PHONE_A, &path).await.unwrap();
+        for _ in 0..50 {
+            if !link.sent.lock().unwrap().is_empty() {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+
+        let sent = link.sent.lock().unwrap().clone();
+        let announcement = sent
+            .iter()
+            .find(|packet| packet.packet_type == crate::kdeconnect::PACKET_TYPE_SHARE_REQUEST)
+            .expect("the file must be announced");
+        // The WAN correlation id must be present so the receiver can match the
+        // payload stream to this announcement.
+        assert!(
+            announcement.body["payloadTransferInfo"]["relayPayloadId"].is_string(),
+            "a remote announcement carries its payload id"
+        );
+    }
+
+    // --- Device Fabric ------------------------------------------------------
+
+    #[cfg(feature = "kdeconnect-wan")]
+    async fn fabric_of(inner: &Arc<LanInner>, device_id: &str) -> crate::kdeconnect::fabric::RelayDeviceRecord {
+        inner
+            .device_fabric()
+            .await
+            .devices
+            .into_iter()
+            .find(|record| record.id == device_id)
+            .expect("device should be in the fabric")
+    }
+
+    #[cfg(feature = "kdeconnect-wan")]
+    #[tokio::test]
+    async fn one_device_reachable_over_both_routes_appears_exactly_once() {
+        use crate::kdeconnect::fabric::RelayConnectionState;
+        use crate::kdeconnect::wan::TransportKind;
+        let (inner, _events) = multi_device_harness(&[PHONE_A]);
+        with_route(&inner, PHONE_A, TransportKind::RelayWan).await;
+        with_route(&inner, PHONE_A, TransportKind::KdeLan).await;
+
+        let fabric = inner.device_fabric().await.devices;
+
+        assert_eq!(fabric.len(), 1, "LAN and WAN are routes, not devices");
+        assert_eq!(fabric[0].id, PHONE_A);
+        assert!(fabric[0].routes.wan_available);
+        // LAN wins for the reported state whenever it is healthy.
+        assert_eq!(fabric[0].connection, RelayConnectionState::Local);
+    }
+
+    #[cfg(feature = "kdeconnect-wan")]
+    #[tokio::test]
+    async fn route_registration_order_does_not_change_the_result() {
+        use crate::kdeconnect::wan::TransportKind;
+        let (first, _e1) = multi_device_harness(&[PHONE_A]);
+        with_route(&first, PHONE_A, TransportKind::KdeLan).await;
+        with_route(&first, PHONE_A, TransportKind::RelayWan).await;
+
+        let (second, _e2) = multi_device_harness(&[PHONE_A]);
+        with_route(&second, PHONE_A, TransportKind::RelayWan).await;
+        with_route(&second, PHONE_A, TransportKind::KdeLan).await;
+
+        assert_eq!(first.device_fabric().await.devices.len(), 1);
+        assert_eq!(second.device_fabric().await.devices.len(), 1);
+        assert_eq!(
+            fabric_of(&first, PHONE_A).await.routes.wan_available,
+            fabric_of(&second, PHONE_A).await.routes.wan_available
+        );
+    }
+
+    #[cfg(feature = "kdeconnect-wan")]
+    #[tokio::test]
+    async fn a_trusted_device_with_no_route_is_offline_but_still_present() {
+        use crate::kdeconnect::fabric::RelayConnectionState;
+        let (inner, _events) = multi_device_harness(&[PHONE_A]);
+
+        let fabric = inner.device_fabric().await.devices;
+
+        assert_eq!(fabric.len(), 1, "a trusted device stays visible while offline");
+        assert!(fabric[0].trusted, "trust is independent of connectivity");
+        assert_eq!(fabric[0].connection, RelayConnectionState::Offline);
+        assert_eq!(fabric[0].last_seen(), None);
+    }
+
+    #[cfg(feature = "kdeconnect-wan")]
+    #[tokio::test]
+    async fn devices_are_independent_of_one_another() {
+        use crate::kdeconnect::fabric::RelayConnectionState;
+        use crate::kdeconnect::wan::TransportKind;
+        let (inner, _events) = multi_device_harness(&[PHONE_A, PHONE_B, TABLET]);
+        with_route(&inner, PHONE_A, TransportKind::KdeLan).await;
+        with_route(&inner, PHONE_B, TransportKind::RelayWan).await;
+
+        let fabric = inner.device_fabric().await.devices;
+        assert_eq!(fabric.len(), 3);
+
+        // One device on LAN, another on WAN, a third offline -- all at once.
+        assert_eq!(fabric_of(&inner, PHONE_B).await.connection, RelayConnectionState::RemoteDirect);
+        assert_eq!(fabric_of(&inner, TABLET).await.connection, RelayConnectionState::Offline);
+
+        // Phone A losing LAN must not disturb the others.
+        inner.router.unregister(PHONE_A, TransportKind::KdeLan);
+        assert_eq!(fabric_of(&inner, PHONE_A).await.connection, RelayConnectionState::Offline);
+        assert_eq!(fabric_of(&inner, PHONE_B).await.connection, RelayConnectionState::RemoteDirect);
+        assert_eq!(fabric_of(&inner, TABLET).await.connection, RelayConnectionState::Offline);
+    }
+
+    #[cfg(feature = "kdeconnect-wan")]
+    #[tokio::test]
+    async fn capabilities_belong_to_the_device_and_are_isolated_per_device() {
+        use crate::kdeconnect::fabric::RelayFeature;
+        use crate::kdeconnect::wan::TransportKind;
+        let (inner, _events) = multi_device_harness(&[PHONE_A, TABLET]);
+        with_route(&inner, PHONE_A, TransportKind::KdeLan).await;
+        with_route(&inner, TABLET, TransportKind::KdeLan).await;
+
+        inner.peer_capabilities.lock().await.insert(
+            PHONE_A.to_owned(),
+            (
+                vec![
+                    crate::kdeconnect::PACKET_TYPE_SMS_REQUEST_CONVERSATIONS.to_owned(),
+                    crate::kdeconnect::PACKET_TYPE_SHARE_REQUEST.to_owned(),
+                ],
+                vec![crate::kdeconnect::PACKET_TYPE_NOTIFICATION.to_owned()],
+            ),
+        );
+        inner.peer_capabilities.lock().await.insert(
+            TABLET.to_owned(),
+            (vec![crate::kdeconnect::PACKET_TYPE_SHARE_REQUEST.to_owned()], vec![]),
+        );
+
+        let phone = fabric_of(&inner, PHONE_A).await;
+        let tablet = fabric_of(&inner, TABLET).await;
+
+        assert!(phone.supports(RelayFeature::Messages));
+        assert!(phone.supports(RelayFeature::Notifications));
+        assert!(
+            !tablet.supports(RelayFeature::Messages),
+            "one device lacking SMS must not borrow another's capability"
+        );
+        assert!(tablet.supports(RelayFeature::Files), "and keeps its own");
+    }
+
+    #[cfg(feature = "kdeconnect-wan")]
+    #[tokio::test]
+    async fn capabilities_survive_a_route_change_because_they_belong_to_the_device() {
+        use crate::kdeconnect::fabric::RelayFeature;
+        use crate::kdeconnect::wan::TransportKind;
+        let (inner, _events) = multi_device_harness(&[PHONE_A]);
+        with_route(&inner, PHONE_A, TransportKind::KdeLan).await;
+        inner.peer_capabilities.lock().await.insert(
+            PHONE_A.to_owned(),
+            (
+                vec![crate::kdeconnect::PACKET_TYPE_SMS_REQUEST_CONVERSATIONS.to_owned()],
+                vec![],
+            ),
+        );
+        assert!(fabric_of(&inner, PHONE_A).await.supports(RelayFeature::Messages));
+
+        // Go Remote: the capability set must be unchanged.
+        inner.router.unregister(PHONE_A, TransportKind::KdeLan);
+        with_route(&inner, PHONE_A, TransportKind::RelayWan).await;
+
+        let remote = fabric_of(&inner, PHONE_A).await;
+        assert!(remote.connection.is_remote());
+        assert!(
+            remote.supports(RelayFeature::Messages),
+            "going Remote must not strip a capability"
+        );
+    }
+
+    #[cfg(feature = "kdeconnect-wan")]
+    #[tokio::test]
+    async fn battery_state_is_reported_against_its_own_device() {
+        use crate::kdeconnect::wan::TransportKind;
+        let (inner, _events) = multi_device_harness(&[PHONE_A, PHONE_B]);
+        with_route(&inner, PHONE_A, TransportKind::KdeLan).await;
+        inner.battery.lock().await.insert(
+            PHONE_A.to_owned(),
+            BatteryState { current_charge: 58, is_charging: true, threshold_event: None },
+        );
+
+        assert_eq!(fabric_of(&inner, PHONE_A).await.battery_percent, Some(58));
+        assert_eq!(fabric_of(&inner, PHONE_A).await.charging, Some(true));
+        assert_eq!(fabric_of(&inner, PHONE_B).await.battery_percent, None);
+    }
+
+    #[cfg(feature = "kdeconnect-wan")]
+    #[tokio::test]
+    async fn the_snapshot_carries_the_local_policy_so_availability_is_answered_once() {
+        use crate::kdeconnect::fabric::{FeatureAvailability, RelayFeature};
+        use crate::kdeconnect::wan::TransportKind;
+        let (inner, _events) = multi_device_harness(&[PHONE_A]);
+        with_route(&inner, PHONE_A, TransportKind::RelayWan).await;
+        inner.peer_capabilities.lock().await.insert(
+            PHONE_A.to_owned(),
+            (
+                vec![
+                    crate::kdeconnect::PACKET_TYPE_CLIPBOARD_CONNECT.to_owned(),
+                    crate::kdeconnect::PACKET_TYPE_SMS_REQUEST_CONVERSATIONS.to_owned(),
+                ],
+                vec![crate::kdeconnect::PACKET_TYPE_RUNCOMMAND_REQUEST.to_owned()],
+            ),
+        );
+
+        inner.set_clipboard_enabled(false);
+        let snapshot = inner.device_fabric().await;
+        assert!(!snapshot.policy.clipboard_enabled);
+        let device = snapshot.get(PHONE_A).expect("device is in the fabric");
+        // Switched off locally is Disabled, which is a different answer from a
+        // peer that cannot do it at all.
+        assert_eq!(
+            device.availability(RelayFeature::Clipboard, &snapshot.policy),
+            FeatureAvailability::Disabled
+        );
+        // Nothing configured yet is its own state, so the UI can explain it.
+        assert_eq!(
+            device.availability(RelayFeature::Commands, &snapshot.policy),
+            FeatureAvailability::NotConfigured
+        );
+        assert_eq!(
+            device.availability(RelayFeature::Messages, &snapshot.policy),
+            FeatureAvailability::Available
+        );
+
+        inner.set_clipboard_enabled(true);
+        let snapshot = inner.device_fabric().await;
+        assert_eq!(
+            snapshot
+                .get(PHONE_A)
+                .unwrap()
+                .availability(RelayFeature::Clipboard, &snapshot.policy),
+            FeatureAvailability::Available
+        );
+    }
+
+    #[cfg(feature = "kdeconnect-wan")]
+    #[tokio::test]
+    async fn a_device_change_emits_one_event_carrying_both_views() {
+        use crate::kdeconnect::fabric::RelayConnectionState;
+        use crate::kdeconnect::wan::TransportKind;
+        let (inner, mut events) = multi_device_harness(&[PHONE_A]);
+        with_route(&inner, PHONE_A, TransportKind::RelayWan).await;
+
+        inner.emit_devices().await;
+
+        let event = events.recv().await.expect("one event");
+        let KdeConnectEvent::DevicesChanged { devices, fabric } = event else {
+            panic!("expected DevicesChanged");
+        };
+        // One change, one event: the legacy snapshot and the fabric describe the
+        // same moment rather than arriving separately and disagreeing.
+        assert_eq!(devices.len(), 1);
+        assert_eq!(fabric.devices.len(), 1);
+        assert_eq!(fabric.devices[0].id, PHONE_A);
+        assert_eq!(fabric.devices[0].connection, RelayConnectionState::RemoteDirect);
+        assert!(events.try_recv().is_err(), "and no second event follows");
+    }
+
+    // --- Forget -------------------------------------------------------------
+
+    #[cfg(feature = "kdeconnect-wan")]
+    #[tokio::test]
+    async fn forgetting_a_device_removes_its_wan_binding_so_it_cannot_reconnect() {
+        use crate::kdeconnect::wan::{TransportKind, WanBinding};
+        let (inner, _events) = multi_device_harness(&[PHONE_A, PHONE_B]);
+        with_route(&inner, PHONE_A, TransportKind::RelayWan).await;
+
+        let endpoint = iroh::SecretKey::generate().public();
+        inner.wan_bindings.upsert(WanBinding {
+            kde_device_id: PHONE_A.to_owned(),
+            endpoint_id: endpoint,
+            display_name: "Phone A".into(),
+            device_type: "phone".into(),
+            capabilities: Vec::new(),
+            binding_version: 1,
+            updated_at_unix: 0,
+            last_wan_connected_at_unix: None,
+            last_transport: None,
+        });
+        assert!(inner.wan_bindings.by_kde_device_id(PHONE_A).is_some());
+
+        let _ = inner.unpair(PHONE_A).await;
+
+        assert!(
+            inner.wan_bindings.by_kde_device_id(PHONE_A).is_none(),
+            "a forgotten device must not keep a binding it could reconnect through"
+        );
+        assert!(
+            inner.wan_bindings.by_endpoint_id(&endpoint).is_none(),
+            "and the endpoint must no longer resolve to any device"
+        );
+        assert!(inner.router.available_transports(PHONE_A).is_empty());
+        assert!(inner.trust.lock().await.get(PHONE_A).is_none());
+    }
+
+    #[cfg(feature = "kdeconnect-wan")]
+    #[tokio::test]
+    async fn forgetting_one_device_leaves_every_other_device_untouched() {
+        use crate::kdeconnect::wan::{TransportKind, WanBinding};
+        let (inner, _events) = multi_device_harness(&[PHONE_A, PHONE_B]);
+        with_route(&inner, PHONE_A, TransportKind::KdeLan).await;
+        with_route(&inner, PHONE_B, TransportKind::RelayWan).await;
+
+        let keep = iroh::SecretKey::generate().public();
+        inner.wan_bindings.upsert(WanBinding {
+            kde_device_id: PHONE_B.to_owned(),
+            endpoint_id: keep,
+            display_name: "Phone B".into(),
+            device_type: "phone".into(),
+            capabilities: Vec::new(),
+            binding_version: 1,
+            updated_at_unix: 0,
+            last_wan_connected_at_unix: None,
+            last_transport: None,
+        });
+        inner.battery.lock().await.insert(
+            PHONE_B.to_owned(),
+            BatteryState { current_charge: 71, is_charging: false, threshold_event: None },
+        );
+
+        let _ = inner.unpair(PHONE_A).await;
+
+        let fabric = inner.device_fabric().await.devices;
+        assert_eq!(fabric.len(), 1, "only the forgotten device disappears");
+        assert_eq!(fabric[0].id, PHONE_B);
+        assert!(inner.wan_bindings.by_kde_device_id(PHONE_B).is_some());
+        assert_eq!(fabric[0].battery_percent, Some(71));
+        assert!(!inner.router.available_transports(PHONE_B).is_empty());
+    }
+
+    #[cfg(feature = "kdeconnect-wan")]
+    #[tokio::test]
+    async fn forgetting_a_device_clears_its_feature_state_only() {
+        let (inner, _events) = multi_device_harness(&[PHONE_A, PHONE_B]);
+        let dir = tempfile::tempdir().unwrap();
+        inner.set_download_dir(dir.path().to_path_buf()).await;
+        let (tx, _rx) = tokio::sync::mpsc::channel(16);
+
+        for device in [PHONE_A, PHONE_B] {
+            inner
+                .handle_transport_packet(
+                    device,
+                    &notification_packet("n1", "hi", false),
+                    &PacketReplyRoute::Lan(tx.clone()),
+                )
+                .await;
+            inner
+                .handle_transport_packet(
+                    device,
+                    &share_packet("x.bin", 100, Some(&format!("payload-{device}"))),
+                    &PacketReplyRoute::Lan(tx.clone()),
+                )
+                .await;
+        }
+        assert_eq!(inner.transfers_for(PHONE_A).await.len(), 1);
+        assert_eq!(inner.transfers_for(PHONE_B).await.len(), 1);
+
+        let _ = inner.unpair(PHONE_A).await;
+
+        assert!(inner.get_notifications(PHONE_A).await.is_empty());
+        assert!(inner.transfers_for(PHONE_A).await.is_empty());
+        // The other device keeps everything.
+        assert_eq!(inner.get_notifications(PHONE_B).await.len(), 1);
+        assert_eq!(inner.transfers_for(PHONE_B).await.len(), 1);
+    }
+
+    // --- KDE LAN payload transport (real sockets + real TLS) ---------------
+
+    /// Runs one full LAN payload exchange over loopback with real pinned TLS,
+    /// returning what landed on disk.
+    ///
+    /// This is the actual protocol: the sender binds a listener and is the TLS
+    /// *server*, the receiver dials back and is the TLS *client*, and both pin
+    /// the other's certificate.
+    async fn lan_payload_round_trip(
+        sender_identity: &LocalIdentity,
+        receiver_identity: &LocalIdentity,
+        sender_pin: Vec<u8>,
+        receiver_pin: Vec<u8>,
+        body: Vec<u8>,
+        filename: &str,
+    ) -> Result<(std::path::PathBuf, tempfile::TempDir)> {
+        use crate::kdeconnect::files::{lan_payload, receive::IncomingFile};
+
+        let listener = lan_payload::PayloadListener::bind().await?;
+        let port = listener.port();
+        let size = body.len() as u64;
+
+        let sender_identity = sender_identity.clone();
+        let send = tokio::spawn(async move {
+            let stream = listener.accept().await?;
+            let mut tls = start_tls_as_server(&sender_identity, stream, Some(&receiver_pin)).await?;
+            let mut source = std::io::Cursor::new(body);
+            lan_payload::stream_payload(&mut source, &mut tls, size, |_| {}).await?;
+            tokio::io::AsyncWriteExt::shutdown(&mut tls).await.ok();
+            Ok::<_, anyhow::Error>(())
+        });
+
+        let dir = tempfile::tempdir()?;
+        let stream =
+            lan_payload::connect_to_payload(std::net::IpAddr::from([127, 0, 0, 1]), port).await?;
+        let mut tls = start_tls_as_client(
+            receiver_identity,
+            stream,
+            &sender_identity_device_id(&sender_pin),
+            Some(&sender_pin),
+        )
+        .await?;
+        let mut incoming = IncomingFile::create(dir.path(), filename, size, None).await?;
+        incoming.stream_from(&mut tls, |_| {}).await?;
+        let path = incoming.finalize().await?;
+        send.await??;
+        Ok((path, dir))
+    }
+
+    /// The pinned certificate is matched by bytes, so any stable name works for
+    /// the TLS SNI field in these tests.
+    fn sender_identity_device_id(_pin: &[u8]) -> String {
+        "lan-payload-peer".to_string()
+    }
+
+    #[cfg(feature = "kdeconnect-wan")]
+    #[tokio::test]
+    async fn a_large_lan_announcement_is_accepted_while_the_same_size_over_wan_is_not() {
+        let over = (crate::kdeconnect::wan::payload::MAX_WAN_PAYLOAD_BYTES + 1) as i64;
+
+        // LAN: announced with a port, no relayPayloadId -- must be accepted.
+        let (inner, _events) = multi_device_harness(&[PHONE_A]);
+        let (tx, _rx) = tokio::sync::mpsc::channel(16);
+        let mut lan = share_packet("big.bin", over, None);
+        let mut info = serde_json::Map::new();
+        info.insert("port".into(), 1739.into());
+        lan.body.insert("payloadTransferInfo".into(), serde_json::Value::Object(info));
+        inner
+            .handle_transport_packet(PHONE_A, &lan, &PacketReplyRoute::Lan(tx))
+            .await;
+        assert_eq!(
+            inner.transfers_for(PHONE_A).await.len(),
+            1,
+            "a large local file must be accepted"
+        );
+
+        // WAN: the same size with a relayPayloadId must be refused.
+        let (inner, _events) = multi_device_harness(&[PHONE_A]);
+        let (tx, _rx) = tokio::sync::mpsc::channel(16);
+        inner
+            .handle_transport_packet(
+                PHONE_A,
+                &share_packet("big.bin", over, Some("payload-1")),
+                &PacketReplyRoute::Lan(tx),
+            )
+            .await;
+        assert!(inner.transfers_for(PHONE_A).await.is_empty());
+    }
+
+    #[cfg(feature = "kdeconnect-wan")]
+    #[tokio::test]
+    async fn a_lan_payload_streams_over_real_pinned_tls_byte_for_byte() {
+        let sender = LocalIdentity::generate("Sender").unwrap();
+        let receiver = LocalIdentity::generate("Receiver").unwrap();
+        let sender_cert = sender.certificate_der().unwrap().as_ref().to_vec();
+        let receiver_cert = receiver.certificate_der().unwrap().as_ref().to_vec();
+
+        // Multiple chunks plus a partial one.
+        let body: Vec<u8> = (0..(64 * 1024 * 2 + 913)).map(|i| (i % 251) as u8).collect();
+
+        let (path, _dir) = lan_payload_round_trip(
+            &sender,
+            &receiver,
+            sender_cert,
+            receiver_cert,
+            body.clone(),
+            "report.pdf",
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(tokio::fs::read(&path).await.unwrap(), body);
+        assert_eq!(path.file_name().unwrap(), "report.pdf");
+    }
+
+    #[cfg(feature = "kdeconnect-wan")]
+    #[tokio::test]
+    async fn a_lan_payload_larger_than_the_wan_limit_transfers_fine() {
+        // 21 MiB: over the Relay WAN ceiling, which must not apply on LAN.
+        let sender = LocalIdentity::generate("Sender").unwrap();
+        let receiver = LocalIdentity::generate("Receiver").unwrap();
+        let size = 21 * 1024 * 1024;
+        let body = vec![0x5A_u8; size];
+
+        let (path, _dir) = lan_payload_round_trip(
+            &sender,
+            &receiver,
+            sender.certificate_der().unwrap().as_ref().to_vec(),
+            receiver.certificate_der().unwrap().as_ref().to_vec(),
+            body,
+            "large.bin",
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(
+            tokio::fs::metadata(&path).await.unwrap().len(),
+            size as u64,
+            "LAN carries files of any size"
+        );
+    }
+
+    #[cfg(feature = "kdeconnect-wan")]
+    #[tokio::test]
+    async fn zero_and_single_byte_lan_payloads_round_trip() {
+        for body in [Vec::new(), vec![0x42_u8]] {
+            let sender = LocalIdentity::generate("Sender").unwrap();
+            let receiver = LocalIdentity::generate("Receiver").unwrap();
+            let expected = body.clone();
+            let (path, _dir) = lan_payload_round_trip(
+                &sender,
+                &receiver,
+                sender.certificate_der().unwrap().as_ref().to_vec(),
+                receiver.certificate_der().unwrap().as_ref().to_vec(),
+                body,
+                "edge.bin",
+            )
+            .await
+            .unwrap();
+            assert_eq!(tokio::fs::read(&path).await.unwrap(), expected);
+        }
+    }
+
+    #[cfg(feature = "kdeconnect-wan")]
+    #[tokio::test]
+    async fn a_payload_connection_from_the_wrong_peer_is_refused_by_tls() {
+        // An impostor that knows the port but is not the paired device.
+        let sender = LocalIdentity::generate("Sender").unwrap();
+        let receiver = LocalIdentity::generate("Receiver").unwrap();
+        let impostor = LocalIdentity::generate("Impostor").unwrap();
+
+        let result = lan_payload_round_trip(
+            &sender,
+            // The receiver presents the impostor's identity, while the sender
+            // still pins the real receiver's certificate.
+            &impostor,
+            sender.certificate_der().unwrap().as_ref().to_vec(),
+            receiver.certificate_der().unwrap().as_ref().to_vec(),
+            vec![1_u8; 1024],
+            "x.bin",
+        )
+        .await;
+
+        assert!(
+            result.is_err(),
+            "knowing the payload port must never be enough to deliver a file"
+        );
+    }
+
+    #[cfg(feature = "kdeconnect-wan")]
+    #[tokio::test]
+    async fn a_receiver_that_pins_the_wrong_sender_refuses_the_payload() {
+        let sender = LocalIdentity::generate("Sender").unwrap();
+        let receiver = LocalIdentity::generate("Receiver").unwrap();
+        let other = LocalIdentity::generate("Other").unwrap();
+
+        let result = lan_payload_round_trip(
+            &sender,
+            &receiver,
+            // Receiver expects `other`'s certificate, but `sender` answers.
+            other.certificate_der().unwrap().as_ref().to_vec(),
+            receiver.certificate_der().unwrap().as_ref().to_vec(),
+            vec![1_u8; 1024],
+            "x.bin",
+        )
+        .await;
+
+        assert!(result.is_err(), "an unexpected sender certificate must fail the handshake");
+    }
+
+    #[cfg(feature = "kdeconnect-wan")]
+    #[tokio::test]
+    async fn a_lan_payload_that_stops_early_leaves_no_finished_file() {
+        use crate::kdeconnect::files::{lan_payload, receive::IncomingFile};
+        let sender = LocalIdentity::generate("Sender").unwrap();
+        let receiver = LocalIdentity::generate("Receiver").unwrap();
+        let sender_cert = sender.certificate_der().unwrap().as_ref().to_vec();
+        let receiver_cert = receiver.certificate_der().unwrap().as_ref().to_vec();
+
+        let listener = lan_payload::PayloadListener::bind().await.unwrap();
+        let port = listener.port();
+
+        let send = tokio::spawn(async move {
+            let stream = listener.accept().await.unwrap();
+            let mut tls = start_tls_as_server(&sender, stream, Some(&receiver_cert)).await.unwrap();
+            // Announce 10 KiB but deliver 1 KiB, then hang up.
+            tokio::io::AsyncWriteExt::write_all(&mut tls, &vec![7_u8; 1024]).await.unwrap();
+            tokio::io::AsyncWriteExt::shutdown(&mut tls).await.ok();
+        });
+
+        let dir = tempfile::tempdir().unwrap();
+        let stream = lan_payload::connect_to_payload(std::net::IpAddr::from([127, 0, 0, 1]), port)
+            .await
+            .unwrap();
+        let mut tls =
+            start_tls_as_client(&receiver, stream, "peer", Some(&sender_cert)).await.unwrap();
+        let mut incoming = IncomingFile::create(dir.path(), "short.bin", 10_240, None).await.unwrap();
+        let error = incoming.stream_from(&mut tls, |_| {}).await.unwrap_err();
+        drop(incoming);
+        send.await.unwrap();
+
+        assert!(error.to_string().contains("ended after 1024 of 10240"));
+        let mut entries = tokio::fs::read_dir(dir.path()).await.unwrap();
+        assert!(
+            entries.next_entry().await.unwrap().is_none(),
+            "a broken LAN transfer must leave the directory clean"
+        );
+    }
+
+    // --- Route policy and cancellation -------------------------------------
+
+    /// Registers a link of the given kind so route policy can be exercised.
+    #[cfg(feature = "kdeconnect-wan")]
+    async fn with_route(
+        inner: &Arc<LanInner>,
+        device_id: &str,
+        kind: crate::kdeconnect::wan::TransportKind,
+    ) {
+        if kind == crate::kdeconnect::wan::TransportKind::KdeLan {
+            let (packets, _rx) = tokio::sync::mpsc::channel(1);
+            inner.connections.lock().await.insert(
+                device_id.to_owned(),
+                Conn {
+                    packets,
+                    peer_cert_der: Vec::new(),
+                    name: device_id.to_owned(),
+                    device_type: "phone".into(),
+                    protocol_version: PROTOCOL_VERSION,
+                    epoch: 1,
+                },
+            );
+        }
+        inner.router.register(Arc::new(TestRouteLink {
+            device_id: device_id.to_owned(),
+            kind,
+        }));
+        // Only *adds* the share capability. Registering a route must not look
+        // like a capability reset, or tests would mask real capability loss.
+        let mut capabilities = inner.peer_capabilities.lock().await;
+        let entry = capabilities
+            .entry(device_id.to_owned())
+            .or_insert_with(|| (Vec::new(), Vec::new()));
+        let share = crate::kdeconnect::PACKET_TYPE_SHARE_REQUEST.to_owned();
+        if !entry.0.contains(&share) {
+            entry.0.push(share);
+        }
+    }
+
+    fn file_of(dir: &std::path::Path, name: &str, size: u64) -> std::path::PathBuf {
+        let path = dir.join(name);
+        let file = std::fs::File::create(&path).unwrap();
+        file.set_len(size).unwrap();
+        path
+    }
+
+    #[cfg(feature = "kdeconnect-wan")]
+    async fn state_of(
+        inner: &Arc<LanInner>,
+        device_id: &str,
+        transfer_id: &str,
+    ) -> crate::kdeconnect::files::TransferState {
+        inner
+            .transfers
+            .lock()
+            .await
+            .get(&crate::kdeconnect::files::TransferKey::new(device_id, transfer_id))
+            .map(|transfer| transfer.state.clone())
+            .expect("transfer should exist")
+    }
+
+    #[cfg(feature = "kdeconnect-wan")]
+    #[tokio::test]
+    async fn a_large_file_is_accepted_over_lan_because_the_limit_is_wan_only() {
+        use crate::kdeconnect::wan::TransportKind;
+        let (inner, _events) = multi_device_harness(&[PHONE_A]);
+        with_route(&inner, PHONE_A, TransportKind::KdeLan).await;
+
+        let dir = tempfile::tempdir().unwrap();
+        // 25 MiB: comfortably over the Relay WAN ceiling.
+        let path = file_of(dir.path(), "big.bin", 25 * 1024 * 1024);
+
+        let transfer_id = inner.send_file(PHONE_A, &path).await.unwrap();
+
+        assert_ne!(
+            state_of(&inner, PHONE_A, &transfer_id).await,
+            crate::kdeconnect::files::TransferState::RequiresLocalConnection,
+            "LAN must carry files of any size; the 20 MiB cap is a WAN policy"
+        );
+    }
+
+    #[cfg(feature = "kdeconnect-wan")]
+    #[tokio::test]
+    async fn the_same_large_file_is_refused_when_only_wan_is_available() {
+        use crate::kdeconnect::files::TransferState;
+        use crate::kdeconnect::wan::TransportKind;
+        let (inner, _events) = multi_device_harness(&[PHONE_A]);
+        with_route(&inner, PHONE_A, TransportKind::RelayWan).await;
+
+        let dir = tempfile::tempdir().unwrap();
+        let path = file_of(dir.path(), "big.bin", 25 * 1024 * 1024);
+
+        let transfer_id = inner.send_file(PHONE_A, &path).await.unwrap();
+
+        assert_eq!(
+            state_of(&inner, PHONE_A, &transfer_id).await,
+            TransferState::RequiresLocalConnection
+        );
+    }
+
+    #[cfg(feature = "kdeconnect-wan")]
+    #[tokio::test]
+    async fn lan_is_preferred_over_wan_when_both_routes_are_available() {
+        use crate::kdeconnect::wan::TransportKind;
+        let (inner, _events) = multi_device_harness(&[PHONE_A]);
+        with_route(&inner, PHONE_A, TransportKind::RelayWan).await;
+        with_route(&inner, PHONE_A, TransportKind::KdeLan).await;
+
+        // A file over the WAN ceiling proves LAN was chosen: had WAN been
+        // selected this would have been refused outright.
+        let dir = tempfile::tempdir().unwrap();
+        let path = file_of(dir.path(), "big.bin", 25 * 1024 * 1024);
+        let transfer_id = inner.send_file(PHONE_A, &path).await.unwrap();
+
+        assert_ne!(
+            state_of(&inner, PHONE_A, &transfer_id).await,
+            crate::kdeconnect::files::TransferState::RequiresLocalConnection,
+            "a local file must never be relayed over the Internet"
+        );
+        assert_eq!(inner.router.active_transport(PHONE_A), Some(TransportKind::KdeLan));
+    }
+
+    #[cfg(feature = "kdeconnect-wan")]
+    #[tokio::test]
+    async fn a_small_file_is_accepted_on_either_route() {
+        use crate::kdeconnect::files::TransferState;
+        use crate::kdeconnect::wan::TransportKind;
+        for kind in [TransportKind::KdeLan, TransportKind::RelayWan] {
+            let (inner, _events) = multi_device_harness(&[PHONE_A]);
+            with_route(&inner, PHONE_A, kind).await;
+            let dir = tempfile::tempdir().unwrap();
+            let path = file_of(dir.path(), "small.bin", 2 * 1024 * 1024);
+
+            let transfer_id = inner.send_file(PHONE_A, &path).await.unwrap();
+            assert_ne!(
+                state_of(&inner, PHONE_A, &transfer_id).await,
+                TransferState::RequiresLocalConnection,
+                "{kind:?} should accept 2 MiB"
+            );
+        }
+    }
+
+    #[cfg(feature = "kdeconnect-wan")]
+    #[tokio::test]
+    async fn the_remote_boundary_holds_exactly_at_twenty_mebibytes() {
+        use crate::kdeconnect::files::TransferState;
+        use crate::kdeconnect::wan::payload::MAX_WAN_PAYLOAD_BYTES;
+        use crate::kdeconnect::wan::TransportKind;
+
+        for (size, refused) in [(MAX_WAN_PAYLOAD_BYTES, false), (MAX_WAN_PAYLOAD_BYTES + 1, true)] {
+            let (inner, _events) = multi_device_harness(&[PHONE_A]);
+            with_route(&inner, PHONE_A, TransportKind::RelayWan).await;
+            let dir = tempfile::tempdir().unwrap();
+            let path = file_of(dir.path(), "edge.bin", size);
+
+            let transfer_id = inner.send_file(PHONE_A, &path).await.unwrap();
+            let state = state_of(&inner, PHONE_A, &transfer_id).await;
+            assert_eq!(
+                state == TransferState::RequiresLocalConnection,
+                refused,
+                "{size} bytes over WAN"
+            );
+        }
+    }
+
+    #[cfg(feature = "kdeconnect-wan")]
+    #[tokio::test]
+    async fn a_disconnected_device_reports_unavailable_rather_than_a_size_error() {
+        use crate::kdeconnect::files::TransferState;
+        let (inner, _events) = multi_device_harness(&[PHONE_A]);
+        inner.peer_capabilities.lock().await.insert(
+            PHONE_A.to_owned(),
+            (vec![crate::kdeconnect::PACKET_TYPE_SHARE_REQUEST.to_owned()], vec![]),
+        );
+        let dir = tempfile::tempdir().unwrap();
+        let path = file_of(dir.path(), "x.bin", 100);
+
+        let transfer_id = inner.send_file(PHONE_A, &path).await.unwrap();
+
+        assert!(matches!(
+            state_of(&inner, PHONE_A, &transfer_id).await,
+            TransferState::Failed { .. }
+        ));
+    }
+
+    #[cfg(feature = "kdeconnect-wan")]
+    #[tokio::test]
+    async fn a_retry_creates_a_new_transfer_and_re_runs_route_selection() {
+        use crate::kdeconnect::files::TransferState;
+        use crate::kdeconnect::wan::TransportKind;
+        let (inner, _events) = multi_device_harness(&[PHONE_A]);
+        with_route(&inner, PHONE_A, TransportKind::RelayWan).await;
+
+        let dir = tempfile::tempdir().unwrap();
+        let path = file_of(dir.path(), "big.bin", 25 * 1024 * 1024);
+
+        // Remote: refused for its size.
+        let first = inner.send_file(PHONE_A, &path).await.unwrap();
+        assert_eq!(
+            state_of(&inner, PHONE_A, &first).await,
+            TransferState::RequiresLocalConnection
+        );
+
+        // LAN comes back; retrying re-evaluates the route rather than reusing
+        // the old decision.
+        with_route(&inner, PHONE_A, TransportKind::KdeLan).await;
+        let second = inner.send_file(PHONE_A, &path).await.unwrap();
+
+        assert_ne!(first, second, "a retry is a new transfer, not a resumed one");
+        assert_ne!(
+            state_of(&inner, PHONE_A, &second).await,
+            TransferState::RequiresLocalConnection
+        );
+        // The original attempt keeps its own outcome.
+        assert_eq!(
+            state_of(&inner, PHONE_A, &first).await,
+            TransferState::RequiresLocalConnection
+        );
+    }
+
+    #[cfg(feature = "kdeconnect-wan")]
+    #[tokio::test]
+    async fn cancelling_marks_the_transfer_and_drops_its_pending_payload() {
+        use crate::kdeconnect::files::TransferState;
+        let (inner, _events) = multi_device_harness(&[PHONE_A]);
+        let dir = tempfile::tempdir().unwrap();
+        inner.set_download_dir(dir.path().to_path_buf()).await;
+        let (tx, _rx) = tokio::sync::mpsc::channel(16);
+
+        inner
+            .handle_transport_packet(
+                PHONE_A,
+                &share_packet("x.bin", 1_000, Some("payload-1")),
+                &PacketReplyRoute::Lan(tx),
+            )
+            .await;
+        let transfer_id = inner.transfers_for(PHONE_A).await[0].key.transfer_id.clone();
+
+        inner.cancel_transfer(PHONE_A, &transfer_id).await;
+
+        assert_eq!(state_of(&inner, PHONE_A, &transfer_id).await, TransferState::Cancelled);
+        assert!(
+            inner.pending_payloads.lock().await.is_empty(),
+            "a cancelled transfer must not still be waiting for bytes"
+        );
+
+        // A payload arriving afterwards has nothing to attach to and writes
+        // nothing.
+        let mut source = std::io::Cursor::new(vec![0_u8; 1_000]);
+        inner.handle_incoming_payload("payload-1", 1_000, &mut source).await;
+        assert_eq!(
+            state_of(&inner, PHONE_A, &transfer_id).await,
+            TransferState::Cancelled,
+            "a cancelled transfer must never become Completed"
+        );
+        let mut entries = tokio::fs::read_dir(dir.path()).await.unwrap();
+        assert!(entries.next_entry().await.unwrap().is_none());
+    }
+
+    #[cfg(feature = "kdeconnect-wan")]
+    #[tokio::test]
+    async fn cancelling_a_finished_transfer_does_not_rewrite_its_outcome() {
+        use crate::kdeconnect::files::{Transfer, TransferKey, TransferState};
+        let (inner, _events) = multi_device_harness(&[PHONE_A]);
+        let key = TransferKey::new(PHONE_A, "t1");
+        inner.transfers.lock().await.insert(Transfer {
+            key: key.clone(),
+            filename: "x.bin".into(),
+            total_bytes: 10,
+            state: TransferState::Completed { total: 10 },
+        });
+
+        inner.cancel_transfer(PHONE_A, "t1").await;
+
+        assert_eq!(
+            state_of(&inner, PHONE_A, "t1").await,
+            TransferState::Completed { total: 10 }
+        );
+    }
+
+    #[cfg(feature = "kdeconnect-wan")]
+    #[tokio::test]
+    async fn an_announcement_offering_no_payload_transport_fails_cleanly() {
+        let (inner, _events) = multi_device_harness(&[PHONE_A]);
+        let dir = tempfile::tempdir().unwrap();
+        inner.set_download_dir(dir.path().to_path_buf()).await;
+        let (tx, _rx) = tokio::sync::mpsc::channel(16);
+
+        // Neither a relayPayloadId nor a LAN port.
+        inner
+            .handle_transport_packet(
+                PHONE_A,
+                &share_packet("x.bin", 100, None),
+                &PacketReplyRoute::Lan(tx),
+            )
+            .await;
+        tokio::time::sleep(Duration::from_millis(50)).await;
+
+        let transfers = inner.transfers_for(PHONE_A).await;
+        assert!(matches!(
+            transfers[0].state,
+            crate::kdeconnect::files::TransferState::Failed { .. }
+        ));
+    }
+
+    // --- Clipboard ---------------------------------------------------------
+
+    fn clipboard_packet(content: &str, timestamp_ms: i64) -> NetworkPacket {
+        let mut body = serde_json::Map::new();
+        body.insert("content".into(), content.into());
+        body.insert("timestamp".into(), timestamp_ms.into());
+        NetworkPacket::new(crate::kdeconnect::PACKET_TYPE_CLIPBOARD_CONNECT, body)
+    }
+
+    async fn clipboard_events(
+        events: &mut tokio::sync::mpsc::UnboundedReceiver<KdeConnectEvent>,
+    ) -> Vec<(String, String)> {
+        let mut received = Vec::new();
+        while let Ok(event) = events.try_recv() {
+            if let KdeConnectEvent::ClipboardReceived { device_id, content, .. } = event {
+                received.push((device_id, content));
+            }
+        }
+        received
+    }
+
+    #[tokio::test]
+    async fn an_incoming_clipboard_packet_is_applied_once() {
+        let (inner, mut events) = multi_device_harness(&[PHONE_A]);
+        let (tx, _rx) = tokio::sync::mpsc::channel(16);
+        let packet = clipboard_packet("hello", now_unix_millis());
+
+        assert!(
+            inner
+                .handle_transport_packet(PHONE_A, &packet, &PacketReplyRoute::Lan(tx.clone()))
+                .await
+        );
+        // The same packet again -- a retransmit or a reconnect replay.
+        inner
+            .handle_transport_packet(PHONE_A, &packet, &PacketReplyRoute::Lan(tx))
+            .await;
+
+        let applied = clipboard_events(&mut events).await;
+        assert_eq!(applied.len(), 1, "a duplicate packet must be idempotent");
+        assert_eq!(applied[0], (PHONE_A.to_owned(), "hello".to_owned()));
+    }
+
+    #[tokio::test]
+    async fn a_remote_clipboard_value_is_not_echoed_back_out() {
+        let (inner, mut events) = multi_device_harness(&[PHONE_A]);
+        let (tx, _rx) = tokio::sync::mpsc::channel(16);
+        inner
+            .handle_transport_packet(
+                PHONE_A,
+                &clipboard_packet("hello", now_unix_millis()),
+                &PacketReplyRoute::Lan(tx),
+            )
+            .await;
+        assert_eq!(clipboard_events(&mut events).await.len(), 1);
+
+        // The desktop's own clipboard watcher now observes that write. Sending
+        // it back out is exactly the loop this must prevent.
+        inner
+            .send_clipboard_to_all_paired("hello", now_unix_millis())
+            .await
+            .unwrap();
+
+        let guard_blocked = {
+            let mut guard = inner.clipboard_guard.lock().await;
+            guard
+                .should_send_local("hello", true, now_unix_millis())
+                .is_err()
+        };
+        assert!(guard_blocked, "the echo must still be suppressed afterwards");
+    }
+
+    #[tokio::test]
+    async fn an_untrusted_device_cannot_write_the_clipboard() {
+        let (inner, mut events) = multi_device_harness(&[PHONE_A]);
+        let (tx, _rx) = tokio::sync::mpsc::channel(16);
+
+        inner
+            .handle_transport_packet(
+                "dddddddddddddddddddddddddddddddd",
+                &clipboard_packet("hello", now_unix_millis()),
+                &PacketReplyRoute::Lan(tx),
+            )
+            .await;
+
+        assert!(clipboard_events(&mut events).await.is_empty());
+    }
+
+    #[tokio::test]
+    async fn disabling_sync_blocks_an_incoming_clipboard_from_overwriting_the_local_one() {
+        let (inner, mut events) = multi_device_harness(&[PHONE_A]);
+        inner.set_clipboard_enabled(false);
+        let (tx, _rx) = tokio::sync::mpsc::channel(16);
+
+        inner
+            .handle_transport_packet(
+                PHONE_A,
+                &clipboard_packet("hello", now_unix_millis()),
+                &PacketReplyRoute::Lan(tx),
+            )
+            .await;
+
+        assert!(
+            clipboard_events(&mut events).await.is_empty(),
+            "a disabled clipboard must not be overwritten from outside"
+        );
+    }
+
+    #[tokio::test]
+    async fn disabling_sync_blocks_sending_even_to_a_paired_device() {
+        let (inner, _events) = multi_device_harness(&[PHONE_A]);
+        inner.set_clipboard_enabled(false);
+
+        // Succeeds as a no-op rather than erroring: the user switched it off.
+        inner
+            .send_clipboard_to_all_paired("hello", now_unix_millis())
+            .await
+            .unwrap();
+        assert!(
+            inner.send_clipboard(PHONE_A, "hello", now_unix_millis()).await.is_err(),
+            "an explicit single-device send must refuse while sync is off"
+        );
+    }
+
+    #[tokio::test]
+    async fn an_oversized_clipboard_packet_is_rejected_before_it_reaches_the_clipboard() {
+        let (inner, mut events) = multi_device_harness(&[PHONE_A]);
+        let (tx, _rx) = tokio::sync::mpsc::channel(16);
+        let huge = "x".repeat(crate::kdeconnect::clipboard::MAX_CLIPBOARD_BYTES + 1);
+        let packet = clipboard_packet(&huge, now_unix_millis());
+
+        // Refused while parsing, so the dispatcher never claims it.
+        assert!(packet.as_clipboard().is_err());
+        inner
+            .handle_transport_packet(PHONE_A, &packet, &PacketReplyRoute::Lan(tx))
+            .await;
+        assert!(
+            clipboard_events(&mut events).await.is_empty(),
+            "the local clipboard must be preserved"
+        );
+    }
+
+    #[tokio::test]
+    async fn unicode_and_multiline_clipboard_content_is_applied_intact() {
+        let (inner, mut events) = multi_device_harness(&[PHONE_A]);
+        let (tx, _rx) = tokio::sync::mpsc::channel(16);
+        let text = "line one\nline two\t日本語 — 🎉\nhttps://example.com/a?b=c";
+
+        inner
+            .handle_transport_packet(
+                PHONE_A,
+                &clipboard_packet(text, now_unix_millis()),
+                &PacketReplyRoute::Lan(tx),
+            )
+            .await;
+
+        assert_eq!(clipboard_events(&mut events).await[0].1, text);
+    }
+
+    #[cfg(feature = "kdeconnect-wan")]
+    #[tokio::test]
+    async fn clipboard_arriving_over_relay_wan_behaves_identically_to_lan() {
+        let (inner, mut events) = multi_device_harness(&[PHONE_A]);
+        let (_link, route) = wan_route(PHONE_A);
+
+        inner
+            .handle_transport_packet(
+                PHONE_A,
+                &clipboard_packet("from wan", now_unix_millis()),
+                &route,
+            )
+            .await;
+
+        let applied = clipboard_events(&mut events).await;
+        assert_eq!(applied.len(), 1);
+        assert_eq!(applied[0].1, "from wan");
+    }
+
+    #[cfg(feature = "kdeconnect-wan")]
+    #[tokio::test]
+    async fn a_local_copy_fans_out_to_a_remote_device_over_wan() {
+        // The old implementation wrote straight into the LAN connection map, so
+        // a Remote device silently received nothing.
+        let (inner, _events) = multi_device_harness(&[PHONE_A]);
+        let (link, _route) = wan_route(PHONE_A);
+        inner
+            .router
+            .register(Arc::clone(&link) as Arc<dyn crate::kdeconnect::wan::TransportLink>);
+        inner.peer_capabilities.lock().await.insert(
+            PHONE_A.to_owned(),
+            (
+                vec![crate::kdeconnect::PACKET_TYPE_CLIPBOARD_CONNECT.to_owned()],
+                vec![],
+            ),
+        );
+
+        inner
+            .send_clipboard_to_all_paired("hello wan", now_unix_millis())
+            .await
+            .unwrap();
+
+        let sent = link.sent.lock().unwrap().clone();
+        assert!(
+            sent.iter().any(|packet| packet.packet_type
+                == crate::kdeconnect::PACKET_TYPE_CLIPBOARD_CONNECT),
+            "a Remote device must receive the clipboard over WAN"
+        );
+    }
+
+    #[cfg(feature = "kdeconnect-wan")]
+    #[tokio::test]
+    async fn a_remote_origin_value_is_not_fanned_out_to_the_other_devices() {
+        // Three devices: one echo must not become a broadcast to the rest.
+        let (inner, mut events) = multi_device_harness(&[PHONE_A, PHONE_B, TABLET]);
+        let (link_b, _rb) = wan_route(PHONE_B);
+        let (link_t, _rt) = wan_route(TABLET);
+        inner
+            .router
+            .register(Arc::clone(&link_b) as Arc<dyn crate::kdeconnect::wan::TransportLink>);
+        inner
+            .router
+            .register(Arc::clone(&link_t) as Arc<dyn crate::kdeconnect::wan::TransportLink>);
+        for device in [PHONE_B, TABLET] {
+            inner.peer_capabilities.lock().await.insert(
+                device.to_owned(),
+                (
+                    vec![crate::kdeconnect::PACKET_TYPE_CLIPBOARD_CONNECT.to_owned()],
+                    vec![],
+                ),
+            );
+        }
+
+        let (tx, _rx) = tokio::sync::mpsc::channel(16);
+        inner
+            .handle_transport_packet(
+                PHONE_A,
+                &clipboard_packet("from phone a", now_unix_millis()),
+                &PacketReplyRoute::Lan(tx),
+            )
+            .await;
+        assert_eq!(clipboard_events(&mut events).await.len(), 1, "applied locally once");
+
+        // Even if a fan-out were attempted for that value, the guard stops it.
+        inner
+            .send_clipboard_to_all_paired("from phone a", now_unix_millis())
+            .await
+            .unwrap();
+
+        for (name, link) in [("phone-b", &link_b), ("tablet", &link_t)] {
+            assert!(
+                link.sent.lock().unwrap().is_empty(),
+                "{name} must not receive a rebroadcast of another device's clipboard"
+            );
+        }
+    }
+
     // --- Remote input ------------------------------------------------------
 
     /// Records what would have been injected instead of touching the desktop.
@@ -5725,6 +8096,60 @@ mod tests {
         assert_eq!(messages[0].body, "hello");
     }
 
+    #[cfg(feature = "kdeconnect-wan")]
+    #[tokio::test]
+    async fn identical_sms_thread_ids_are_scoped_to_their_originating_device() {
+        let (inner, _events) = multi_device_harness(&[PHONE_A, PHONE_B]);
+        let message_for = |id, body: &str| SmsMessage {
+            id,
+            thread_id: 42,
+            addresses: vec!["+15550100".into()],
+            body: body.into(),
+            date: id,
+            message_type: 1,
+            read: Some(false),
+            sub_id: None,
+            event: None,
+            attachments: Vec::new(),
+        };
+
+        inner
+            .merge_sms_messages(PHONE_A, vec![message_for(1, "from A")])
+            .await;
+        inner
+            .merge_sms_messages(PHONE_B, vec![message_for(1, "from B")])
+            .await;
+        inner
+            .merge_sms_messages(PHONE_A, vec![message_for(2, "A updated")])
+            .await;
+
+        let a = inner.get_sms_messages(PHONE_A, 42).await;
+        let b = inner.get_sms_messages(PHONE_B, 42).await;
+        assert_eq!(a.iter().map(|message| message.body.as_str()).collect::<Vec<_>>(), ["from A", "A updated"]);
+        assert_eq!(b.iter().map(|message| message.body.as_str()).collect::<Vec<_>>(), ["from B"]);
+
+        let (link_a, _) = wan_route(PHONE_A);
+        let (link_b, _) = wan_route(PHONE_B);
+        inner.router.register(Arc::clone(&link_a) as Arc<dyn crate::kdeconnect::wan::TransportLink>);
+        inner.router.register(Arc::clone(&link_b) as Arc<dyn crate::kdeconnect::wan::TransportLink>);
+        for device_id in [PHONE_A, PHONE_B] {
+            inner.peer_capabilities.lock().await.insert(
+                device_id.to_owned(),
+                (vec![crate::kdeconnect::PACKET_TYPE_SMS_REQUEST.to_owned()], Vec::new()),
+            );
+        }
+
+        inner
+            .send_sms(PHONE_B, vec!["+15550100".into()], "reply to B", None)
+            .await
+            .unwrap();
+        assert!(link_a.sent.lock().unwrap().is_empty(), "reply must not be routed through phone A");
+        let sent_b = link_b.sent.lock().unwrap();
+        assert_eq!(sent_b.len(), 1);
+        assert_eq!(sent_b[0].packet_type, crate::kdeconnect::PACKET_TYPE_SMS_REQUEST);
+        assert_eq!(sent_b[0].body["messageBody"], "reply to B");
+    }
+
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn relay_heartbeat_and_device_state_round_trip_over_the_selected_route() {
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -6189,7 +8614,9 @@ mod tests {
         let phone_id = phone_identity.device_id.clone();
         let relay_id = relay_identity.device_id.clone();
 
-        let listener = TcpListener::bind("127.0.0.1:1740").await.unwrap();
+        // Must be inside KDE Connect's advertised TCP range, but below 1739 --
+        // that is where payload listeners start, and one may hold 1740.
+        let listener = TcpListener::bind("127.0.0.1:1718").await.unwrap();
         let addr = listener.local_addr().unwrap();
 
         let relay_inner = LanInner::new(
@@ -6408,7 +8835,7 @@ mod tests {
         let phone_id = phone_identity.device_id.clone();
         let relay_id = relay_identity.device_id.clone();
 
-        let listener = TcpListener::bind("127.0.0.1:1741").await.unwrap();
+        let listener = TcpListener::bind("127.0.0.1:1719").await.unwrap();
         let addr = listener.local_addr().unwrap();
 
         let relay_inner = LanInner::new(

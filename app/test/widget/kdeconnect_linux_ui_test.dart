@@ -7,7 +7,9 @@ import 'package:relay_app/model/persistence/color_mode.dart';
 import 'package:relay_app/model/persistence/quick_save_mode.dart';
 import 'package:relay_app/model/persistence/relay_paired_address.dart';
 import 'package:relay_app/model/ui/relay_capability_vm.dart';
+import 'package:relay_app/model/ui/relay_connection_state.dart';
 import 'package:relay_app/model/ui/relay_device_vm.dart';
+import 'package:relay_app/model/ui/relay_last_seen.dart';
 import 'package:relay_app/pages/gnome/gnome_shell.dart';
 import 'package:relay_app/pages/relay_home_vm.dart';
 import 'package:relay_app/provider/device_info_provider.dart';
@@ -114,6 +116,10 @@ void main() {
     progress: null,
     detail: 'Paired',
     targetKind: RelayDeviceTargetKind.kdeConnect,
+    deviceClass: RelayDeviceClass.phone,
+    fabricTrusted: true,
+    hasFabricRecord: true,
+    explicitConnectionState: RelayConnectionState.offline,
   );
 
   const pairedPhoneNoBattery = RelayDeviceVm(
@@ -124,6 +130,10 @@ void main() {
     progress: null,
     detail: 'Connected',
     targetKind: RelayDeviceTargetKind.kdeConnect,
+    deviceClass: RelayDeviceClass.phone,
+    fabricTrusted: true,
+    hasFabricRecord: true,
+    explicitConnectionState: RelayConnectionState.local,
     battery: RelayBatteryVm(percentage: null, isCharging: false, isFull: false, isStale: false),
   );
 
@@ -135,6 +145,10 @@ void main() {
     progress: null,
     detail: 'Connected',
     targetKind: RelayDeviceTargetKind.kdeConnect,
+    deviceClass: RelayDeviceClass.phone,
+    fabricTrusted: true,
+    hasFabricRecord: true,
+    explicitConnectionState: RelayConnectionState.local,
     battery: RelayBatteryVm(percentage: 76, isCharging: true, isFull: false, isStale: false),
   );
 
@@ -146,6 +160,10 @@ void main() {
     progress: null,
     detail: 'Connected',
     targetKind: RelayDeviceTargetKind.kdeConnect,
+    deviceClass: RelayDeviceClass.phone,
+    fabricTrusted: true,
+    hasFabricRecord: true,
+    explicitConnectionState: RelayConnectionState.local,
     battery: RelayBatteryVm(percentage: 76, isCharging: false, isFull: false, isStale: false),
   );
 
@@ -157,6 +175,10 @@ void main() {
     progress: null,
     detail: 'Paired',
     targetKind: RelayDeviceTargetKind.kdeConnect,
+    deviceClass: RelayDeviceClass.phone,
+    fabricTrusted: true,
+    hasFabricRecord: true,
+    explicitConnectionState: RelayConnectionState.offline,
     battery: RelayBatteryVm(percentage: 76, isCharging: false, isFull: false, isStale: true),
   );
 
@@ -214,10 +236,63 @@ void main() {
     expect(find.byKey(const ValueKey('gnome-send-files-button')), findsNothing);
   });
 
-  testWidgets('paired KDE Connect phone shows Remove Device', (tester) async {
+  testWidgets('Local phone, Remote phone, and Offline tablet render simultaneously without duplicate cards', (tester) async {
+    const local = RelayDeviceVm(
+      key: 'kdeconnect:phone-a',
+      alias: 'Galaxy M14',
+      deviceType: DeviceType.mobile,
+      deviceClass: RelayDeviceClass.phone,
+      phase: RelayDevicePhase.idle,
+      progress: null,
+      detail: 'Connected',
+      targetKind: RelayDeviceTargetKind.kdeConnect,
+      fabricTrusted: true,
+      hasFabricRecord: true,
+      explicitConnectionState: RelayConnectionState.local,
+      battery: RelayBatteryVm(percentage: 58, isCharging: false, isFull: false, isStale: false),
+    );
+    const remote = RelayDeviceVm(
+      key: 'kdeconnect:phone-b',
+      alias: 'Phone B',
+      deviceType: DeviceType.mobile,
+      deviceClass: RelayDeviceClass.phone,
+      phase: RelayDevicePhase.idle,
+      progress: null,
+      detail: 'Connected',
+      targetKind: RelayDeviceTargetKind.kdeConnect,
+      fabricTrusted: true,
+      hasFabricRecord: true,
+      explicitConnectionState: RelayConnectionState.remoteRelay,
+      battery: RelayBatteryVm(percentage: 71, isCharging: false, isFull: false, isStale: false),
+    );
+    const offline = RelayDeviceVm(
+      key: 'kdeconnect:tablet',
+      alias: 'Tablet',
+      deviceType: DeviceType.mobile,
+      deviceClass: RelayDeviceClass.tablet,
+      phase: RelayDevicePhase.idle,
+      progress: null,
+      detail: 'Paired',
+      targetKind: RelayDeviceTargetKind.kdeConnect,
+      fabricTrusted: true,
+      hasFabricRecord: true,
+      explicitConnectionState: RelayConnectionState.offline,
+    );
+
+    await pumpShell(tester, vm([local, remote, offline]));
+    expect(find.byKey(const ValueKey('relay-sidebar-kdeconnect:phone-a')), findsOneWidget);
+    expect(find.byKey(const ValueKey('relay-sidebar-kdeconnect:phone-b')), findsOneWidget);
+    expect(find.byKey(const ValueKey('relay-sidebar-kdeconnect:tablet')), findsOneWidget);
+    expect(find.text('Local'), findsWidgets);
+    expect(find.text('Remote'), findsWidgets);
+    expect(find.text('Offline'), findsWidgets);
+  });
+
+  testWidgets('paired offline KDE Connect phone shows Forget Device', (tester) async {
     await pumpShell(tester, vm([pairedPhone]));
-    expect(find.text('Paired'), findsWidgets);
+    expect(find.text('Offline'), findsWidgets);
     expect(find.byKey(const ValueKey('kdeconnect-remove-device')), findsOneWidget);
+    expect(find.text('Forget Device'), findsOneWidget);
   });
 
   testWidgets('device information uses joined groups with a separate destructive action', (tester) async {

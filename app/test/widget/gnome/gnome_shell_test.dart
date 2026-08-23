@@ -169,7 +169,7 @@ void main() {
     await tester.pump(const Duration(milliseconds: 500));
 
     // Verify presence of sidebar, spatial scene and device details
-    expect(find.text('DEVICES'), findsOneWidget);
+    expect(find.text('MY DEVICES'), findsOneWidget);
     expect(find.text('Pixel 8 Pro'), findsWidgets);
     expect(find.text('Send Files'), findsWidgets);
     expect(find.text('Send Folder'), findsOneWidget);
@@ -309,11 +309,14 @@ void main() {
       final document = tester.widget<ConstrainedBox>(find.byKey(const ValueKey('gnome-settings-document')));
       expect(document.constraints.maxWidth, 760);
       expect(tester.widget<SingleChildScrollView>(find.byType(SingleChildScrollView)).padding, const EdgeInsets.fromLTRB(32, 24, 32, 36));
+      expect(find.text('Clipboard'), findsOneWidget);
+      expect(find.text('Clipboard sync'), findsOneWidget);
+
       // Linux also gains the Remote Input permission group; input control is a
       // user-granted capability and has to be visible and revocable.
       expect(find.text('Remote input'), findsOneWidget);
       expect(find.text('Allow remote input'), findsOneWidget);
-      expect(find.byType(AdwBoxedList), findsNWidgets(8));
+      expect(find.byType(AdwBoxedList), findsNWidgets(9));
       expect(find.byType(RelayBreath), findsNothing);
       expect(find.byType(RelayEdgeSweep), findsNothing);
       expect(find.byType(DropdownButton), findsNothing);
@@ -367,7 +370,7 @@ void main() {
       );
       await tester.pumpAndSettle();
       expect(tester.takeException(), isNull);
-      expect(find.byType(AdwBoxedList), findsNWidgets(8));
+      expect(find.byType(AdwBoxedList), findsNWidgets(9));
       expect(tester.widget<SingleChildScrollView>(find.byType(SingleChildScrollView)).padding, const EdgeInsets.fromLTRB(16, 24, 16, 36));
     } finally {
       debugDefaultTargetPlatformOverride = null;

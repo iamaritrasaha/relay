@@ -6,6 +6,8 @@ import 'package:flutter/services.dart';
 import 'package:logging/logging.dart';
 import 'package:refena_flutter/refena_flutter.dart';
 import 'package:relay_app/provider/persistence_provider.dart';
+import 'package:relay_app/util/native/directories.dart';
+import 'package:relay_app/provider/relay_clipboard_service.dart';
 import 'package:relay_isolates/rust/api/kdeconnect.dart';
 
 final _logger = Logger('KdeConnect');
@@ -83,13 +85,35 @@ class RelayNotificationRecord {
 }
 
 class KdeConnectState {
+  /// The discovery/pairing view: every peer Relay can currently see, trusted or
+  /// not. Kept because the fabric deliberately contains only trusted devices,
+  /// and a pairing candidate has to come from somewhere.
   final List<RsKdeConnectDevice> devices;
+
+  /// The Device Fabric: the authoritative product device model.
+  ///
+  /// One record per trusted logical device, with LAN and Relay WAN recorded as
+  /// routes against it. Connection state, trust, capabilities and feature
+  /// availability all come from here — never from a display string, a selected
+  /// transport, or whichever network last worked.
+  final RsRelayDeviceFabric? fabric;
   final KdeConnectIncomingRequest? incoming;
   final Map<String, List<RsKdeNotification>> notifications;
 
   /// The desktop's RunCommand allow-list. Owned by this machine, not by any
   /// device: which phone asked is carried in the request, never in the storage.
   final List<RsRunCommand> runCommands;
+
+  /// File transfers, keyed by "deviceId:transferId" — never by filename, so two
+  /// devices sending the same name stay independent.
+  final Map<String, RsTransfer> transfers;
+
+  /// Whether clipboard sync is on for this desktop.
+  final bool clipboardEnabled;
+
+  /// Whether this session permits unattended clipboard observation. False on
+  /// Wayland, where only the focused client is offered the clipboard.
+  final bool clipboardAutoSync;
 
   /// Whether the desktop user has switched remote input on.
   final bool remoteInputEnabled;
@@ -107,9 +131,13 @@ class KdeConnectState {
 
   const KdeConnectState({
     this.devices = const [],
+    this.fabric,
     this.incoming,
     this.notifications = const {},
     this.runCommands = const [],
+    this.transfers = const {},
+    this.clipboardEnabled = true,
+    this.clipboardAutoSync = false,
     this.remoteInputEnabled = false,
     this.remoteInputReady = false,
     this.smsConversations = const {},
@@ -120,6 +148,16 @@ class KdeConnectState {
     this.lastPingMessage,
     this.lastPingTimestamp = 0,
   });
+
+  /// Every trusted logical device, in the core's deterministic order.
+  List<RsRelayDevice> get fabricDevices => fabric?.devices ?? const [];
+
+  /// The fabric record for one logical device, or null when Relay does not know
+  /// it. Never falls back to another device's record.
+  RsRelayDevice? fabricFor(String deviceId) {
+    final id = kdeConnectDeviceIdFromKey(deviceId);
+    return fabricDevices.firstWhereOrNull((device) => device.deviceId == id);
+  }
 
   /// Notifications belonging to exactly one logical device.
   ///
@@ -145,19 +183,29 @@ class KdeConnectState {
         ),
   ];
 
+  /// Transfers belonging to one logical device, newest activity included.
+  List<RsTransfer> transfersForDevice(String deviceId) {
+    final id = kdeConnectDeviceIdFromKey(deviceId);
+    return transfers.values.where((transfer) => transfer.deviceId == id).toList();
+  }
+
   /// Display name for a device id, falling back to the raw id so a merged view
   /// can always attribute a notification to *something*.
   String deviceNameFor(String deviceId) {
     final id = kdeConnectDeviceIdFromKey(deviceId);
-    return devices.firstWhereOrNull((device) => device.deviceId == id)?.name ?? id;
+    return fabricFor(id)?.displayName ?? devices.firstWhereOrNull((device) => device.deviceId == id)?.name ?? id;
   }
 
   KdeConnectState copyWith({
     List<RsKdeConnectDevice>? devices,
+    RsRelayDeviceFabric? fabric,
     KdeConnectIncomingRequest? incoming,
     bool clearIncoming = false,
     Map<String, List<RsKdeNotification>>? notifications,
     List<RsRunCommand>? runCommands,
+    Map<String, RsTransfer>? transfers,
+    bool? clipboardEnabled,
+    bool? clipboardAutoSync,
     bool? remoteInputEnabled,
     bool? remoteInputReady,
     Map<String, List<RsKdeSmsConversation>>? smsConversations,
@@ -169,9 +217,13 @@ class KdeConnectState {
     int? lastPingTimestamp,
   }) => KdeConnectState(
     devices: devices ?? this.devices,
+    fabric: fabric ?? this.fabric,
     incoming: clearIncoming ? null : incoming ?? this.incoming,
     notifications: notifications ?? this.notifications,
     runCommands: runCommands ?? this.runCommands,
+    transfers: transfers ?? this.transfers,
+    clipboardEnabled: clipboardEnabled ?? this.clipboardEnabled,
+    clipboardAutoSync: clipboardAutoSync ?? this.clipboardAutoSync,
     remoteInputEnabled: remoteInputEnabled ?? this.remoteInputEnabled,
     remoteInputReady: remoteInputReady ?? this.remoteInputReady,
     smsConversations: smsConversations ?? this.smsConversations,
@@ -202,8 +254,12 @@ class KdeConnectService extends ReduxNotifier<KdeConnectState> {
   final KdeConnectStarter startRuntime;
 
   RsKdeConnect? _runtime;
+
+  /// Watches the local clipboard and applies remote values to it.
+  late final RelayClipboardService clipboard = RelayClipboardService(
+    onLocalChange: (text) async => dispatchAsync(KdeConnectSendClipboardAction(text)),
+  );
   StreamSubscription<RsKdeConnectEvent>? _events;
-  String? _lastReceivedClipboard;
 
   KdeConnectService({
     required this.persistence,
@@ -216,6 +272,7 @@ class KdeConnectService extends ReduxNotifier<KdeConnectState> {
 
   @override
   void dispose() {
+    unawaited(clipboard.stop());
     unawaited(_events?.cancel());
     final runtime = _runtime;
     if (runtime != null) {
@@ -292,9 +349,32 @@ class KdeConnectStartAction extends AsyncReduxAction<KdeConnectService, KdeConne
     // session is deliberately never re-established automatically: input control
     // must be granted by a present user, not inherited from a previous run.
     final remoteInputEnabled = notifier.persistence.getKdeConnectRemoteInputEnabled();
-    runtime.setRemoteInputEnabled(enabled: remoteInputEnabled);
+    await runtime.setRemoteInputEnabled(enabled: remoteInputEnabled);
 
-    return state.copyWith(runCommands: restoredCommands, remoteInputEnabled: remoteInputEnabled, remoteInputReady: false);
+    // Received files need a destination before any transfer can be accepted.
+    final downloadDir = notifier.persistence.getDestination() ?? await getDefaultDestinationDirectory();
+    await runtime.setDownloadDir(directory: downloadDir);
+
+    final clipboardEnabled = notifier.persistence.getKdeConnectClipboardEnabled();
+    await runtime.setClipboardEnabled(enabled: clipboardEnabled);
+    if (clipboardEnabled) {
+      await notifier.clipboard.start();
+    }
+
+    // Read once at start-up so restored trust is on screen immediately, as
+    // Offline. Waiting for the first DevicesChanged would leave a user who has
+    // paired three phones looking at an empty app until one of them connects.
+    // Trust is restored here; a connection is not, and the fabric says so.
+    final initialFabric = await runtime.deviceFabric();
+
+    return state.copyWith(
+      fabric: initialFabric,
+      runCommands: restoredCommands,
+      remoteInputEnabled: remoteInputEnabled,
+      remoteInputReady: false,
+      clipboardEnabled: clipboardEnabled,
+      clipboardAutoSync: notifier.clipboard.autoSyncAvailable,
+    );
   }
 }
 
@@ -404,15 +484,17 @@ class KdeConnectSendClipboardAction extends AsyncReduxAction<KdeConnectService, 
 
   @override
   Future<KdeConnectState> reduce() async {
-    if (content.isNotEmpty && content != notifier._lastReceivedClipboard) {
-      try {
-        await notifier._runtime?.sendClipboardToAllPaired(
-          content: content,
-          timestampMs: DateTime.now().millisecondsSinceEpoch,
-        );
-      } catch (error, stack) {
-        _logger.warning('Send clipboard failed', error, stack);
-      }
+    if (content.isEmpty) return state;
+    try {
+      // Loop suppression, the enable switch and the size bound all live in the
+      // core, which is the only layer that sees both directions.
+      await notifier._runtime?.sendClipboardToAllPaired(
+        content: content,
+        timestampMs: DateTime.now().millisecondsSinceEpoch,
+      );
+    } catch (error, stack) {
+      // Never log the content itself.
+      _logger.warning('Send clipboard failed', error, stack);
     }
     return state;
   }
@@ -458,8 +540,7 @@ List<RsRunCommand> kdeRunCommandsFromJson(List<Map<String, dynamic>> raw) => [
 ];
 
 List<Map<String, dynamic>> kdeRunCommandsToJson(List<RsRunCommand> commands) => [
-  for (final command in commands)
-    {'id': command.id, 'name': command.name, 'command': command.command, 'enabled': command.enabled},
+  for (final command in commands) {'id': command.id, 'name': command.name, 'command': command.command, 'enabled': command.enabled},
 ];
 
 /// Replaces the desktop's RunCommand allow-list, persisting it and pushing it
@@ -482,7 +563,8 @@ class KdeConnectSetRunCommandsAction extends AsyncReduxAction<KdeConnectService,
       // Never log a command line: they routinely carry paths and secrets.
       _logger.warning('Applying the RunCommand list failed', error, stack);
     }
-    return state.copyWith(runCommands: commands);
+    final fabric = await notifier._runtime?.deviceFabric();
+    return state.copyWith(runCommands: commands, fabric: fabric);
   }
 }
 
@@ -498,8 +580,9 @@ class KdeConnectSetRemoteInputEnabledAction extends AsyncReduxAction<KdeConnectS
   @override
   Future<KdeConnectState> reduce() async {
     await notifier.persistence.setKdeConnectRemoteInputEnabled(enabled);
-    notifier._runtime?.setRemoteInputEnabled(enabled: enabled);
-    return state.copyWith(remoteInputEnabled: enabled);
+    await notifier._runtime?.setRemoteInputEnabled(enabled: enabled);
+    final fabric = await notifier._runtime?.deviceFabric();
+    return state.copyWith(remoteInputEnabled: enabled, fabric: fabric);
   }
 }
 
@@ -516,7 +599,8 @@ class KdeConnectAuthorizeRemoteInputAction extends AsyncReduxAction<KdeConnectSe
       _logger.warning('Remote input authorization failed or was declined', error, stack);
     }
     final ready = await notifier._runtime?.remoteInputReady() ?? false;
-    return state.copyWith(remoteInputReady: ready);
+    final fabric = await notifier._runtime?.deviceFabric();
+    return state.copyWith(remoteInputReady: ready, fabric: fabric);
   }
 }
 
@@ -524,7 +608,79 @@ class KdeConnectRevokeRemoteInputAction extends AsyncReduxAction<KdeConnectServi
   @override
   Future<KdeConnectState> reduce() async {
     await notifier._runtime?.revokeRemoteInput();
-    return state.copyWith(remoteInputReady: false);
+    final fabric = await notifier._runtime?.deviceFabric();
+    return state.copyWith(remoteInputReady: false, fabric: fabric);
+  }
+}
+
+/// Turns clipboard sync on or off.
+///
+/// Switching it off stops the local watcher *and* tells the core to refuse
+/// incoming clipboard packets, so neither direction can move data.
+class KdeConnectSetClipboardEnabledAction extends AsyncReduxAction<KdeConnectService, KdeConnectState> {
+  final bool enabled;
+
+  KdeConnectSetClipboardEnabledAction(this.enabled);
+
+  @override
+  Future<KdeConnectState> reduce() async {
+    await notifier.persistence.setKdeConnectClipboardEnabled(enabled);
+    await notifier._runtime?.setClipboardEnabled(enabled: enabled);
+    if (enabled) {
+      await notifier.clipboard.start();
+    } else {
+      await notifier.clipboard.stop();
+    }
+    final fabric = await notifier._runtime?.deviceFabric();
+    return state.copyWith(clipboardEnabled: enabled, fabric: fabric);
+  }
+}
+
+/// Sends one file to a device.
+///
+/// The core decides the route and applies the remote size policy; an oversized
+/// file resolves to `requiresLocalConnection` rather than failing, so the UI can
+/// explain what to do instead of showing an error.
+class KdeConnectSendFileAction extends AsyncReduxAction<KdeConnectService, KdeConnectState> {
+  final String deviceId;
+  final String path;
+
+  KdeConnectSendFileAction({required this.deviceId, required this.path});
+
+  @override
+  Future<KdeConnectState> reduce() async {
+    try {
+      await notifier._runtime?.sendFile(deviceId: kdeConnectDeviceIdFromKey(deviceId), path: path);
+    } catch (error, stack) {
+      // Log the failure, not the file's contents or full path.
+      _logger.warning('Send file failed for device=$deviceId', error, stack);
+    }
+    return state;
+  }
+}
+
+/// Cancels an in-flight transfer.
+///
+/// The core marks it cancelled, drops any pending payload correlation and
+/// removes the partial file, so a cancelled transfer can never later report as
+/// completed.
+class KdeConnectCancelTransferAction extends AsyncReduxAction<KdeConnectService, KdeConnectState> {
+  final String deviceId;
+  final String transferId;
+
+  KdeConnectCancelTransferAction({required this.deviceId, required this.transferId});
+
+  @override
+  Future<KdeConnectState> reduce() async {
+    try {
+      await notifier._runtime?.cancelTransfer(
+        deviceId: kdeConnectDeviceIdFromKey(deviceId),
+        transferId: transferId,
+      );
+    } catch (error, stack) {
+      _logger.warning('Cancel transfer failed', error, stack);
+    }
+    return state;
   }
 }
 
@@ -536,8 +692,23 @@ class KdeConnectApplyEventAction extends ReduxAction<KdeConnectService, KdeConne
   @override
   KdeConnectState reduce() {
     switch (event) {
-      case RsKdeConnectEvent_DevicesChanged(:final devices):
-        return state.copyWith(devices: devices);
+      case RsKdeConnectEvent_DevicesChanged(:final devices, :final fabric):
+        // One event carries both views of the same observation, so the fabric
+        // and the discovery list can never describe different moments. Device-
+        // owned caches are pruned against that same snapshot: when Forget
+        // removes a Fabric record, no stale message, notification, transfer or
+        // phone state can keep living behind a vanished card.
+        final retainedIds = fabric.devices.map((device) => device.deviceId).toSet();
+        return state.copyWith(
+          devices: devices,
+          fabric: fabric,
+          notifications: Map.fromEntries(state.notifications.entries.where((entry) => retainedIds.contains(entry.key))),
+          transfers: Map.fromEntries(state.transfers.entries.where((entry) => retainedIds.contains(entry.value.deviceId))),
+          smsConversations: Map.fromEntries(state.smsConversations.entries.where((entry) => retainedIds.contains(entry.key))),
+          smsMessages: Map.fromEntries(state.smsMessages.entries.where((entry) => retainedIds.contains(entry.key))),
+          activeCalls: Map.fromEntries(state.activeCalls.entries.where((entry) => retainedIds.contains(entry.key))),
+          recentTelephonyEvents: Map.fromEntries(state.recentTelephonyEvents.entries.where((entry) => retainedIds.contains(entry.key))),
+        );
       case RsKdeConnectEvent_IncomingPair(:final deviceId, :final name):
         return state.copyWith(
           incoming: KdeConnectIncomingRequest(deviceId: deviceId, name: name),
@@ -569,10 +740,11 @@ class KdeConnectApplyEventAction extends ReduxAction<KdeConnectService, KdeConne
           lastPingTimestamp: DateTime.now().millisecondsSinceEpoch,
         );
       case RsKdeConnectEvent_ClipboardReceived(:final content):
-        if (content.isNotEmpty && content != notifier._lastReceivedClipboard) {
-          notifier._lastReceivedClipboard = content;
-          unawaited(Clipboard.setData(ClipboardData(text: content)));
-        }
+        // The core has already decided this is worth applying: it checked trust,
+        // the enable switch, the size bound and loop suppression, and recorded
+        // the value so the resulting local change is not echoed back. Applying
+        // it here through the GTK channel keeps Wayland working.
+        unawaited(notifier.clipboard.applyRemote(content));
         return state;
       case RsKdeConnectEvent_NotificationsChanged(:final deviceId, :final notifications):
         return state.copyWith(
@@ -600,6 +772,12 @@ class KdeConnectApplyEventAction extends ReduxAction<KdeConnectService, KdeConne
           'messages=${nextState.smsMessages[deviceId]?.values.fold<int>(0, (total, thread) => total + thread.length) ?? 0}',
         );
         return nextState;
+      case RsKdeConnectEvent_TransferChanged(:final transfer):
+        // Keyed by device *and* transfer id: a second device sending the same
+        // filename must not overwrite the first one's progress.
+        return state.copyWith(
+          transfers: {...state.transfers, '${transfer.deviceId}:${transfer.transferId}': transfer},
+        );
       case RsKdeConnectEvent_TelephonyReceived(:final deviceId, :final event):
         final currentEvent = KdeTelephonyState(
           event: event.event,
