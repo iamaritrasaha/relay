@@ -169,7 +169,7 @@ void main() {
     await tester.pump(const Duration(milliseconds: 500));
 
     // Verify presence of sidebar, spatial scene and device details
-    expect(find.text('DEVICES'), findsOneWidget);
+    expect(find.text('MY DEVICES'), findsOneWidget);
     expect(find.text('Pixel 8 Pro'), findsWidgets);
     expect(find.text('Send Files'), findsWidgets);
     expect(find.text('Send Folder'), findsOneWidget);

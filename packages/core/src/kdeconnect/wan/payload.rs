@@ -15,8 +15,7 @@
 
 use uuid::Uuid;
 
-/// Strict Relay WAN V1 payload ceiling: 20 MiB.
-pub const MAX_WAN_PAYLOAD_BYTES: u64 = 20 * 1024 * 1024;
+pub use crate::kdeconnect::files::MAX_WAN_PAYLOAD_BYTES;
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq, thiserror::Error)]
 pub enum WanPayloadError {

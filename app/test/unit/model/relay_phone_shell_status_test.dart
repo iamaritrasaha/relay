@@ -49,6 +49,51 @@ RsKdeConnectDevice kdeDevice({
   transportState: connected ? transportState : 'offline',
 );
 
+RsRelayDeviceFabric fabricFor(List<RsKdeConnectDevice> devices) => RsRelayDeviceFabric(
+  devices: [
+    for (final device in devices)
+      if (device.paired)
+        RsRelayDevice(
+          deviceId: device.deviceId,
+          displayName: device.name,
+          deviceClass: device.deviceType == 'tablet'
+              ? RsRelayDeviceClass.tablet
+              : device.deviceType == 'phone'
+              ? RsRelayDeviceClass.phone
+              : RsRelayDeviceClass.laptop,
+          trusted: true,
+          connectionState: switch (device.transportState) {
+            'local' when device.connected => RsRelayConnectionState.local,
+            'remoteDirect' when device.connected => RsRelayConnectionState.remoteDirect,
+            'remoteRelay' when device.connected => RsRelayConnectionState.remoteRelay,
+            _ => RsRelayConnectionState.offline,
+          },
+          lanAvailable: device.connected && device.transportState == 'local',
+          wanAvailable: device.connected && device.transportState.startsWith('remote'),
+          wanBound: device.transportState.startsWith('remote'),
+          batteryPercent: device.batteryPercentage,
+          charging: device.batteryIsCharging,
+          capabilities: const [RsRelayFeature.notifications, RsRelayFeature.clipboard, RsRelayFeature.battery, RsRelayFeature.ping],
+          featureAvailability: [
+            for (final feature in const [
+              RsRelayFeature.notifications,
+              RsRelayFeature.clipboard,
+              RsRelayFeature.battery,
+              RsRelayFeature.ping,
+            ])
+              RsRelayFeatureState(
+                feature: feature,
+                availability: device.connected ? RsFeatureAvailability.available : RsFeatureAvailability.notConnected,
+              ),
+          ],
+        ),
+  ],
+  clipboardEnabled: true,
+  remoteInputEnabled: false,
+  remoteInputAuthorized: false,
+  hasConfiguredCommands: false,
+);
+
 List<RelayDeviceVm> devicesFor(List<RsKdeConnectDevice> kdeConnectDevices) => RelayHomeVm.fromState(
   configuredAlias: 'My Linux',
   selfDeviceType: DeviceType.desktop,
@@ -63,6 +108,7 @@ List<RelayDeviceVm> devicesFor(List<RsKdeConnectDevice> kdeConnectDevices) => Re
   transfers: FileTransferNotifier(),
   selectedFiles: const [],
   kdeConnectDevices: kdeConnectDevices,
+  kdeFabric: fabricFor(kdeConnectDevices),
 ).devices;
 
 RelayPhoneShellStatus? statusFor(
@@ -190,6 +236,15 @@ void main() {
       ]);
       expect(snapshot!.displayName, 'Redmi Note 14 Pro');
       expect(snapshot.phoneCount, 2);
+    });
+
+    test('a connected phone outranks a connected tablet', () {
+      final snapshot = statusFor([
+        kdeDevice(id: _phoneId, name: 'Phone', deviceType: 'phone'),
+        kdeDevice(id: _secondPhoneId, name: 'Newer tablet', deviceType: 'tablet'),
+      ]);
+      expect(snapshot!.deviceId, 'kdeconnect:$_phoneId');
+      expect(snapshot.phoneCount, 2, reason: 'selecting one shell device must not remove the other from app state');
     });
 
     test('follow focused device selects the active focused phone', () {

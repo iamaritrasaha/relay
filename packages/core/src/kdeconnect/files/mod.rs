@@ -23,7 +23,10 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
-use crate::kdeconnect::wan::payload::MAX_WAN_PAYLOAD_BYTES;
+/// Strict Relay WAN V1 payload ceiling. Kept in the transport-neutral file
+/// layer so a KDE/LAN-only build can still compile and enforce metadata rules
+/// without importing the optional WAN module.
+pub const MAX_WAN_PAYLOAD_BYTES: u64 = 20 * 1024 * 1024;
 
 pub mod lan_payload;
 pub mod receive;

@@ -143,10 +143,10 @@ return transferChanged(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeWhen<TResult extends Object?>({TResult Function( List<RsKdeConnectDevice> devices)?  devicesChanged,TResult Function( String deviceId,  String name)?  incomingPair,TResult Function( String deviceId,  String reason)?  pairingFailed,TResult Function( List<RsKdeConnectTrustedDevice> devices)?  trustChanged,TResult Function( String deviceId,  String? message)?  pingReceived,TResult Function( String deviceId,  String content,  PlatformInt64 timestampMs)?  clipboardReceived,TResult Function( String deviceId,  List<RsKdeNotification> notifications)?  notificationsChanged,TResult Function( String deviceId,  List<RsKdeSmsConversation> conversations,  List<RsKdeSmsMessage> messages)?  smsChanged,TResult Function( String deviceId,  RsKdeTelephonyEvent event)?  telephonyReceived,TResult Function( RsTransfer transfer)?  transferChanged,required TResult orElse(),}) {final _that = this;
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>({TResult Function( List<RsKdeConnectDevice> devices,  RsRelayDeviceFabric fabric)?  devicesChanged,TResult Function( String deviceId,  String name)?  incomingPair,TResult Function( String deviceId,  String reason)?  pairingFailed,TResult Function( List<RsKdeConnectTrustedDevice> devices)?  trustChanged,TResult Function( String deviceId,  String? message)?  pingReceived,TResult Function( String deviceId,  String content,  PlatformInt64 timestampMs)?  clipboardReceived,TResult Function( String deviceId,  List<RsKdeNotification> notifications)?  notificationsChanged,TResult Function( String deviceId,  List<RsKdeSmsConversation> conversations,  List<RsKdeSmsMessage> messages)?  smsChanged,TResult Function( String deviceId,  RsKdeTelephonyEvent event)?  telephonyReceived,TResult Function( RsTransfer transfer)?  transferChanged,required TResult orElse(),}) {final _that = this;
 switch (_that) {
 case RsKdeConnectEvent_DevicesChanged() when devicesChanged != null:
-return devicesChanged(_that.devices);case RsKdeConnectEvent_IncomingPair() when incomingPair != null:
+return devicesChanged(_that.devices,_that.fabric);case RsKdeConnectEvent_IncomingPair() when incomingPair != null:
 return incomingPair(_that.deviceId,_that.name);case RsKdeConnectEvent_PairingFailed() when pairingFailed != null:
 return pairingFailed(_that.deviceId,_that.reason);case RsKdeConnectEvent_TrustChanged() when trustChanged != null:
 return trustChanged(_that.devices);case RsKdeConnectEvent_PingReceived() when pingReceived != null:
@@ -173,10 +173,10 @@ return transferChanged(_that.transfer);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult when<TResult extends Object?>({required TResult Function( List<RsKdeConnectDevice> devices)  devicesChanged,required TResult Function( String deviceId,  String name)  incomingPair,required TResult Function( String deviceId,  String reason)  pairingFailed,required TResult Function( List<RsKdeConnectTrustedDevice> devices)  trustChanged,required TResult Function( String deviceId,  String? message)  pingReceived,required TResult Function( String deviceId,  String content,  PlatformInt64 timestampMs)  clipboardReceived,required TResult Function( String deviceId,  List<RsKdeNotification> notifications)  notificationsChanged,required TResult Function( String deviceId,  List<RsKdeSmsConversation> conversations,  List<RsKdeSmsMessage> messages)  smsChanged,required TResult Function( String deviceId,  RsKdeTelephonyEvent event)  telephonyReceived,required TResult Function( RsTransfer transfer)  transferChanged,}) {final _that = this;
+@optionalTypeArgs TResult when<TResult extends Object?>({required TResult Function( List<RsKdeConnectDevice> devices,  RsRelayDeviceFabric fabric)  devicesChanged,required TResult Function( String deviceId,  String name)  incomingPair,required TResult Function( String deviceId,  String reason)  pairingFailed,required TResult Function( List<RsKdeConnectTrustedDevice> devices)  trustChanged,required TResult Function( String deviceId,  String? message)  pingReceived,required TResult Function( String deviceId,  String content,  PlatformInt64 timestampMs)  clipboardReceived,required TResult Function( String deviceId,  List<RsKdeNotification> notifications)  notificationsChanged,required TResult Function( String deviceId,  List<RsKdeSmsConversation> conversations,  List<RsKdeSmsMessage> messages)  smsChanged,required TResult Function( String deviceId,  RsKdeTelephonyEvent event)  telephonyReceived,required TResult Function( RsTransfer transfer)  transferChanged,}) {final _that = this;
 switch (_that) {
 case RsKdeConnectEvent_DevicesChanged():
-return devicesChanged(_that.devices);case RsKdeConnectEvent_IncomingPair():
+return devicesChanged(_that.devices,_that.fabric);case RsKdeConnectEvent_IncomingPair():
 return incomingPair(_that.deviceId,_that.name);case RsKdeConnectEvent_PairingFailed():
 return pairingFailed(_that.deviceId,_that.reason);case RsKdeConnectEvent_TrustChanged():
 return trustChanged(_that.devices);case RsKdeConnectEvent_PingReceived():
@@ -199,10 +199,10 @@ return transferChanged(_that.transfer);}
 /// }
 /// ```
 
-@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>({TResult? Function( List<RsKdeConnectDevice> devices)?  devicesChanged,TResult? Function( String deviceId,  String name)?  incomingPair,TResult? Function( String deviceId,  String reason)?  pairingFailed,TResult? Function( List<RsKdeConnectTrustedDevice> devices)?  trustChanged,TResult? Function( String deviceId,  String? message)?  pingReceived,TResult? Function( String deviceId,  String content,  PlatformInt64 timestampMs)?  clipboardReceived,TResult? Function( String deviceId,  List<RsKdeNotification> notifications)?  notificationsChanged,TResult? Function( String deviceId,  List<RsKdeSmsConversation> conversations,  List<RsKdeSmsMessage> messages)?  smsChanged,TResult? Function( String deviceId,  RsKdeTelephonyEvent event)?  telephonyReceived,TResult? Function( RsTransfer transfer)?  transferChanged,}) {final _that = this;
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>({TResult? Function( List<RsKdeConnectDevice> devices,  RsRelayDeviceFabric fabric)?  devicesChanged,TResult? Function( String deviceId,  String name)?  incomingPair,TResult? Function( String deviceId,  String reason)?  pairingFailed,TResult? Function( List<RsKdeConnectTrustedDevice> devices)?  trustChanged,TResult? Function( String deviceId,  String? message)?  pingReceived,TResult? Function( String deviceId,  String content,  PlatformInt64 timestampMs)?  clipboardReceived,TResult? Function( String deviceId,  List<RsKdeNotification> notifications)?  notificationsChanged,TResult? Function( String deviceId,  List<RsKdeSmsConversation> conversations,  List<RsKdeSmsMessage> messages)?  smsChanged,TResult? Function( String deviceId,  RsKdeTelephonyEvent event)?  telephonyReceived,TResult? Function( RsTransfer transfer)?  transferChanged,}) {final _that = this;
 switch (_that) {
 case RsKdeConnectEvent_DevicesChanged() when devicesChanged != null:
-return devicesChanged(_that.devices);case RsKdeConnectEvent_IncomingPair() when incomingPair != null:
+return devicesChanged(_that.devices,_that.fabric);case RsKdeConnectEvent_IncomingPair() when incomingPair != null:
 return incomingPair(_that.deviceId,_that.name);case RsKdeConnectEvent_PairingFailed() when pairingFailed != null:
 return pairingFailed(_that.deviceId,_that.reason);case RsKdeConnectEvent_TrustChanged() when trustChanged != null:
 return trustChanged(_that.devices);case RsKdeConnectEvent_PingReceived() when pingReceived != null:
@@ -223,7 +223,7 @@ return transferChanged(_that.transfer);case _:
 
 
 class RsKdeConnectEvent_DevicesChanged extends RsKdeConnectEvent {
-  const RsKdeConnectEvent_DevicesChanged({required final  List<RsKdeConnectDevice> devices}): _devices = devices,super._();
+  const RsKdeConnectEvent_DevicesChanged({required final  List<RsKdeConnectDevice> devices, required this.fabric}): _devices = devices,super._();
   
 
  final  List<RsKdeConnectDevice> _devices;
@@ -233,6 +233,11 @@ class RsKdeConnectEvent_DevicesChanged extends RsKdeConnectEvent {
   return EqualUnmodifiableListView(_devices);
 }
 
+/// The Device Fabric as of the same observation. This is the
+/// authoritative product device model; `devices` remains for the
+/// discovery/pairing surface, which sees untrusted peers the fabric
+/// deliberately does not contain.
+ final  RsRelayDeviceFabric fabric;
 
 /// Create a copy of RsKdeConnectEvent
 /// with the given fields replaced by the non-null parameter values.
@@ -244,16 +249,16 @@ $RsKdeConnectEvent_DevicesChangedCopyWith<RsKdeConnectEvent_DevicesChanged> get 
 
 @override
 bool operator ==(Object other) {
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is RsKdeConnectEvent_DevicesChanged&&const DeepCollectionEquality().equals(other._devices, _devices));
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is RsKdeConnectEvent_DevicesChanged&&const DeepCollectionEquality().equals(other._devices, _devices)&&(identical(other.fabric, fabric) || other.fabric == fabric));
 }
 
 
 @override
-int get hashCode => Object.hash(runtimeType,const DeepCollectionEquality().hash(_devices));
+int get hashCode => Object.hash(runtimeType,const DeepCollectionEquality().hash(_devices),fabric);
 
 @override
 String toString() {
-  return 'RsKdeConnectEvent.devicesChanged(devices: $devices)';
+  return 'RsKdeConnectEvent.devicesChanged(devices: $devices, fabric: $fabric)';
 }
 
 
@@ -264,7 +269,7 @@ abstract mixin class $RsKdeConnectEvent_DevicesChangedCopyWith<$Res> implements 
   factory $RsKdeConnectEvent_DevicesChangedCopyWith(RsKdeConnectEvent_DevicesChanged value, $Res Function(RsKdeConnectEvent_DevicesChanged) _then) = _$RsKdeConnectEvent_DevicesChangedCopyWithImpl;
 @useResult
 $Res call({
- List<RsKdeConnectDevice> devices
+ List<RsKdeConnectDevice> devices, RsRelayDeviceFabric fabric
 });
 
 
@@ -281,10 +286,11 @@ class _$RsKdeConnectEvent_DevicesChangedCopyWithImpl<$Res>
 
 /// Create a copy of RsKdeConnectEvent
 /// with the given fields replaced by the non-null parameter values.
-@pragma('vm:prefer-inline') $Res call({Object? devices = null,}) {
+@pragma('vm:prefer-inline') $Res call({Object? devices = null,Object? fabric = null,}) {
   return _then(RsKdeConnectEvent_DevicesChanged(
 devices: null == devices ? _self._devices : devices // ignore: cast_nullable_to_non_nullable
-as List<RsKdeConnectDevice>,
+as List<RsKdeConnectDevice>,fabric: null == fabric ? _self.fabric : fabric // ignore: cast_nullable_to_non_nullable
+as RsRelayDeviceFabric,
   ));
 }
 

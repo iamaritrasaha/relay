@@ -1,6 +1,6 @@
 import 'package:collection/collection.dart';
-import 'package:relay_app/model/ui/relay_connection_state.dart';
 import 'package:relay_app/model/ui/relay_capability_vm.dart';
+import 'package:relay_app/model/ui/relay_last_seen.dart';
 import 'package:relay_app/model/ui/relay_device_vm.dart';
 import 'package:relay_isolates/model/device.dart';
 
@@ -214,11 +214,7 @@ class RelayPhoneShellStatus {
     Map<String, int> notificationCounts = const {},
     Map<String, int> unreadMessageCounts = const {},
   }) {
-    final candidates = devices.where(isEligiblePhone).toList()
-      ..sort((a, b) {
-        final connectedComparison = _boolRank(isConnected(b)).compareTo(_boolRank(isConnected(a)));
-        return connectedComparison != 0 ? connectedComparison : a.key.compareTo(b.key);
-      });
+    final candidates = devices.where(isEligiblePhone).toList()..sort(_byPrimaryPreference);
 
     RelayDeviceVm? chosen;
 
@@ -260,10 +256,35 @@ class RelayPhoneShellStatus {
   static bool isEligiblePhone(RelayDeviceVm device) => device.deviceType == DeviceType.mobile && device.isPaired;
 
   /// Whether a live link exists, across every transport Relay speaks.
-  static bool isConnected(RelayDeviceVm device) =>
-      device.isKdeConnect ? device.connectionState.isConnected : device.continuityConnected;
+  static bool isConnected(RelayDeviceVm device) => device.isKdeConnect ? device.connectionState.isConnected : device.continuityConnected;
 
-  static int _boolRank(bool value) => value ? 1 : 0;
+  /// The core's primary-device preference, applied to the shell's candidates.
+  ///
+  /// Showing one device is a deliberate presentation choice, so the choice is
+  /// explicit and total rather than falling out of iteration order. A connected
+  /// phone and a connected tablet are separate ranks, not one "connected mobile"
+  /// bucket: without that, a tablet that happened to be more recently active
+  /// took the place of the phone the user actually meant.
+  static int _byPrimaryPreference(RelayDeviceVm a, RelayDeviceVm b) {
+    final rankComparison = _primaryRank(a).compareTo(_primaryRank(b));
+    if (rankComparison != 0) {
+      return rankComparison;
+    }
+    // Most recently active first; a device with no timestamp sorts last.
+    final recency = (b.lastSeenUnix ?? -1).compareTo(a.lastSeenUnix ?? -1);
+    // Falling through to the id keeps the answer stable across rebuilds.
+    return recency != 0 ? recency : a.key.compareTo(b.key);
+  }
+
+  static int _primaryRank(RelayDeviceVm device) {
+    final connected = isConnected(device);
+    return switch (device.deviceClass) {
+      RelayDeviceClass.phone => connected ? 0 : 3,
+      RelayDeviceClass.tablet => connected ? 1 : 4,
+      // A device with no fabric class is still rankable by connectivity alone.
+      _ => connected ? 2 : 5,
+    };
+  }
 
   /// Maps Relay's canonical device model onto the shell snapshot.
   ///

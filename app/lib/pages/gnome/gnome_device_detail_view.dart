@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:refena_flutter/refena_flutter.dart';
@@ -8,6 +7,7 @@ import 'package:relay_app/config/relay_brand.dart';
 import 'package:relay_app/config/relay_motion.dart';
 import 'package:relay_app/model/ui/relay_capability_vm.dart';
 import 'package:relay_app/model/ui/relay_device_vm.dart';
+import 'package:relay_app/model/ui/relay_feature.dart';
 import 'package:relay_app/pages/relay_home_vm.dart';
 import 'package:relay_app/provider/kdeconnect_provider.dart';
 import 'package:relay_app/provider/receive_history_provider.dart';
@@ -19,7 +19,6 @@ import 'package:relay_app/widget/gnome/relay_connection_stage.dart';
 import 'package:relay_app/widget/gnome/relay_connection_status.dart';
 import 'package:relay_app/widget/relay/relay_device_relationship_tile.dart';
 import 'package:relay_app/widget/relay_carbon/relay_surface.dart';
-import 'package:relay_app/widget/relay_motion/relay_ambient_clock.dart';
 import 'package:relay_app/widget/relay_motion/relay_atmospheric_drift.dart';
 import 'package:relay_app/widget/relay_motion/relay_breath.dart';
 import 'package:relay_app/widget/relay_motion/relay_device_dock.dart';
@@ -72,11 +71,15 @@ class GnomeDeviceDetailView extends StatelessWidget {
     this.onCancelTransfer,
   });
 
-  bool get _connected =>
-      (device.isKdeConnect && device.connectionState.isConnected) ||
-      device.statusSummary == 'Connected' ||
-      device.statusSummary.startsWith('Connected · ') ||
-      device.continuityConnected;
+  /// Whether a live route exists.
+  ///
+  /// For a KDE device this is the Device Fabric's answer and nothing else; the
+  /// string comparisons below only serve continuity peers, which have no fabric
+  /// record. Letting them apply to a KDE device is how an offline phone once
+  /// read as connected.
+  bool get _connected => device.isKdeConnect
+      ? device.connectionState.isConnected
+      : (device.statusSummary == 'Connected' || device.statusSummary.startsWith('Connected · ') || device.continuityConnected);
 
   bool get _transferring =>
       device.phase == RelayDevicePhase.sending || device.phase == RelayDevicePhase.waiting || device.phase == RelayDevicePhase.verifying;
@@ -318,7 +321,10 @@ class _DeviceHeader extends StatelessWidget {
               if (device.phase == RelayDevicePhase.idle)
                 RelayConnectionStatus(
                   connected: connected,
-                  label: connected ? device.statusSummary : device.detail,
+                  // [statusSummary] is already the fabric's word for this device
+                  // in both states; falling back to [detail] when disconnected
+                  // reintroduced the display-string derivation.
+                  label: device.statusSummary,
                   palette: palette,
                   animationsEnabled: animationsEnabled,
                   ambient: true,
@@ -399,6 +405,42 @@ class _ActionRow extends StatelessWidget {
     _ => false,
   };
 
+  /// One action button, presented from the core's availability answer.
+  ///
+  /// Returns null only for a feature the peer never advertised: hiding a
+  /// feature that exists but is temporarily out of reach would tell the user
+  /// their phone cannot do something it plainly can.
+  static Widget? _featureAction({
+    required RelayDeviceVm device,
+    required RelayFeature feature,
+    required Key buttonKey,
+    required IconData icon,
+    required String label,
+    required VoidCallback onPressed,
+    bool primary = false,
+  }) {
+    final availability = device.availabilityOf(feature);
+    if (!availability.isVisible) {
+      return null;
+    }
+    final enabled = availability.isAvailable;
+    final button = primary && enabled
+        ? FilledButton.icon(
+            key: buttonKey,
+            icon: Icon(icon, size: 18),
+            label: Text(label),
+            onPressed: onPressed,
+          )
+        : OutlinedButton.icon(
+            key: buttonKey,
+            icon: Icon(icon, size: 18),
+            label: Text(label),
+            onPressed: enabled ? onPressed : null,
+          );
+    final reason = availability.reason;
+    return reason == null ? button : Tooltip(message: '$label · $reason', child: button);
+  }
+
   @override
   Widget build(BuildContext context) {
     final deviceId = device.key.replaceFirst('kdeconnect:', '');
@@ -437,20 +479,27 @@ class _ActionRow extends StatelessWidget {
             onPressed: onOpenPhone,
           ),
       ] else if (device.isPaired) ...[
-        if (_usable(device.capabilityStatuses[RelayCapability.clipboard]))
-          FilledButton.icon(
-            key: const ValueKey('gnome-clipboard-button'),
-            icon: const Icon(YaruIcons.copy, size: 18),
-            label: const Text('Clipboard'),
-            onPressed: onOpenClipboard,
-          ),
-        if (_usable(device.capabilityStatuses[RelayCapability.messages]))
-          OutlinedButton.icon(
-            key: const ValueKey('gnome-messages-button'),
-            icon: const Icon(YaruIcons.chat_bubble, size: 18),
-            label: const Text('Messages'),
-            onPressed: onOpenMessages,
-          ),
+        // Every gate below asks the Device Fabric the same question: what can
+        // this device do right now? A feature the peer genuinely lacks is
+        // hidden; one that is merely out of reach, off, or unauthorised stays
+        // visible and disabled, with the core's reason on the tooltip.
+        ?_featureAction(
+          device: device,
+          feature: RelayFeature.clipboard,
+          buttonKey: const ValueKey('gnome-clipboard-button'),
+          icon: YaruIcons.copy,
+          label: 'Clipboard',
+          primary: true,
+          onPressed: onOpenClipboard,
+        ),
+        ?_featureAction(
+          device: device,
+          feature: RelayFeature.messages,
+          buttonKey: const ValueKey('gnome-messages-button'),
+          icon: YaruIcons.chat_bubble,
+          label: 'Messages',
+          onPressed: onOpenMessages,
+        ),
         if (_usable(device.capabilityStatuses[RelayCapability.phone]))
           OutlinedButton.icon(
             key: const ValueKey('gnome-phone-button'),
@@ -669,7 +718,8 @@ class _TransferStripState extends State<_TransferStrip> with SingleTickerProvide
   @override
   void initState() {
     super.initState();
-    _pulse = AnimationController(vsync: this, duration: const Duration(milliseconds: 1400))..repeat();
+    _pulse = AnimationController(vsync: this, duration: const Duration(milliseconds: 1400));
+    unawaited(_pulse.repeat());
   }
 
   @override
@@ -1343,15 +1393,16 @@ class _DeviceDetails extends StatelessWidget {
             AdwActionRow(
               leading: const Icon(YaruIcons.network_wireless),
               title: 'Connection',
+              // Plain product language, not the transport. Which route carries
+              // the link is a diagnostic, and lives in the diagnostics dialog.
               subtitle: device.isKdeConnect
-                  ? device.detail == 'Connected'
-                        ? device.connectionType == RelayConnectionType.local
-                              ? 'KDE LAN'
-                              : device.connectionType == RelayConnectionType.direct
-                              ? 'Relay WAN · Direct'
-                              : 'Relay WAN · Relay'
-                        : device.detail == 'Paired'
-                        ? 'Paired'
+                  ? device.hasFabricRecord
+                        ? switch (device.connectionState) {
+                            RelayConnectionState.local => 'On your local network',
+                            RelayConnectionState.remoteDirect || RelayConnectionState.remoteRelay => 'Away from your network',
+                            RelayConnectionState.reconnecting => 'Trying to reconnect',
+                            RelayConnectionState.offline => 'Last seen ${device.lastSeenLabel(now: DateTime.now()).toLowerCase()}',
+                          }
                         : 'Nearby on your local network'
                   : device.isCompatibilityPeer
                   ? 'Nearby on your local network'
@@ -1362,7 +1413,7 @@ class _DeviceDetails extends StatelessWidget {
                   : 'Nearby on your local network',
               trailing: RelayConnectionStatus(
                 connected: connected,
-                label: connected && device.isKdeConnect
+                label: device.isKdeConnect
                     ? device.statusSummary
                     : connected
                     ? 'Connected'
@@ -1371,6 +1422,17 @@ class _DeviceDetails extends StatelessWidget {
                 animationsEnabled: animationsEnabled,
               ),
             ),
+            if (device.isKdeConnect && device.hasFabricRecord)
+              AdwActionRow(
+                key: const ValueKey('device-details-last-seen'),
+                leading: const Icon(YaruIcons.history),
+                title: 'Last seen',
+                subtitle: device.platform == null ? null : 'Reported as ${device.platform}',
+                trailing: Text(
+                  device.lastSeenLabel(now: DateTime.now()),
+                  style: theme.textTheme.bodyMedium,
+                ),
+              ),
             AdwActionRow(
               leading: Icon(device.isVerifiedRelay ? YaruIcons.shield : YaruIcons.information),
               title: 'Device verification',
@@ -1400,13 +1462,13 @@ class _DeviceDetails extends StatelessWidget {
                 style: theme.textTheme.bodyMedium,
               ),
             ),
-            if (!device.isKdeConnect)
-              AdwNavigationRow(
-                leading: const Icon(YaruIcons.settings),
-                title: 'Security & diagnostics',
-                subtitle: 'Verify this device and view technical details',
-                onTap: onOpenDiagnostics,
-              ),
+            AdwNavigationRow(
+              key: const ValueKey('device-details-diagnostics'),
+              leading: const Icon(YaruIcons.settings),
+              title: 'Security & diagnostics',
+              subtitle: 'Verify this device and view technical details',
+              onTap: onOpenDiagnostics,
+            ),
           ],
         ),
       ),
@@ -1421,17 +1483,58 @@ class _KdeConnectRelationshipTile extends StatelessWidget {
 
   String get _deviceId => device.key.startsWith('kdeconnect:') ? device.key.substring('kdeconnect:'.length) : device.key;
 
+  /// Forgets the device, after the user confirms.
+  ///
+  /// The core's forget is comprehensive — trust, the WAN binding, live routes,
+  /// notifications, messages and in-flight transfers all go with it — and none
+  /// of it comes back without pairing again. That is worth one confirmation.
+  /// Files already downloaded are deliberately kept: they are the user's.
+  Future<void> _forget(BuildContext context) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        key: const ValueKey('kdeconnect-forget-confirm'),
+        title: Text('Forget ${device.alias}?'),
+        content: const Text(
+          'Relay will stop trusting this device and remove its messages, '
+          'notifications and connection details. Files you already received are kept. '
+          'You will need to pair again to reconnect.',
+        ),
+        actions: [
+          OutlinedButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            key: const ValueKey('kdeconnect-forget-confirm-accept'),
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: const Text('Forget'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !context.mounted) {
+      return;
+    }
+    // The device leaves the fabric as part of this, so the card disappears on
+    // the next state update rather than lingering as a stale Offline entry.
+    await context.redux(kdeConnectProvider).dispatchAsync(KdeConnectUnpairAction(_deviceId));
+  }
+
   @override
   Widget build(BuildContext context) {
-    final paired = device.detail == 'Paired' || device.detail == 'Connected';
+    // Trust, from the fabric. A trusted device that is asleep still offers
+    // "Forget", never "Pair" -- offering to pair again would imply Relay had
+    // forgotten it.
+    final paired = device.isPaired;
 
     if (paired) {
       return _CompactDeviceAction(
         key: const ValueKey('kdeconnect-remove-device'),
         icon: YaruIcons.trash,
-        label: 'Remove Device',
+        label: 'Forget Device',
         destructive: true,
-        onPressed: () => unawaited(context.redux(kdeConnectProvider).dispatchAsync(KdeConnectUnpairAction(_deviceId))),
+        onPressed: () => unawaited(_forget(context)),
       );
     }
     return _CompactDeviceAction(

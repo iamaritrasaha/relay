@@ -146,6 +146,13 @@ pub struct KdeTelephonyEvent {
 pub enum KdeConnectEvent {
     DevicesChanged {
         devices: Vec<DeviceSnapshot>,
+        /// The Device Fabric as of the same observation.
+        ///
+        /// Carried on the existing event rather than emitted as a second one:
+        /// every change that alters the fabric already produces exactly one
+        /// `DevicesChanged`, so this keeps the coalescing that already exists
+        /// instead of doubling the traffic to the UI.
+        fabric: fabric::RelayFabricSnapshot,
     },
     IncomingPair {
         device_id: String,
@@ -391,12 +398,12 @@ impl KdeConnectHandle {
         self.inner.cancel_transfer(device_id, transfer_id).await;
     }
 
-    /// The Device Fabric: one authoritative record per trusted logical device.
+    /// The Device Fabric: one authoritative record per trusted logical device,
+    /// with the local feature policy that was in force when it was read.
     ///
     /// A device reachable over both LAN and WAN appears once, with both routes
     /// recorded against it -- never as two entries.
-    #[cfg(feature = "kdeconnect-wan")]
-    pub async fn device_fabric(&self) -> Vec<fabric::RelayDeviceRecord> {
+    pub async fn device_fabric(&self) -> fabric::RelayFabricSnapshot {
         self.inner.device_fabric().await
     }
 

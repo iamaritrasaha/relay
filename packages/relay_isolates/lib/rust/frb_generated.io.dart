@@ -333,6 +333,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   RsKdeTelephonyEvent dco_decode_box_autoadd_rs_kde_telephony_event(dynamic raw);
 
   @protected
+  RsRelayDeviceFabric dco_decode_box_autoadd_rs_relay_device_fabric(dynamic raw);
+
+  @protected
   RsSmsMessage dco_decode_box_autoadd_rs_sms_message(dynamic raw);
 
   @protected
@@ -451,6 +454,15 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   List<RsRelayAnywhereFile> dco_decode_list_rs_relay_anywhere_file(dynamic raw);
+
+  @protected
+  List<RsRelayDevice> dco_decode_list_rs_relay_device(dynamic raw);
+
+  @protected
+  List<RsRelayFeature> dco_decode_list_rs_relay_feature(dynamic raw);
+
+  @protected
+  List<RsRelayFeatureState> dco_decode_list_rs_relay_feature_state(dynamic raw);
 
   @protected
   List<RsRelayIncomingFile> dco_decode_list_rs_relay_incoming_file(dynamic raw);
@@ -619,6 +631,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   RsDiscoveredDevice dco_decode_rs_discovered_device(dynamic raw);
 
   @protected
+  RsFeatureAvailability dco_decode_rs_feature_availability(dynamic raw);
+
+  @protected
   RsHashFileEvent dco_decode_rs_hash_file_event(dynamic raw);
 
   @protected
@@ -665,6 +680,24 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   RsRelayAnywhereListenerEvent dco_decode_rs_relay_anywhere_listener_event(dynamic raw);
+
+  @protected
+  RsRelayConnectionState dco_decode_rs_relay_connection_state(dynamic raw);
+
+  @protected
+  RsRelayDevice dco_decode_rs_relay_device(dynamic raw);
+
+  @protected
+  RsRelayDeviceClass dco_decode_rs_relay_device_class(dynamic raw);
+
+  @protected
+  RsRelayDeviceFabric dco_decode_rs_relay_device_fabric(dynamic raw);
+
+  @protected
+  RsRelayFeature dco_decode_rs_relay_feature(dynamic raw);
+
+  @protected
+  RsRelayFeatureState dco_decode_rs_relay_feature_state(dynamic raw);
 
   @protected
   RsRelayIncomingFile dco_decode_rs_relay_incoming_file(dynamic raw);
@@ -1037,6 +1070,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   RsKdeTelephonyEvent sse_decode_box_autoadd_rs_kde_telephony_event(SseDeserializer deserializer);
 
   @protected
+  RsRelayDeviceFabric sse_decode_box_autoadd_rs_relay_device_fabric(SseDeserializer deserializer);
+
+  @protected
   RsSmsMessage sse_decode_box_autoadd_rs_sms_message(SseDeserializer deserializer);
 
   @protected
@@ -1155,6 +1191,15 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   List<RsRelayAnywhereFile> sse_decode_list_rs_relay_anywhere_file(SseDeserializer deserializer);
+
+  @protected
+  List<RsRelayDevice> sse_decode_list_rs_relay_device(SseDeserializer deserializer);
+
+  @protected
+  List<RsRelayFeature> sse_decode_list_rs_relay_feature(SseDeserializer deserializer);
+
+  @protected
+  List<RsRelayFeatureState> sse_decode_list_rs_relay_feature_state(SseDeserializer deserializer);
 
   @protected
   List<RsRelayIncomingFile> sse_decode_list_rs_relay_incoming_file(SseDeserializer deserializer);
@@ -1325,6 +1370,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   RsDiscoveredDevice sse_decode_rs_discovered_device(SseDeserializer deserializer);
 
   @protected
+  RsFeatureAvailability sse_decode_rs_feature_availability(SseDeserializer deserializer);
+
+  @protected
   RsHashFileEvent sse_decode_rs_hash_file_event(SseDeserializer deserializer);
 
   @protected
@@ -1371,6 +1419,24 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   RsRelayAnywhereListenerEvent sse_decode_rs_relay_anywhere_listener_event(SseDeserializer deserializer);
+
+  @protected
+  RsRelayConnectionState sse_decode_rs_relay_connection_state(SseDeserializer deserializer);
+
+  @protected
+  RsRelayDevice sse_decode_rs_relay_device(SseDeserializer deserializer);
+
+  @protected
+  RsRelayDeviceClass sse_decode_rs_relay_device_class(SseDeserializer deserializer);
+
+  @protected
+  RsRelayDeviceFabric sse_decode_rs_relay_device_fabric(SseDeserializer deserializer);
+
+  @protected
+  RsRelayFeature sse_decode_rs_relay_feature(SseDeserializer deserializer);
+
+  @protected
+  RsRelayFeatureState sse_decode_rs_relay_feature_state(SseDeserializer deserializer);
 
   @protected
   RsRelayIncomingFile sse_decode_rs_relay_incoming_file(SseDeserializer deserializer);
@@ -1788,6 +1854,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   void sse_encode_box_autoadd_rs_kde_telephony_event(RsKdeTelephonyEvent self, SseSerializer serializer);
 
   @protected
+  void sse_encode_box_autoadd_rs_relay_device_fabric(RsRelayDeviceFabric self, SseSerializer serializer);
+
+  @protected
   void sse_encode_box_autoadd_rs_sms_message(RsSmsMessage self, SseSerializer serializer);
 
   @protected
@@ -1906,6 +1975,15 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   void sse_encode_list_rs_relay_anywhere_file(List<RsRelayAnywhereFile> self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_list_rs_relay_device(List<RsRelayDevice> self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_list_rs_relay_feature(List<RsRelayFeature> self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_list_rs_relay_feature_state(List<RsRelayFeatureState> self, SseSerializer serializer);
 
   @protected
   void sse_encode_list_rs_relay_incoming_file(List<RsRelayIncomingFile> self, SseSerializer serializer);
@@ -2077,6 +2155,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   void sse_encode_rs_discovered_device(RsDiscoveredDevice self, SseSerializer serializer);
 
   @protected
+  void sse_encode_rs_feature_availability(RsFeatureAvailability self, SseSerializer serializer);
+
+  @protected
   void sse_encode_rs_hash_file_event(RsHashFileEvent self, SseSerializer serializer);
 
   @protected
@@ -2123,6 +2204,24 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   void sse_encode_rs_relay_anywhere_listener_event(RsRelayAnywhereListenerEvent self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_rs_relay_connection_state(RsRelayConnectionState self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_rs_relay_device(RsRelayDevice self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_rs_relay_device_class(RsRelayDeviceClass self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_rs_relay_device_fabric(RsRelayDeviceFabric self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_rs_relay_feature(RsRelayFeature self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_rs_relay_feature_state(RsRelayFeatureState self, SseSerializer serializer);
 
   @protected
   void sse_encode_rs_relay_incoming_file(RsRelayIncomingFile self, SseSerializer serializer);

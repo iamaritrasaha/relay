@@ -5,7 +5,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:logging/logging.dart';
 import 'package:refena_flutter/refena_flutter.dart';
-import 'package:relay_app/model/ui/relay_connection_state.dart';
 import 'package:relay_app/config/relay_brand.dart';
 import 'package:relay_app/config/relay_motion.dart';
 import 'package:relay_app/model/ui/relay_device_vm.dart';

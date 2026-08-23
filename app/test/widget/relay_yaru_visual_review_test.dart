@@ -7,6 +7,7 @@ import 'package:refena_flutter/refena_flutter.dart';
 import 'package:relay_app/config/theme.dart';
 import 'package:relay_app/model/persistence/color_mode.dart';
 import 'package:relay_app/model/ui/relay_capability_vm.dart';
+import 'package:relay_app/model/ui/relay_connection_state.dart';
 import 'package:relay_app/model/ui/relay_device_vm.dart';
 import 'package:relay_app/pages/gnome/gnome_shell.dart';
 import 'package:relay_app/pages/relay_home_vm.dart';
@@ -110,7 +111,11 @@ void main() {
     phase: RelayDevicePhase.idle,
     progress: null,
     detail: 'Connected',
+    explicitConnectionState: RelayConnectionState.local,
     targetKind: RelayDeviceTargetKind.kdeConnect,
+    fabricTrusted: true,
+    hasFabricRecord: true,
+    lanAvailable: true,
     battery: RelayBatteryVm(percentage: 77),
     networkType: 'LTE',
     signalLevel: 2,
@@ -132,6 +137,7 @@ void main() {
     phase: RelayDevicePhase.idle,
     progress: null,
     detail: 'Ready',
+    explicitConnectionState: RelayConnectionState.remoteDirect,
     targetKind: RelayDeviceTargetKind.pairedRelay,
     relayId: 'relay-tablet',
     battery: RelayBatteryVm(percentage: 41, isCharging: true),
@@ -144,6 +150,7 @@ void main() {
     phase: RelayDevicePhase.idle,
     progress: null,
     detail: 'Ready',
+    explicitConnectionState: RelayConnectionState.remoteDirect,
     targetKind: RelayDeviceTargetKind.verifiedRelay,
     relayId: 'relay-thinkpad',
   );
@@ -156,6 +163,7 @@ void main() {
     phase: RelayDevicePhase.idle,
     progress: null,
     detail: 'Paired',
+    explicitConnectionState: RelayConnectionState.offline,
     targetKind: RelayDeviceTargetKind.pairedRelay,
     relayId: 'relay-pixel-7',
     connectionType: RelayConnectionType.relayed,

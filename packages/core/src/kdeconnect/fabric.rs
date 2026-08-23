@@ -200,6 +200,20 @@ pub enum RelayFeature {
 }
 
 impl RelayFeature {
+    /// Every feature Relay knows about, so a caller can materialise a complete
+    /// availability map without maintaining its own list that can drift.
+    pub const ALL: [RelayFeature; 9] = [
+        RelayFeature::Notifications,
+        RelayFeature::Messages,
+        RelayFeature::Media,
+        RelayFeature::Commands,
+        RelayFeature::RemoteInput,
+        RelayFeature::Clipboard,
+        RelayFeature::Files,
+        RelayFeature::Battery,
+        RelayFeature::Ping,
+    ];
+
     pub fn as_str(self) -> &'static str {
         match self {
             RelayFeature::Notifications => "notifications",
@@ -249,7 +263,7 @@ impl FeatureAvailability {
 }
 
 /// Local policy that gates features regardless of what a peer supports.
-#[derive(Clone, Copy, Debug, Default)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct LocalFeaturePolicy {
     pub clipboard_enabled: bool,
     pub remote_input_enabled: bool,
@@ -344,9 +358,46 @@ impl RelayDeviceRecord {
         }
     }
 
+    /// The availability of every feature, in one pass.
+    ///
+    /// Materialised for transport across the FFI boundary so the Dart side asks
+    /// the same [`Self::availability`] question exactly once per feature, rather
+    /// than re-implementing the rules to answer it itself.
+    pub fn availability_map(
+        &self,
+        policy: &LocalFeaturePolicy,
+    ) -> Vec<(RelayFeature, FeatureAvailability)> {
+        RelayFeature::ALL
+            .into_iter()
+            .map(|feature| (feature, self.availability(feature, policy)))
+            .collect()
+    }
+
     /// Aggregate last-seen, derived from route activity.
     pub fn last_seen(&self) -> Option<i64> {
         self.routes.last_seen()
+    }
+}
+
+/// The whole fabric as one consistent observation.
+///
+/// The policy travels *with* the records rather than being fetched separately:
+/// a caller that read the two at different moments could compute an
+/// availability that neither state ever actually produced.
+#[derive(Clone, Debug, PartialEq)]
+pub struct RelayFabricSnapshot {
+    pub devices: Vec<RelayDeviceRecord>,
+    pub policy: LocalFeaturePolicy,
+}
+
+impl RelayFabricSnapshot {
+    pub fn get(&self, device_id: &str) -> Option<&RelayDeviceRecord> {
+        self.devices.iter().find(|device| device.id == device_id)
+    }
+
+    /// The one device a space-constrained surface should present.
+    pub fn primary(&self, pinned_id: Option<&str>) -> Option<&RelayDeviceRecord> {
+        primary_device(&self.devices, pinned_id)
     }
 }
 
@@ -753,6 +804,41 @@ mod tests {
             with_state("phone", RelayDeviceClass::Phone, true, false, Some(100)),
         ];
         assert_eq!(primary_device(&devices, None).unwrap().id, "phone");
+    }
+
+    // --- availability map and snapshot --------------------------------------
+
+    #[test]
+    fn the_availability_map_covers_every_feature_and_agrees_with_the_single_rule() {
+        let device = connected_phone(&[RelayFeature::Messages, RelayFeature::Clipboard]);
+        let policy = LocalFeaturePolicy::default();
+        let map = device.availability_map(&policy);
+
+        assert_eq!(map.len(), RelayFeature::ALL.len(), "no feature may be missing");
+        for (feature, availability) in map {
+            assert_eq!(
+                availability,
+                device.availability(feature, &policy),
+                "the map must not be a second implementation of {feature:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_snapshot_looks_up_by_id_and_picks_its_own_primary() {
+        let snapshot = RelayFabricSnapshot {
+            devices: vec![
+                with_state("tablet", RelayDeviceClass::Tablet, true, false, Some(900)),
+                with_state("phone", RelayDeviceClass::Phone, true, false, Some(100)),
+            ],
+            policy: LocalFeaturePolicy::default(),
+        };
+        assert_eq!(snapshot.get("tablet").unwrap().class, RelayDeviceClass::Tablet);
+        assert!(snapshot.get("absent").is_none());
+        // The same rule as the free function: a connected phone outranks a more
+        // recently active tablet.
+        assert_eq!(snapshot.primary(None).unwrap().id, "phone");
+        assert_eq!(snapshot.primary(Some("tablet")).unwrap().id, "tablet");
     }
 
     #[test]

@@ -15,8 +15,7 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context as _, Result};
 use tokio::io::{AsyncRead, AsyncReadExt as _, AsyncWriteExt as _};
 
-use super::{sanitize_filename, unique_destination};
-use crate::kdeconnect::wan::payload::MAX_WAN_PAYLOAD_BYTES;
+use super::{sanitize_filename, unique_destination, MAX_WAN_PAYLOAD_BYTES};
 
 /// Streaming chunk size. Matches the sender's, so a chunk read is typically one
 /// chunk written with no re-buffering in between.

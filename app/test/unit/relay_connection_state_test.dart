@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:relay_app/model/ui/relay_connection_state.dart';
+import 'package:relay_app/model/ui/relay_device_vm.dart';
 import 'package:relay_app/pages/relay_home_vm.dart';
 import 'package:relay_isolates/rust/api/kdeconnect.dart';
 
@@ -24,6 +25,39 @@ void main() {
     outgoingCapabilities: const [],
     transportState: transportState,
   );
+
+  RelayDeviceVm fabricVm(RsKdeConnectDevice live) {
+    final connection = switch (live.transportState) {
+      'local' when live.connected => RsRelayConnectionState.local,
+      'remoteDirect' when live.connected => RsRelayConnectionState.remoteDirect,
+      'remoteRelay' when live.connected => RsRelayConnectionState.remoteRelay,
+      'reconnecting' => RsRelayConnectionState.reconnecting,
+      _ => RsRelayConnectionState.offline,
+    };
+    final fabric = RsRelayDeviceFabric(
+      devices: live.paired
+          ? [
+              RsRelayDevice(
+                deviceId: live.deviceId,
+                displayName: live.name,
+                deviceClass: RsRelayDeviceClass.phone,
+                trusted: true,
+                connectionState: connection,
+                lanAvailable: connection == RsRelayConnectionState.local,
+                wanAvailable: connection == RsRelayConnectionState.remoteDirect || connection == RsRelayConnectionState.remoteRelay,
+                wanBound: connection == RsRelayConnectionState.remoteDirect || connection == RsRelayConnectionState.remoteRelay,
+                capabilities: const [],
+                featureAvailability: const [],
+              ),
+            ]
+          : const [],
+      clipboardEnabled: true,
+      remoteInputEnabled: false,
+      remoteInputAuthorized: false,
+      hasConfiguredCommands: false,
+    );
+    return RelayHomeVm.kdeDevices(fabric: fabric, discovered: [live]).single;
+  }
 
   group('core mapping', () {
     test('each transport state maps to its own connection state', () {
@@ -92,32 +126,32 @@ void main() {
 
   group('device view model', () {
     test('a connected LAN device is Local', () {
-      final vm = RelayHomeVm.kdeDeviceVm(device(transportState: 'local'));
+      final vm = fabricVm(device(transportState: 'local'));
       expect(vm.connectionState, RelayConnectionState.local);
       expect(vm.connectionState.userLabel, 'Local');
     });
 
     test('a connected WAN device is Remote, not merely "Connected"', () {
-      final vm = RelayHomeVm.kdeDeviceVm(device(transportState: 'remoteDirect'));
+      final vm = fabricVm(device(transportState: 'remoteDirect'));
       expect(vm.connectionState, RelayConnectionState.remoteDirect);
       expect(vm.connectionState.userLabel, 'Remote');
     });
 
     test('a paired but disconnected device is Offline, not Local', () {
-      final vm = RelayHomeVm.kdeDeviceVm(device(connected: false, transportState: 'offline'));
+      final vm = fabricVm(device(connected: false, transportState: 'offline'));
       expect(vm.connectionState, RelayConnectionState.offline);
       expect(vm.connectionState.isConnected, isFalse);
     });
 
     test('trust and reachability are independent facts', () {
       // Unpaired but somehow "connected" must not be treated as usable.
-      final vm = RelayHomeVm.kdeDeviceVm(device(paired: false, transportState: 'local'));
+      final vm = fabricVm(device(paired: false, transportState: 'local'));
       expect(vm.connectionState, RelayConnectionState.offline);
     });
 
     test('a stale transport string cannot outrank a disconnected device', () {
       // connected=false wins even if the transport state still says 'local'.
-      final vm = RelayHomeVm.kdeDeviceVm(device(connected: false, transportState: 'local'));
+      final vm = fabricVm(device(connected: false, transportState: 'local'));
       expect(vm.connectionState, RelayConnectionState.offline);
     });
   });

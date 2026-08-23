@@ -9,7 +9,8 @@ import 'package:relay_isolates/rust/frb_generated.dart';
 
 part 'kdeconnect.freezed.dart';
 
-// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `clone`, `clone`, `eq`, `eq`, `fmt`, `fmt`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `try_from`
+// These functions are ignored because they are not marked as `pub`: `relay_device_from_record`
+// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `clone`, `clone`, `eq`, `eq`, `fmt`, `fmt`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `try_from`
 // These functions are ignored (category: IgnoreBecauseExplicitAttribute): `_keep_frb_imports`
 
 Future<RsKdeConnectIdentity> kdeconnectGenerateIdentity({required String deviceName}) =>
@@ -44,6 +45,14 @@ abstract class RsKdeConnect implements RustOpaqueInterface {
 
   /// Whether clipboard sync is switched on for this desktop.
   Future<bool> clipboardEnabled();
+
+  /// The Device Fabric: the authoritative product device model.
+  ///
+  /// One record per trusted logical device, with LAN and Relay WAN recorded
+  /// as routes against it. Normally the UI receives this on the
+  /// `DevicesChanged` event; this call exists for the initial read, before
+  /// any event has arrived.
+  Future<RsRelayDeviceFabric> deviceFabric();
 
   /// Dismisses one notification on the logical device that produced it.
   ///
@@ -124,6 +133,16 @@ abstract class RsKdeConnect implements RustOpaqueInterface {
   Future<List<RsTransfer>> transfersFor({required String deviceId});
 
   Future<void> unpair({required String deviceId});
+}
+
+/// Whether a feature can be used with a device right now, and if not, why.
+enum RsFeatureAvailability {
+  available,
+  unsupported,
+  notConnected,
+  disabled,
+  needsPermission,
+  notConfigured,
 }
 
 class RsKdeConnectDevice {
@@ -227,6 +246,12 @@ sealed class RsKdeConnectEvent with _$RsKdeConnectEvent {
 
   const factory RsKdeConnectEvent.devicesChanged({
     required List<RsKdeConnectDevice> devices,
+
+    /// The Device Fabric as of the same observation. This is the
+    /// authoritative product device model; `devices` remains for the
+    /// discovery/pairing surface, which sees untrusted peers the fabric
+    /// deliberately does not contain.
+    required RsRelayDeviceFabric fabric,
   }) = RsKdeConnectEvent_DevicesChanged;
   const factory RsKdeConnectEvent.incomingPair({
     required String deviceId,
@@ -511,6 +536,222 @@ class RsKdeTelephonyEvent {
           phoneNumber == other.phoneNumber &&
           contactName == other.contactName &&
           phoneThumbnail == other.phoneThumbnail;
+}
+
+/// How a logical device is reachable right now, as the core derived it.
+///
+/// Mirrors `relay_core::kdeconnect::fabric::RelayConnectionState` one-for-one so
+/// the product never re-derives reachability from a display string. `Offline` is
+/// a real answer, not a fallback for "unknown".
+enum RsRelayConnectionState {
+  offline,
+  local,
+  remoteDirect,
+  remoteRelay,
+  reconnecting,
+}
+
+/// One logical Relay device, as the Device Fabric knows it.
+///
+/// This is the product's device identity: LAN and Relay WAN are routes recorded
+/// against it, never separate devices. Nothing route-private crosses here --
+/// no secret key, no certificate, no filesystem path. The WAN `EndpointId`
+/// itself is deliberately absent; only whether a binding exists is exposed,
+/// because that is the whole of what the product needs to reason about.
+class RsRelayDevice {
+  /// The stable logical id (the KDE device id, reused as the compatibility key).
+  final String deviceId;
+  final String displayName;
+  final RsRelayDeviceClass deviceClass;
+
+  /// Peer-reported platform string, e.g. "android".
+  final String? platform;
+  final String? platformVersion;
+  final String? relayVersion;
+
+  /// Trust persists across restarts and is independent of connectivity.
+  final bool trusted;
+  final RsRelayConnectionState connectionState;
+  final bool lanAvailable;
+  final bool wanAvailable;
+
+  /// Whether a WAN binding exists at all, i.e. whether remote reachability is
+  /// even possible. Distinct from [`Self::wan_available`], which is about now.
+  final bool wanBound;
+
+  /// "direct" or "relay" while a WAN route is up; absent otherwise.
+  final String? wanPath;
+
+  /// Unix seconds of the last authenticated activity on each route, kept
+  /// apart so WAN traffic cannot make a dead LAN link look alive.
+  final PlatformInt64? lanLastSeenUnix;
+  final PlatformInt64? wanLastSeenUnix;
+
+  /// The most recent genuine activity on any route.
+  final PlatformInt64? lastSeenUnix;
+  final int? batteryPercent;
+  final bool? charging;
+
+  /// Everything the peer advertised, independent of the current route.
+  final List<RsRelayFeature> capabilities;
+
+  /// The availability of every feature, already answered by the core's single
+  /// rule so no screen has to reimplement the policy.
+  final List<RsRelayFeatureState> featureAvailability;
+
+  const RsRelayDevice({
+    required this.deviceId,
+    required this.displayName,
+    required this.deviceClass,
+    this.platform,
+    this.platformVersion,
+    this.relayVersion,
+    required this.trusted,
+    required this.connectionState,
+    required this.lanAvailable,
+    required this.wanAvailable,
+    required this.wanBound,
+    this.wanPath,
+    this.lanLastSeenUnix,
+    this.wanLastSeenUnix,
+    this.lastSeenUnix,
+    this.batteryPercent,
+    this.charging,
+    required this.capabilities,
+    required this.featureAvailability,
+  });
+
+  @override
+  int get hashCode =>
+      deviceId.hashCode ^
+      displayName.hashCode ^
+      deviceClass.hashCode ^
+      platform.hashCode ^
+      platformVersion.hashCode ^
+      relayVersion.hashCode ^
+      trusted.hashCode ^
+      connectionState.hashCode ^
+      lanAvailable.hashCode ^
+      wanAvailable.hashCode ^
+      wanBound.hashCode ^
+      wanPath.hashCode ^
+      lanLastSeenUnix.hashCode ^
+      wanLastSeenUnix.hashCode ^
+      lastSeenUnix.hashCode ^
+      batteryPercent.hashCode ^
+      charging.hashCode ^
+      capabilities.hashCode ^
+      featureAvailability.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is RsRelayDevice &&
+          runtimeType == other.runtimeType &&
+          deviceId == other.deviceId &&
+          displayName == other.displayName &&
+          deviceClass == other.deviceClass &&
+          platform == other.platform &&
+          platformVersion == other.platformVersion &&
+          relayVersion == other.relayVersion &&
+          trusted == other.trusted &&
+          connectionState == other.connectionState &&
+          lanAvailable == other.lanAvailable &&
+          wanAvailable == other.wanAvailable &&
+          wanBound == other.wanBound &&
+          wanPath == other.wanPath &&
+          lanLastSeenUnix == other.lanLastSeenUnix &&
+          wanLastSeenUnix == other.wanLastSeenUnix &&
+          lastSeenUnix == other.lastSeenUnix &&
+          batteryPercent == other.batteryPercent &&
+          charging == other.charging &&
+          capabilities == other.capabilities &&
+          featureAvailability == other.featureAvailability;
+}
+
+/// Physical form factor, already normalised by the core.
+enum RsRelayDeviceClass {
+  desktop,
+  laptop,
+  phone,
+  tablet,
+  tv,
+  other,
+}
+
+/// The whole fabric as one consistent observation.
+class RsRelayDeviceFabric {
+  final List<RsRelayDevice> devices;
+
+  /// The id of the device a single-device surface should present, chosen by
+  /// the core's deterministic rule. Null when there is nothing to show.
+  final String? primaryDeviceId;
+  final bool clipboardEnabled;
+  final bool remoteInputEnabled;
+  final bool remoteInputAuthorized;
+  final bool hasConfiguredCommands;
+
+  const RsRelayDeviceFabric({
+    required this.devices,
+    this.primaryDeviceId,
+    required this.clipboardEnabled,
+    required this.remoteInputEnabled,
+    required this.remoteInputAuthorized,
+    required this.hasConfiguredCommands,
+  });
+
+  @override
+  int get hashCode =>
+      devices.hashCode ^
+      primaryDeviceId.hashCode ^
+      clipboardEnabled.hashCode ^
+      remoteInputEnabled.hashCode ^
+      remoteInputAuthorized.hashCode ^
+      hasConfiguredCommands.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is RsRelayDeviceFabric &&
+          runtimeType == other.runtimeType &&
+          devices == other.devices &&
+          primaryDeviceId == other.primaryDeviceId &&
+          clipboardEnabled == other.clipboardEnabled &&
+          remoteInputEnabled == other.remoteInputEnabled &&
+          remoteInputAuthorized == other.remoteInputAuthorized &&
+          hasConfiguredCommands == other.hasConfiguredCommands;
+}
+
+/// A feature Relay can offer for a device.
+enum RsRelayFeature {
+  notifications,
+  messages,
+  media,
+  commands,
+  remoteInput,
+  clipboard,
+  files,
+  battery,
+  ping,
+}
+
+/// One feature's availability for one device.
+class RsRelayFeatureState {
+  final RsRelayFeature feature;
+  final RsFeatureAvailability availability;
+
+  const RsRelayFeatureState({
+    required this.feature,
+    required this.availability,
+  });
+
+  @override
+  int get hashCode => feature.hashCode ^ availability.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is RsRelayFeatureState && runtimeType == other.runtimeType && feature == other.feature && availability == other.availability;
 }
 
 /// One entry in the desktop's RunCommand allow-list.

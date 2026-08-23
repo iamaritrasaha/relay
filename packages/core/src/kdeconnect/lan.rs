@@ -87,7 +87,6 @@ pub(crate) struct PendingFile {
 /// accepting Relay's requests or by sending Relay the data. Which direction
 /// matters differs per feature, so each is stated explicitly rather than
 /// guessed from one list.
-#[cfg(feature = "kdeconnect-wan")]
 fn relay_features_from_capabilities(
     incoming: &[String],
     outgoing: &[String],
@@ -200,6 +199,10 @@ impl DeviceTable {
 
     pub fn iter(&self) -> impl Iterator<Item = &ObservedDevice> {
         self.by_id.values()
+    }
+
+    fn remove(&mut self, device_id: &str) {
+        self.by_id.remove(device_id);
     }
 }
 
@@ -711,11 +714,17 @@ impl LanInner {
         out
     }
 
+    /// The one place device state reaches the product.
+    ///
+    /// Both the legacy snapshot and the Device Fabric are computed here from the
+    /// same observation, so the two can never describe different moments, and
+    /// one event still covers one change.
     async fn emit_devices(&self) {
         let devices = self.snapshot().await;
+        let fabric = self.device_fabric().await;
         let _ = self
             .event_tx
-            .send(KdeConnectEvent::DevicesChanged { devices });
+            .send(KdeConnectEvent::DevicesChanged { devices, fabric });
     }
 
     async fn emit_trust(&self) {
@@ -928,20 +937,28 @@ impl LanInner {
         self.commands.replace(entries);
     }
 
-    /// The Device Fabric: one record per trusted logical device.
+    /// The Device Fabric: one record per trusted logical device, plus the local
+    /// feature policy that was in force when it was read.
     ///
     /// Assembled from live state each time rather than cached, so it cannot
     /// disagree with the routes, trust store and capability sets it summarises.
     /// A device that is reachable over both LAN and WAN appears exactly once,
     /// with both routes recorded against it.
-    #[cfg(feature = "kdeconnect-wan")]
-    pub(crate) async fn device_fabric(&self) -> Vec<crate::kdeconnect::fabric::RelayDeviceRecord> {
-        use crate::kdeconnect::fabric::{RelayDeviceClass, RelayDeviceRecord, RelayFeature};
-        use crate::kdeconnect::wan::TransportKind;
+    ///
+    /// The policy travels with the records because availability is a function of
+    /// both: reading them separately could produce an answer that neither state
+    /// ever actually justified.
+    pub(crate) async fn device_fabric(&self) -> crate::kdeconnect::fabric::RelayFabricSnapshot {
+        use crate::kdeconnect::fabric::{
+            LocalFeaturePolicy, RelayDeviceClass, RelayDeviceRecord, RelayFabricSnapshot,
+        };
 
         let trusted = self.trust.lock().await.snapshot();
         let battery = self.battery.lock().await.clone();
         let capabilities = self.peer_capabilities.lock().await.clone();
+        #[cfg(not(feature = "kdeconnect-wan"))]
+        let heartbeat = self.heartbeat.lock().await.clone();
+        #[cfg(feature = "kdeconnect-wan")]
         let route_last_seen = self.route_last_seen.lock().await.clone();
         let connections = self.connections.lock().await;
 
@@ -953,23 +970,36 @@ impl LanInner {
                 device.name.clone(),
                 RelayDeviceClass::from_peer_string(&device.device_type),
             );
+            record.platform = Some(device.device_type.clone());
+            record.relay_version = Some(device.protocol_version.to_string());
 
             // Route availability is runtime truth, read from the router rather
             // than from anything persisted.
-            let transports = self.router.available_transports(&id);
-            record.routes.lan_available =
-                transports.contains(&TransportKind::KdeLan) && connections.contains_key(&id);
-            record.routes.wan_available = transports.contains(&TransportKind::RelayWan);
-            record.routes.wan_bound = device.wan_endpoint_id.is_some();
-            record.routes.wan_relayed = self
-                .router
-                .snapshot(&id)
-                .state
-                == crate::kdeconnect::wan::TransportState::RemoteRelay;
-            record.routes.lan_last_seen =
-                route_last_seen.get(&(id.clone(), TransportKind::KdeLan)).copied();
-            record.routes.wan_last_seen =
-                route_last_seen.get(&(id.clone(), TransportKind::RelayWan)).copied();
+            #[cfg(feature = "kdeconnect-wan")]
+            {
+                use crate::kdeconnect::wan::TransportKind;
+                let transports = self.router.available_transports(&id);
+                record.routes.lan_available =
+                    transports.contains(&TransportKind::KdeLan) && connections.contains_key(&id);
+                record.routes.wan_available = transports.contains(&TransportKind::RelayWan);
+                record.routes.wan_bound = device.wan_endpoint_id.is_some();
+                record.routes.wan_relayed = self.router.snapshot(&id).state
+                    == crate::kdeconnect::wan::TransportState::RemoteRelay;
+                record.routes.lan_last_seen = route_last_seen
+                    .get(&(id.clone(), TransportKind::KdeLan))
+                    .copied();
+                record.routes.wan_last_seen = route_last_seen
+                    .get(&(id.clone(), TransportKind::RelayWan))
+                    .copied();
+            }
+            #[cfg(not(feature = "kdeconnect-wan"))]
+            {
+                // Without the WAN feature there is exactly one route, and the
+                // live LAN session is the only evidence of it.
+                record.routes.lan_available = connections.contains_key(&id);
+                record.routes.lan_last_seen =
+                    heartbeat.get(&id).and_then(|state| state.last_seen_unix);
+            }
             record.refresh_connection(false);
 
             // Capabilities belong to the logical device, taken from what the
@@ -982,11 +1012,21 @@ impl LanInner {
                 record.battery_percent = Some(state.current_charge);
                 record.charging = Some(state.is_charging);
             }
-            let _ = RelayFeature::Ping;
             records.push(record);
         }
+        drop(connections);
         records.sort_by(|a, b| a.id.cmp(&b.id));
-        records
+
+        let policy = LocalFeaturePolicy {
+            clipboard_enabled: self.clipboard_enabled(),
+            remote_input_enabled: self.input_enabled(),
+            remote_input_authorized: self.input_ready().await,
+            has_configured_commands: !self.commands.snapshot().is_empty(),
+        };
+        RelayFabricSnapshot {
+            devices: records,
+            policy,
+        }
     }
 
     pub(crate) async fn set_download_dir(&self, directory: std::path::PathBuf) {
@@ -1225,7 +1265,7 @@ impl LanInner {
         // offer a file of any size, exactly as KDE Connect does, so applying
         // this unconditionally would refuse ordinary local transfers.
         if share.relay_payload_id.is_some()
-            && size > crate::kdeconnect::wan::payload::MAX_WAN_PAYLOAD_BYTES
+            && size > crate::kdeconnect::files::MAX_WAN_PAYLOAD_BYTES
         {
             tracing::warn!(
                 "[Relay Files] device={device_id} announced {size} bytes, over the remote limit"
@@ -1286,7 +1326,6 @@ impl LanInner {
     /// Relay to some other host. The TLS handshake is pinned to that device's
     /// certificate, so a local process which merely guessed the port cannot
     /// deliver a file.
-    #[cfg(feature = "kdeconnect-wan")]
     async fn fetch_lan_payload(
         self: &Arc<Self>,
         device_id: &str,
@@ -1388,7 +1427,6 @@ impl LanInner {
     /// copying, filename safety, temp-file/atomic finalize, progress throttling
     /// and terminal-state handling. The feature layer genuinely does not know
     /// which transport delivered the bytes.
-    #[cfg(feature = "kdeconnect-wan")]
     async fn receive_payload_stream<R>(
         self: &Arc<Self>,
         key: &crate::kdeconnect::files::TransferKey,
@@ -2486,11 +2524,29 @@ impl LanInner {
     }
 
     pub async fn unpair(&self, device_id: &str) -> Result<()> {
-        if let Some(session) = self.pairing.lock().await.get_mut(device_id) {
-            session.local_cancel();
-        }
+        // Tell the peer while its route and trust record still exist. Once the
+        // router registrations below are removed there is deliberately no way
+        // to deliver another packet to this logical device.
+        let _ = self
+            .send_packet(device_id, &PairBody::unpair().serialize())
+            .await;
+
+        self.clear_forgotten_device(device_id).await;
+        self.emit_trust().await;
+        self.emit_devices().await;
+        Ok(())
+    }
+
+    /// Removes every piece of runtime and persisted ownership for one logical
+    /// device. Both a local Forget and a peer-originated unpair use the same
+    /// teardown, so neither path can leave a reconnectable WAN binding or stale
+    /// feature data behind.
+    async fn clear_forgotten_device(&self, device_id: &str) {
+        self.pairing.lock().await.remove(device_id);
         self.incoming.lock().await.remove(device_id);
         self.trust.lock().await.remove(device_id);
+        self.devices.lock().await.remove(device_id);
+        self.connections.lock().await.remove(device_id);
         self.battery.lock().await.remove(device_id);
         self.connectivity.lock().await.remove(device_id);
         self.clipboard.lock().await.remove(device_id);
@@ -2498,6 +2554,14 @@ impl LanInner {
         self.sms.lock().await.remove(device_id);
         self.peer_capabilities.lock().await.remove(device_id);
         self.heartbeat.lock().await.remove(device_id);
+        self.last_connect.lock().await.remove(device_id);
+        self.mismatches.lock().await.remove(device_id);
+        self.input_queues.lock().await.remove(device_id);
+        self.transfers.lock().await.remove_device(device_id);
+        self.pending_payloads
+            .lock()
+            .await
+            .retain(|_, pending| pending.device_id != device_id);
 
         // Everything that could let a forgotten device come back, or leave its
         // data behind, has to go with the trust record. Leaving the WAN binding
@@ -2516,30 +2580,12 @@ impl LanInner {
                 .lock()
                 .await
                 .retain(|(id, _), _| id != device_id);
-            self.input_queues.lock().await.remove(device_id);
-            // Feature state scoped to this device only; other devices keep theirs.
-            self.transfers
-                .lock()
-                .await
-                .remove_device(device_id);
-            self.pending_payloads
-                .lock()
-                .await
-                .retain(|_, pending| pending.device_id != device_id);
         }
-        // The live LAN session, so an in-flight link cannot keep serving it.
-        self.connections.lock().await.remove(device_id);
 
         let _ = self.event_tx.send(KdeConnectEvent::NotificationsChanged {
             device_id: device_id.to_string(),
             notifications: Vec::new(),
         });
-        let _ = self
-            .send_packet(device_id, &PairBody::unpair().serialize())
-            .await;
-        self.emit_trust().await;
-        self.emit_devices().await;
-        Ok(())
     }
 
     pub async fn send_ping(&self, device_id: &str, message: Option<String>) -> Result<()> {
@@ -3125,8 +3171,7 @@ impl LanInner {
                 self.emit_devices().await;
             }
             PairingEffect::Unpaired => {
-                self.incoming.lock().await.remove(device_id);
-                self.trust.lock().await.remove(device_id);
+                self.clear_forgotten_device(device_id).await;
                 self.emit_trust().await;
                 self.emit_devices().await;
             }
@@ -3818,9 +3863,15 @@ async fn finish_secure_link(
                                 .await;
                         } else if let Ok(wan_identity) = packet.as_relay_wan_identity() {
                             #[cfg(feature = "kdeconnect-wan")]
-                            read_inner
-                                .register_wan_binding(&read_id, &name, &device_type, wan_identity)
-                                .await;
+                            {
+                                read_inner
+                                    .register_wan_binding(&read_id, &name, &device_type, wan_identity)
+                                    .await;
+                                // A binding changes diagnostics and future
+                                // reachability even though it does not itself
+                                // create a live WAN route.
+                                read_inner.emit_devices().await;
+                            }
                             #[cfg(not(feature = "kdeconnect-wan"))]
                             let _ = wan_identity;
                         } else if !read_inner
@@ -3867,6 +3918,8 @@ async fn finish_secure_link(
                 crate::kdeconnect::wan::TransportKind::KdeLan,
             ));
         }
+        #[cfg(not(feature = "kdeconnect-wan"))]
+        let _ = removed_current_lan;
         if let Some(state) = read_inner.connectivity.lock().await.get_mut(&read_id) {
             state.stale = true;
         }
@@ -6188,6 +6241,7 @@ mod tests {
         inner
             .device_fabric()
             .await
+            .devices
             .into_iter()
             .find(|record| record.id == device_id)
             .expect("device should be in the fabric")
@@ -6202,13 +6256,13 @@ mod tests {
         with_route(&inner, PHONE_A, TransportKind::RelayWan).await;
         with_route(&inner, PHONE_A, TransportKind::KdeLan).await;
 
-        let fabric = inner.device_fabric().await;
+        let fabric = inner.device_fabric().await.devices;
 
         assert_eq!(fabric.len(), 1, "LAN and WAN are routes, not devices");
         assert_eq!(fabric[0].id, PHONE_A);
         assert!(fabric[0].routes.wan_available);
         // LAN wins for the reported state whenever it is healthy.
-        assert_eq!(fabric[0].connection, RelayConnectionState::RemoteDirect);
+        assert_eq!(fabric[0].connection, RelayConnectionState::Local);
     }
 
     #[cfg(feature = "kdeconnect-wan")]
@@ -6223,8 +6277,8 @@ mod tests {
         with_route(&second, PHONE_A, TransportKind::RelayWan).await;
         with_route(&second, PHONE_A, TransportKind::KdeLan).await;
 
-        assert_eq!(first.device_fabric().await.len(), 1);
-        assert_eq!(second.device_fabric().await.len(), 1);
+        assert_eq!(first.device_fabric().await.devices.len(), 1);
+        assert_eq!(second.device_fabric().await.devices.len(), 1);
         assert_eq!(
             fabric_of(&first, PHONE_A).await.routes.wan_available,
             fabric_of(&second, PHONE_A).await.routes.wan_available
@@ -6237,7 +6291,7 @@ mod tests {
         use crate::kdeconnect::fabric::RelayConnectionState;
         let (inner, _events) = multi_device_harness(&[PHONE_A]);
 
-        let fabric = inner.device_fabric().await;
+        let fabric = inner.device_fabric().await.devices;
 
         assert_eq!(fabric.len(), 1, "a trusted device stays visible while offline");
         assert!(fabric[0].trusted, "trust is independent of connectivity");
@@ -6254,7 +6308,7 @@ mod tests {
         with_route(&inner, PHONE_A, TransportKind::KdeLan).await;
         with_route(&inner, PHONE_B, TransportKind::RelayWan).await;
 
-        let fabric = inner.device_fabric().await;
+        let fabric = inner.device_fabric().await.devices;
         assert_eq!(fabric.len(), 3);
 
         // One device on LAN, another on WAN, a third offline -- all at once.
@@ -6348,6 +6402,78 @@ mod tests {
         assert_eq!(fabric_of(&inner, PHONE_B).await.battery_percent, None);
     }
 
+    #[cfg(feature = "kdeconnect-wan")]
+    #[tokio::test]
+    async fn the_snapshot_carries_the_local_policy_so_availability_is_answered_once() {
+        use crate::kdeconnect::fabric::{FeatureAvailability, RelayFeature};
+        use crate::kdeconnect::wan::TransportKind;
+        let (inner, _events) = multi_device_harness(&[PHONE_A]);
+        with_route(&inner, PHONE_A, TransportKind::RelayWan).await;
+        inner.peer_capabilities.lock().await.insert(
+            PHONE_A.to_owned(),
+            (
+                vec![
+                    crate::kdeconnect::PACKET_TYPE_CLIPBOARD_CONNECT.to_owned(),
+                    crate::kdeconnect::PACKET_TYPE_SMS_REQUEST_CONVERSATIONS.to_owned(),
+                ],
+                vec![crate::kdeconnect::PACKET_TYPE_RUNCOMMAND_REQUEST.to_owned()],
+            ),
+        );
+
+        inner.set_clipboard_enabled(false);
+        let snapshot = inner.device_fabric().await;
+        assert!(!snapshot.policy.clipboard_enabled);
+        let device = snapshot.get(PHONE_A).expect("device is in the fabric");
+        // Switched off locally is Disabled, which is a different answer from a
+        // peer that cannot do it at all.
+        assert_eq!(
+            device.availability(RelayFeature::Clipboard, &snapshot.policy),
+            FeatureAvailability::Disabled
+        );
+        // Nothing configured yet is its own state, so the UI can explain it.
+        assert_eq!(
+            device.availability(RelayFeature::Commands, &snapshot.policy),
+            FeatureAvailability::NotConfigured
+        );
+        assert_eq!(
+            device.availability(RelayFeature::Messages, &snapshot.policy),
+            FeatureAvailability::Available
+        );
+
+        inner.set_clipboard_enabled(true);
+        let snapshot = inner.device_fabric().await;
+        assert_eq!(
+            snapshot
+                .get(PHONE_A)
+                .unwrap()
+                .availability(RelayFeature::Clipboard, &snapshot.policy),
+            FeatureAvailability::Available
+        );
+    }
+
+    #[cfg(feature = "kdeconnect-wan")]
+    #[tokio::test]
+    async fn a_device_change_emits_one_event_carrying_both_views() {
+        use crate::kdeconnect::fabric::RelayConnectionState;
+        use crate::kdeconnect::wan::TransportKind;
+        let (inner, mut events) = multi_device_harness(&[PHONE_A]);
+        with_route(&inner, PHONE_A, TransportKind::RelayWan).await;
+
+        inner.emit_devices().await;
+
+        let event = events.recv().await.expect("one event");
+        let KdeConnectEvent::DevicesChanged { devices, fabric } = event else {
+            panic!("expected DevicesChanged");
+        };
+        // One change, one event: the legacy snapshot and the fabric describe the
+        // same moment rather than arriving separately and disagreeing.
+        assert_eq!(devices.len(), 1);
+        assert_eq!(fabric.devices.len(), 1);
+        assert_eq!(fabric.devices[0].id, PHONE_A);
+        assert_eq!(fabric.devices[0].connection, RelayConnectionState::RemoteDirect);
+        assert!(events.try_recv().is_err(), "and no second event follows");
+    }
+
     // --- Forget -------------------------------------------------------------
 
     #[cfg(feature = "kdeconnect-wan")]
@@ -6412,7 +6538,7 @@ mod tests {
 
         let _ = inner.unpair(PHONE_A).await;
 
-        let fabric = inner.device_fabric().await;
+        let fabric = inner.device_fabric().await.devices;
         assert_eq!(fabric.len(), 1, "only the forgotten device disappears");
         assert_eq!(fabric[0].id, PHONE_B);
         assert!(inner.wan_bindings.by_kde_device_id(PHONE_B).is_some());
@@ -6714,6 +6840,20 @@ mod tests {
         device_id: &str,
         kind: crate::kdeconnect::wan::TransportKind,
     ) {
+        if kind == crate::kdeconnect::wan::TransportKind::KdeLan {
+            let (packets, _rx) = tokio::sync::mpsc::channel(1);
+            inner.connections.lock().await.insert(
+                device_id.to_owned(),
+                Conn {
+                    packets,
+                    peer_cert_der: Vec::new(),
+                    name: device_id.to_owned(),
+                    device_type: "phone".into(),
+                    protocol_version: PROTOCOL_VERSION,
+                    epoch: 1,
+                },
+            );
+        }
         inner.router.register(Arc::new(TestRouteLink {
             device_id: device_id.to_owned(),
             kind,
@@ -7954,6 +8094,60 @@ mod tests {
         let messages = inner.get_sms_messages(&phone_id, 3).await;
         assert_eq!(messages.len(), 1, "the same message must not be stored twice");
         assert_eq!(messages[0].body, "hello");
+    }
+
+    #[cfg(feature = "kdeconnect-wan")]
+    #[tokio::test]
+    async fn identical_sms_thread_ids_are_scoped_to_their_originating_device() {
+        let (inner, _events) = multi_device_harness(&[PHONE_A, PHONE_B]);
+        let message_for = |id, body: &str| SmsMessage {
+            id,
+            thread_id: 42,
+            addresses: vec!["+15550100".into()],
+            body: body.into(),
+            date: id,
+            message_type: 1,
+            read: Some(false),
+            sub_id: None,
+            event: None,
+            attachments: Vec::new(),
+        };
+
+        inner
+            .merge_sms_messages(PHONE_A, vec![message_for(1, "from A")])
+            .await;
+        inner
+            .merge_sms_messages(PHONE_B, vec![message_for(1, "from B")])
+            .await;
+        inner
+            .merge_sms_messages(PHONE_A, vec![message_for(2, "A updated")])
+            .await;
+
+        let a = inner.get_sms_messages(PHONE_A, 42).await;
+        let b = inner.get_sms_messages(PHONE_B, 42).await;
+        assert_eq!(a.iter().map(|message| message.body.as_str()).collect::<Vec<_>>(), ["from A", "A updated"]);
+        assert_eq!(b.iter().map(|message| message.body.as_str()).collect::<Vec<_>>(), ["from B"]);
+
+        let (link_a, _) = wan_route(PHONE_A);
+        let (link_b, _) = wan_route(PHONE_B);
+        inner.router.register(Arc::clone(&link_a) as Arc<dyn crate::kdeconnect::wan::TransportLink>);
+        inner.router.register(Arc::clone(&link_b) as Arc<dyn crate::kdeconnect::wan::TransportLink>);
+        for device_id in [PHONE_A, PHONE_B] {
+            inner.peer_capabilities.lock().await.insert(
+                device_id.to_owned(),
+                (vec![crate::kdeconnect::PACKET_TYPE_SMS_REQUEST.to_owned()], Vec::new()),
+            );
+        }
+
+        inner
+            .send_sms(PHONE_B, vec!["+15550100".into()], "reply to B", None)
+            .await
+            .unwrap();
+        assert!(link_a.sent.lock().unwrap().is_empty(), "reply must not be routed through phone A");
+        let sent_b = link_b.sent.lock().unwrap();
+        assert_eq!(sent_b.len(), 1);
+        assert_eq!(sent_b[0].packet_type, crate::kdeconnect::PACKET_TYPE_SMS_REQUEST);
+        assert_eq!(sent_b[0].body["messageBody"], "reply to B");
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]

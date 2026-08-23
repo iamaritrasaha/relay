@@ -12,6 +12,8 @@ import 'package:relay_app/model/state/server/server_state.dart';
 import 'package:relay_app/model/ui/relay_capability_vm.dart';
 import 'package:relay_app/model/ui/relay_connection_state.dart';
 import 'package:relay_app/model/ui/relay_device_vm.dart';
+import 'package:relay_app/model/ui/relay_feature.dart';
+import 'package:relay_app/model/ui/relay_last_seen.dart';
 import 'package:relay_app/provider/continuity/continuity_provider.dart';
 import 'package:relay_app/provider/device_info_provider.dart';
 import 'package:relay_app/provider/file_transfer_provider.dart';
@@ -123,6 +125,7 @@ class RelayHomeVm {
     Map<String, RelayVerifiedLanDevice> verifiedLanDevices = const {},
     RelayContinuityState continuity = const RelayContinuityState(),
     List<RsKdeConnectDevice> kdeConnectDevices = const [],
+    RsRelayDeviceFabric? kdeFabric,
   }) {
     final selection = RelayPayloadVm(
       fileCount: selectedFiles.length,
@@ -153,7 +156,7 @@ class RelayHomeVm {
               ),
           for (final route in pairedByRelayId.values)
             _pairedDeviceVm(route, remoteTransfers.values.firstWhereOrNull((entry) => entry.relayId == route.relayId), continuity),
-          for (final device in kdeConnectDevices) _kdeConnectDeviceVm(device),
+          ...kdeDevices(fabric: kdeFabric, discovered: kdeConnectDevices),
         ]..sort((a, b) {
           final aliasComparison = a.alias.toLowerCase().compareTo(b.alias.toLowerCase());
           return aliasComparison != 0 ? aliasComparison : a.key.compareTo(b.key);
@@ -355,82 +358,159 @@ class RelayHomeVm {
     );
   }
 
-  /// The capability gating for a KDE Connect peer, exposed so the directional
-  /// rules can be tested against real advertised capability sets.
+  /// Every KDE device, exactly once each.
+  ///
+  /// The Device Fabric is authoritative for anything Relay is trusted with; the
+  /// discovery list contributes only the peers the fabric has never heard of,
+  /// which are pairing candidates. A phone reachable over LAN *and* Relay WAN
+  /// has one fabric record and therefore one card — the routes are recorded
+  /// against it, not presented as two devices.
   @visibleForTesting
-  static RelayDeviceVm kdeDeviceVm(RsKdeConnectDevice device) => _kdeConnectDeviceVm(device);
+  static List<RelayDeviceVm> kdeDevices({
+    required RsRelayDeviceFabric? fabric,
+    required List<RsKdeConnectDevice> discovered,
+  }) {
+    final byId = {for (final device in discovered) device.deviceId: device};
+    final records = fabric?.devices ?? const <RsRelayDevice>[];
+    final known = {for (final record in records) record.deviceId};
+    return [
+      for (final record in records) _fabricDeviceVm(record, byId[record.deviceId]),
+      // A device the fabric does not know is not trusted, whatever it announced
+      // about itself. It appears as something to pair with, never as one of the
+      // user's own devices.
+      for (final device in discovered)
+        if (!known.contains(device.deviceId)) _pairingCandidateVm(device),
+    ];
+  }
 
-  static RelayDeviceVm _kdeConnectDeviceVm(RsKdeConnectDevice device) {
-    // One derivation, from the core. Trust and reachability are separate facts:
-    // a paired device that is not connected is Offline, not "Local".
-    final connectionState = device.paired && device.connected
-        ? RelayConnectionState.fromCore(device.transportState)
-        : RelayConnectionState.offline;
-    final detail = device.connected && device.paired
-        ? 'Connected'
-        : device.paired
-        ? 'Paired'
-        : 'Nearby';
+  /// The capability gating for an untrusted KDE Connect peer, exposed so the
+  /// directional rules can be tested against real advertised capability sets.
+  @visibleForTesting
+  static RelayDeviceVm kdeDeviceVm(RsKdeConnectDevice device) => _pairingCandidateVm(device);
+
+  /// One trusted logical device, presented from its fabric record.
+  ///
+  /// [live] is the discovery entry for the same device when there is one. It
+  /// contributes only route-incidental extras — address, radio, the peer's
+  /// advertised packet types — and never connection state, trust or
+  /// capabilities: those come from the record, which is the whole point.
+  static RelayDeviceVm _fabricDeviceVm(RsRelayDevice record, RsKdeConnectDevice? live) {
+    final connectionState = _connectionStateOf(record.connectionState);
+    final availability = relayFeatureAvailability(record.featureAvailability);
+    final connected = connectionState.isConnected;
+    return RelayDeviceVm(
+      key: 'kdeconnect:${record.deviceId}',
+      alias: record.displayName,
+      deviceType: switch (record.deviceClass) {
+        RsRelayDeviceClass.phone || RsRelayDeviceClass.tablet => DeviceType.mobile,
+        _ => DeviceType.desktop,
+      },
+      deviceClass: RelayDeviceClass.fromCore(record.deviceClass),
+      phase: RelayDevicePhase.idle,
+      progress: null,
+      // Retained for the surfaces that still read it. Reachability is *not* in
+      // here: every surface reads [connectionState].
+      detail: connected ? 'Connected' : 'Paired',
+      targetKind: RelayDeviceTargetKind.kdeConnect,
+      explicitConnectionState: connectionState,
+      connectionType: switch (connectionState) {
+        RelayConnectionState.local => RelayConnectionType.local,
+        RelayConnectionState.remoteDirect => RelayConnectionType.direct,
+        RelayConnectionState.remoteRelay => RelayConnectionType.relayed,
+        RelayConnectionState.reconnecting || RelayConnectionState.offline => RelayConnectionType.unspecified,
+      },
+      securityState: RelaySecurityState.unauthenticated,
+      battery: RelayBatteryVm(
+        percentage: record.batteryPercent,
+        isCharging: record.charging ?? false,
+        isFull: record.batteryPercent == 100 && (record.charging ?? false),
+        // A reading from a device Relay can no longer reach is the last known
+        // one, not a current one.
+        isStale: !connected && record.batteryPercent != null,
+      ),
+      networkType: live?.networkType,
+      signalLevel: live?.signalLevel,
+      connectivityStale: live?.connectivityStale ?? !connected,
+      // Actions need a live route to carry the request, which the availability
+      // answer already accounts for.
+      canPing: availability[RelayFeature.ping]?.isAvailable ?? false,
+      canFindDevice: connected && (live != null && live.incomingCapabilities.contains('kdeconnect.findmyphone.request')),
+      // Sending is an independent protocol direction. Android can grant
+      // SEND_SMS without granting Relay permission to list conversations (or
+      // vice versa), so do not couple the composer to the read-side Messages
+      // availability. It still requires Fabric trust/connectivity and the
+      // peer's concrete send-request capability.
+      canSendSms: record.trusted && connected && (live?.incomingCapabilities.contains('kdeconnect.sms.request') ?? false),
+      canMuteRinger: connected && (live != null && live.incomingCapabilities.contains('kdeconnect.telephony.request_mute')),
+      capabilities: {
+        RelayCapability.phone:
+            (connected &&
+                live != null &&
+                (live.outgoingCapabilities.contains('kdeconnect.telephony') ||
+                    live.incomingCapabilities.contains('kdeconnect.telephony.request_mute')))
+            ? CapabilityStatus.available
+            : CapabilityStatus.unavailable,
+      },
+      ip: live?.ip,
+      port: live?.port,
+      hasFabricRecord: true,
+      fabricTrusted: record.trusted,
+      lanAvailable: record.lanAvailable,
+      wanAvailable: record.wanAvailable,
+      wanBound: record.wanBound,
+      wanPath: record.wanPath,
+      lanLastSeenUnix: record.lanLastSeenUnix?.toInt(),
+      wanLastSeenUnix: record.wanLastSeenUnix?.toInt(),
+      lastSeenUnix: record.lastSeenUnix?.toInt(),
+      platform: record.platform,
+      platformVersion: record.platformVersion,
+      relayVersion: record.relayVersion,
+      featureAvailability: availability,
+    );
+  }
+
+  static RelayConnectionState _connectionStateOf(RsRelayConnectionState raw) => switch (raw) {
+    RsRelayConnectionState.local => RelayConnectionState.local,
+    RsRelayConnectionState.remoteDirect => RelayConnectionState.remoteDirect,
+    RsRelayConnectionState.remoteRelay => RelayConnectionState.remoteRelay,
+    RsRelayConnectionState.reconnecting => RelayConnectionState.reconnecting,
+    RsRelayConnectionState.offline => RelayConnectionState.offline,
+  };
+
+  /// A KDE peer Relay has seen but does not trust: something to pair with.
+  ///
+  /// It has no fabric record, so it offers nothing and claims no connection —
+  /// being visible on the network is not being connected.
+  static RelayDeviceVm _pairingCandidateVm(RsKdeConnectDevice device) {
     return RelayDeviceVm(
       key: 'kdeconnect:${device.deviceId}',
       alias: device.name,
       deviceType: switch (device.deviceType) {
-        'phone' || 'smartphone' => DeviceType.mobile,
-        'tablet' => DeviceType.mobile,
-        'tv' => DeviceType.desktop,
-        'laptop' => DeviceType.desktop,
+        'phone' || 'smartphone' || 'tablet' => DeviceType.mobile,
         _ => DeviceType.desktop,
+      },
+      deviceClass: switch (device.deviceType) {
+        'phone' || 'smartphone' || 'mobile' => RelayDeviceClass.phone,
+        'tablet' => RelayDeviceClass.tablet,
+        'laptop' || 'notebook' => RelayDeviceClass.laptop,
+        'desktop' || 'computer' || 'pc' => RelayDeviceClass.desktop,
+        'tv' || 'television' => RelayDeviceClass.tv,
+        _ => RelayDeviceClass.other,
       },
       phase: RelayDevicePhase.idle,
       progress: null,
-      detail: detail,
+      detail: 'Nearby',
       targetKind: RelayDeviceTargetKind.kdeConnect,
-      explicitConnectionState: connectionState,
-      // Derived from the same authoritative state rather than a second switch.
-      // The previous catch-all mapped 'offline' onto `local`, so a disconnected
-      // device was presented as being on the local network.
-      connectionType: switch (connectionState) {
-        RelayConnectionState.remoteDirect => RelayConnectionType.direct,
-        RelayConnectionState.remoteRelay => RelayConnectionType.relayed,
-        RelayConnectionState.reconnecting => RelayConnectionType.unspecified,
-        RelayConnectionState.local => RelayConnectionType.local,
-        RelayConnectionState.offline => RelayConnectionType.unspecified,
-      },
+      explicitConnectionState: RelayConnectionState.offline,
+      connectionType: RelayConnectionType.unspecified,
       securityState: RelaySecurityState.unauthenticated,
-      battery: RelayBatteryVm(
-        percentage: device.batteryPercentage,
-        isCharging: device.batteryIsCharging ?? false,
-        isFull: device.batteryPercentage == 100 && (device.batteryIsCharging ?? false),
-        isStale: !device.connected && device.batteryPercentage != null,
-      ),
       networkType: device.networkType,
       signalLevel: device.signalLevel,
       connectivityStale: device.connectivityStale,
-      canPing: _kdePeerAccepts(device, 'kdeconnect.ping'),
-      canFindDevice: _kdePeerAccepts(device, 'kdeconnect.findmyphone.request'),
-      canSendSms: _kdePeerAccepts(device, 'kdeconnect.sms.request'),
-      canMuteRinger: _kdePeerAccepts(device, 'kdeconnect.telephony.request_mute'),
-      capabilities: {
-        RelayCapability.files: CapabilityStatus.unavailable,
-        RelayCapability.clipboard: device.paired ? CapabilityStatus.available : CapabilityStatus.unavailable,
-        RelayCapability.battery: device.paired ? CapabilityStatus.available : CapabilityStatus.unavailable,
-        RelayCapability.messages: _kdePeerAccepts(device, 'kdeconnect.sms.request_conversations')
-            ? CapabilityStatus.available
-            : CapabilityStatus.unavailable,
-        RelayCapability.notifications: device.paired ? CapabilityStatus.available : CapabilityStatus.unavailable,
-        RelayCapability.phone:
-            (device.paired &&
-                (device.outgoingCapabilities.contains('kdeconnect.telephony') || _kdePeerAccepts(device, 'kdeconnect.telephony.request_mute')))
-            ? CapabilityStatus.available
-            : CapabilityStatus.unavailable,
-      },
       ip: device.ip,
       port: device.port,
     );
   }
-
-  static bool _kdePeerAccepts(RsKdeConnectDevice device, String packetType) =>
-      device.paired && device.connected && device.incomingCapabilities.contains(packetType);
 
   static RelayDeviceVm _idle(Device device) => RelayDeviceVm(
     key: device.fingerprint,
@@ -641,5 +721,6 @@ final relayHomeVmProvider = ViewProvider<RelayHomeVm>((ref) {
     verifiedLanDevices: ref.watch(relayVerifiedLanDevicesProvider),
     continuity: ref.watch(continuityProvider),
     kdeConnectDevices: ref.watch(kdeConnectProvider.select((state) => state.devices)),
+    kdeFabric: ref.watch(kdeConnectProvider.select((state) => state.fabric)),
   );
 }, debugLabel: 'relayHomeVmProvider');
